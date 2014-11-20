@@ -1141,6 +1141,41 @@ static void ecm_front_end_ipv6_connection_tcp_callback(void *app_data, struct ns
 		return;
 	}
 
+	spin_lock_bh(&fecti->lock);
+	DEBUG_ASSERT(fecti->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecti->accel_mode);
+
+	/*
+	 * If a flush occured before we got the ACK then our acceleration was effectively cancelled on us
+	 * GGG TODO This is a workaround for a NSS message OOO quirk, this should eventually be removed.
+	 */
+	if (fecti->base.stats.flush_happened) {
+		fecti->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		fecti->base.stats.flush_happened = false;
+
+		/*
+		 * We are decelerated, clear any pending flag as that is meaningless now.
+		 */
+		fecti->base.stats.decelerate_pending = false;
+
+		/*
+		 * Increement the no-action counter.  Our connectin was decelerated on us with no action occurring.
+		 */
+		fecti->base.stats.no_action_seen++;
+		spin_unlock_bh(&fecti->lock);
+
+		/*
+		 * Release the connection.
+		 */
+		feci->deref(feci);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+
+	/*
+	 * We got an ACK - we are accelerated.
+	 */
+	fecti->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
+
 	/*
 	 * Create succeeded, declare that we are accelerated.
 	 */
@@ -1148,15 +1183,6 @@ static void ecm_front_end_ipv6_connection_tcp_callback(void *app_data, struct ns
 	ecm_front_end_ipv6_tcp_accelerated_count++;	/* Protocol specific counter */
 	ecm_front_end_ipv6_accelerated_count++;		/* General running counter */
 	spin_unlock_bh(&ecm_front_end_ipv6_lock);
-
-	spin_lock_bh(&fecti->lock);
-	DEBUG_ASSERT(fecti->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecti->accel_mode);
-	fecti->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
-
-	/*
-	 * Increement the no-action counter, this is reset if offload action is seen
-	 */
-	fecti->base.stats.no_action_seen++;
 
 	/*
 	 * Clear any nack count
@@ -1168,6 +1194,11 @@ static void ecm_front_end_ipv6_connection_tcp_callback(void *app_data, struct ns
 	 * If decelerate is pending then we need to begin deceleration :-(
 	 */
 	if (!fecti->base.stats.decelerate_pending) {
+		/*
+		 * Increement the no-action counter, this is reset if offload action is seen
+		 */
+		fecti->base.stats.no_action_seen++;
+
 		spin_unlock_bh(&fecti->lock);
 
 		/*
@@ -1256,9 +1287,9 @@ static void ecm_front_end_ipv6_connection_tcp_front_end_accelerate(struct ecm_fr
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
 	memset(&nim, 0, sizeof(struct nss_ipv6_msg));
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_create_msg),
-			ecm_front_end_ipv6_connection_tcp_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_tcp_callback,
 			(void *)ecm_db_connection_serial_get(fecti->ci));
 
 	nircm = &nim.msg.rule_create;
@@ -2021,9 +2052,9 @@ static void ecm_front_end_ipv6_connection_tcp_front_end_decelerate(struct ecm_fr
 	/*
 	 * Prepare deceleration message
 	 */
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_destroy_msg),
-			ecm_front_end_ipv6_connection_tcp_destroy_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_tcp_destroy_callback,
 			(void *)ecm_db_connection_serial_get(fecti->ci));
 
 	nirdm = &nim.msg.rule_destroy;
@@ -2184,10 +2215,24 @@ static void ecm_front_end_ipv6_connection_tcp_front_end_accel_ceased(struct ecm_
 	DEBUG_CHECK_MAGIC(fecti, ECM_FRONT_END_IPV6_CONNECTION_TCP_INSTANCE_MAGIC, "%p: magic failed", fecti);
 	DEBUG_INFO("%p: accel ceased\n", fecti);
 
+	spin_lock_bh(&fecti->lock);
+
+	/*
+	 * If we are in accel-pending state then the NSS has issued a flush out-of-order
+	 * with the ACK/NACK we are actually waiting for.
+	 * To work around this we record a "flush has already happened" and will action it when we finally get that ACK/NACK.
+	 * GGG TODO This should eventually be removed when the NSS honours messaging sequence.
+	 */
+	if (fecti->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
+		fecti->base.stats.flush_happened = true;
+		fecti->base.stats.flush_happened_total++;
+		spin_unlock_bh(&fecti->lock);
+		return;
+	}
+
 	/*
 	 * If connection is no longer accelerated by the time we get here just ignore the command
 	 */
-	spin_lock_bh(&fecti->lock);
 	if (fecti->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
 		spin_unlock_bh(&fecti->lock);
 		return;
@@ -2290,12 +2335,13 @@ static int ecm_front_end_ipv6_connection_tcp_front_end_xml_state_get(struct ecm_
 	spin_unlock_bh(&fecti->lock);
 
 	return snprintf(buf, buf_sz, "<front_end_tcp can_accel=\"%d\" accel_mode=\"%d\" decelerate_pending=\"%d\""
-			" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
+			" flush_happened_total=\"%d\" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
 			" driver_fail_total=\"%d\" driver_fail=\"%d\" driver_fail_limit=\"%d\""
 			" nss_nack_total=\"%d\" nss_nack=\"%d\" nss_nack_limit=\"%d\"/>\n",
 			can_accel,
 			accel_mode,
 			stats.decelerate_pending,
+			stats.flush_happened_total,
 			stats.no_action_seen_total,
 			stats.no_action_seen,
 			stats.no_action_seen_limit,
@@ -2462,6 +2508,41 @@ static void ecm_front_end_ipv6_connection_udp_callback(void *app_data, struct ns
 		return;
 	}
 
+	spin_lock_bh(&fecui->lock);
+	DEBUG_ASSERT(fecui->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecui->accel_mode);
+
+	/*
+	 * If a flush occured before we got the ACK then our acceleration was effectively cancelled on us
+	 * GGG TODO This is a workaround for a NSS message OOO quirk, this should eventually be removed.
+	 */
+	if (fecui->base.stats.flush_happened) {
+		fecui->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		fecui->base.stats.flush_happened = false;
+
+		/*
+		 * We are decelerated, clear any pending flag as that is meaningless now.
+		 */
+		fecui->base.stats.decelerate_pending = false;
+
+		/*
+		 * Increement the no-action counter.  Our connectin was decelerated on us with no action occurring.
+		 */
+		fecui->base.stats.no_action_seen++;
+		spin_unlock_bh(&fecui->lock);
+
+		/*
+		 * Release the connection.
+		 */
+		feci->deref(feci);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+
+	/*
+	 * We got an ACK - we are accelerated.
+	 */
+	fecui->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
+
 	/*
 	 * Create succeeded, declare that we are accelerated.
 	 */
@@ -2469,15 +2550,6 @@ static void ecm_front_end_ipv6_connection_udp_callback(void *app_data, struct ns
 	ecm_front_end_ipv6_udp_accelerated_count++;	/* Protocol specific counter */
 	ecm_front_end_ipv6_accelerated_count++;		/* General running counter */
 	spin_unlock_bh(&ecm_front_end_ipv6_lock);
-
-	spin_lock_bh(&fecui->lock);
-	DEBUG_ASSERT(fecui->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecui->accel_mode);
-	fecui->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
-
-	/*
-	 * Increement the no-action counter, this is reset if offload action is seen
-	 */
-	fecui->base.stats.no_action_seen++;
 
 	/*
 	 * Clear any nack count
@@ -2489,6 +2561,11 @@ static void ecm_front_end_ipv6_connection_udp_callback(void *app_data, struct ns
 	 * If decelerate is pending then we need to begin deceleration :-(
 	 */
 	if (!fecui->base.stats.decelerate_pending) {
+		/*
+		 * Increement the no-action counter, this is reset if offload action is seen
+		 */
+		fecui->base.stats.no_action_seen++;
+
 		spin_unlock_bh(&fecui->lock);
 
 		/*
@@ -2576,9 +2653,9 @@ static void ecm_front_end_ipv6_connection_udp_front_end_accelerate(struct ecm_fr
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
 	memset(&nim, 0, sizeof(struct nss_ipv6_msg));
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_create_msg),
-			ecm_front_end_ipv6_connection_udp_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_udp_callback,
 			(void *)ecm_db_connection_serial_get(fecui->ci));
 
 	nircm = &nim.msg.rule_create;
@@ -3297,9 +3374,9 @@ static void ecm_front_end_ipv6_connection_udp_front_end_decelerate(struct ecm_fr
 	/*
 	 * Prepare deceleration message
 	 */
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_destroy_msg),
-			ecm_front_end_ipv6_connection_udp_destroy_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_udp_destroy_callback,
 			(void *)ecm_db_connection_serial_get(fecui->ci));
 
 	nirdm = &nim.msg.rule_destroy;
@@ -3462,10 +3539,24 @@ static void ecm_front_end_ipv6_connection_udp_front_end_accel_ceased(struct ecm_
 	DEBUG_CHECK_MAGIC(fecui, ECM_FRONT_END_IPV6_CONNECTION_UDP_INSTANCE_MAGIC, "%p: magic failed", fecui);
 	DEBUG_INFO("%p: accel ceased\n", fecui);
 
+	spin_lock_bh(&fecui->lock);
+
+	/*
+	 * If we are in accel-pending state then the NSS has issued a flush out-of-order
+	 * with the ACK/NACK we are actually waiting for.
+	 * To work around this we record a "flush has already happened" and will action it when we finally get that ACK/NACK.
+	 * GGG TODO This should eventually be removed when the NSS honours messaging sequence.
+	 */
+	if (fecui->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
+		fecui->base.stats.flush_happened = true;
+		fecui->base.stats.flush_happened_total++;
+		spin_unlock_bh(&fecui->lock);
+		return;
+	}
+
 	/*
 	 * If connection is no longer accelerated by the time we get here just ignore the command
 	 */
-	spin_lock_bh(&fecui->lock);
 	if (fecui->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
 		spin_unlock_bh(&fecui->lock);
 		return;
@@ -3568,12 +3659,13 @@ static int ecm_front_end_ipv6_connection_udp_front_end_xml_state_get(struct ecm_
 	spin_unlock_bh(&fecui->lock);
 
 	return snprintf(buf, buf_sz, "<front_end_tcp can_accel=\"%d\" accel_mode=\"%d\" decelerate_pending=\"%d\""
-			" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
+			" flush_happened_total=\"%d\" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
 			" driver_fail_total=\"%d\" driver_fail=\"%d\" driver_fail_limit=\"%d\""
 			" nss_nack_total=\"%d\" nss_nack=\"%d\" nss_nack_limit=\"%d\"/>\n",
 			can_accel,
 			accel_mode,
 			stats.decelerate_pending,
+			stats.flush_happened_total,
 			stats.no_action_seen_total,
 			stats.no_action_seen,
 			stats.no_action_seen_limit,
@@ -3740,6 +3832,41 @@ static void ecm_front_end_ipv6_connection_non_ported_callback(void *app_data, st
 		return;
 	}
 
+	spin_lock_bh(&fecnpi->lock);
+	DEBUG_ASSERT(fecnpi->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecnpi->accel_mode);
+
+	/*
+	 * If a flush occured before we got the ACK then our acceleration was effectively cancelled on us
+	 * GGG TODO This is a workaround for a NSS message OOO quirk, this should eventually be removed.
+	 */
+	if (fecnpi->base.stats.flush_happened) {
+		fecnpi->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		fecnpi->base.stats.flush_happened = false;
+
+		/*
+		 * We are decelerated, clear any pending flag as that is meaningless now.
+		 */
+		fecnpi->base.stats.decelerate_pending = false;
+
+		/*
+		 * Increement the no-action counter.  Our connectin was decelerated on us with no action occurring.
+		 */
+		fecnpi->base.stats.no_action_seen++;
+		spin_unlock_bh(&fecnpi->lock);
+
+		/*
+		 * Release the connection.
+		 */
+		feci->deref(feci);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+
+	/*
+	 * We got an ACK - we are accelerated.
+	 */
+	fecnpi->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
+
 	/*
 	 * Create succeeded, declare that we are accelerated.
 	 */
@@ -3747,15 +3874,6 @@ static void ecm_front_end_ipv6_connection_non_ported_callback(void *app_data, st
 	ecm_front_end_ipv6_non_ported_accelerated_count++;	/* Protocol specific counter */
 	ecm_front_end_ipv6_accelerated_count++;			/* General running counter */
 	spin_unlock_bh(&ecm_front_end_ipv6_lock);
-
-	spin_lock_bh(&fecnpi->lock);
-	DEBUG_ASSERT(fecnpi->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Unexpected mode: %d\n", ci, fecnpi->accel_mode);
-	fecnpi->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
-
-	/*
-	 * Increement the no-action counter, this is reset if offload action is seen
-	 */
-	fecnpi->base.stats.no_action_seen++;
 
 	/*
 	 * Clear any nack count
@@ -3767,6 +3885,11 @@ static void ecm_front_end_ipv6_connection_non_ported_callback(void *app_data, st
 	 * If decelerate is pending then we need to begin deceleration :-(
 	 */
 	if (!fecnpi->base.stats.decelerate_pending) {
+		/*
+		 * Increement the no-action counter, this is reset if offload action is seen
+		 */
+		fecnpi->base.stats.no_action_seen++;
+
 		spin_unlock_bh(&fecnpi->lock);
 
 		/*
@@ -3877,9 +4000,9 @@ static void ecm_front_end_ipv6_connection_non_ported_front_end_accelerate(struct
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
 	memset(&nim, 0, sizeof(struct nss_ipv6_msg));
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_create_msg),
-			ecm_front_end_ipv6_connection_non_ported_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_non_ported_callback,
 			(void *)ecm_db_connection_serial_get(fecnpi->ci));
 
 	nircm = &nim.msg.rule_create;
@@ -4601,9 +4724,9 @@ static void ecm_front_end_ipv6_connection_non_ported_front_end_decelerate(struct
 	/*
 	 * Prepare deceleration message
 	 */
-	nss_cmn_msg_init(&nim.cm, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
+	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_destroy_msg),
-			ecm_front_end_ipv6_connection_non_ported_destroy_callback,
+			(nss_ipv6_msg_callback_t *)ecm_front_end_ipv6_connection_non_ported_destroy_callback,
 			(void *)ecm_db_connection_serial_get(fecnpi->ci));
 
 	nirdm = &nim.msg.rule_destroy;
@@ -4767,10 +4890,24 @@ static void ecm_front_end_ipv6_connection_non_ported_front_end_accel_ceased(stru
 
 	DEBUG_INFO("%p: accel ceased\n", fecnpi);
 
+	spin_lock_bh(&fecnpi->lock);
+
+	/*
+	 * If we are in accel-pending state then the NSS has issued a flush out-of-order
+	 * with the ACK/NACK we are actually waiting for.
+	 * To work around this we record a "flush has already happened" and will action it when we finally get that ACK/NACK.
+	 * GGG TODO This should eventually be removed when the NSS honours messaging sequence.
+	 */
+	if (fecnpi->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
+		fecnpi->base.stats.flush_happened = true;
+		fecnpi->base.stats.flush_happened_total++;
+		spin_unlock_bh(&fecnpi->lock);
+		return;
+	}
+
 	/*
 	 * If connection is no longer accelerated by the time we get here just ignore the command
 	 */
-	spin_lock_bh(&fecnpi->lock);
 	if (fecnpi->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
 		spin_unlock_bh(&fecnpi->lock);
 		return;
@@ -4873,12 +5010,13 @@ static int ecm_front_end_ipv6_connection_non_ported_front_end_xml_state_get(stru
 	spin_unlock_bh(&fecnpi->lock);
 
 	return snprintf(buf, buf_sz, "<front_end_tcp can_accel=\"%d\" accel_mode=\"%d\" decelerate_pending=\"%d\""
-			" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
+			" flush_happened_total=\"%d\" no_action_seen_total=\"%d\" no_action_seen=\"%d\" no_action_seen_limit=\"%d\""
 			" driver_fail_total=\"%d\" driver_fail=\"%d\" driver_fail_limit=\"%d\""
 			" nss_nack_total=\"%d\" nss_nack=\"%d\" nss_nack_limit=\"%d\"/>\n",
 			can_accel,
 			accel_mode,
 			stats.decelerate_pending,
+			stats.flush_happened_total,
 			stats.no_action_seen_total,
 			stats.no_action_seen,
 			stats.no_action_seen_limit,
@@ -5067,6 +5205,132 @@ static bool ecm_front_end_ipv6_reclassify(struct ecm_db_connection_instance *ci,
 	return full_reclassification;
 }
 
+/*
+ * ecm_front_end_ipv6_connection_regenerate()
+ *	Re-generate a connection.
+ *
+ * Re-generating a connection involves re-evaluating the interface lists in case interface heirarchies have changed.
+ * It also involves the possible triggering of classifier re-evaluation but only if all currently assigned
+ * classifiers permit this operation.
+ */
+static bool ecm_front_end_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+							struct net_device *out_dev, struct net_device *in_dev)
+{
+	int i;
+	bool reclassify_allowed;
+	int32_t to_list_first;
+	struct ecm_db_iface_instance *to_list[ECM_DB_IFACE_HEIRARCHY_MAX];
+	int32_t from_list_first;
+	struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
+	ip_addr_t ip_src_addr;
+	ip_addr_t ip_dest_addr;
+	int protocol;
+	bool is_routed;
+	uint8_t src_node_addr[ETH_ALEN];
+	uint8_t dest_node_addr[ETH_ALEN];
+	int assignment_count;
+	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+
+	DEBUG_INFO("%p: re-gen needed\n", ci);
+
+	/*
+	 * We may need to swap the devices around depending on who the sender of the packet that triggered the re-gen is
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_DEST) {
+		struct net_device *tmp_dev;
+
+		/*
+		 * This is a packet sent by the destination of the connection, i.e. it is a packet issued by the 'from' side of the connection.
+		 */
+		DEBUG_TRACE("%p: Re-gen swap devs\n", ci);
+		tmp_dev = out_dev;
+		out_dev = in_dev;
+		in_dev = tmp_dev;
+	}
+
+	/*
+	 * Update the interface lists - these may have changed, e.g. LAG path change etc.
+	 * NOTE: We never have to change the usual mapping->host->node_iface arrangements for each side of the connection (to/from sides)
+	 * This is because if these interfaces change then the connection is dead anyway.
+	 * But a LAG slave might change the heirarchy the connection is using but the LAG master is still sane.
+	 * If any of the new interface heirarchies cannot be created then simply set empty-lists as this will deny
+	 * acceleration and ensure that a bad rule cannot be created.
+	 * IMPORTANT: The 'sender' defines who has sent the packet that triggered this re-generation
+	 */
+	protocol = ecm_db_connection_protocol_get(ci);
+
+	is_routed = ecm_db_connection_is_routed_get(ci);
+
+	ecm_db_connection_from_address_get(ci, ip_src_addr);
+
+	ecm_db_connection_to_address_get(ci, ip_dest_addr);
+
+	ecm_db_connection_from_node_address_get(ci, src_node_addr);
+
+	ecm_db_connection_to_node_address_get(ci, dest_node_addr);
+
+	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
+	from_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(from_list, ip_dest_addr, ip_src_addr, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+	ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
+	ecm_db_connection_interfaces_deref(from_list, from_list_first);
+
+	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
+	to_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(to_list, ip_src_addr, ip_dest_addr, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+	ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
+	ecm_db_connection_interfaces_deref(to_list, to_list_first);
+
+	/*
+	 * Get list of assigned classifiers to reclassify.
+	 * Remember: This also includes our default classifier too.
+	 */
+	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
+
+	/*
+	 * All of the assigned classifiers must permit reclassification.
+	 */
+	reclassify_allowed = true;
+	for (i = 0; i < assignment_count; ++i) {
+		DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+		if (!assignments[i]->reclassify_allowed(assignments[i])) {
+			DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+			reclassify_allowed = false;
+			break;
+		}
+	}
+
+	if (!reclassify_allowed) {
+		/*
+		 * Regeneration came to a successful conclusion even though reclassification was denied
+		 */
+		DEBUG_WARN("%p: re-gen denied\n", ci);\
+
+		/*
+		 * Release the assignments
+		 */
+		ecm_db_connection_assignments_release(assignment_count, assignments);
+		return true;
+	}
+
+	/*
+	 * Reclassify
+	 */
+	DEBUG_INFO("%p: reclassify\n", ci);
+	if (!ecm_front_end_ipv6_reclassify(ci, assignment_count, assignments)) {
+		/*
+		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
+		 */
+		DEBUG_WARN("%p: Regeneration failed\n", ci);
+		ecm_db_connection_assignments_release(assignment_count, assignments);
+		return false;
+	}
+	DEBUG_INFO("%p: reclassify success\n", ci);
+
+	/*
+	 * Release the assignments
+	 */
+	ecm_db_connection_assignments_release(assignment_count, assignments);
+	return true;
+}
 
 /*
  * ecm_front_end_ipv6_tcp_process()
@@ -5078,7 +5342,7 @@ static unsigned int ecm_front_end_ipv6_tcp_process(struct net_device *out_dev,
 							uint8_t *dest_node_addr,
 							bool can_accel,  bool is_routed, struct sk_buff *skb,
 							struct ecm_tracker_ip_header *iph,
-							struct nf_conn *ct, enum ip_conntrack_dir ct_dir, ecm_db_direction_t ecm_dir,
+							struct nf_conn *ct, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir,
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
 							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr)
 {
@@ -5087,7 +5351,6 @@ static unsigned int ecm_front_end_ipv6_tcp_process(struct net_device *out_dev,
 	int src_port;
 	int dest_port;
 	struct ecm_db_connection_instance *ci;
-	ecm_tracker_sender_type_t sender;
 	ip_addr_t match_addr;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -5118,7 +5381,7 @@ static unsigned int ecm_front_end_ipv6_tcp_process(struct net_device *out_dev,
 	 * Extract transport port information
 	 * Refer to the ecm_front_end_ipv6_process() for information on how we extract this information.
 	 */
-	if (ct_dir == IP_CT_DIR_ORIGINAL) {
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		switch(ecm_dir) {
 		case ECM_DB_DIRECTION_NON_NAT:
 		case ECM_DB_DIRECTION_BRIDGED:
@@ -5388,95 +5651,26 @@ static unsigned int ecm_front_end_ipv6_tcp_process(struct net_device *out_dev,
 	}
 
 	/*
-	 * Do we need to action generation change?
-	 */
-	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
-		int i;
-		bool reclassify_allowed;
-		int32_t to_list_first;
-		struct ecm_db_iface_instance *to_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-		int32_t from_list_first;
-		struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-
-		DEBUG_INFO("%p: re-gen needed\n", ci);
-
-		/*
-		 * Update the interface lists - these may have changed, e.g. LAG path change etc.
-		 * NOTE: We never have to change the usual mapping->host->node_iface arrangements for each side of the connection (to/from sides)
-		 * This is because if these interfaces change then the connection is dead anyway.
-		 * But a LAG slave might change the heirarchy the connection is using but the LAG master is still sane.
-		 * GGG TODO The empty list checks may mean that stale interface list information remains on a connection - this could be bad.
-		 * GGG Investigate the removal of the empty list checks.
-		 */
-		DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-		from_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(from_list, ip_dest_addr, ip_src_addr, IPPROTO_TCP, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
-		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
-		ecm_db_connection_interfaces_deref(from_list, from_list_first);
-
-		DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-		to_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(to_list, ip_src_addr, ip_dest_addr, IPPROTO_TCP, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
-		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
-		ecm_db_connection_interfaces_deref(to_list, to_list_first);
-
-		/*
-		 * Get list of assigned classifiers to reclassify.
-		 * Remember: This also includes our default classifier too.
-		 */
-		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
-
-		/*
-		 * All of the assigned classifiers must permit reclassification.
-		 */
-		reclassify_allowed = true;
-		for (i = 0; i < assignment_count; ++i) {
-			DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-			if (!assignments[i]->reclassify_allowed(assignments[i])) {
-				DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-				reclassify_allowed = false;
-				break;
-			}
-		}
-
-		if (!reclassify_allowed) {
-			DEBUG_WARN("%p: re-gen denied\n", ci);
-		} else {
-			/*
-			 * Reclassify
-			 */
-			DEBUG_TRACE("%p: reclassify\n", ci);
-			if (!ecm_front_end_ipv6_reclassify(ci, assignment_count, assignments)) {
-				DEBUG_WARN("%p: Regeneration failed, dropping packet\n", ci);
-				ecm_db_connection_assignments_release(assignment_count, assignments);
-				ecm_db_connection_deref(ci);
-				return NF_ACCEPT;
-			}
-			DEBUG_TRACE("%p: reclassify success\n", ci);
-		}
-
-		/*
-		 * Release the assignments and re-obtain them as there may be new ones been reassigned.
-		 */
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-	}
-
-	/*
 	 * Identify which side of the connection is sending
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
 	 */
 	ecm_db_connection_from_address_get(ci, match_addr);
 	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
+	 * Do we need to action generation change?
+	 */
+	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
+		if (!ecm_front_end_ipv6_connection_regenerate(ci, sender, out_dev, in_dev)) {
+			DEBUG_WARN("%p: Re-generation failed\n", ci);
+			ecm_db_connection_deref(ci);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*
@@ -5649,7 +5843,7 @@ static unsigned int ecm_front_end_ipv6_udp_process(struct net_device *out_dev,
 							uint8_t *dest_node_addr,
 							bool can_accel, bool is_routed, struct sk_buff *skb,
 							struct ecm_tracker_ip_header *iph,
-							struct nf_conn *ct, enum ip_conntrack_dir ct_dir, ecm_db_direction_t ecm_dir,
+							struct nf_conn *ct, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir,
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
 							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr)
 {
@@ -5658,7 +5852,6 @@ static unsigned int ecm_front_end_ipv6_udp_process(struct net_device *out_dev,
 	int src_port;
 	int dest_port;
 	struct ecm_db_connection_instance *ci;
-	ecm_tracker_sender_type_t sender;
 	ip_addr_t match_addr;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -5704,7 +5897,7 @@ static unsigned int ecm_front_end_ipv6_udp_process(struct net_device *out_dev,
 	 * Extract transport port information
 	 * Refer to the ecm_front_end_ipv6_process() for information on how we extract this information.
 	 */
-	if (ct_dir == IP_CT_DIR_ORIGINAL) {
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		switch(ecm_dir) {
 		case ECM_DB_DIRECTION_NON_NAT:
 		case ECM_DB_DIRECTION_BRIDGED:
@@ -5960,95 +6153,26 @@ static unsigned int ecm_front_end_ipv6_udp_process(struct net_device *out_dev,
 	}
 
 	/*
-	 * Do we need to action generation change?
-	 */
-	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
-		int i;
-		bool reclassify_allowed;
-		int32_t to_list_first;
-		struct ecm_db_iface_instance *to_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-		int32_t from_list_first;
-		struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-
-		DEBUG_INFO("%p: re-gen needed\n", ci);
-
-		/*
-		 * Update the interface lists - these may have changed, e.g. LAG path change etc.
-		 * NOTE: We never have to change the usual mapping->host->node_iface arrangements for each side of the connection (to/from sides)
-		 * This is because if these interfaces change then the connection is dead anyway.
-		 * But a LAG slave might change the heirarchy the connection is using but the LAG master is still sane.
-		 * GGG TODO The empty list checks may mean that stale interface list information remains on a connection - this could be bad.
-		 * GGG Investigate the removal of the empty list checks.
-		 */
-		DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-		from_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(from_list, ip_dest_addr, ip_src_addr, IPPROTO_UDP, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
-		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
-		ecm_db_connection_interfaces_deref(from_list, from_list_first);
-
-		DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-		to_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(to_list, ip_src_addr, ip_dest_addr, IPPROTO_UDP, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
-		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
-		ecm_db_connection_interfaces_deref(to_list, to_list_first);
-
-		/*
-		 * Get list of assigned classifiers to reclassify.
-		 * Remember: This also includes our default classifier too.
-		 */
-		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
-
-		/*
-		 * All of the assigned classifiers must permit reclassification.
-		 */
-		reclassify_allowed = true;
-		for (i = 0; i < assignment_count; ++i) {
-			DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-			if (!assignments[i]->reclassify_allowed(assignments[i])) {
-				DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-				reclassify_allowed = false;
-				break;
-			}
-		}
-
-		if (!reclassify_allowed) {
-			DEBUG_WARN("%p: re-gen denied\n", ci);
-		} else {
-			/*
-			 * Reclassify
-			 */
-			DEBUG_TRACE("%p: reclassify\n", ci);
-			if (!ecm_front_end_ipv6_reclassify(ci, assignment_count, assignments)) {
-				DEBUG_WARN("%p: Regeneration failed, dropping packet\n", ci);
-				ecm_db_connection_assignments_release(assignment_count, assignments);
-				ecm_db_connection_deref(ci);
-				return NF_ACCEPT;
-			}
-			DEBUG_TRACE("%p: reclassify success\n", ci);
-		}
-
-		/*
-		 * Release the assignments and re-obtain them as there may be new ones been reassigned.
-		 */
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-	}
-
-	/*
 	 * Identify which side of the connection is sending
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
 	 */
 	ecm_db_connection_from_address_get(ci, match_addr);
 	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
+	 * Do we need to action generation change?
+	 */
+	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
+		if (!ecm_front_end_ipv6_connection_regenerate(ci, sender, out_dev, in_dev)) {
+			DEBUG_WARN("%p: Re-generation failed\n", ci);
+			ecm_db_connection_deref(ci);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*
@@ -6221,12 +6345,11 @@ static unsigned int ecm_front_end_ipv6_non_ported_process(struct net_device *out
 							uint8_t *dest_node_addr,
 							bool can_accel, bool is_routed, struct sk_buff *skb,
 							struct ecm_tracker_ip_header *ip_hdr,
-							struct nf_conn *ct, enum ip_conntrack_dir ct_dir, ecm_db_direction_t ecm_dir,
+							struct nf_conn *ct, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir,
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
 							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr)
 {
 	struct ecm_db_connection_instance *ci;
-	ecm_tracker_sender_type_t sender;
 	int protocol;
 	int src_port;
 	int dest_port;
@@ -6488,95 +6611,26 @@ static unsigned int ecm_front_end_ipv6_non_ported_process(struct net_device *out
 	}
 
 	/*
-	 * Do we need to action generation change?
-	 */
-	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
-		int i;
-		bool reclassify_allowed;
-		int32_t to_list_first;
-		struct ecm_db_iface_instance *to_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-		int32_t from_list_first;
-		struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
-
-		DEBUG_INFO("%p: re-gen needed\n", ci);
-
-		/*
-		 * Update the interface lists - these may have changed, e.g. LAG path change etc.
-		 * NOTE: We never have to change the usual mapping->host->node_iface arrangements for each side of the connection (to/from sides)
-		 * This is because if these interfaces change then the connection is dead anyway.
-		 * But a LAG slave might change the heirarchy the connection is using but the LAG master is still sane.
-		 * GGG TODO The empty list checks may mean that stale interface list information remains on a connection - this could be bad.
-		 * GGG Investigate the removal of the empty list checks.
-		 */
-		DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-		from_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(from_list, ip_dest_addr, ip_src_addr, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
-		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
-		ecm_db_connection_interfaces_deref(from_list, from_list_first);
-
-		DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-		to_list_first = ecm_front_end_ipv6_interface_heirarchy_construct(to_list, ip_src_addr, ip_dest_addr, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
-		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_connection_deref(ci);
-			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
-			return NF_ACCEPT;
-		}
-		ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
-		ecm_db_connection_interfaces_deref(to_list, to_list_first);
-
-		/*
-		 * Get list of assigned classifiers to reclassify.
-		 * Remember: This also includes our default classifier too.
-		 */
-		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
-
-		/*
-		 * All of the assigned classifiers must permit reclassification.
-		 */
-		reclassify_allowed = true;
-		for (i = 0; i < assignment_count; ++i) {
-			DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-			if (!assignments[i]->reclassify_allowed(assignments[i])) {
-				DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
-				reclassify_allowed = false;
-				break;
-			}
-		}
-
-		if (!reclassify_allowed) {
-			DEBUG_WARN("%p: re-gen denied\n", ci);
-		} else {
-			/*
-			 * Reclassify
-			 */
-			DEBUG_TRACE("%p: reclassify\n", ci);
-			if (!ecm_front_end_ipv6_reclassify(ci, assignment_count, assignments)) {
-				DEBUG_WARN("%p: Regeneration failed, dropping packet\n", ci);
-				ecm_db_connection_assignments_release(assignment_count, assignments);
-				ecm_db_connection_deref(ci);
-				return NF_ACCEPT;
-			}
-			DEBUG_TRACE("%p: reclassify success\n", ci);
-		}
-
-		/*
-		 * Release the assignments and re-obtain them as there may be new ones been reassigned.
-		 */
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-	}
-
-	/*
 	 * Identify which side of the connection is sending
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
 	 */
 	ecm_db_connection_from_address_get(ci, match_addr);
 	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
+	 * Do we need to action generation change?
+	 */
+	if (unlikely(ecm_db_connection_classifier_generation_changed(ci))) {
+		if (!ecm_front_end_ipv6_connection_regenerate(ci, sender, out_dev, in_dev)) {
+			DEBUG_WARN("%p: Re-generation failed\n", ci);
+			ecm_db_connection_deref(ci);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*
@@ -6752,7 +6806,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
         enum ip_conntrack_info ctinfo;
 	struct nf_conntrack_tuple orig_tuple;
 	struct nf_conntrack_tuple reply_tuple;
-	enum ip_conntrack_dir ct_dir;
+	ecm_tracker_sender_type_t sender;
 	ecm_db_direction_t ecm_dir = ECM_DB_DIRECTION_EGRESS_NAT;
 	ip_addr_t ip_src_addr;
 	ip_addr_t ip_dest_addr;
@@ -6784,7 +6838,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 		orig_tuple.dst.protonum = ip_hdr.protocol;
 		ECM_IP_ADDR_COPY(reply_tuple.src.u3.in6.in6_u.u6_addr32, orig_tuple.dst.u3.in6.in6_u.u6_addr32);
 		ECM_IP_ADDR_COPY(reply_tuple.dst.u3.in6.in6_u.u6_addr32, orig_tuple.src.u3.in6.in6_u.u6_addr32);
-		ct_dir = IP_CT_DIR_ORIGINAL;
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		if (unlikely(ct == &nf_conntrack_untracked)) {
 			DEBUG_TRACE("%p: ct: untracked\n", skb);
@@ -6806,7 +6860,11 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 		DEBUG_TRACE("%p: ct: %p, ctinfo: %x\n", skb, ct, ctinfo);
 		orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 		reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
-		ct_dir = CTINFO2DIR(ctinfo);
+		if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
+			sender = ECM_TRACKER_SENDER_TYPE_SRC;
+		} else {
+			sender = ECM_TRACKER_SENDER_TYPE_DEST;
+		}
 
 		/*
 		 * Is this a related connection?
@@ -6837,7 +6895,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 		ecm_dir = ECM_DB_DIRECTION_BRIDGED;
 	}
 
-	if (ct_dir == IP_CT_DIR_ORIGINAL) {
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		if (ecm_dir == ECM_DB_DIRECTION_NON_NAT) {
 			ECM_NIN6_ADDR_TO_IP_ADDR(ip_src_addr, orig_tuple.src.u3.in6);
 			ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.in6);
@@ -6863,10 +6921,10 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 		}
 	}
 
-	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, ct_dir: %d ecm_dir: %d\n",
+	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 				ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
-				orig_tuple.dst.protonum, ct_dir, ecm_dir);
+				orig_tuple.dst.protonum, sender, ecm_dir);
 
 	/*
 	 * Non-unicast source or destination packets are ignored
@@ -6891,7 +6949,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 				dest_node_addr,
 				can_accel, is_routed, skb,
 				&ip_hdr,
-				ct, ct_dir, ecm_dir,
+				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
 				ip_src_addr, ip_dest_addr);
 	} else if (likely(orig_tuple.dst.protonum == IPPROTO_UDP)) {
@@ -6900,7 +6958,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 				dest_node_addr,
 				can_accel, is_routed, skb,
 				&ip_hdr,
-				ct, ct_dir, ecm_dir,
+				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
 				ip_src_addr, ip_dest_addr);
 	}
@@ -6909,7 +6967,7 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
 				dest_node_addr,
 				can_accel, is_routed, skb,
 				&ip_hdr,
-				ct, ct_dir, ecm_dir,
+				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
 				ip_src_addr, ip_dest_addr);
 }
