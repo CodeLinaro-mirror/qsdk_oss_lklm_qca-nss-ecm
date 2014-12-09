@@ -14,6 +14,7 @@
  **************************************************************************
  */
 
+#include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
@@ -22,7 +23,7 @@
 #include <linux/icmp.h>
 #include <linux/sysctl.h>
 #include <linux/kthread.h>
-#include <linux/sysdev.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/pkt_sched.h>
 #include <linux/string.h>
@@ -52,8 +53,10 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
+#endif
 
 /*
  * Debug output levels
@@ -77,8 +80,12 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
+#ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
+#endif
+#ifdef ECM_CLASSIFIER_HYFI_ENABLE
 #include "ecm_classifier_hyfi.h"
+#endif
 #include "ecm_classifier_dscp.h"
 #include "ecm_interface.h"
 
@@ -155,9 +162,9 @@ static int ecm_front_end_ipv4_accelerated_count = 0;			/* Total offloads */
 static spinlock_t ecm_front_end_ipv4_lock;			/* Protect against SMP access between netfilter, events and private threaded function. */
 
 /*
- * SysFS linkage
+ * System device linkage
  */
-static struct sys_device ecm_front_end_ipv4_sys_dev;		/* SysFS linkage */
+static struct device ecm_front_end_ipv4_dev;		/* System device linkage */
 
 /*
  * General operational control
@@ -222,14 +229,16 @@ static struct ecm_db_node_instance *ecm_front_end_ipv4_node_establish_and_ref(st
 		ecm_db_iface_type_t type;
 		ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 		bool on_link = false;
+#ifdef ECM_INTERFACE_PPP_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe_info;
-
+#endif
 		type = ecm_db_connection_iface_type_get(interface_list[i]);
 		DEBUG_INFO("Lookup node address, interface @ %d is type: %d\n", i, type);
 
 		switch (type) {
 
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * Node address is the address of the remote PPPoE server
 			 */
@@ -237,15 +246,27 @@ static struct ecm_db_node_instance *ecm_front_end_ipv4_node_establish_and_ref(st
 			memcpy(node_addr, pppoe_info.remote_mac, ETH_ALEN);
 			done = true;
 			break;
+#else
+			DEBUG_TRACE("PPPoE interface unsupported\n");
+			return NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_SIT:
 		case ECM_DB_IFACE_TYPE_TUNIPIP6:
 			done = true;
 			break;
 
+		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			/*
+			 * VLAN handled same along with ethernet, lag, bridge etc.
+			 */
+#else
+			DEBUG_TRACE("VLAN interface unsupported\n");
+			return NULL;
+#endif
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
-		case ECM_DB_IFACE_TYPE_VLAN:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			if (!ecm_interface_mac_addr_get(addr, node_addr, &on_link, gw_addr)) {
@@ -420,21 +441,21 @@ static struct ecm_db_mapping_instance *ecm_front_end_ipv4_mapping_establish_and_
 	DEBUG_INFO("Establish mapping for " ECM_IP_ADDR_DOT_FMT ":%d\n", ECM_IP_ADDR_TO_DOT(addr), port);
 
 	/*
-	 * No mapping - establish host existence
-	 */
-	hi = ecm_front_end_ipv4_host_establish_and_ref(addr);
-	if (!hi) {
-		DEBUG_WARN("Failed to establish host\n");
-		return NULL;
-	}
-
-	/*
 	 * Locate the mapping
 	 */
 	mi = ecm_db_mapping_find_and_ref(addr, port);
 	if (mi) {
 		DEBUG_TRACE("%p: mapping established\n", mi);
 		return mi;
+	}
+
+	/*
+	 * No mapping - establish host existence
+	 */
+	hi = ecm_front_end_ipv4_host_establish_and_ref(addr);
+	if (!hi) {
+		DEBUG_WARN("Failed to establish host\n");
+		return NULL;
 	}
 
 	/*
@@ -808,10 +829,14 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_in_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecti);
@@ -844,6 +869,7 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecti, from_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -865,8 +891,12 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecti,
 					nircm->pppoe_rule.flow_pppoe_session_id,
 					nircm->pppoe_rule.flow_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			DEBUG_TRACE("%p: VLAN\n", fecti);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
@@ -908,6 +938,10 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecti, from_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecti, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecti);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecti);
@@ -958,10 +992,14 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_out_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecti);
@@ -994,6 +1032,7 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecti, to_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -1014,8 +1053,12 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecti,
 				    nircm->pppoe_rule.return_pppoe_session_id,
 				    nircm->pppoe_rule.return_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			DEBUG_TRACE("%p: VLAN\n", fecti);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
@@ -1057,6 +1100,10 @@ static void ecm_front_end_ipv4_connection_tcp_front_end_accelerate(struct ecm_fr
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecti, to_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecti, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecti);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecti);
@@ -2213,10 +2260,14 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_in_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecui);
@@ -2249,6 +2300,7 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecui, from_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -2270,8 +2322,12 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecui,
 					nircm->pppoe_rule.flow_pppoe_session_id,
 					nircm->pppoe_rule.flow_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			DEBUG_TRACE("%p: VLAN\n", fecui);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
@@ -2313,6 +2369,10 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecui, from_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecui, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecui);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecui);
@@ -2363,10 +2423,14 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_out_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecui);
@@ -2399,6 +2463,7 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecui, to_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -2419,8 +2484,12 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecui,
 				    nircm->pppoe_rule.return_pppoe_session_id,
 				    nircm->pppoe_rule.return_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			DEBUG_TRACE("%p: VLAN\n", fecui);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
@@ -2462,6 +2531,10 @@ static void ecm_front_end_ipv4_connection_udp_front_end_accelerate(struct ecm_fr
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecui, to_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecui, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecui);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecui);
@@ -3240,6 +3313,7 @@ static struct ecm_front_end_ipv4_connection_udp_instance *ecm_front_end_ipv4_con
 }
 
 #ifdef CONFIG_IPV6_SIT_6RD
+#ifdef ECM_INTERFACE_SIT_ENABLE
 /*
  * ecm_front_end_ipv4_sit_set_peer()
  *	It will set the tunnel's peer when the tunnel is a remote any tunnel.
@@ -3310,6 +3384,7 @@ static void ecm_front_end_ipv4_sit_set_peer(struct ecm_front_end_ipv4_connection
 
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 }
+#endif
 #endif
 
 /*
@@ -3660,10 +3735,14 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_in_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecnpi);
@@ -3696,6 +3775,7 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecnpi, from_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -3717,8 +3797,12 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecnpi,
 					nircm->pppoe_rule.flow_pppoe_session_id,
 					nircm->pppoe_rule.flow_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			DEBUG_TRACE("%p: VLAN\n", fecnpi);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
@@ -3760,6 +3844,10 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecnpi, from_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecnpi, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecnpi);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecnpi);
@@ -3810,10 +3898,14 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_out_dev = NULL;
+#endif
 
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", fecnpi);
@@ -3846,6 +3938,7 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", fecnpi, to_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -3866,7 +3959,11 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", fecnpi,
 				    nircm->pppoe_rule.return_pppoe_session_id,
 				    nircm->pppoe_rule.return_pppoe_remote_mac);
+#else
+			rule_invalid = true;
+#endif
 			break;
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 		case ECM_DB_IFACE_TYPE_VLAN:
 			DEBUG_TRACE("%p: VLAN\n", fecnpi);
 			if (interface_type_counts[ii_type] > 1) {
@@ -3909,6 +4006,10 @@ static void ecm_front_end_ipv4_connection_non_ported_front_end_accelerate(struct
 				DEBUG_TRACE("%p: VLAN use mac: %pM\n", fecnpi, to_nss_iface_address);
 			}
 			DEBUG_TRACE("%p: vlan tag: %x\n", fecnpi, vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VLAN - unsupported\n", fecnpi);
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			DEBUG_TRACE("%p: IPSEC\n", fecnpi);
@@ -4706,6 +4807,7 @@ static struct ecm_classifier_instance *ecm_front_end_ipv4_assign_classifier(stru
 	DEBUG_TRACE("%p: Assign classifier of type: %d\n", ci, type);
 	DEBUG_ASSERT(type != ECM_CLASSIFIER_TYPE_DEFAULT, "Must never need to instantiate default type in this way");
 
+#ifdef ECM_CLASSIFIER_NL_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_NL) {
 		struct ecm_classifier_nl_instance *cnli;
 		cnli = ecm_classifier_nl_instance_alloc(ci);
@@ -4717,7 +4819,9 @@ static struct ecm_classifier_instance *ecm_front_end_ipv4_assign_classifier(stru
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cnli);
 		return (struct ecm_classifier_instance *)cnli;
 	}
+#endif
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_DSCP) {
 		struct ecm_classifier_dscp_instance *cdscpi;
 		cdscpi = ecm_classifier_dscp_instance_alloc(ci);
@@ -4729,6 +4833,7 @@ static struct ecm_classifier_instance *ecm_front_end_ipv4_assign_classifier(stru
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cdscpi);
 		return (struct ecm_classifier_instance *)cdscpi;
 	}
+#endif
 
 #ifdef ECM_CLASSIFIER_HYFI_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_HYFI) {
@@ -6813,6 +6918,7 @@ static unsigned int ecm_front_end_ipv4_non_ported_process(struct net_device *out
 	DEBUG_TRACE("%p: skb priority: %u\n", ci, skb->priority);
 
 #ifdef CONFIG_IPV6_SIT_6RD
+#ifdef ECM_INTERFACE_SIT_ENABLE
 	/*
 	 * SIT tunnel acceleration needs create a rule to the nss firmware if the
 	 *	tunnel's dest ip address is empty,it will get dest ip and the embedded ipv6's dest ip
@@ -6828,6 +6934,8 @@ static unsigned int ecm_front_end_ipv4_non_ported_process(struct net_device *out
 		feci->deref(feci);
 	}
 #endif
+#endif
+
 	/*
 	 * Accelerate?
 	 */
@@ -7260,11 +7368,19 @@ static unsigned int ecm_front_end_ipv4_ip_process(struct net_device *out_dev, st
  * ecm_front_end_ipv4_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 static unsigned int ecm_front_end_ipv4_post_routing_hook(unsigned int hooknum,
 				struct sk_buff *skb,
 				const struct net_device *in_unused,
 				const struct net_device *out,
 				int (*okfn)(struct sk_buff *))
+#else
+static unsigned int ecm_front_end_ipv4_post_routing_hook(const struct nf_hook_ops *ops,
+				struct sk_buff *skb,
+				const struct net_device *in_unused,
+				const struct net_device *out,
+				int (*okfn)(struct sk_buff *))
+#endif
 {
 	struct net_device *in;
 	bool can_accel = true;
@@ -7308,11 +7424,19 @@ static unsigned int ecm_front_end_ipv4_post_routing_hook(unsigned int hooknum,
  * These may have come from another bridged interface or from a non-bridged interface.
  * Conntrack information may be available or not if this skb is bridged.
  */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(unsigned int hooknum,
 					struct sk_buff *skb,
 					const struct net_device *in_unused,
 					const struct net_device *out,
 					int (*okfn)(struct sk_buff *))
+#else
+static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(const struct nf_hook_ops *ops,
+					struct sk_buff *skb,
+					const struct net_device *in_unused,
+					const struct net_device *out,
+					int (*okfn)(struct sk_buff *))
+#endif
 {
 	struct ethhdr *skb_eth_hdr;
 	uint16_t eth_type;
@@ -7359,15 +7483,17 @@ static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(unsigned int hoo
 	 *	Process.
 	 *
 	 * Begin by identifying case 1.
-	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out->master is the 'bridge'.
+	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out interface's master is the 'bridge'.
 	 */
-	bridge = out->master;
+	bridge = ecm_interface_get_and_hold_dev_master((struct net_device *)out);
+	DEBUG_ASSERT(bridge, "Expected bridge\n");
 	in = dev_get_by_index(&init_net, skb->skb_iif);
 	if  (!in) {
 		/*
 		 * Case 1.
 		 */
 		DEBUG_TRACE("Local traffic: %p, ignoring traffic to bridge: %p (%s) \n", skb, bridge, bridge->name);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 	dev_put(in);
@@ -7378,22 +7504,25 @@ static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(unsigned int hoo
 	 * Case 3:
 	 *	If the packet was not local (case 1) or routed (case 2) then we process.
 	 */
-	in = br_port_dev_get(out->master, skb_eth_hdr->h_source);
+	in = br_port_dev_get(bridge, skb_eth_hdr->h_source);
 	if (!in) {
 		DEBUG_TRACE("skb: %p, no in device for bridge: %p (%s)\n", skb, bridge, bridge->name);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 	if (in == out) {
 		DEBUG_TRACE("skb: %p, bridge: %p (%s), port bounce on %p (%s)\n", skb, bridge, bridge->name, out, out->name);
 		dev_put(in);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
-	if (!compare_ether_addr(skb_eth_hdr->h_source, bridge->dev_addr)) {
+	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
 		/*
 		 * Case 2: Routed trafffic would be handled by the INET post routing.
 		 */
 		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
 		dev_put(in);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 
@@ -7402,6 +7531,7 @@ static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(unsigned int hoo
 	result = ecm_front_end_ipv4_ip_process((struct net_device *)out, in,
 				skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, skb);
 	dev_put(in);
+	dev_put(bridge);
 	return result;
 }
 
@@ -7651,7 +7781,11 @@ sync_conntrack:
 		spin_unlock_bh(&ct->lock);
 	}
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	acct = nf_conn_acct_find(ct);
+#else
+	acct = nf_conn_acct_find(ct)->counter;
+#endif
 	if (acct) {
 		spin_lock_bh(&ct->lock);
 		atomic64_add(sync->flow_rx_packet_count, &acct[IP_CT_DIR_ORIGINAL].packets);
@@ -7814,7 +7948,7 @@ static void ecm_front_end_ipv4_conntrack_event_destroy(struct nf_conn *ct)
 static void ecm_front_end_ipv4_conntrack_event_mark(struct nf_conn *ct)
 {
 	struct ecm_db_connection_instance *ci;
-	struct ecm_classifier_instance *cls;
+	struct ecm_classifier_instance *__attribute__((unused))cls;
 
 	DEBUG_INFO("Mark event for ct: %p\n", ct);
 
@@ -7831,6 +7965,7 @@ static void ecm_front_end_ipv4_conntrack_event_mark(struct nf_conn *ct)
 		return;
 	}
 
+#ifdef ECM_CLASSIFIER_NL_ENABLE
 	/*
 	 * As of now, only the Netlink classifier is interested in conmark changes
 	 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
@@ -7840,6 +7975,7 @@ static void ecm_front_end_ipv4_conntrack_event_mark(struct nf_conn *ct)
 		ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
 		cls->deref(cls);
 	}
+#endif
 
 	/*
 	 * All done
@@ -7892,8 +8028,8 @@ EXPORT_SYMBOL(ecm_front_end_ipv4_conntrack_event);
 /*
  * ecm_front_end_ipv4_get_stop()
  */
-static ssize_t ecm_front_end_ipv4_get_stop(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_stop(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -7925,8 +8061,8 @@ EXPORT_SYMBOL(ecm_front_end_ipv4_stop);
 /*
  * ecm_front_end_ipv4_set_stop()
  */
-static ssize_t ecm_front_end_ipv4_set_stop(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_set_stop(struct device *dev,
+				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	char num_buf[12];
@@ -7951,8 +8087,8 @@ static ssize_t ecm_front_end_ipv4_set_stop(struct sys_device *dev,
 /*
  * ecm_front_end_ipv4_get_udp_accelerated_count()
  */
-static ssize_t ecm_front_end_ipv4_get_udp_accelerated_count(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_udp_accelerated_count(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -7972,8 +8108,8 @@ static ssize_t ecm_front_end_ipv4_get_udp_accelerated_count(struct sys_device *d
 /*
  * ecm_front_end_ipv4_get_tcp_accelerated_count()
  */
-static ssize_t ecm_front_end_ipv4_get_tcp_accelerated_count(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_tcp_accelerated_count(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -7993,8 +8129,8 @@ static ssize_t ecm_front_end_ipv4_get_tcp_accelerated_count(struct sys_device *d
 /*
  * ecm_front_end_ipv4_get_non_ported_accelerated_count()
  */
-static ssize_t ecm_front_end_ipv4_get_non_ported_accelerated_count(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_non_ported_accelerated_count(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -8014,8 +8150,8 @@ static ssize_t ecm_front_end_ipv4_get_non_ported_accelerated_count(struct sys_de
 /*
  * ecm_front_end_ipv4_get_accelerated_count()
  */
-static ssize_t ecm_front_end_ipv4_get_accelerated_count(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_accelerated_count(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -8035,8 +8171,8 @@ static ssize_t ecm_front_end_ipv4_get_accelerated_count(struct sys_device *dev,
 /*
  * ecm_front_end_ipv4_get_no_action_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_get_no_action_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_no_action_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -8056,8 +8192,8 @@ static ssize_t ecm_front_end_ipv4_get_no_action_limit_default(struct sys_device 
 /*
  * ecm_front_end_ipv4_set_no_action_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_set_no_action_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_set_no_action_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	char num_buf[12];
@@ -8084,8 +8220,8 @@ static ssize_t ecm_front_end_ipv4_set_no_action_limit_default(struct sys_device 
 /*
  * ecm_front_end_ipv4_get_driver_fail_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_get_driver_fail_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_driver_fail_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -8105,8 +8241,8 @@ static ssize_t ecm_front_end_ipv4_get_driver_fail_limit_default(struct sys_devic
 /*
  * ecm_front_end_ipv4_set_driver_fail_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_set_driver_fail_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_set_driver_fail_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	char num_buf[12];
@@ -8133,8 +8269,8 @@ static ssize_t ecm_front_end_ipv4_set_driver_fail_limit_default(struct sys_devic
 /*
  * ecm_front_end_ipv4_get_nack_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_get_nack_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_get_nack_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -8154,8 +8290,8 @@ static ssize_t ecm_front_end_ipv4_get_nack_limit_default(struct sys_device *dev,
 /*
  * ecm_front_end_ipv4_set_nack_limit_default()
  */
-static ssize_t ecm_front_end_ipv4_set_nack_limit_default(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_front_end_ipv4_set_nack_limit_default(struct device *dev,
+				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	char num_buf[12];
@@ -8180,24 +8316,48 @@ static ssize_t ecm_front_end_ipv4_set_nack_limit_default(struct sys_device *dev,
 }
 
 /*
- * SysFS attributes
+ * System device attributes
  */
-static SYSDEV_ATTR(stop, 0644, ecm_front_end_ipv4_get_stop, ecm_front_end_ipv4_set_stop);
-static SYSDEV_ATTR(no_action_limit_default, 0644, ecm_front_end_ipv4_get_no_action_limit_default, ecm_front_end_ipv4_set_no_action_limit_default);
-static SYSDEV_ATTR(driver_fail_limit_default, 0644, ecm_front_end_ipv4_get_driver_fail_limit_default, ecm_front_end_ipv4_set_driver_fail_limit_default);
-static SYSDEV_ATTR(nack_limit_default, 0644, ecm_front_end_ipv4_get_nack_limit_default, ecm_front_end_ipv4_set_nack_limit_default);
-static SYSDEV_ATTR(udp_accelerated_count, 0444, ecm_front_end_ipv4_get_udp_accelerated_count, NULL);
-static SYSDEV_ATTR(tcp_accelerated_count, 0444, ecm_front_end_ipv4_get_tcp_accelerated_count, NULL);
-static SYSDEV_ATTR(non_ported_accelerated_count, 0444, ecm_front_end_ipv4_get_non_ported_accelerated_count, NULL);
-static SYSDEV_ATTR(accelerated_count, 0444, ecm_front_end_ipv4_get_accelerated_count, NULL);
+static DEVICE_ATTR(stop, 0644, ecm_front_end_ipv4_get_stop, ecm_front_end_ipv4_set_stop);
+static DEVICE_ATTR(no_action_limit_default, 0644, ecm_front_end_ipv4_get_no_action_limit_default, ecm_front_end_ipv4_set_no_action_limit_default);
+static DEVICE_ATTR(driver_fail_limit_default, 0644, ecm_front_end_ipv4_get_driver_fail_limit_default, ecm_front_end_ipv4_set_driver_fail_limit_default);
+static DEVICE_ATTR(nack_limit_default, 0644, ecm_front_end_ipv4_get_nack_limit_default, ecm_front_end_ipv4_set_nack_limit_default);
+static DEVICE_ATTR(udp_accelerated_count, 0444, ecm_front_end_ipv4_get_udp_accelerated_count, NULL);
+static DEVICE_ATTR(tcp_accelerated_count, 0444, ecm_front_end_ipv4_get_tcp_accelerated_count, NULL);
+static DEVICE_ATTR(non_ported_accelerated_count, 0444, ecm_front_end_ipv4_get_non_ported_accelerated_count, NULL);
+static DEVICE_ATTR(accelerated_count, 0444, ecm_front_end_ipv4_get_accelerated_count, NULL);
 
 /*
- * SysFS class of the front end
- * SysFS control points can be found at /sys/devices/system/ecm_front_end_ipv4/ecm_front_end_ipv4X/
+ * System device attribute array.
  */
-static struct sysdev_class ecm_front_end_ipv4_sysclass = {
-	.name = "ecm_front_end_ipv4",
+static struct device_attribute *ecm_front_end_ipv4_attrs[] = {
+	&dev_attr_stop,
+	&dev_attr_no_action_limit_default,
+	&dev_attr_driver_fail_limit_default,
+	&dev_attr_nack_limit_default,
+	&dev_attr_udp_accelerated_count,
+	&dev_attr_tcp_accelerated_count,
+	&dev_attr_non_ported_accelerated_count,
+	&dev_attr_accelerated_count
 };
+
+/*
+ * Sub System node of the front end
+ * Sysdevice control points can be found at /sys/devices/system/ecm_front_end_ipv4/ecm_front_end_ipv4X/
+ */
+static struct bus_type ecm_front_end_ipv4_subsys = {
+	.name = "ecm_front_end_ipv4",
+	.dev_name = "ecm_front_end_ipv4",
+};
+
+/*
+ * ecm_front_end_ipv4_dev_release()
+ *	This is a dummy release function for device.
+ */
+static void ecm_front_end_ipv4_dev_release(struct device *dev)
+{
+
+}
 
 /*
  * ecm_front_end_ipv4_init()
@@ -8205,6 +8365,7 @@ static struct sysdev_class ecm_front_end_ipv4_sysclass = {
 int ecm_front_end_ipv4_init(void)
 {
 	int result;
+	int i;
 	DEBUG_INFO("ECM Front end IPv4 init\n");
 
 	/*
@@ -8213,68 +8374,36 @@ int ecm_front_end_ipv4_init(void)
 	spin_lock_init(&ecm_front_end_ipv4_lock);
 
 	/*
-	 * Register the sysfs class
+	 * Register the Sub system
 	 */
-	result = sysdev_class_register(&ecm_front_end_ipv4_sysclass);
+	result = subsys_system_register(&ecm_front_end_ipv4_subsys, NULL);
 	if (result) {
-		DEBUG_ERROR("Failed to register SysFS class %d\n", result);
+		DEBUG_ERROR("Failed to register sub system %d\n", result);
 		return result;
 	}
 
 	/*
-	 * Register SYSFS device control
+	 * Register System device control
 	 */
-	memset(&ecm_front_end_ipv4_sys_dev, 0, sizeof(ecm_front_end_ipv4_sys_dev));
-	ecm_front_end_ipv4_sys_dev.id = 0;
-	ecm_front_end_ipv4_sys_dev.cls = &ecm_front_end_ipv4_sysclass;
-	result = sysdev_register(&ecm_front_end_ipv4_sys_dev);
+	memset(&ecm_front_end_ipv4_dev, 0, sizeof(ecm_front_end_ipv4_dev));
+	ecm_front_end_ipv4_dev.id = 0;
+	ecm_front_end_ipv4_dev.bus = &ecm_front_end_ipv4_subsys;
+	ecm_front_end_ipv4_dev.release = ecm_front_end_ipv4_dev_release;
+	result = device_register(&ecm_front_end_ipv4_dev);
 	if (result) {
-		DEBUG_ERROR("Failed to register SysFS device %d\n", result);
+		DEBUG_ERROR("Failed to register System device %d\n", result);
 		goto task_cleanup_1;
 	}
 
 	/*
 	 * Create files, one for each parameter supported by this module
 	 */
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_stop);
-	if (result) {
-		DEBUG_ERROR("Failed to register stop file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_no_action_limit_default);
-	if (result) {
-		DEBUG_ERROR("Failed to register no_action_limit_default file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_driver_fail_limit_default);
-	if (result) {
-		DEBUG_ERROR("Failed to register driver_fail_limit_default file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_nack_limit_default);
-	if (result) {
-		DEBUG_ERROR("Failed to register nack_limit_default file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_udp_accelerated_count);
-	if (result) {
-		DEBUG_ERROR("Failed to register udp_accelerated_count file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_tcp_accelerated_count);
-	if (result) {
-		DEBUG_ERROR("Failed to register tcp_accelerated_count file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_non_ported_accelerated_count);
-	if (result) {
-		DEBUG_ERROR("Failed to register non_ported_accelerated_count file %d\n", result);
-		goto task_cleanup_2;
-	}
-	result = sysdev_create_file(&ecm_front_end_ipv4_sys_dev, &attr_accelerated_count);
-	if (result) {
-		DEBUG_ERROR("Failed to register accelerated_count file %d\n", result);
-		goto task_cleanup_2;
+	for (i = 0; i < ARRAY_SIZE(ecm_front_end_ipv4_attrs); i++) {
+		result = device_create_file(&ecm_front_end_ipv4_dev, ecm_front_end_ipv4_attrs[i]);
+		if (result) {
+			DEBUG_ERROR("Failed to register stop file %d\n", result);
+			goto task_cleanup_2;
+		}
 	}
 
 	/*
@@ -8294,9 +8423,12 @@ int ecm_front_end_ipv4_init(void)
 	return 0;
 
 task_cleanup_2:
-	sysdev_unregister(&ecm_front_end_ipv4_sys_dev);
+	while (--i >= 0) {
+		device_remove_file(&ecm_front_end_ipv4_dev, ecm_front_end_ipv4_attrs[i]);
+	}
+	device_unregister(&ecm_front_end_ipv4_dev);
 task_cleanup_1:
-	sysdev_class_unregister(&ecm_front_end_ipv4_sysclass);
+	bus_unregister(&ecm_front_end_ipv4_subsys);
 
 	return result;
 }
@@ -8307,6 +8439,7 @@ EXPORT_SYMBOL(ecm_front_end_ipv4_init);
  */
 void ecm_front_end_ipv4_exit(void)
 {
+	int i;
 	DEBUG_INFO("ECM Front end IPv4 Module exit\n");
 	spin_lock_bh(&ecm_front_end_ipv4_lock);
 	ecm_front_end_ipv4_terminate_pending = true;
@@ -8323,7 +8456,11 @@ void ecm_front_end_ipv4_exit(void)
 	 */
 	nss_ipv4_notify_unregister();
 
-	sysdev_unregister(&ecm_front_end_ipv4_sys_dev);
-	sysdev_class_unregister(&ecm_front_end_ipv4_sysclass);
+	for (i = 0; i < ARRAY_SIZE(ecm_front_end_ipv4_attrs); i++) {
+		device_remove_file(&ecm_front_end_ipv4_dev, ecm_front_end_ipv4_attrs[i]);
+	}
+
+	device_unregister(&ecm_front_end_ipv4_dev);
+	bus_unregister(&ecm_front_end_ipv4_subsys);
 }
 EXPORT_SYMBOL(ecm_front_end_ipv4_exit);

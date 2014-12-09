@@ -14,6 +14,7 @@
  **************************************************************************
  */
 
+#include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
@@ -22,7 +23,7 @@
 #include <linux/icmp.h>
 #include <linux/sysctl.h>
 #include <linux/kthread.h>
-#include <linux/sysdev.h>
+#include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/pkt_sched.h>
 #include <linux/string.h>
@@ -43,7 +44,9 @@
 
 
 #include <linux/inetdevice.h>
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 #include <net/ipip.h>
+#endif
 #include <net/ip6_tunnel.h>
 #include <net/addrconf.h>
 #include <linux/if_arp.h>
@@ -60,8 +63,10 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
+#endif
 
 /*
  * Debug output levels
@@ -86,10 +91,12 @@
 #include "ecm_db.h"
 #include "ecm_interface.h"
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 /*
  * TODO: Remove once the Linux image and headers get propogated.
  */
 struct net_device *ipv6_dev_find(struct net *net, struct in6_addr *addr, int strict);
+#endif
 
 /*
  * Locking - concurrency control
@@ -97,9 +104,9 @@ struct net_device *ipv6_dev_find(struct net *net, struct in6_addr *addr, int str
 static spinlock_t ecm_interface_lock;			/* Protect against SMP access between netfilter, events and private threaded function. */
 
 /*
- * SysFS linkage
+ * System device linkage
  */
-static struct sys_device ecm_interface_sys_dev;		/* SysFS linkage */
+static struct device ecm_interface_dev;		/* System device linkage */
 
 /*
  * General operational control
@@ -110,6 +117,33 @@ static int ecm_interface_stopped = 0;			/* When non-zero further traffic will no
  * Management thread control
  */
 static bool ecm_interface_terminate_pending = false;		/* True when the user has signalled we should quit */
+
+/*
+ * ecm_interface_get_and_hold_dev_master()
+ *	Returns the master device of a net device if any.
+ */
+struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
+{
+	struct net_device *master;
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,6,0))
+	rcu_read_lock();
+	master = netdev_master_upper_dev_get_rcu(dev);
+	if (!master) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	dev_hold(master);
+	rcu_read_unlock();
+#else
+	master = dev->master;
+	if (!master) {
+		return NULL;
+	}
+	dev_hold(master);
+#endif
+	return master;
+}
+EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
 
 /*
  * ecm_interface_dev_find_by_local_addr_ipv4()
@@ -125,6 +159,7 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv4(ip_addr_t ad
 	return dev;
 }
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 /*
  * ecm_interface_dev_find_by_local_addr_ipv6()
  *	Return a hold to the device for the given local IP address.  Returns NULL on failure.
@@ -138,6 +173,7 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t ad
 	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, 1);
 	return dev;
 }
+#endif
 
 /*
  * ecm_interface_dev_find_by_local_addr()
@@ -156,7 +192,11 @@ struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr)
 		return ecm_interface_dev_find_by_local_addr_ipv4(addr);
 	}
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 	return ecm_interface_dev_find_by_local_addr_ipv6(addr);
+#else
+	return NULL;
+#endif
 }
 EXPORT_SYMBOL(ecm_interface_dev_find_by_local_addr);
 
@@ -208,6 +248,7 @@ struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_loc
 }
 EXPORT_SYMBOL(ecm_interface_dev_find_by_addr);
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 /*
  * ecm_interface_mac_addr_get_ipv6()
  *	Return mac for an IPv6 address
@@ -291,6 +332,7 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 	DEBUG_TRACE(ECM_IP_ADDR_OCTAL_FMT " maps to %pM\n", ECM_IP_ADDR_TO_OCTAL(addr), mac_addr);
 	return true;
 }
+#endif
 
 /*
  * ecm_interface_mac_addr_get_ipv4()
@@ -316,12 +358,17 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 		return false;
 	}
 	DEBUG_ASSERT(ecm_rt.v4_route, "Did not locate a v4 route!\n");
+	DEBUG_TRACE("Found route\n");
 
 	/*
 	 * Is this destination on link or off-link via a gateway?
 	 */
 	rt = ecm_rt.rt.rtv4;
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	if ((rt->rt_dst != rt->rt_gateway) || (rt->rt_flags & RTF_GATEWAY)) {
+#else
+	if (rt->rt_uses_gateway || (rt->rt_flags & RTF_GATEWAY)) {
+#endif
 		*on_link = false;
 		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
 	} else {
@@ -333,27 +380,35 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 */
 	rcu_read_lock();
 	dst = ecm_rt.dst;
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	neigh = dst_get_neighbour_noref(dst);
 	if (neigh) {
 		neigh_hold(neigh);
-	} else {
+	}
+#else
+	neigh = dst_neigh_lookup(dst, &ipv4_addr);
+#endif
+	if (!neigh) {
 		neigh = neigh_lookup(&arp_tbl, &ipv4_addr, dst->dev);
 	}
 	if (!neigh) {
 		rcu_read_unlock();
 		ecm_interface_route_release(&ecm_rt);
+		DEBUG_WARN("no neigh\n");
 		return false;
 	}
 	if (!(neigh->nud_state & NUD_VALID)) {
 		rcu_read_unlock();
 		neigh_release(neigh);
 		ecm_interface_route_release(&ecm_rt);
+		DEBUG_WARN("neigh nud state is not valid\n");
 		return false;
 	}
 	if (!neigh->dev) {
 		rcu_read_unlock();
 		neigh_release(neigh);
 		ecm_interface_route_release(&ecm_rt);
+		DEBUG_WARN("neigh has no device\n");
 		return false;
 	}
 
@@ -413,7 +468,11 @@ bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link
 		return ecm_interface_mac_addr_get_ipv4(addr, mac_addr, on_link, gw_addr);
 	}
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 	return ecm_interface_mac_addr_get_ipv6(addr, mac_addr, on_link, gw_addr);
+#else
+	return false;
+#endif
 }
 EXPORT_SYMBOL(ecm_interface_mac_addr_get);
 
@@ -441,6 +500,7 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_int
 	return true;
 }
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 /*
  * ecm_interface_addr_find_route_by_addr_ipv6()
  *	Return the route for the given IP address.  Returns NULL on failure.
@@ -465,6 +525,7 @@ static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t addr, struct ecm_int
 	ecm_rt->v4_route = false;
 	return true;
 }
+#endif
 
 /*
  * ecm_interface_addr_find_route_by_addr()
@@ -485,7 +546,11 @@ bool ecm_interface_find_route_by_addr(ip_addr_t addr, struct ecm_interface_route
 		return ecm_interface_find_route_by_addr_ipv4(addr, ecm_rt);
 	}
 
+#ifdef ECM_FRONT_END_IPV6_ENABLE
 	return ecm_interface_find_route_by_addr_ipv6(addr, ecm_rt);
+#else
+	return false;
+#endif
 }
 EXPORT_SYMBOL(ecm_interface_find_route_by_addr);
 
@@ -499,6 +564,7 @@ void ecm_interface_route_release(struct ecm_interface_route *rt)
 }
 EXPORT_SYMBOL(ecm_interface_route_release);
 
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 /*
  * ecm_interface_vlan_interface_establish()
  *	Returns a reference to a iface of the VLAN type, possibly creating one if necessary.
@@ -548,6 +614,7 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 	DEBUG_TRACE("%p: vlan iface established\n", nii);
 	return nii;
 }
+#endif
 
 /*
  * ecm_interface_bridge_interface_establish()
@@ -700,7 +767,7 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	return nii;
 }
 
-#ifdef ECM_INTERFACE_PPP_SUPPORT
+#ifdef ECM_INTERFACE_PPP_ENABLE
 /*
  * ecm_interface_pppoe_interface_establish()
  *	Returns a reference to a iface of the PPPoE type, possibly creating one if necessary.
@@ -905,6 +972,7 @@ static struct ecm_db_iface_instance *ecm_interface_ipsec_tunnel_interface_establ
 }
 
 #ifdef CONFIG_IPV6_SIT_6RD
+#ifdef ECM_INTERFACE_SIT_ENABLE
 /*
  * ecm_interface_sit_interface_establish()
  *	Returns a reference to a iface of the SIT type, possibly creating one if necessary.
@@ -954,6 +1022,7 @@ static struct ecm_db_iface_instance *ecm_interface_sit_interface_establish(struc
 	DEBUG_TRACE("%p: sit iface established\n", nii);
 	return nii;
 }
+#endif
 #endif
 
 /*
@@ -1020,7 +1089,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 	struct ecm_db_iface_instance *ii;
 	union {
 		struct ecm_db_interface_info_ethernet ethernet;		/* type == ECM_DB_IFACE_TYPE_ETHERNET */
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan;			/* type == ECM_DB_IFACE_TYPE_VLAN */
+#endif
 		struct ecm_db_interface_info_lag lag;			/* type == ECM_DB_IFACE_TYPE_LAG */
 		struct ecm_db_interface_info_bridge bridge;		/* type == ECM_DB_IFACE_TYPE_BRIDGE */
 		struct ecm_db_interface_info_pppoe pppoe;		/* type == ECM_DB_IFACE_TYPE_PPPOE */
@@ -1031,7 +1102,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 		struct ecm_db_interface_info_tunipip6 tunipip6;		/* type == ECM_DB_IFACE_TYPE_TUNIPIP6 */
 	} type_info;
 
-#ifdef ECM_INTERFACE_PPP_SUPPORT
+#ifdef ECM_INTERFACE_PPP_ENABLE
 	int channel_count;
 	struct ppp_channel *ppp_chan[1];
 	int channel_protocol;
@@ -1062,6 +1133,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 		 * Ethernet - but what sub type?
 		 */
 
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 		/*
 		 * VLAN?
 		 */
@@ -1082,6 +1154,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 			ii = ecm_interface_vlan_interface_establish(&type_info.vlan, dev_name, dev_interface_num, nss_interface_num, dev_mtu);
 			return ii;
 		}
+#endif
 
 		/*
 		 * BRIDGE?
@@ -1164,6 +1237,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 	}
 
 #ifdef CONFIG_IPV6_SIT_6RD
+#ifdef ECM_INTERFACE_SIT_ENABLE
 	/*
 	 * SIT (6-in-4)?
 	 */
@@ -1197,6 +1271,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 		ii = ecm_interface_sit_interface_establish(&type_info.sit, dev_name, dev_interface_num, nss_interface_num, dev_mtu);
 		return ii;
 	}
+#endif
 #endif
 
 	/*
@@ -1238,7 +1313,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct net_device 
 		return ii;
 	}
 
-#ifndef ECM_INTERFACE_PPP_SUPPORT
+#ifndef ECM_INTERFACE_PPP_ENABLE
 	/*
 	 * PPP support is NOT provided for.
 	 * Interface is therefore unknown
@@ -1551,7 +1626,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 		 * will use to emit to the destination address.
 		 */
 		do {
-#ifdef ECM_INTERFACE_PPP_SUPPORT
+#ifdef ECM_INTERFACE_PPP_ENABLE
 			int channel_count;
 			struct ppp_channel *ppp_chan[1];
 			int channel_protocol;
@@ -1566,6 +1641,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 				 * Ethernet - but what sub type?
 				 */
 
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 				/*
 				 * VLAN?
 				 */
@@ -1580,6 +1656,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 							dest_dev, next_dev, next_dev->name);
 					break;
 				}
+#endif
 
 				/*
 				 * BRIDGE?
@@ -1655,14 +1732,14 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 					DEBUG_TRACE("Net device: %p is BRIDGE, next_dev: %p (%s)\n", dest_dev, next_dev, next_dev->name);
 					break;
 				}
-
+#ifdef ECM_INTERFACE_BOND_ENABLE
 				/*
 				 * LAG?
 				 */
 				if (ecm_front_end_is_lag_master(dest_dev)) {
 					/*
 					 * Link aggregation
-					 * Figure out which slave device of the link aggregation will be used to reach the destination.
+					 * Figure out whiich slave device of the link aggregation will be used to reach the destination.
 					 */
 					bool dest_on_link = false;
 					ip_addr_t dest_gw_addr = ECM_IP_ADDR_NULL;
@@ -1682,11 +1759,14 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 						memcpy(src_mac_addr, src_node_addr, ETH_ALEN);
 						memcpy(dest_mac_addr, dest_node_addr, ETH_ALEN);
 					} else {
+						struct net_device *dest_dev_master;
+
 						/*
 						 * Use appropriate source MAC address for routed packets
 						 */
-						if (dest_dev->master) {
-							memcpy(src_mac_addr, dest_dev->master->dev_addr, ETH_ALEN);
+						dest_dev_master = ecm_interface_get_and_hold_dev_master(dest_dev);
+						if (dest_dev_master) {
+							memcpy(src_mac_addr, dest_dev_master->dev_addr, ETH_ALEN);
 						} else {
 							memcpy(src_mac_addr, dest_dev->dev_addr, ETH_ALEN);
 						}
@@ -1709,13 +1789,17 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 							/*
 							 * find proper interfce from which to issue ARP
 							 */
-							if (dest_dev->master) {
-								master_dev = dest_dev->master;
+							if (dest_dev_master) {
+								master_dev = dest_dev_master;
 							} else {
 								master_dev = dest_dev;
 							}
 
 							dev_hold(master_dev);
+
+							if (dest_dev_master) {
+								dev_put(dest_dev_master);
+							}
 
 							ECM_IP_ADDR_TO_NIN4_ADDR(ipv4_addr, dest_addr);
 							src_ip = inet_select_addr(master_dev, ipv4_addr, RT_SCOPE_LINK);
@@ -1750,6 +1834,10 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 							ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 							return ECM_DB_IFACE_HEIRARCHY_MAX;
 						}
+
+						if (dest_dev_master) {
+							dev_put(dest_dev_master);
+						}
 					}
 
 					next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
@@ -1772,6 +1860,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 					DEBUG_TRACE("Net device: %p is LAG, slave dev: %p (%s)\n", dest_dev, next_dev, next_dev->name);
 					break;
 				}
+#endif
 
 				/*
 				 * ETHERNET!
@@ -1824,7 +1913,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 				break;
 			}
 
-#ifndef ECM_INTERFACE_PPP_SUPPORT
+#ifndef ECM_INTERFACE_PPP_ENABLE
 			DEBUG_TRACE("Net device: %p is UNKNOWN (PPP Unsupported) type: %d\n", dest_dev, dest_dev_type);
 #else
 			/*
@@ -1980,6 +2069,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 		switch (ii_type) {
 			struct rtnl_link_stats64 stats;
 
+#ifdef ECM_INTERFACE_VLAN_ENABLE
 			case ECM_DB_IFACE_TYPE_VLAN:
 				DEBUG_INFO("VLAN\n");
 				stats.rx_packets = rx_packets;
@@ -1988,6 +2078,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				stats.tx_bytes = tx_bytes;
 				__vlan_dev_update_accel_stats(dev, &stats);
 				break;
+#endif
 			case ECM_DB_IFACE_TYPE_BRIDGE:
 				DEBUG_INFO("BRIDGE\n");
 				stats.rx_packets = rx_packets;
@@ -2224,7 +2315,11 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		if (!netif_carrier_ok(dev)) {
 			DEBUG_INFO("Net device: %p, CARRIER BAD\n", dev);
 			if (netif_is_bond_slave(dev)) {
-				ecm_interface_dev_regenerate_connections(dev->master);
+				struct net_device *master;
+				master = ecm_interface_get_and_hold_dev_master(dev);
+				DEBUG_ASSERT(master, "Expected a master\n");
+				ecm_interface_dev_regenerate_connections(master);
+				dev_put(master);
 			} else {
 				ecm_interface_dev_regenerate_connections(dev);
 			}
@@ -2255,8 +2350,8 @@ static struct notifier_block ecm_interface_netdev_notifier __read_mostly = {
 /*
  * ecm_interface_get_stop()
  */
-static ssize_t ecm_interface_get_stop(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_interface_get_stop(struct device *dev,
+				  struct device_attribute *attr,
 				  char *buf)
 {
 	ssize_t count;
@@ -2289,8 +2384,8 @@ EXPORT_SYMBOL(ecm_interface_stop);
 /*
  * ecm_interface_set_stop()
  */
-static ssize_t ecm_interface_set_stop(struct sys_device *dev,
-				  struct sysdev_attribute *attr,
+static ssize_t ecm_interface_set_stop(struct device *dev,
+				  struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
 	char num_buf[12];
@@ -2313,17 +2408,27 @@ static ssize_t ecm_interface_set_stop(struct sys_device *dev,
 }
 
 /*
- * SysFS attributes for the default classifier itself.
+ * System device attributes for the ECM interface.
  */
-static SYSDEV_ATTR(stop, 0644, ecm_interface_get_stop, ecm_interface_set_stop);
+static DEVICE_ATTR(stop, 0644, ecm_interface_get_stop, ecm_interface_set_stop);
 
 /*
- * SysFS class of the ubicom default classifier
- * SysFS control points can be found at /sys/devices/system/ecm_front_end/ecm_front_endX/
+ * Sub system node.
+ * Sys device control points can be found at /sys/devices/system/ecm_interface/ecm_interfaceX/
  */
-static struct sysdev_class ecm_interface_sysclass = {
+static struct bus_type ecm_interface_subsys = {
 	.name = "ecm_interface",
+	.dev_name = "ecm_interface",
 };
+
+/*
+ * ecm_interface_dev_release()
+ *	This is a dummy release function for device.
+ */
+static void ecm_interface_dev_release(struct device *dev)
+{
+
+}
 
 /*
  * ecm_interface_init()
@@ -2339,30 +2444,31 @@ int ecm_interface_init(void)
 	spin_lock_init(&ecm_interface_lock);
 
 	/*
-	 * Register the sysfs class
+	 * Register the sub system
 	 */
-	result = sysdev_class_register(&ecm_interface_sysclass);
+	result = subsys_system_register(&ecm_interface_subsys, NULL);
 	if (result) {
-		DEBUG_ERROR("Failed to register SysFS class %d\n", result);
+		DEBUG_ERROR("Failed to register sub system %d\n", result);
 		return result;
 	}
 
 	/*
-	 * Register SYSFS device control
+	 * Register system device control
 	 */
-	memset(&ecm_interface_sys_dev, 0, sizeof(ecm_interface_sys_dev));
-	ecm_interface_sys_dev.id = 0;
-	ecm_interface_sys_dev.cls = &ecm_interface_sysclass;
-	result = sysdev_register(&ecm_interface_sys_dev);
+	memset(&ecm_interface_dev, 0, sizeof(ecm_interface_dev));
+	ecm_interface_dev.id = 0;
+	ecm_interface_dev.bus = &ecm_interface_subsys;
+	ecm_interface_dev.release = &ecm_interface_dev_release;
+	result = device_register(&ecm_interface_dev);
 	if (result) {
-		DEBUG_ERROR("Failed to register SysFS device %d\n", result);
+		DEBUG_ERROR("Failed to register system device %d\n", result);
 		goto task_cleanup_1;
 	}
 
 	/*
 	 * Create files, one for each parameter supported by this module
 	 */
-	result = sysdev_create_file(&ecm_interface_sys_dev, &attr_stop);
+	result = device_create_file(&ecm_interface_dev, &dev_attr_stop);
 	if (result) {
 		DEBUG_ERROR("Failed to register stop file %d\n", result);
 		goto task_cleanup_2;
@@ -2377,9 +2483,9 @@ int ecm_interface_init(void)
 	return 0;
 
 task_cleanup_2:
-	sysdev_unregister(&ecm_interface_sys_dev);
+	device_unregister(&ecm_interface_dev);
 task_cleanup_1:
-	sysdev_class_unregister(&ecm_interface_sysclass);
+	bus_unregister(&ecm_interface_subsys);
 
 	return result;
 }
@@ -2397,7 +2503,9 @@ void ecm_interface_exit(void)
 	spin_unlock_bh(&ecm_interface_lock);
 
 	unregister_netdevice_notifier(&ecm_interface_netdev_notifier);
-	sysdev_unregister(&ecm_interface_sys_dev);
-	sysdev_class_unregister(&ecm_interface_sysclass);
+
+	device_remove_file(&ecm_interface_dev, &dev_attr_stop);
+	device_unregister(&ecm_interface_dev);
+	bus_unregister(&ecm_interface_subsys);
 }
 EXPORT_SYMBOL(ecm_interface_exit);
