@@ -116,7 +116,7 @@ static void *ecm_bond_notifier_nss_context = NULL;		/* Registration for LAG */
  * ecm_bond_notifier_send_lag_state()
  *	Send the currnet LAG state of a physical interface that has changed state in the bonding driver.
  */
-static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance *nss_ctx, struct net_device *slave)
+static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance *nss_ctx, struct net_device *slave, enum nss_lag_state_change_ev slave_state)
 {
 	int32_t lagid = 0;
 	int32_t slave_ifnum;
@@ -139,11 +139,7 @@ static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance 
 	 * Figure out the aggregation id of this slave
 	 */
 	memset(&nm, 0, sizeof(nm));
-	if (netif_is_bond_slave(slave)) {
-		lagid = bond_get_id(slave->master) + NSS_LAG0_INTERFACE_NUM;
-	} else {
-		lagid = NSS_LAG0_INTERFACE_NUM;
-	}
+	lagid = bond_get_id(slave->master) + NSS_LAG0_INTERFACE_NUM;
 
 	/*
 	 * Construct a message to the NSS to update it
@@ -158,11 +154,11 @@ static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance 
 	/*
 	 * If the slave device IS a slave then this is an enslave, else it has been released
 	 */
-	if (netif_is_bond_slave(slave)) {
-		nlsc->event = NSS_LAG_ENSLAVE;
+	nlsc->event = slave_state;
+
+	if (nlsc->event == NSS_LAG_ENSLAVE) {
 		DEBUG_INFO("Enslave: %p (%s)\n", slave, slave->name);
 	} else {
-		nlsc->event = NSS_LAG_RELEASE;
 		DEBUG_INFO("Release: %p (%s)\n", slave, slave->name);
 	}
 
@@ -194,7 +190,7 @@ static void ecm_bond_notifier_bond_release(struct net_device *slave_dev)
 		return;
 	}
 	spin_unlock_bh(&ecm_bond_notifier_lock);
-	ecm_bond_notifier_send_lag_state(ecm_bond_notifier_nss_context, slave_dev);
+	ecm_bond_notifier_send_lag_state(ecm_bond_notifier_nss_context, slave_dev, NSS_LAG_RELEASE);
 }
 
 /*
@@ -214,7 +210,7 @@ static void ecm_bond_notifier_bond_enslave(struct net_device *slave_dev)
 		return;
 	}
 	spin_unlock_bh(&ecm_bond_notifier_lock);
-	ecm_bond_notifier_send_lag_state(ecm_bond_notifier_nss_context, slave_dev);
+	ecm_bond_notifier_send_lag_state(ecm_bond_notifier_nss_context, slave_dev, NSS_LAG_ENSLAVE);
 }
 
 /*
