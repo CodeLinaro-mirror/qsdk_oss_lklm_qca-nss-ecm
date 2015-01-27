@@ -86,6 +86,8 @@
 #include "ecm_interface.h"
 // GGG #include "ecm_front_end_ipv6.h"
 
+#define ECM_BOND_ID_INVALID			0xFFFFFFFF
+
 /*
  * Locking of the classifier - concurrency control
  */
@@ -119,6 +121,7 @@ static void *ecm_bond_notifier_nss_context = NULL;		/* Registration for LAG */
 static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance *nss_ctx, struct net_device *slave, enum nss_lag_state_change_ev slave_state)
 {
 	int32_t lagid = 0;
+	int32_t bondid = 0;
 	int32_t slave_ifnum;
 	nss_tx_status_t nss_tx_status;
 	struct nss_lag_msg nm;
@@ -139,7 +142,13 @@ static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance 
 	 * Figure out the aggregation id of this slave
 	 */
 	memset(&nm, 0, sizeof(nm));
-	lagid = bond_get_id(slave->master) + NSS_LAG0_INTERFACE_NUM;
+	bondid = bond_get_id(slave->master);
+	if (bondid == ECM_BOND_ID_INVALID) {
+		DEBUG_WARN("Invalid LAG group id 0x%x\n", bondid);
+		return NSS_TX_FAILURE;
+	}
+
+	lagid = bondid + NSS_LAG0_INTERFACE_NUM;
 
 	/*
 	 * Construct a message to the NSS to update it
@@ -151,16 +160,7 @@ static nss_tx_status_t ecm_bond_notifier_send_lag_state(struct nss_ctx_instance 
 
 	nlsc = &nm.msg.state;
 
-	/*
-	 * If the slave device IS a slave then this is an enslave, else it has been released
-	 */
 	nlsc->event = slave_state;
-
-	if (nlsc->event == NSS_LAG_ENSLAVE) {
-		DEBUG_INFO("Enslave: %p (%s)\n", slave, slave->name);
-	} else {
-		DEBUG_INFO("Release: %p (%s)\n", slave, slave->name);
-	}
 
 	nlsc->interface = slave_ifnum;
 
