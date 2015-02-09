@@ -67,6 +67,9 @@
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
+#ifdef ECM_INTERFACE_PPP_ENABLE
+#include <linux/if_pppox.h>
+#endif
 
 /*
  * Debug output levels
@@ -288,12 +291,18 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 
 	rcu_read_lock();
 	dst = ecm_rt.dst;
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	neigh = dst_get_neighbour_noref(dst);
 	if (neigh) {
 		neigh_hold(neigh);
-	} else {
+	}
+#else
+	neigh = dst_neigh_lookup(dst, &daddr);
+#endif
+	if (!neigh) {
 		neigh = neigh_lookup(&nd_tbl, &daddr, dst->dev);
 	}
+
 	if (!neigh) {
 		rcu_read_unlock();
 		ecm_interface_route_release(&ecm_rt);
@@ -2130,6 +2139,13 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				stats.tx_bytes = tx_bytes;
 				br_dev_update_stats(dev, &stats);
 				break;
+
+#ifdef ECM_INTERFACE_PPP_ENABLE
+			case ECM_DB_IFACE_TYPE_PPPOE:
+				DEBUG_INFO("PPPOE\n");
+				ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes);
+				break;
+#endif
 			default:
 				/*
 				 * TODO: Extend it accordingly
@@ -2343,7 +2359,11 @@ static void ecm_interface_mtu_change(struct net_device *dev)
  */
 static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, unsigned long event, void *ptr)
 {
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 10, 0))
 	struct net_device *dev __attribute__ ((unused)) = (struct net_device *)ptr;
+#else
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+#endif
 
 	DEBUG_INFO("Net device notifier for: %p, name: %s, event: %lx\n", dev, dev->name, event);
 
