@@ -7420,6 +7420,19 @@ static unsigned int ecm_front_end_ipv4_post_routing_hook(const struct nf_hook_op
 	spin_unlock_bh(&ecm_front_end_ipv4_lock);
 
 	/*
+	 * Don't process broadcast or multicast
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
+
+	if (skb->pkt_type == PACKET_MULTICAST) {
+		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * Identify interface from where this packet came
 	 */
 	in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -7477,6 +7490,19 @@ static unsigned int ecm_front_end_ipv4_bridge_post_routing_hook(const struct nf_
 		return NF_ACCEPT;
 	}
 	spin_unlock_bh(&ecm_front_end_ipv4_lock);
+
+	/*
+	 * Don't process broadcast or multicast
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
+
+	if (skb->pkt_type == PACKET_MULTICAST) {
+		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
 
 	/*
 	 * Check packet is an IP Ethernet packet
