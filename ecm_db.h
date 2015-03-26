@@ -17,8 +17,17 @@
 /*
  * API's
  */
+#ifndef ECM_DB_H_
+#define ECM_DB_H_
+
+
 uint32_t ecm_db_time_get(void);
 void ecm_db_connection_defunct_all(void);
+
+void ecm_db_traverse_node_from_connection_list_and_decelerate(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_to_connection_list_and_decelerate(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_from_nat_connection_list_and_decelerate(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_to_nat_connection_list_and_decelerate(struct ecm_db_node_instance *node);
 
 int ecm_db_connection_count_get(void);
 
@@ -235,3 +244,30 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi);
 int ecm_db_iface_deref(struct ecm_db_iface_instance *ii);
 int ecm_db_node_deref(struct ecm_db_node_instance *ni);
 
+int ecm_db_connection_count_by_protocol_get(int protocol);
+
+#ifdef ECM_STATE_OUTPUT_ENABLE
+int ecm_db_connection_xml_state_get(struct ecm_db_connection_instance *ci, char *buf, int buf_sz);
+int ecm_db_mapping_xml_state_get(struct ecm_db_mapping_instance *mi, char *buf, int buf_sz);
+int ecm_db_host_xml_state_get(struct ecm_db_host_instance *hi, char *buf, int buf_sz);
+int ecm_db_node_xml_state_get(struct ecm_db_node_instance *ni, char *buf, int buf_sz);
+int ecm_db_iface_xml_state_get(struct ecm_db_iface_instance *ii, char *buf, int buf_sz);
+int ecm_db_connection_hash_table_lengths_get(int index);
+int ecm_db_connection_hash_index_get_next(int index);
+int ecm_db_connection_hash_index_get_first(void);
+int ecm_db_mapping_hash_table_lengths_get(int index);
+int ecm_db_mapping_hash_index_get_next(int index);
+int ecm_db_mapping_hash_index_get_first(void);
+int ecm_db_host_hash_table_lengths_get(int index);
+int ecm_db_host_hash_index_get_next(int index);
+int ecm_db_host_hash_index_get_first(void);
+int ecm_db_node_hash_table_lengths_get(int index);
+int ecm_db_node_hash_index_get_next(int index);
+int ecm_db_node_hash_index_get_first(void);
+int ecm_db_iface_hash_table_lengths_get(int index);
+int ecm_db_iface_hash_index_get_next(int index);
+int ecm_db_iface_hash_index_get_first(void);
+int ecm_db_protocol_get_next(int protocol);
+int ecm_db_protocol_get_first(void);
+#endif
+#endif
