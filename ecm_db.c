@@ -477,6 +477,7 @@ struct ecm_db_connection_instance {
 
 	uint32_t time_added;					/* RO: DB time stamp when the connection was added into the database */
 
+	int ip_version;						/* RO: The version of IP protocol this connection was established for */
 	int protocol;						/* RO: Protocol of the connection */
 	ecm_db_direction_t direction;				/* RO: 'Direction' of connection establishment. */
 	bool is_routed;						/* RO: True when connection is routed, false when not */
@@ -1639,6 +1640,17 @@ int ecm_db_connection_protocol_get(struct ecm_db_connection_instance *ci)
 	return ci->protocol;
 }
 EXPORT_SYMBOL(ecm_db_connection_protocol_get);
+
+/*
+ * ecm_db_connection_ip_version_get()
+ *	Return IP version of connection
+ */
+int ecm_db_connection_ip_version_get(struct ecm_db_connection_instance *ci)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	return ci->ip_version;
+}
+EXPORT_SYMBOL(ecm_db_connection_ip_version_get);
 
 /*
  * ecm_db_host_address_get()
@@ -5855,6 +5867,7 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 							struct ecm_db_mapping_instance *mapping_nat_from, struct ecm_db_mapping_instance *mapping_nat_to,
 							struct ecm_db_node_instance *from_node, struct ecm_db_node_instance *to_node,
 							struct ecm_db_node_instance *from_nat_node, struct ecm_db_node_instance *to_nat_node,
+							int ip_version,
 							int protocol, ecm_db_direction_t dir,
 							ecm_db_connection_final_callback_t final,
 							ecm_db_connection_defunct_callback_t defunct,
@@ -5931,6 +5944,7 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 	/*
 	 * Set the protocol and routed flag
 	 */
+	ci->ip_version = ip_version;
 	ci->protocol = protocol;
 	ci->is_routed = is_routed;
 
@@ -8609,6 +8623,7 @@ static bool ecm_db_char_dev_conn_msg_prep(struct ecm_db_state_file_instance *sfi
 	char dip_address[50];
 	char dip_address_nat[50];
 	ecm_db_direction_t direction;
+	int ip_version;
 	int protocol;
 	bool is_routed;
 	uint32_t generations;
@@ -8676,6 +8691,7 @@ static bool ecm_db_char_dev_conn_msg_prep(struct ecm_db_state_file_instance *sfi
 	sprintf(snode_address_nat, "%pM", ni->address);
 
 	direction = sfi->ci->direction;
+	ip_version = sfi->ci->ip_version;
 	protocol = sfi->ci->protocol;
 	is_routed = sfi->ci->is_routed;
 	generations = sfi->ci->generations;
@@ -8697,7 +8713,7 @@ static bool ecm_db_char_dev_conn_msg_prep(struct ecm_db_state_file_instance *sfi
 	msg_len = snprintf(sfi->msgp, ECM_DB_STATE_FILE_BUFFER_SIZE,
 			"<conn serial=\"%u\" sip_address=\"%s\" sip_address_nat=\"%s\" sport=\"%d\" sport_nat=\"%d\" snode_address=\"%s\" snode_address_nat=\"%s\""
 			" dip_address=\"%s\" dip_address_nat=\"%s\" dport=\"%d\" dport_nat=\"%d\" dnode_address=\"%s\" dnode_address_nat=\"%s\""
-			" protocol=\"%d\" is_routed=\"%d\" expires=\"%ld\" direction=\"%d\" time_added=\"%u\" generations=\"%u\""
+			" ip_version=\"%d\" protocol=\"%d\" is_routed=\"%d\" expires=\"%ld\" direction=\"%d\" time_added=\"%u\" generations=\"%u\""
 			" from_data_total=\"%llu\" to_data_total=\"%llu\" from_packet_total=\"%llu\" to_packet_total=\"%llu\" from_data_total_dropped=\"%llu\" to_data_total_dropped=\"%llu\" from_packet_total_dropped=\"%llu\" to_packet_total_dropped=\"%llu\">\n",
 			serial,
 			sip_address,
@@ -8712,6 +8728,7 @@ static bool ecm_db_char_dev_conn_msg_prep(struct ecm_db_state_file_instance *sfi
 			dport_nat,
 			dnode_address,
 			dnode_address_nat,
+			ip_version,
 			protocol,
 			is_routed,
 			expires_in,

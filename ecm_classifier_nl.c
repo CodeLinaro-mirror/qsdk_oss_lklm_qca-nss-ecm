@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -206,10 +206,11 @@ ecm_classifier_nl_send_genl_msg(enum ECM_CL_NL_GENL_CMD cmd,
 }
 
 /*
- * Helper function to convert connection IP info into a genl_attr_tuple
+ * ecm_cl_nl_genl_attr_tuple_encode()
+ *	Helper function to convert connection IP info into a genl_attr_tuple
  */
-static int
-ecm_cl_nl_genl_attr_tuple_encode(struct ecm_cl_nl_genl_attr_tuple *tuple,
+static int ecm_cl_nl_genl_attr_tuple_encode(struct ecm_cl_nl_genl_attr_tuple *tuple,
+				 int ip_version,
 				 int proto,
 				 ip_addr_t src_ip,
 				 int src_port,
@@ -220,24 +221,26 @@ ecm_cl_nl_genl_attr_tuple_encode(struct ecm_cl_nl_genl_attr_tuple *tuple,
 	tuple->proto = (uint8_t)proto;
 	tuple->src_port = htons((uint16_t)src_port);
 	tuple->dst_port = htons((uint16_t)dst_port);
-	if (ECM_IP_ADDR_IS_V4(src_ip)) {
+	if (ip_version == 4) {
 		tuple->af = AF_INET;
 		ECM_IP_ADDR_TO_NIN4_ADDR(tuple->src_ip.in.s_addr, src_ip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(tuple->dst_ip.in.s_addr, dst_ip);
-	} else {
+		return 0;
+	}
+	if (ip_version == 6) {
 		tuple->af = AF_INET6;
 		ECM_IP_ADDR_TO_NIN6_ADDR(tuple->src_ip.in6, src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(tuple->dst_ip.in6, dst_ip);
+		return 0;
 	}
-
-	return 0;
+	return -EAFNOSUPPORT;
 }
 
 /*
- * Helper function to convert a genl_attr_tuple into connection IP info
+ * ecm_cl_nl_genl_attr_tuple_decode()
+ *	Helper function to convert a genl_attr_tuple into connection IP info
  */
-static int
-ecm_cl_nl_genl_attr_tuple_decode(struct ecm_cl_nl_genl_attr_tuple *tuple,
+static int ecm_cl_nl_genl_attr_tuple_decode(struct ecm_cl_nl_genl_attr_tuple *tuple,
 				 int *proto,
 				 ip_addr_t src_ip,
 				 int *src_port,
@@ -260,11 +263,15 @@ ecm_cl_nl_genl_attr_tuple_decode(struct ecm_cl_nl_genl_attr_tuple *tuple,
 	return 0;
 }
 
-static void
-ecm_classifier_nl_genl_msg_ACCEL_OK(struct ecm_classifier_nl_instance *cnli)
+/*
+ * ecm_classifier_nl_genl_msg_ACCEL_OK()
+ *	Indicates that Accelleration is okay to the netlink channel
+ */
+static void ecm_classifier_nl_genl_msg_ACCEL_OK(struct ecm_classifier_nl_instance *cnli)
 {
 	struct ecm_db_connection_instance *ci;
 	int ret;
+	int ip_version;
 	int proto;
 	int src_port;
 	int dst_port;
@@ -299,14 +306,16 @@ ecm_classifier_nl_genl_msg_ACCEL_OK(struct ecm_classifier_nl_instance *cnli)
 	ecm_db_connection_to_address_get(ci, dst_ip);
 	dst_port = ecm_db_connection_to_port_get(ci);
 
+	ip_version = ecm_db_connection_ip_version_get(ci);
 	ecm_db_connection_deref(ci);
 
 	ret = ecm_cl_nl_genl_attr_tuple_encode(&tuple,
-					       proto,
-					       src_ip,
-					       src_port,
-					       dst_ip,
-					       dst_port);
+						ip_version,
+						proto,
+						src_ip,
+						src_port,
+						dst_ip,
+						dst_port);
 	if (ret != 0) {
 		DEBUG_WARN("failed to encode genl_attr_tuple: %d\n", ret);
 		return;
@@ -332,9 +341,10 @@ ecm_classifier_nl_genl_msg_ACCEL_OK(struct ecm_classifier_nl_instance *cnli)
  * GGG TODO The purpose of this is not clear, esp. wrt. "accel ok" message.
  * DO NOT CALL THIS UNLESS ECM_CLASSIFIER_NL_F_ACCEL_OK has been set.
  */
-static void ecm_classifier_nl_genl_msg_closed(struct ecm_classifier_nl_instance *cnli,
+static void ecm_classifier_nl_genl_msg_closed(struct ecm_db_connection_instance *ci, struct ecm_classifier_nl_instance *cnli,
 					int proto, ip_addr_t src_ip, ip_addr_t dst_ip, int src_port, int dst_port)
 {
+	int ip_version;
 	int ret;
 	struct ecm_cl_nl_genl_attr_tuple tuple;
 
@@ -342,12 +352,14 @@ static void ecm_classifier_nl_genl_msg_closed(struct ecm_classifier_nl_instance 
 	cnli->flags |= ECM_CLASSIFIER_NL_F_CLOSED;
 	spin_unlock_bh(&ecm_classifier_nl_lock);
 
+	ip_version = ecm_db_connection_ip_version_get(ci);
 	ret = ecm_cl_nl_genl_attr_tuple_encode(&tuple,
-					       proto,
-					       src_ip,
-					       src_port,
-					       dst_ip,
-					       dst_port);
+						ip_version,
+						proto,
+						src_ip,
+						src_port,
+						dst_ip,
+						dst_port);
 	if (ret != 0) {
 		DEBUG_WARN("failed to encode genl_attr_tuple: %d\n", ret);
 		return;
@@ -887,9 +899,9 @@ static int ecm_classifier_nl_xml_state_get(struct ecm_classifier_instance *ci, c
  * @note FIXME: The param ci should be const, but none of the called functions
  *       are declared const.  This would be a larger change.
  */
-static struct nf_conn *
-ecm_classifier_nl_ct_get_and_ref(struct ecm_db_connection_instance *ci)
+static struct nf_conn *ecm_classifier_nl_ct_get_and_ref(struct ecm_db_connection_instance *ci)
 {
+	int ip_version;
 	int proto;
 	int src_port;
 	int dst_port;
@@ -899,29 +911,28 @@ ecm_classifier_nl_ct_get_and_ref(struct ecm_db_connection_instance *ci)
 	struct nf_conntrack_tuple tuple = {};
 
 	DEBUG_ASSERT(ci != NULL, "ci was NULL for ct lookup");
+	ip_version = ecm_db_connection_ip_version_get(ci);
 	proto = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_from_address_get(ci, src_ip);
 	src_port = (uint16_t)ecm_db_connection_from_port_get(ci);
 	ecm_db_connection_to_address_nat_get(ci, dst_ip);
 	dst_port = (uint16_t)ecm_db_connection_to_port_nat_get(ci);
 
-	/*
-	 * FIXME: This assumes that all connections for which _IS_V4() is false
-	 * are V6 connections.  If this is false...this will break.
-	 */
-	if (ECM_IP_ADDR_IS_V4(src_ip)) {
-		DEBUG_ASSERT(ECM_IP_ADDR_IS_V4(dst_ip),
-			     "src IP was V4 but dst IP was not");
+	if (ip_version == 4) {
 		tuple.src.l3num = AF_INET;
 		ECM_IP_ADDR_TO_NIN4_ADDR(tuple.src.u3.ip, src_ip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(tuple.dst.u3.ip, dst_ip);
-	} else {
-		DEBUG_ASSERT(!ECM_IP_ADDR_IS_V4(dst_ip),
-			     "src IP was V6 but dst IP was not");
+		goto ip_check_done;
+	}
+	if (ip_version == 6) {
 		tuple.src.l3num = AF_INET6;
 		ECM_IP_ADDR_TO_NIN6_ADDR(tuple.src.u3.in6, src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(tuple.dst.u3.in6, dst_ip);
+		goto ip_check_done;
 	}
+	return NULL;
+
+ip_check_done:
 	tuple.dst.protonum = proto;
 	tuple.src.u.all = htons(src_port);
 	tuple.dst.u.all = htons(dst_port);
@@ -1027,7 +1038,7 @@ static void ecm_classifier_nl_connection_removed(void *arg, struct ecm_db_connec
 	dst_port = ecm_db_connection_to_port_get(ci);
 
 	DEBUG_INFO("%p: NL classifier: %p, issue Close\n", ci, cnli);
-	ecm_classifier_nl_genl_msg_closed(cnli, proto, src_ip, dst_ip, src_port, dst_port);
+	ecm_classifier_nl_genl_msg_closed(ci, cnli, proto, src_ip, dst_ip, src_port, dst_port);
 
 	classi->deref(classi);
 }
