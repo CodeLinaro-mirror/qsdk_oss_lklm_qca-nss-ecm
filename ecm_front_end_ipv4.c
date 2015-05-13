@@ -87,6 +87,9 @@
 #include "ecm_classifier_hyfi.h"
 #endif
 #include "ecm_classifier_dscp.h"
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+#include "ecm_classifier_pcc.h"
+#endif
 #include "ecm_interface.h"
 
 /*
@@ -4806,6 +4809,20 @@ static struct ecm_classifier_instance *ecm_front_end_ipv4_assign_classifier(stru
 {
 	DEBUG_TRACE("%p: Assign classifier of type: %d\n", ci, type);
 	DEBUG_ASSERT(type != ECM_CLASSIFIER_TYPE_DEFAULT, "Must never need to instantiate default type in this way");
+
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+	if (type == ECM_CLASSIFIER_TYPE_PCC) {
+		struct ecm_classifier_pcc_instance *pcci;
+		pcci = ecm_classifier_pcc_instance_alloc(ci);
+		if (!pcci) {
+			DEBUG_TRACE("%p: Failed to create Parental Controls classifier\n", ci);
+			return NULL;
+		}
+		DEBUG_TRACE("%p: Created Parental Controls classifier: %p\n", ci, pcci);
+		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)pcci);
+		return (struct ecm_classifier_instance *)pcci;
+	}
+#endif
 
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_NL) {

@@ -102,12 +102,22 @@ ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
 ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_PCC_ENABLE=y in order to enable
+# the Parental Controls subsystem classifier in ECM. Currently disabled until
+# customers require it / if they need to integrate their Parental Controls with it.
+# #############################################################################
+ECM_CLASSIFIER_PCC_ENABLE=y
+ecm-$(ECM_CLASSIFIER_PCC_ENABLE) += ecm_classifier_pcc.o
+ccflags-$(ECM_CLASSIFIER_PCC_ENABLE) += -DECM_CLASSIFIER_PCC_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_NL_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DEFAULT_DEBUG_LEVEL=1
 ccflags-y += -DECM_DB_DEBUG_LEVEL=1
