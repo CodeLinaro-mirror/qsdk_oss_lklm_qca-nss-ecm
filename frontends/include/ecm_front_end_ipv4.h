@@ -14,10 +14,19 @@
  **************************************************************************
  */
 
-#ifdef ECM_NSS
-#define ecm_front_end_ipv4_init ecm_nss_ipv4_init
-#define ecm_front_end_ipv4_exit ecm_nss_ipv4_exit
-#define ecm_front_end_ipv4_stop ecm_nss_ipv4_stop
-#else
-#error "Unrecognized subsystem"
-#endif
+#include "ecm_nss_ipv4.h"
+
+/*
+ * IPv4 rule sync reasons.
+ */
+enum ecm_front_end_ipv4_rule_sync_reason {
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_STATS = 0,	/* Sync is to synchronize stats */
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_FLUSH,	/* Sync is to flush a cache entry */
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_EVICT,	/*Sync is to evict a cache entry */
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY	/* Sync is to destroy a cache entry */
+};
+
+extern void ecm_front_end_ipv4_stop(int num);
+extern int ecm_front_end_ipv4_init(struct dentry *dentry);
+extern void ecm_front_end_ipv4_exit(void);
+

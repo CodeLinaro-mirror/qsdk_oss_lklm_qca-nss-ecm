@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,19 +14,14 @@
  **************************************************************************
  */
 
-#include "ecm_nss_ipv6.h"
-
-/*
- * IPv4 rule sync reasons.
- */
-enum ecm_front_end_ipv6_rule_sync_reason {
-	ECM_FRONT_END_IPV6_RULE_SYNC_REASON_STATS = 0,	/* Sync is to synchronize stats */
-	ECM_FRONT_END_IPV6_RULE_SYNC_REASON_FLUSH,	/* Sync is to flush a cache entry */
-	ECM_FRONT_END_IPV6_RULE_SYNC_REASON_EVICT,	/*Sync is to evict a cache entry */
-	ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY	/* Sync is to destroy a cache entry */
-};
-
-extern void ecm_front_end_ipv6_stop(int num);
-extern int ecm_front_end_ipv6_init(struct dentry *dentry);
-extern void ecm_front_end_ipv6_exit(void);
+extern unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
+							struct net_device *in_dev,
+							uint8_t *src_node_addr,
+							uint8_t *dest_node_addr,
+							bool can_accel, bool is_routed, bool is_l2_encap, struct sk_buff *skb,
+							struct ecm_tracker_ip_header *iph,
+							struct nf_conn *ct, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir,
+							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
+							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr);
+extern bool ecm_nss_ported_ipv6_debugfs_init(struct dentry *dentry);
 
