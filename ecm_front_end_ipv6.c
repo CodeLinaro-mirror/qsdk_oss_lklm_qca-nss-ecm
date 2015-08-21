@@ -1908,7 +1908,6 @@ static void ecm_front_end_ipv6_connection_tcp_front_end_accelerate(struct ecm_fr
 	nss_tx_status = nss_ipv6_tx(ecm_front_end_ipv6_nss_ipv6_mgr, &nim);
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		spin_lock_bh(&fecti->lock);
-		DEBUG_ASSERT(fecti->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Accel mode unexpected: %d\n", fecti, fecti->accel_mode);
 		fecti->base.stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&fecti->lock);
 		return;
@@ -3256,7 +3255,6 @@ static void ecm_front_end_ipv6_connection_udp_front_end_accelerate(struct ecm_fr
 	nss_tx_status = nss_ipv6_tx(ecm_front_end_ipv6_nss_ipv6_mgr, &nim);
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		spin_lock_bh(&fecui->lock);
-		DEBUG_ASSERT(fecui->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Accel mode unexpected: %d\n", fecui, fecui->accel_mode);
 		fecui->base.stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&fecui->lock);
 		return;
@@ -4622,7 +4620,6 @@ static void ecm_front_end_ipv6_connection_non_ported_front_end_accelerate(struct
 	nss_tx_status = nss_ipv6_tx(ecm_front_end_ipv6_nss_ipv6_mgr, &nim);
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		spin_lock_bh(&fecnpi->lock);
-		DEBUG_ASSERT(fecnpi->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%p: Accel mode unexpected: %d\n", fecnpi, fecnpi->accel_mode);
 		fecnpi->base.stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&fecnpi->lock);
 		return;
