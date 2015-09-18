@@ -106,6 +106,10 @@ enum ecm_sfe_ported_ipv4_proto_types {
 struct ecm_sfe_ported_ipv4_connection_instance {
 	struct ecm_front_end_connection_instance base;		/* Base class */
 	uint8_t ported_accelerated_count_index;			/* Index value of accelerated count array (UDP or TCP) */
+#ifdef CONFIG_XFRM
+	enum ecm_sfe_ipsec_state flow_ipsec_state;	/* Flow traffic need ipsec process or not */
+	enum ecm_sfe_ipsec_state return_ipsec_state;	/* Return traffic need ipsec process or not */
+#endif
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -804,6 +808,14 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= SFE_RULE_CREATE_DSCP_MARKING_VALID;
 	}
 #endif
+
+#ifdef CONFIG_XFRM
+	nircm->direction_rule.flow_accel = (npci->flow_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	nircm->direction_rule.return_accel = (npci->return_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	if (!nircm->direction_rule.flow_accel || !nircm->direction_rule.return_accel) {
+		nircm->valid_flags |= SFE_RULE_CREATE_DIRECTION_VALID;
+	}
+#endif
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -925,6 +937,19 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 					|| (ct->proto.tcp.seen[0].flags & IP_CT_TCP_FLAG_BE_LIBERAL)
 					|| (ct->proto.tcp.seen[1].flags & IP_CT_TCP_FLAG_BE_LIBERAL)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SEQ_CHECK;
+			} else {
+#ifdef CONFIG_XFRM
+				/*
+				 * TCP window check will fail if TCP is accelerated in one direction but not in another
+				 */
+				if (nircm->direction_rule.flow_accel != nircm->direction_rule.return_accel) {
+					spin_unlock_bh(&ct->lock);
+					DEBUG_WARN("Can't accelerate ipsec TCP flow in uni-direction because TCP window checking is on\n");
+					ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+					ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+					goto ported_accel_bad_rule;
+				}
+#endif
 			}
 			spin_unlock_bh(&ct->lock);
 		}
@@ -1750,6 +1775,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
 	int protocol = (int)orig_tuple->dst.protonum;
+	__be16 *layer4hdr = NULL;
 
 	if (protocol == IPPROTO_TCP) {
 		/*
@@ -1760,6 +1786,8 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 			DEBUG_WARN("TCP packet header %p\n", skb);
 			return NF_ACCEPT;
 		}
+
+		layer4hdr = (__be16 *)tcp_hdr;
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
@@ -1827,6 +1855,8 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 			DEBUG_WARN("Invalid UDP header in skb %p\n", skb);
 			return NF_ACCEPT;
 		}
+
+		layer4hdr = (__be16 *)udp_hdr;
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
@@ -1991,6 +2021,16 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 			return NF_ACCEPT;
 		}
 
+#ifdef CONFIG_XFRM
+		/*
+		 * Packet has been decrypted by ipsec, mark it in connection.
+		 */
+		if (unlikely(skb->sp)) {
+			((struct ecm_sfe_ported_ipv4_connection_instance *)feci)->flow_ipsec_state = ECM_SFE_IPSEC_STATE_WAS_DECRYPTED;
+			((struct ecm_sfe_ported_ipv4_connection_instance *)feci)->return_ipsec_state = ECM_SFE_IPSEC_STATE_TO_ENCRYPT;
+		}
+#endif
+
 		/*
 		 * Get the src and destination mappings.
 		 * For this we also need the interface lists which we also set upon the new connection while we are at it.
@@ -1998,7 +2038,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from' interface heirarchy list\n", nci);
-		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
@@ -2028,7 +2068,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%p: Create the 'to' interface heirarchy list\n", nci);
-		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
@@ -2070,7 +2110,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from NAT' interface heirarchy list\n", nci);
-		from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat);
+		from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr);
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(dest_mi);
 			ecm_db_node_deref(dest_ni);
@@ -2111,7 +2151,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%p: Create the 'to NAT' interface heirarchy list\n", nci);
-		to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat);
+		to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr);
 		if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_nat_mi);
 			ecm_db_node_deref(src_nat_ni);
@@ -2287,7 +2327,7 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_sfe_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat);
+		ecm_sfe_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, layer4hdr);
 	}
 
 	/*

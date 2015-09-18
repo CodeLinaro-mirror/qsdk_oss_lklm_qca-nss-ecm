@@ -107,6 +107,10 @@ enum ecm_sfe_ported_ipv6_proto_types {
 struct ecm_sfe_ported_ipv6_connection_instance {
 	struct ecm_front_end_connection_instance base;		/* Base class */
 	uint8_t ported_accelerated_count_index;			/* Index value of accelerated count array (UDP or TCP) */
+#ifdef CONFIG_XFRM
+	enum ecm_sfe_ipsec_state flow_ipsec_state;	/* Flow traffic need ipsec process or not */
+	enum ecm_sfe_ipsec_state return_ipsec_state;	/* Return traffic need ipsec process or not */
+#endif
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -809,6 +813,14 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= SFE_RULE_CREATE_DSCP_MARKING_VALID;
 	}
 #endif
+
+#ifdef CONFIG_XFRM
+	nircm->direction_rule.flow_accel = (npci->flow_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	nircm->direction_rule.return_accel = (npci->return_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	if (!nircm->direction_rule.flow_accel || !nircm->direction_rule.return_accel) {
+		nircm->valid_flags |= SFE_RULE_CREATE_DIRECTION_VALID;
+	}
+#endif
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -885,6 +897,19 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 					|| (ct->proto.tcp.seen[0].flags & IP_CT_TCP_FLAG_BE_LIBERAL)
 					|| (ct->proto.tcp.seen[1].flags & IP_CT_TCP_FLAG_BE_LIBERAL)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SEQ_CHECK;
+			} else {
+#ifdef CONFIG_XFRM
+				/*
+				 * TCP window check will fail if TCP is accelerated in one direction but not in another
+				 */
+				if (nircm->direction_rule.flow_accel != nircm->direction_rule.return_accel) {
+					spin_unlock_bh(&ct->lock);
+					DEBUG_WARN("Can't accelerate ipsec TCP flow in uni-direction because TCP window checking is on\n");
+					ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+					ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+					goto ported_accel_bad_rule;
+				}
+#endif
 			}
 			spin_unlock_bh(&ct->lock);
 		}
@@ -1903,6 +1928,16 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 			return NF_ACCEPT;
 		}
 
+#ifdef CONFIG_XFRM
+		/*
+		 * Packet has been decrypted by ipsec, mark it in connection.
+		 */
+		if (unlikely(skb->sp)) {
+			((struct ecm_sfe_ported_ipv6_connection_instance *)feci)->flow_ipsec_state = ECM_SFE_IPSEC_STATE_WAS_DECRYPTED;
+			((struct ecm_sfe_ported_ipv6_connection_instance *)feci)->return_ipsec_state = ECM_SFE_IPSEC_STATE_TO_ENCRYPT;
+		}
+#endif
+
 		/*
 		 * Get the src and destination mappings
 		 * For this we also need the interface lists which we also set upon the new connection while we are at it.
@@ -1910,7 +1945,7 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from' interface heirarchy list\n", nci);
-		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, NULL);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
@@ -1940,7 +1975,7 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		}
 
 		DEBUG_TRACE("%p: Create the 'to' interface heirarchy list\n", nci);
-		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
