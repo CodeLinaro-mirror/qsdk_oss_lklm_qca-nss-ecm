@@ -13,7 +13,6 @@
  * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  **************************************************************************
  */
-
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
@@ -143,6 +142,10 @@ static unsigned long ecm_sfe_ipv4_accel_cmd_time_avg_samples = 0;	/* Sum of time
 static unsigned long ecm_sfe_ipv4_accel_cmd_time_avg_set = 1;	/* How many samples in the set */
 static unsigned long ecm_sfe_ipv4_decel_cmd_time_avg_samples = 0;	/* Sum of time taken for the set of accel command samples, used to compute average time for an accel command to complete */
 static unsigned long ecm_sfe_ipv4_decel_cmd_time_avg_set = 1;	/* How many samples in the set */
+
+#ifdef CONFIG_XFRM
+static int ecm_sfe_ipv4_reject_acceleration_for_ipsec;		/* Don't accelerate IPSEC traffic */
+#endif
 
 /*
  * Debugfs dentry object.
@@ -641,7 +644,8 @@ bool ecm_sfe_ipv4_reclassify(struct ecm_db_connection_instance *ci, int assignme
  */
 void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *out_dev_nat,
-							struct net_device *in_dev, struct net_device *in_dev_nat)
+							struct net_device *in_dev, struct net_device *in_dev_nat,
+							__be16 *layer4hdr)
 {
 	int i;
 	bool reclassify_allowed;
@@ -716,7 +720,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv4_retry_regen;
 	}
@@ -725,7 +729,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'from NAT' interface heirarchy list\n", ci);
-	from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat);
+	from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr);
 	if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv4_retry_regen;
 	}
@@ -734,7 +738,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv4_retry_regen;
 	}
@@ -743,7 +747,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to NAT' interface heirarchy list\n", ci);
-	to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat);
+	to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr);
 	if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv4_retry_regen;
 	}
@@ -854,6 +858,17 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 		DEBUG_TRACE("skb %p is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
+
+#ifdef CONFIG_XFRM
+	/*
+	 * If skb_dst(skb)->xfrm is not null, packet is to be encrypted by ipsec, we can't accelerate it.
+	 * If skb->sp is not null, packet is decrypted by ipsec. We only accelerate it when configuration didn't reject ipsec.
+	 */
+	if (unlikely(skb_dst(skb)->xfrm || (ecm_sfe_ipv4_reject_acceleration_for_ipsec && skb->sp))) {
+		DEBUG_TRACE("skip local ipsec flows\n");
+		return NF_ACCEPT;
+	}
+#endif
 
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
@@ -2235,6 +2250,14 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 stop file in debugfs\n");
 		goto task_cleanup;
 	}
+
+#ifdef CONFIG_XFRM
+	if (!debugfs_create_u32("reject_acceleration_for_ipsec", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
+					(u32 *)&ecm_sfe_ipv4_reject_acceleration_for_ipsec)) {
+		DEBUG_ERROR("Failed to create ecm sfe ipv4 reject_acceleration_for_ipsec file in debugfs\n");
+		goto task_cleanup;
+	}
+#endif
 
 	if (!debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_no_action_limit_default)) {

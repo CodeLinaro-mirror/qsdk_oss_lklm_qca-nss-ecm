@@ -96,6 +96,10 @@
  */
 struct ecm_sfe_non_ported_ipv6_connection_instance {
 	struct ecm_front_end_connection_instance base;		/* Base class */
+#ifdef CONFIG_XFRM
+	enum ecm_sfe_ipsec_state flow_ipsec_state;	/* Flow traffic need ipsec process or not */
+	enum ecm_sfe_ipsec_state return_ipsec_state;	/* Return traffic need ipsec process or not */
+#endif
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -808,6 +812,14 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		nircm->dscp_rule.return_dscp = pr->return_dscp;
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_DSCP_MARKING;
 		nircm->valid_flags |= SFE_RULE_CREATE_DSCP_MARKING_VALID;
+	}
+#endif
+
+#ifdef CONFIG_XFRM
+	nircm->direction_rule.flow_accel = (nnpci->flow_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	nircm->direction_rule.return_accel = (nnpci->return_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
+	if (!nircm->direction_rule.flow_accel || !nircm->direction_rule.return_accel) {
+		nircm->valid_flags |= SFE_RULE_CREATE_DIRECTION_VALID;
 	}
 #endif
 	/*
@@ -1730,6 +1742,16 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 			return NF_ACCEPT;
 		}
 
+#ifdef CONFIG_XFRM
+		/*
+		 * Packet has been decrypted by ipsec, mark it in connection.
+		 */
+		if (unlikely(skb->sp)) {
+			((struct ecm_sfe_non_ported_ipv6_connection_instance *)feci)->flow_ipsec_state = ECM_SFE_IPSEC_STATE_WAS_DECRYPTED;
+			((struct ecm_sfe_non_ported_ipv6_connection_instance *)feci)->return_ipsec_state = ECM_SFE_IPSEC_STATE_TO_ENCRYPT;
+		}
+#endif
+
 		/*
 		 * Get the src and destination mappings
 		 * For this we also need the interface lists which we also set upon the new connection while we are at it.
@@ -1737,7 +1759,7 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from' interface heirarchy list\n", nci);
-		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, NULL);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
@@ -1767,7 +1789,7 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 		}
 
 		DEBUG_TRACE("%p: Create the 'to' interface heirarchy list\n", nci);
-		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
