@@ -20,7 +20,6 @@
 #ifndef ECM_DB_H_
 #define ECM_DB_H_
 
-
 uint32_t ecm_db_time_get(void);
 void ecm_db_connection_defunct_all(void);
 #ifdef ECM_DB_XREF_ENABLE
@@ -66,6 +65,7 @@ ecm_db_iface_type_t ecm_db_connection_iface_type_get(struct ecm_db_iface_instanc
 int32_t ecm_db_iface_mtu_reset(struct ecm_db_iface_instance *ii, int32_t mtu);
 int32_t ecm_db_iface_ae_interface_identifier_get(struct ecm_db_iface_instance *ii);
 int32_t ecm_db_iface_interface_identifier_get(struct ecm_db_iface_instance *ii);
+void ecm_db_iface_identifier_hash_table_entry_check_and_update(struct ecm_db_iface_instance *ii, int32_t new_interface_identifier);
 
 struct ecm_front_end_connection_instance *ecm_db_connection_front_end_get_and_ref(struct ecm_db_connection_instance *ci);
 
@@ -78,6 +78,7 @@ bool ecm_db_connection_regeneration_required_check(struct ecm_db_connection_inst
 bool ecm_db_connection_regeneration_required_peek(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_regeneration_needed(struct ecm_db_connection_instance *ci);
 void ecm_db_regeneration_needed(void);
+void ecm_db_connection_regenerate(struct ecm_db_connection_instance *ci);
 #ifdef ECM_DB_CTA_TRACK_ENABLE
 void ecm_db_connection_regenerate_by_assignment_type(ecm_classifier_type_t ca_type);
 void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_type);
@@ -128,7 +129,7 @@ struct ecm_db_connection_instance *ecm_db_connection_find_and_ref(ip_addr_t host
 
 void ecm_db_iface_ethernet_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
 void ecm_db_iface_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 void ecm_db_iface_pppoe_session_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_pppoe *pppoe_info);
 #endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -145,8 +146,12 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vlan(uint8_t *address, u
 #endif
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address);
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_unknown(uint32_t os_specific_ident);
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_session_id, uint8_t *remote_mac);
+#endif
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+void ecm_db_iface_pppol2tpv2_session_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_pppol2tpv2 *pppol2tpv2_info);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppol2tpv2(uint32_t pppol2tpv2_tunnel_id, uint32_t pppol2tpv2_session_id);
 #endif
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_loopback(uint32_t os_specific_ident);
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
@@ -264,8 +269,13 @@ void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii, uint8_t *address,
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii, uint8_t *address, uint16_t vlan_tag, uint16_t vlan_tpid, char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 #endif
-#ifdef ECM_INTERFACE_PPP_ENABLE
+
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 void ecm_db_iface_add_pppoe(struct ecm_db_iface_instance *ii, uint16_t pppoe_session_id, uint8_t *remote_mac, char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_pppol2tpv2 *pppol2tpv2_info, char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 #endif
 void ecm_db_iface_add_unknown(struct ecm_db_iface_instance *ii, uint32_t os_specific_ident, char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 void ecm_db_iface_add_loopback(struct ecm_db_iface_instance *ii, uint32_t os_specific_ident, char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
@@ -328,17 +338,18 @@ int ecm_db_protocol_get_first(void);
 #ifdef ECM_MULTICAST_ENABLE
 struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_alloc(ip_addr_t origin, ip_addr_t group, uint16_t src_port, uint16_t dst_port);
 int ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance *ti);
+void ecm_db_multicast_connection_deref(struct ecm_db_multicast_tuple_instance *ti);
 void ecm_db_multicast_tuple_instance_add(struct ecm_db_multicast_tuple_instance *ti, struct ecm_db_connection_instance *ci);
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_find_and_ref(ip_addr_t origin, ip_addr_t group);
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_ref_first(ip_addr_t group);
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_ref_next(struct ecm_db_multicast_tuple_instance *ti);
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_find_and_ref(ip_addr_t origin, ip_addr_t group);
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_get_and_ref_first(ip_addr_t group);
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_get_and_ref_next(struct ecm_db_multicast_tuple_instance *ti);
 void ecm_db_multicast_tuple_instance_source_ip_get(struct ecm_db_multicast_tuple_instance *ti, ip_addr_t origin);
 void ecm_db_multicast_tuple_instance_group_ip_get(struct ecm_db_multicast_tuple_instance *ti, ip_addr_t group);
 uint32_t ecm_db_multicast_tuple_instance_flags_get(struct ecm_db_multicast_tuple_instance *ti);
 void ecm_db_multicast_tuple_instance_flags_set(struct ecm_db_multicast_tuple_instance *ti, uint32_t flags);
 void ecm_db_multicast_tuple_instance_flags_clear(struct ecm_db_multicast_tuple_instance *ti, uint32_t flags);
 
-struct ecm_db_connection_instance *ecm_db_multicast_connection_find_and_ref(struct ecm_db_multicast_tuple_instance *ti);
+struct ecm_db_connection_instance *ecm_db_multicast_connection_get_from_tuple(struct ecm_db_multicast_tuple_instance *ti);
 void ecm_db_multicast_connection_to_interfaces_deref_all(struct ecm_db_iface_instance *interfaces, int32_t *ifaces_first);
 void ecm_db_multicast_connection_to_interfaces_clear(struct ecm_db_connection_instance *ci);
 int32_t ecm_db_multicast_connection_to_interfaces_get_and_ref_all(struct ecm_db_connection_instance *ci, struct ecm_db_iface_instance **interfaces, int32_t **to_ifaces_first);

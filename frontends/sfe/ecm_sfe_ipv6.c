@@ -148,6 +148,10 @@ static unsigned long ecm_sfe_ipv6_accel_cmd_time_avg_set = 1;	/* How many sample
 static unsigned long ecm_sfe_ipv6_decel_cmd_time_avg_samples = 0;	/* Sum of time taken for the set of accel command samples, used to compute average time for an accel command to complete */
 static unsigned long ecm_sfe_ipv6_decel_cmd_time_avg_set = 1;	/* How many samples in the set */
 
+#ifdef CONFIG_XFRM
+static int ecm_sfe_ipv6_reject_acceleration_for_ipsec;		/* Don't accelerate IPSEC traffic */
+#endif
+
 /*
  * Debugfs dentry object.
  */
@@ -169,7 +173,7 @@ static int ecm_sfe_ipv6_stopped = 0;			/* When non-zero further traffic will not
 struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
 							struct net_device *dev, ip_addr_t addr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
-							uint8_t *given_node_addr)
+							uint8_t *given_node_addr, struct sk_buff *skb)
 {
 	struct ecm_db_node_instance *ni;
 	struct ecm_db_node_instance *nni;
@@ -201,7 +205,7 @@ struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_fron
 		ecm_db_iface_type_t type;
 		ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 		bool on_link = false;
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe_info;
 #endif
 		type = ecm_db_connection_iface_type_get(interface_list[i]);
@@ -210,7 +214,7 @@ struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_fron
 		switch (type) {
 
 		case ECM_DB_IFACE_TYPE_PPPOE:
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
 			 * Node address is the address of the remote PPPoE server
 			 */
@@ -287,7 +291,7 @@ struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_fron
 	/*
 	 * No node - establish iface
 	 */
-	ii = ecm_interface_establish_and_ref(feci, dev);
+	ii = ecm_interface_establish_and_ref(feci, dev, skb);
 	if (!ii) {
 		DEBUG_WARN("Failed to establish iface\n");
 		return NULL;
@@ -642,7 +646,7 @@ bool ecm_sfe_ipv6_reclassify(struct ecm_db_connection_instance *ci, int assignme
  * classifiers permit this operation.
  */
 void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
-							struct net_device *out_dev, struct net_device *in_dev)
+							struct net_device *out_dev, struct net_device *in_dev, struct sk_buff *skb)
 {
 	int i;
 	bool reclassify_allowed;
@@ -701,7 +705,7 @@ void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, NULL, skb);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv6_retry_regen;
 	}
@@ -710,7 +714,7 @@ void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL, skb);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv6_retry_regen;
 	}
@@ -738,22 +742,12 @@ void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		}
 	}
 
-	/*
-	 * Re-generation of state is successful.
-	 */
-	ecm_db_conection_regeneration_completed(ci);
-
 	if (!reclassify_allowed) {
 		/*
 		 * Regeneration came to a successful conclusion even though reclassification was denied
 		 */
 		DEBUG_WARN("%p: re-classify denied\n", ci);
-
-		/*
-		 * Release the assignments
-		 */
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-		return;
+		goto ecm_ipv6_regen_done;
 	}
 
 	/*
@@ -765,15 +759,22 @@ void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
 		DEBUG_WARN("%p: Regeneration: reclassify failed\n", ci);
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-		return;
+		goto ecm_ipv6_regen_done;
 	}
 	DEBUG_INFO("%p: reclassify success\n", ci);
+
+ecm_ipv6_regen_done:
 
 	/*
 	 * Release the assignments
 	 */
 	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
+	 * Re-generation of state is successful.
+	 */
+	ecm_db_conection_regeneration_completed(ci);
+
 	return;
 
 ecm_ipv6_retry_regen:
@@ -813,6 +814,17 @@ static unsigned int ecm_sfe_ipv6_ip_process(struct net_device *out_dev, struct n
 		DEBUG_TRACE("skb %p is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
+
+#ifdef CONFIG_XFRM
+	/*
+	 * If skb_dst(skb)->xfrm is not null, packet is to be encrypted by ipsec, we can't accelerate it.
+	 * If skb->sp is not null, packet is decrypted by ipsec. We only accelerate it when configuration didn't reject ipsec.
+	 */
+	if (unlikely(skb_dst(skb)->xfrm || (ecm_sfe_ipv6_reject_acceleration_for_ipsec && skb->sp))) {
+		DEBUG_TRACE("skip local ipsec flows\n");
+		return NF_ACCEPT;
+	}
+#endif
 
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
@@ -996,6 +1008,11 @@ static unsigned int ecm_sfe_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 
 	DEBUG_TRACE("%p: Routing: %s\n", out, out->name);
 
+	if (ecm_front_end_acceleration_rejected(skb)) {
+		DEBUG_TRACE("Acceleration rejected.\n");
+		return NF_ACCEPT;
+	}
+
 	/*
 	 * If operations have stopped then do not process packets
 	 */
@@ -1022,7 +1039,7 @@ static unsigned int ecm_sfe_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 	}
 #endif
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 	/*
 	 * skip l2tp/pptp because we don't accelerate them
 	 */
@@ -1139,7 +1156,7 @@ static unsigned int ecm_sfe_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 	}
 #endif
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 	/*
 	 * skip l2tp/pptp because we don't accelerate them
 	 */
@@ -1943,6 +1960,14 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 stop file in debugfs\n");
 		goto task_cleanup;
 	}
+
+#ifdef CONFIG_XFRM
+	if (!debugfs_create_u32("reject_acceleration_for_ipsec", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
+					(u32 *)&ecm_sfe_ipv6_reject_acceleration_for_ipsec)) {
+		DEBUG_ERROR("Failed to create ecm sfe ipv6 reject_acceleration_for_ipsec file in debugfs\n");
+		goto task_cleanup;
+	}
+#endif
 
 	if (!debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
 					(u32 *)&ecm_sfe_ipv6_no_action_limit_default)) {

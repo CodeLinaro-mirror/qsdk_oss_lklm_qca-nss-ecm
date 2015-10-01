@@ -330,6 +330,9 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	uint8_t from_nss_iface_address[ETH_ALEN];
 	uint8_t to_nss_iface_address[ETH_ALEN];
 	ip_addr_t addr;
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	struct net_device *dev;
+#endif
 	struct nss_ipv4_msg nim;
 	struct nss_ipv4_rule_create_msg *nircm;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
@@ -455,7 +458,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
 #endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -500,7 +503,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", npci, from_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -591,6 +594,33 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: IPSEC - unsupported\n", npci);
 #endif
 			break;
+
+		case ECM_DB_IFACE_TYPE_PPPOL2TPV2:
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+			/*
+			 * l2tp packets from lan to wan gets routed twice.
+			 *	1. eth1-->br-lan to l2tp
+			 *	2. l2tp ---> eth0.
+			 * we need to push nss rule for both. Requirement
+			 * mandidates multiple session per tunnel and all tunnel
+			 * packets has same 5 tuple info. So need to create a
+			 * special static l2tp interface with nss to identify
+			 * packets from wan side. So l2tp--->eth0 rule to be
+			 * pushed with this static interface.
+			 */
+			ecm_db_connection_from_address_get(feci->ci, addr);
+			dev = ecm_interface_dev_find_by_local_addr(addr);
+			if (likely(dev)) {
+				dev_put(dev);
+				from_nss_iface_id =  NSS_L2TPV2_INTERFACE;
+				nircm->conn_rule.flow_interface_num = from_nss_iface_id;
+			}
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: L2TPV2 - unsupported\n", npci);
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%p: Ignoring: %d (%s)\n", npci, ii_type, ii_name);
 		}
@@ -628,7 +658,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			struct ecm_db_interface_info_pppoe pppoe_info;
 #endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -673,7 +703,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", npci, to_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
 			 * More than one PPPoE in the list is not valid!
 			 */
@@ -898,6 +928,19 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_from_iface_mtu_get(feci->ci);
 	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_to_iface_mtu_get(feci->ci);
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	/*
+	 * pppd sets the mtu of l2tp interface. This
+	 * depends on configuration. We have to set the
+	 * static interface mtu as maximum.
+	 * Else l2tp static interface in firmware may reject
+	 * packets from wan side.
+	 */
+	if (unlikely(from_nss_iface_id ==  NSS_L2TPV2_INTERFACE)) {
+		nircm->conn_rule.flow_mtu = 1500;
+	}
+#endif
 
 	if (protocol == IPPROTO_TCP) {
 		/*
@@ -1709,6 +1752,7 @@ static struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_conne
 	feci->state_get = ecm_nss_ported_ipv4_connection_state_get;
 #endif
 	feci->ae_interface_number_by_dev_get = ecm_nss_common_get_interface_number_by_dev;
+	feci->regenerate = ecm_nss_common_connection_regenerate;
 
 	if (protocol == IPPROTO_TCP) {
 		npci->ported_accelerated_count_index = ECM_NSS_PORTED_IPV4_PROTO_TCP;
@@ -1755,6 +1799,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
 	int protocol = (int)orig_tuple->dst.protonum;
+	__be16 *layer4hdr = NULL;
 
 	if (protocol == IPPROTO_TCP) {
 		/*
@@ -1765,6 +1810,8 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 			DEBUG_WARN("TCP packet header %p\n", skb);
 			return NF_ACCEPT;
 		}
+
+		layer4hdr = (__be16 *)tcp_hdr;
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
@@ -1832,6 +1879,8 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 			DEBUG_WARN("Invalid UDP header in skb %p\n", skb);
 			return NF_ACCEPT;
 		}
+
+		layer4hdr = (__be16 *)udp_hdr;
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
@@ -2003,7 +2052,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from' interface heirarchy list\n", nci);
-		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
@@ -2013,7 +2062,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_from_interfaces_reset(nci, from_list, from_list_first);
 
 		DEBUG_TRACE("%p: Create source node\n", nci);
-		src_ni = ecm_nss_ipv4_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr);
+		src_ni = ecm_nss_ipv4_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!src_ni) {
 			feci->deref(feci);
@@ -2033,7 +2082,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%p: Create the 'to' interface heirarchy list\n", nci);
-		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
@@ -2045,7 +2094,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_to_interfaces_reset(nci, to_list, to_list_first);
 
 		DEBUG_TRACE("%p: Create dest node\n", nci);
-		dest_ni = ecm_nss_ipv4_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list, to_list_first, dest_node_addr);
+		dest_ni = ecm_nss_ipv4_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list, to_list_first, dest_node_addr, skb);
 		ecm_db_connection_interfaces_deref(to_list, to_list_first);
 		if (!dest_ni) {
 			ecm_db_mapping_deref(src_mi);
@@ -2075,7 +2124,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%p: Create the 'from NAT' interface heirarchy list\n", nci);
-		from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat);
+		from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb);
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(dest_mi);
 			ecm_db_node_deref(dest_ni);
@@ -2089,7 +2138,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_from_nat_interfaces_reset(nci, from_nat_list, from_nat_list_first);
 
 		DEBUG_TRACE("%p: Create source nat node\n", nci);
-		src_nat_ni = ecm_nss_ipv4_node_establish_and_ref(feci, in_dev_nat, ip_src_addr_nat, from_nat_list, from_nat_list_first, src_node_addr_nat);
+		src_nat_ni = ecm_nss_ipv4_node_establish_and_ref(feci, in_dev_nat, ip_src_addr_nat, from_nat_list, from_nat_list_first, src_node_addr_nat, skb);
 		ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 		if (!src_nat_ni) {
 			ecm_db_mapping_deref(dest_mi);
@@ -2116,7 +2165,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%p: Create the 'to NAT' interface heirarchy list\n", nci);
-		to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat);
+		to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, ip_src_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr, skb);
 		if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(src_nat_mi);
 			ecm_db_node_deref(src_nat_ni);
@@ -2132,7 +2181,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_to_nat_interfaces_reset(nci, to_nat_list, to_nat_list_first);
 
 		DEBUG_TRACE("%p: Create dest nat node\n", nci);
-		dest_nat_ni = ecm_nss_ipv4_node_establish_and_ref(feci, out_dev_nat, ip_dest_addr_nat, to_nat_list, to_nat_list_first, dest_node_addr_nat);
+		dest_nat_ni = ecm_nss_ipv4_node_establish_and_ref(feci, out_dev_nat, ip_dest_addr_nat, to_nat_list, to_nat_list_first, dest_node_addr_nat, skb);
 		ecm_db_connection_interfaces_deref(to_nat_list, to_nat_list_first);
 		if (!dest_nat_ni) {
 			ecm_db_mapping_deref(src_nat_mi);
@@ -2292,7 +2341,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_nss_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat);
+		ecm_nss_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, layer4hdr, skb);
 	}
 
 	/*

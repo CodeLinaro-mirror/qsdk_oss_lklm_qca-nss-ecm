@@ -187,7 +187,7 @@ static int ecm_nss_ipv6_stopped = 0;			/* When non-zero further traffic will not
 struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
 							struct net_device *dev, ip_addr_t addr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
-							uint8_t *given_node_addr)
+							uint8_t *given_node_addr, struct sk_buff *skb)
 {
 	struct ecm_db_node_instance *ni;
 	struct ecm_db_node_instance *nni;
@@ -219,7 +219,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 		ecm_db_iface_type_t type;
 		ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 		bool on_link = false;
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe_info;
 #endif
 		type = ecm_db_connection_iface_type_get(interface_list[i]);
@@ -228,7 +228,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 		switch (type) {
 
 		case ECM_DB_IFACE_TYPE_PPPOE:
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
 			 * Node address is the address of the remote PPPoE server
 			 */
@@ -305,7 +305,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	/*
 	 * No node - establish iface
 	 */
-	ii = ecm_interface_establish_and_ref(feci, dev);
+	ii = ecm_interface_establish_and_ref(feci, dev, skb);
 	if (!ii) {
 		DEBUG_WARN("Failed to establish iface\n");
 		return NULL;
@@ -660,7 +660,7 @@ bool ecm_nss_ipv6_reclassify(struct ecm_db_connection_instance *ci, int assignme
  * classifiers permit this operation.
  */
 void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
-							struct net_device *out_dev, struct net_device *in_dev)
+							struct net_device *out_dev, struct net_device *in_dev, struct sk_buff *skb)
 {
 	int i;
 	bool reclassify_allowed;
@@ -719,7 +719,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, NULL, skb);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv6_retry_regen;
 	}
@@ -728,7 +728,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL, skb);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		goto ecm_ipv6_retry_regen;
 	}
@@ -756,22 +756,12 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		}
 	}
 
-	/*
-	 * Re-generation of state is successful.
-	 */
-	ecm_db_conection_regeneration_completed(ci);
-
 	if (!reclassify_allowed) {
 		/*
 		 * Regeneration came to a successful conclusion even though reclassification was denied
 		 */
 		DEBUG_WARN("%p: re-classify denied\n", ci);
-
-		/*
-		 * Release the assignments
-		 */
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-		return;
+		goto ecm_ipv6_regen_done;
 	}
 
 	/*
@@ -783,15 +773,22 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
 		DEBUG_WARN("%p: Regeneration: reclassify failed\n", ci);
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-		return;
+		goto ecm_ipv6_regen_done;
 	}
 	DEBUG_INFO("%p: reclassify success\n", ci);
+
+ecm_ipv6_regen_done:
 
 	/*
 	 * Release the assignments
 	 */
 	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
+	 * Re-generation of state is successful.
+	 */
+	ecm_db_conection_regeneration_completed(ci);
+
 	return;
 
 ecm_ipv6_retry_regen:
@@ -948,7 +945,6 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 				ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
 				orig_tuple.dst.protonum, sender, ecm_dir);
-
 	/*
 	 * Non-unicast source or destination packets are ignored
 	 * NOTE: Only need to check the non-nat src/dest addresses here.
@@ -2248,11 +2244,6 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	}
 #endif
 
-	if (!ecm_nss_ipv6_sync_queue_init()) {
-		DEBUG_ERROR("Failed to create ecm ipv6 connection sync workqueue\n");
-		goto task_cleanup;
-	}
-
 #ifdef ECM_MULTICAST_ENABLE
 	if (!ecm_nss_multicast_ipv6_debugfs_init(ecm_nss_ipv6_dentry)) {
 		DEBUG_ERROR("Failed to create ecm multicast files in debugfs\n");
@@ -2277,6 +2268,17 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	 * Register this module with the Linux NSS Network driver
 	 */
 	ecm_nss_ipv6_nss_ipv6_mgr = nss_ipv6_notify_register(ecm_nss_ipv6_net_dev_callback, NULL);
+
+	if (!ecm_nss_ipv6_sync_queue_init()) {
+		DEBUG_ERROR("Failed to create ecm ipv6 connection sync workqueue\n");
+		nss_ipv6_notify_unregister();
+#ifdef ECM_MULTICAST_ENABLE
+		ecm_nss_multicast_ipv6_exit();
+#endif
+		nf_unregister_hooks(ecm_nss_ipv6_netfilter_hooks,
+				ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
+		goto task_cleanup;
+	}
 
 	return 0;
 

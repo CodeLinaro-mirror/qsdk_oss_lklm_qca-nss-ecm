@@ -162,7 +162,6 @@ static int ecm_db_iface_table_lengths[ECM_DB_IFACE_HASH_SLOTS];
 static int ecm_db_iface_count = 0;			/* Number of interfaces allocated */
 typedef uint32_t ecm_db_iface_hash_t;
 
-
 #define ECM_DB_IFACE_ID_HASH_SLOTS 8
 static struct ecm_db_iface_instance *ecm_db_iface_id_table[ECM_DB_IFACE_ID_HASH_SLOTS];
 							/* Slots of the interface id hash table */
@@ -251,8 +250,11 @@ struct ecm_db_iface_instance {
 		struct ecm_db_interface_info_lag lag;			/* type == ECM_DB_IFACE_TYPE_LAG */
 #endif
 		struct ecm_db_interface_info_bridge bridge;		/* type == ECM_DB_IFACE_TYPE_BRIDGE */
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe;		/* type == ECM_DB_IFACE_TYPE_PPPOE */
+#endif
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+		struct ecm_db_interface_info_pppol2tpv2 pppol2tpv2;	/* type == ECM_DB_IFACE_TYPE_PPPOL2TPV2 */
 #endif
 		struct ecm_db_interface_info_unknown unknown;		/* type == ECM_DB_IFACE_TYPE_UNKNOWN */
 		struct ecm_db_interface_info_loopback loopback;		/* type == ECM_DB_IFACE_TYPE_LOOPBACK */
@@ -813,6 +815,7 @@ struct ecm_db_listener_instance {
 struct ecm_db_multicast_tuple_instance {
 	struct ecm_db_multicast_tuple_instance *next;	/* Next instance in global list */
 	struct ecm_db_multicast_tuple_instance *prev;	/* Previous instance in global list */
+	struct ecm_db_connection_instance *ci;	/* Pointer to the DB Connection Instance */
 	uint16_t src_port;	/* RO: IPv4/v6 Source Port */
 	uint16_t dst_port;	/* RO: IPv4/v6 Destination Port */
 	ip_addr_t src_ip;	/* RO: IPv4/v6 Source Address */
@@ -879,6 +882,7 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"UNKNOWN",
 	"SIT",
 	"TUNIPIP6",
+	"PPPoL2TPV2"
 };
 
 /*
@@ -1979,6 +1983,27 @@ void ecm_db_regeneration_needed(void)
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_regeneration_needed);
+
+/*
+ * ecm_db_connection_regenerate()
+ *	Re-generate a specific connection
+ */
+void ecm_db_connection_regenerate(struct ecm_db_connection_instance *ci)
+{
+	struct ecm_front_end_connection_instance *feci;
+
+	DEBUG_TRACE("Regenerate connection: %p\n", ci);
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	/*
+	 * Notify front end to regenerate a connection.
+	 */
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	feci->regenerate(feci, ci);
+	feci->deref(feci);
+}
+EXPORT_SYMBOL(ecm_db_connection_regenerate);
 
 /*
  * ecm_db_connection_direction_get()
@@ -3906,7 +3931,7 @@ static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_ethernet(uint
 	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
 }
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_db_iface_generate_hash_index_pppoe()
  * 	Calculate the hash index.
@@ -3917,6 +3942,20 @@ static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_pppoe(uint16_
 	hash_val = (uint32_t)jhash_1word((uint32_t)pppoe_session_id, ecm_db_jhash_rnd);
 	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
 }
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_db_iface_generate_hash_index_pppol2tpv2()
+ *	Calculate the hash index.
+ */
+static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_pppol2tpv2(uint32_t pppol2tpv2_tunnel_id, uint32_t pppol2tpv2_session_id)
+{
+	uint32_t hash_val;
+	hash_val = (uint32_t)jhash_2words(pppol2tpv2_tunnel_id, pppol2tpv2_session_id, ecm_db_jhash_rnd);
+	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
+}
+
 #endif
 
 /*
@@ -4058,6 +4097,94 @@ void ecm_db_iface_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_iface_bridge_address_get);
+
+/*
+ * _ecm_db_iface_identifier_hash_table_insert_entry()
+ *	Calculate the hash index based on updated interface_identifier, and
+ *	re-insert into interface identifier chain.
+ *
+ *	Note: Must take ecm_db_lock before calling this.
+ */
+static void _ecm_db_iface_identifier_hash_table_insert_entry(struct ecm_db_iface_instance *ii, int32_t interface_identifier)
+{
+	ecm_db_iface_id_hash_t iface_id_hash_index;
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
+	ii->iface_id_hash_index = iface_id_hash_index;
+
+	/*
+	 * Insert into interface identifier chain
+	 */
+	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
+	if (ecm_db_iface_id_table[iface_id_hash_index]) {
+		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
+	}
+
+	ecm_db_iface_id_table[iface_id_hash_index] = ii;
+	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
+}
+
+/*
+ * _ecm_db_iface_identifier_hash_table_remove_entry()
+ * 	Remove an entry of a given interface instance from interface identifier chain.
+ *
+ *	Note: Must take ecm_db_lock before calling this.
+ */
+static void _ecm_db_iface_identifier_hash_table_remove_entry(struct ecm_db_iface_instance *ii)
+{
+	/*
+	 * Remove from database if inserted
+	 */
+	if (!ii->flags & ECM_DB_IFACE_FLAGS_INSERTED) {
+		return;
+	}
+
+	/*
+	 * Link out of interface identifier hash table
+	 */
+	if (!ii->iface_id_hash_prev) {
+		DEBUG_ASSERT(ecm_db_iface_id_table[ii->iface_id_hash_index] == ii, "%p: hash table bad got %p for hash index %u\n", ii, ecm_db_iface_id_table[ii->iface_id_hash_index], ii->iface_id_hash_index);
+		ecm_db_iface_id_table[ii->iface_id_hash_index] = ii->iface_id_hash_next;
+	} else {
+		ii->iface_id_hash_prev->iface_id_hash_next = ii->iface_id_hash_next;
+	}
+
+	if (ii->iface_id_hash_next) {
+		ii->iface_id_hash_next->iface_id_hash_prev = ii->iface_id_hash_prev;
+	}
+
+	ii->iface_id_hash_next = NULL;
+	ii->iface_id_hash_prev = NULL;
+	ecm_db_iface_id_table_lengths[ii->iface_id_hash_index]--;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[ii->iface_id_hash_index] >= 0, "%p: invalid table len %d\n", ii, ecm_db_iface_id_table_lengths[ii->iface_id_hash_index]);
+}
+
+/*
+ * ecm_db_iface_identifier_hash_table_entry_check_and_update()
+ * 	Update the hash table entry of interface identifier hash table.
+ * 	First remove the 'ii' from curent hash index position, re-calculate new hash and re-insert
+ * 	the 'ii' at new hash index position into interface identifier hash table.
+ */
+void ecm_db_iface_identifier_hash_table_entry_check_and_update(struct ecm_db_iface_instance *ii, int32_t new_interface_identifier)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
+	spin_lock_bh(&ecm_db_lock);
+	if (ii->interface_identifier == new_interface_identifier) {
+		spin_unlock_bh(&ecm_db_lock);
+		return;
+	}
+
+	DEBUG_TRACE("%p: interface ifindex has changed Old %d, New %d \n", ii, ii->interface_identifier, new_interface_identifier);
+	_ecm_db_iface_identifier_hash_table_remove_entry(ii);
+	ii->interface_identifier = new_interface_identifier;
+	_ecm_db_iface_identifier_hash_table_insert_entry(ii, new_interface_identifier);
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_iface_identifier_hash_table_entry_check_and_update);
 
 /*
  * ecm_db_iface_find_and_ref_by_interface_identifier()
@@ -4285,7 +4412,7 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_lag(uint8_t *address)
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_lag);
 #endif
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_db_iface_pppoe_session_info_get()
  *	Get pppoe interface specific information
@@ -4299,6 +4426,7 @@ void ecm_db_iface_pppoe_session_info_get(struct ecm_db_iface_instance *ii, struc
 	pppoe_info->pppoe_session_id = ii->type_info.pppoe.pppoe_session_id;
 	spin_unlock_bh(&ecm_db_lock);
 }
+
 EXPORT_SYMBOL(ecm_db_iface_pppoe_session_info_get);
 
 /*
@@ -4340,6 +4468,67 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_ses
 	return NULL;
 }
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_pppoe);
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+
+/*
+ * ecm_db_iface_pppol2tpv2_session_info_get
+ *	get l2tpv2 specific info
+ */
+void ecm_db_iface_pppol2tpv2_session_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_pppol2tpv2 *pppol2tpv2_info)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
+	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_PPPOL2TPV2, "%p: Bad type, expected pppol2tpv2, actual: %d\n", ii, ii->type);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(pppol2tpv2_info, &ii->type_info.pppol2tpv2, sizeof(struct ecm_db_interface_info_pppol2tpv2));
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_iface_pppol2tpv2_session_info_get);
+
+/*
+ * ecm_db_iface_find_and_ref_pppol2tpv2()
+ *	Lookup and return a iface reference if any
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppol2tpv2(uint32_t pppol2tpv2_tunnel_id, uint32_t pppol2tpv2_session_id)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_pppol2tpv2(pppol2tpv2_tunnel_id, pppol2tpv2_session_id);
+
+	DEBUG_TRACE("Lookup pppol2tpv2 iface with local_tunnel_id = %d, local_session_id = %d, hash = 0x%x\n", pppol2tpv2_tunnel_id,
+									pppol2tpv2_session_id, hash_index);
+
+	/*
+	 * Iterate the chain looking for a host with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_PPPOL2TPV2)
+				|| (ii->type_info.pppol2tpv2.l2tp.session.session_id != pppol2tpv2_session_id)
+				|| (ii->type_info.pppol2tpv2.l2tp.tunnel.tunnel_id != pppol2tpv2_tunnel_id)) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("iface found %p\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	DEBUG_TRACE("Iface not found\n");
+	return NULL;
+}
+EXPORT_SYMBOL(ecm_db_iface_find_and_ref_pppol2tpv2);
+
 #endif
 
 /*
@@ -5897,7 +6086,7 @@ void ecm_db_connection_regenerate_by_assignment_type(ecm_classifier_type_t ca_ty
 		struct ecm_db_connection_instance *cin;
 
 		DEBUG_TRACE("%p: Re-generate: %d\n", ci, ca_type);
-		ecm_db_connection_regeneration_needed(ci);
+		ecm_db_connection_regenerate(ci);
 
 		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ca_type);
 		ecm_db_connection_by_classifier_type_assignment_deref(ci, ca_type);
@@ -7526,7 +7715,7 @@ static int ecm_db_iface_vlan_state_get(struct ecm_db_iface_instance *ii, struct 
 }
 #endif
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_db_iface_pppoe_state_get()
  * 	Return interface type specific state
@@ -7559,6 +7748,51 @@ static int ecm_db_iface_pppoe_state_get(struct ecm_db_iface_instance *ii, struct
 
 	return ecm_state_prefix_remove(sfi);
 }
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+
+/*
+ * ecm_db_iface_pppol2tpv2_state_get()
+ *	Return interface type specific state
+ */
+static int ecm_db_iface_pppol2tpv2_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	struct ecm_db_interface_info_pppol2tpv2 type_info;
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(&type_info, &ii->type_info, sizeof(struct ecm_db_interface_info_pppol2tpv2));
+	spin_unlock_bh(&ecm_db_lock);
+
+	if ((result = ecm_state_prefix_add(sfi, "pppol2tpv2"))) {
+		return result;
+	}
+
+	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "local_tunnel_id", "%u", type_info.l2tp.tunnel.tunnel_id))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "local_session_id", "%u", type_info.l2tp.session.session_id))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "peer_tunnnel_id", "%u", type_info.l2tp.tunnel.peer_tunnel_id))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "peer_session_id", "%u", type_info.l2tp.session.peer_session_id))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+
 #endif
 
 /*
@@ -7791,7 +8025,7 @@ static int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection
 
 	ret = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(ci, &mc_ifaces, &mc_ifaces_first);
 	if (ret == 0) {
-		return -1;
+		return ret;
 	}
 
 	for (heirarchy_index = 0; heirarchy_index < ECM_DB_MULTICAST_IF_MAX; heirarchy_index++) {
@@ -9162,7 +9396,7 @@ void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii, uint8_t *address, u
 EXPORT_SYMBOL(ecm_db_iface_add_vlan);
 #endif
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_db_iface_add_pppoe()
  *	Add a iface instance into the database
@@ -9278,6 +9512,124 @@ void ecm_db_iface_add_pppoe(struct ecm_db_iface_instance *ii, uint16_t pppoe_ses
 	}
 }
 EXPORT_SYMBOL(ecm_db_iface_add_pppoe);
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_db_iface_add_pppol2tpv2()
+ *	Add a iface instance into the database
+ */
+void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_pppol2tpv2 *pppol2tpv2_info,
+					char *name, int32_t mtu, int32_t interface_identifier,
+					int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final,
+					void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	ecm_db_iface_id_hash_t iface_id_hash_index;
+	struct ecm_db_listener_instance *li;
+	struct ecm_db_interface_info_pppol2tpv2 *type_info;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%p: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%p: inserted\n", ii);
+	DEBUG_ASSERT(name, "%p: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_PPPOL2TPV2;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_pppol2tpv2_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strlcpy(ii->name, name, IFNAMSIZ);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = ae_interface_identifier;
+
+	/*
+	 * Type specific info
+	 */
+	type_info = &ii->type_info.pppol2tpv2;
+	memcpy(type_info, pppol2tpv2_info, sizeof(struct ecm_db_interface_info_pppol2tpv2));
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_pppol2tpv2(type_info->l2tp.tunnel.tunnel_id,
+							  type_info->l2tp.session.session_id);
+	ii->hash_index = hash_index;
+
+	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
+	ii->iface_id_hash_index = iface_id_hash_index;
+	/*
+	 * Add into the global list
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
+	ii->prev = NULL;
+	ii->next = ecm_db_interfaces;
+	if (ecm_db_interfaces) {
+		ecm_db_interfaces->prev = ii;
+	}
+	ecm_db_interfaces = ii;
+
+	/*
+	 * Insert into chain
+	 */
+	ii->hash_next = ecm_db_iface_table[hash_index];
+	if (ecm_db_iface_table[hash_index]) {
+		ecm_db_iface_table[hash_index]->hash_prev = ii;
+	}
+	ecm_db_iface_table[hash_index] = ii;
+	ecm_db_iface_table_lengths[hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
+
+	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
+
+	/*
+	 * Insert into interface identifier chain
+	 */
+	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
+	if (ecm_db_iface_id_table[iface_id_hash_index]) {
+		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
+	}
+	ecm_db_iface_id_table[iface_id_hash_index] = ii;
+	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
+
+	/*
+	 * Set time of addition
+	 */
+	ii->time_added = ecm_db_time;
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Throw add event to the listeners
+	 */
+	DEBUG_TRACE("%p: Throw iface added event\n", ii);
+	li = ecm_db_listeners_get_and_ref_first();
+	while (li) {
+		struct ecm_db_listener_instance *lin;
+		if (li->iface_added) {
+			li->iface_added(li->arg, ii);
+		}
+
+		/*
+		 * Get next listener
+		 */
+		lin = ecm_db_listener_get_and_ref_next(li);
+		ecm_db_listener_deref(li);
+		li = lin;
+	}
+}
+EXPORT_SYMBOL(ecm_db_iface_add_pppol2tpv2);
+
 #endif
 
 /*
@@ -10021,7 +10373,6 @@ struct ecm_db_mapping_instance *ecm_db_mapping_alloc(void)
 }
 EXPORT_SYMBOL(ecm_db_mapping_alloc);
 
-
 /*
  * ecm_db_host_alloc()
  *	Allocate a host instance
@@ -10224,10 +10575,13 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_alloc(ip
 EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_alloc);
 
 /*
- * ecm_db_multicast_tuple_instance_find_and_ref()
+ * ecm_db_multicast_connection_find_and_ref()
  * 	Called by MFC event update to fetch connection from the table
+ * 	This function takes a ref count for both tuple_instance and 'ci'
+ *	Call ecm_db_multicast_connection_deref function for deref both
+ *	'ti' and 'ci'
  */
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_find_and_ref(ip_addr_t origin, ip_addr_t group)
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_find_and_ref(ip_addr_t origin, ip_addr_t group)
 {
 	ecm_db_multicast_tuple_instance_hash_t hash_index;
 	struct ecm_db_multicast_tuple_instance *ti;
@@ -10250,6 +10604,7 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_find_and
 		}
 
 		_ecm_db_multicast_tuple_instance_ref(ti);
+		_ecm_db_connection_ref(ti->ci);
 		spin_unlock_bh(&ecm_db_lock);
 		DEBUG_TRACE("multicast tuple instance found %p\n", ti);
 		return ti;
@@ -10259,12 +10614,12 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_find_and
 	DEBUG_TRACE("multicast tuple instance not found\n");
 	return NULL;
 }
-EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_find_and_ref);
+EXPORT_SYMBOL(ecm_db_multicast_connection_find_and_ref);
 
 /*
  * ecm_db_multicast_tuple_instance_deref()
  * 	Deref the reference count or
- * 	Free the connection struct, when the multicast connection dies
+ * 	Free the tuple_instance struct, when the multicast connection dies
  */
 int ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance *ti)
 {
@@ -10303,6 +10658,23 @@ int ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance
 EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_deref);
 
 /*
+ * ecm_db_multicast_connection_deref()
+ * 	Deref both 'ti' and 'ci'
+ * 	call this function after ecm_db_multicast_connection_find_and_ref()
+ */
+void ecm_db_multicast_connection_deref(struct ecm_db_multicast_tuple_instance *ti)
+{
+	struct ecm_db_connection_instance *ci;
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%p: magic failed", ti);
+
+	ci = ti->ci;
+	ecm_db_multicast_tuple_instance_deref(ti);
+	ecm_db_connection_deref(ci);
+
+}
+EXPORT_SYMBOL(ecm_db_multicast_connection_deref);
+
+/*
  * ecm_db_multicast_tuple_instance_add()
  * 	Add the tuple instance into the hash table. Also, attach the tuple instance
  * 	with connection instance.
@@ -10321,6 +10693,7 @@ void ecm_db_multicast_tuple_instance_add(struct ecm_db_multicast_tuple_instance 
 	 * Attach the multicast tuple instance with the connection instance
 	 */
 	ci->ti = ti;
+	ti->ci = ci;
 
 	/*
 	 * Take a local reference to ti
@@ -10340,10 +10713,12 @@ void ecm_db_multicast_tuple_instance_add(struct ecm_db_multicast_tuple_instance 
 EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_add);
 
 /*
- * ecm_db_multicast_tuple_instance_get_and_ref_first()
+ * ecm_db_multicast_connection_get_and_ref_first()
  * 	Return the first tuple instance from the table when given a group
+ * 	Also take a ref count for 'ci', once done call ecm_db_multicast_connection_deref()
+ * 	to deref both 'ti' and 'ci'
  */
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_ref_first(ip_addr_t group)
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_get_and_ref_first(ip_addr_t group)
 {
 	ecm_db_multicast_tuple_instance_hash_t hash_index;
 	struct ecm_db_multicast_tuple_instance *ti;
@@ -10354,18 +10729,21 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_
 	ti = ecm_db_multicast_tuple_instance_table[hash_index];
 	if (ti) {
 		_ecm_db_multicast_tuple_instance_ref(ti);
+		_ecm_db_connection_ref(ti->ci);
 	}
 	spin_unlock_bh(&ecm_db_lock);
 
 	return ti;
 }
-EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_get_and_ref_first);
+EXPORT_SYMBOL(ecm_db_multicast_connection_get_and_ref_first);
 
 /*
- * ecm_db_multicast_tuple_instance_get_and_ref_next()
- * 	Return the next tuple instance node
+ * ecm_db_multicast_connection_get_and_ref_next()
+ * 	Return the next tuple instance node and
+ * 	take a ref count for 'ci', once done call ecm_db_multicast_connection_deref()
+ * 	to deref both 'ti' and 'ci'
  */
-struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_ref_next(struct ecm_db_multicast_tuple_instance *ti)
+struct ecm_db_multicast_tuple_instance *ecm_db_multicast_connection_get_and_ref_next(struct ecm_db_multicast_tuple_instance *ti)
 {
 	struct ecm_db_multicast_tuple_instance *tin;
 	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%p: magic failed", ti);
@@ -10373,11 +10751,12 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_get_and_
 	tin = ti->next;
 	if (tin) {
 		_ecm_db_multicast_tuple_instance_ref(tin);
+		_ecm_db_connection_ref(tin->ci);
 	}
 	spin_unlock_bh(&ecm_db_lock);
 	return tin;
 }
-EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_get_and_ref_next);
+EXPORT_SYMBOL(ecm_db_multicast_connection_get_and_ref_next);
 
 /*
  * ecm_db_multicast_tuple_instance_source_ip_get()
@@ -10561,16 +10940,17 @@ static void  _ecm_db_multicast_connection_to_interfaces_set_clear(struct ecm_db_
 }
 
 /*
- * ecm_db_multicast_connection_find_and_ref()
+ * ecm_db_multicast_connection_get_from_tuple()
  * 	Return the connection instance
  */
-struct ecm_db_connection_instance *ecm_db_multicast_connection_find_and_ref(struct ecm_db_multicast_tuple_instance *ti)
+struct ecm_db_connection_instance *ecm_db_multicast_connection_get_from_tuple(struct ecm_db_multicast_tuple_instance *ti)
 {
-	struct ecm_db_connection_instance *ci;
-	ci = ecm_db_connection_find_and_ref(ti->src_ip, ti->grp_ip, ti->proto, (int)ti->src_port, (int)ti->dst_port);
-	return ci;
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%p: magic failed", ti);
+	DEBUG_ASSERT(ti->ci, "%p: Bad multicast connection instance \n", ti);
+
+	return ti->ci;
 }
-EXPORT_SYMBOL(ecm_db_multicast_connection_find_and_ref);
+EXPORT_SYMBOL(ecm_db_multicast_connection_get_from_tuple);
 
 /*
  * ecm_db_multicast_connection_to_interfaces_deref_all()

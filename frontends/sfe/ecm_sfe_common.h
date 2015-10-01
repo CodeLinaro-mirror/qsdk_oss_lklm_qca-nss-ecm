@@ -14,6 +14,17 @@
  **************************************************************************
  */
 
+#ifdef CONFIG_XFRM
+/*
+ * Which type of ipsec process traffic need.
+ */
+enum ecm_sfe_ipsec_state {
+	ECM_SFE_IPSEC_STATE_NONE = 0,
+	ECM_SFE_IPSEC_STATE_TO_ENCRYPT,
+	ECM_SFE_IPSEC_STATE_WAS_DECRYPTED
+};
+#endif
+
 /*
  * This macro converts ECM ip_addr_t to SFE IPv6 address
  */
@@ -56,3 +67,27 @@ static inline int32_t ecm_sfe_common_get_interface_number_by_dev(struct net_devi
 	return dev->ifindex;
 }
 
+/*
+ * ecm_sfe_common_connection_regenerate()
+ *	Re-generate a specific connection in SFE front end
+ */
+static inline void ecm_sfe_common_connection_regenerate(struct ecm_front_end_connection_instance *feci, struct ecm_db_connection_instance *ci)
+{
+	/*
+	 * Flag the connection as needing re-generation.
+	 * Re-generation occurs when we next see traffic OR an acceleration engine sync for this connection.
+	 * Refer to front end protocol specific process() functions.
+	 */
+	ecm_db_connection_regeneration_needed(ci);
+
+	/*
+	 * If the connection is accelerated then force deceleration.
+	 * Under normal circumstances deceleration would occur on the next sync received,
+	 * however, there is a situation where a sync may not occur if, say, a cable has been pulled.
+	 * The acceleration engine would see no further traffic to trigger sending a sync and so
+	 * re-generation would not occur.
+	 * The connection would stall and no-regeneration would happen leaving the connection in bad state.
+	 * NOTE: We can just call decelerate() upon the front end - if its not accelerated this will have no effect.
+	 */
+	feci->decelerate(feci);
+}

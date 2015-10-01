@@ -71,6 +71,10 @@
 #endif
 #ifdef ECM_INTERFACE_PPP_ENABLE
 #include <linux/if_pppox.h>
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+#include <linux/l2tp.h>
+#include <linux/../../net/l2tp/l2tp_core.h>
+#endif
 #endif
 
 /*
@@ -754,6 +758,183 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
 #endif
 
 #ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_interface_skip_l2tpv3_pptp()
+ *	skip pptp tunnel encapsulated traffic
+ *
+ * ECM does not handle  PPTP and l2tpv3,
+ * this function detects packets of that type so they can be skipped over to improve their throughput.
+ */
+bool ecm_interface_skip_l2tpv3_pptp(struct sk_buff *skb, const struct net_device *out)
+{
+	struct ppp_channel *ppp_chan[1];
+	int px_proto;
+	struct net_device *in;
+	bool ret = true;
+	struct sock *sk = NULL;
+	struct l2tp_session *session = NULL;
+	struct l2tp_tunnel *tunnel = NULL;
+	struct ppp_channel *pch = NULL;
+
+	/*
+	 * skip first pass of l2tpv3/pptp tunnel encapsulated traffic
+	 */
+	if (out->type == ARPHRD_PPP) {
+		if (ppp_hold_channels((struct net_device *)out, ppp_chan, 1) != 1) {
+			return true;
+		}
+
+		px_proto = ppp_channel_get_protocol(ppp_chan[0]);
+
+		/*
+		 * Skip packets for PPPoPPTP channel
+		 */
+		if (px_proto == PX_PROTO_PPTP) {
+			ppp_release_channels(ppp_chan, 1);
+			return true;
+		}
+
+		/*
+		 * Check for PPPoL2TP channel
+		 */
+		if (px_proto == PX_PROTO_OL2TP) {
+			pch = ppp_chan[0];
+			sk = pch->private;
+			sock_hold(sk);
+
+			/*
+			 * Get L2TP session for this PPP channel
+			 */
+			session = (struct l2tp_session *)(sk->sk_user_data);
+			if ((session == NULL) || (session->magic != L2TP_SESSION_MAGIC)) {
+				sock_put(sk);
+				ppp_release_channels(ppp_chan, 1);
+				return true;
+			}
+
+			tunnel = session->tunnel;
+
+			/*
+			 * Check L2TP tunnel version
+			 */
+			if (tunnel->version == 2) {
+				ret = false;
+			} else {
+				ret = true;
+			}
+
+			sock_put(sk);
+			ppp_release_channels(ppp_chan, 1);
+			return ret;
+		}
+
+		ppp_release_channels(ppp_chan, 1);
+		return false;
+	}
+
+	in = dev_get_by_index(&init_net, skb->skb_iif);
+	if (in && in->type == ARPHRD_PPP) {
+		/*
+		 * Skip L2TPv3 IP encapsulated packets
+		 */
+		if ((skb->sk) && (skb->sk->sk_protocol == IPPROTO_L2TP)) {
+			dev_put(in);
+			return true;
+		}
+
+		/*
+		 * Chack for L2TP UDP encapsulated packets
+		 */
+		if ((skb->sk) && (skb->sk->sk_protocol == IPPROTO_UDP)
+		    && (udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
+			/*
+			 * Get the L2TP tunnel socket this packet is associated with
+			 */
+			sk = skb->sk;
+			tunnel = l2tp_sock_to_tunnel(sk);
+			if (tunnel == NULL) {
+				dev_put(in);
+				return false;
+			}
+
+			if (tunnel->version == 2) {
+				ret = false;
+			} else {
+				ret = true;
+			}
+
+			dev_put(in);
+			sock_put(sk);
+			return ret;
+		}
+
+		/*
+		 * Packet is not associated with a L2TP tunnel socket.
+		 * Check 'in' netdevice for type of PPPoX channel.
+		 */
+		if (ppp_hold_channels((struct net_device *)in, ppp_chan, 1) != 1) {
+			dev_put(in);
+			return true;
+		}
+
+		dev_put(in);
+		px_proto = ppp_channel_get_protocol(ppp_chan[0]);
+
+		/*
+		 * Skip packets for PPPoPPTP channel
+		 */
+		if (px_proto == PX_PROTO_PPTP) {
+			ppp_release_channels(ppp_chan, 1);
+			return true;
+		}
+
+		/*
+		 * Check for PPPoL2TP channel
+		 */
+		if (px_proto == PX_PROTO_OL2TP) {
+			pch = ppp_chan[0];
+			sk = pch->private;
+			sock_hold(sk);
+
+			/*
+			 * Get L2TP session for this PPP channel
+			 */
+			session = (struct l2tp_session *)(sk->sk_user_data);
+			if ((session == NULL) || (session->magic != L2TP_SESSION_MAGIC)) {
+				sock_put(sk);
+				ppp_release_channels(ppp_chan, 1);
+				return true;
+			}
+
+			tunnel = session->tunnel;
+
+			/*
+			 * Check L2TP tunnel version
+			 */
+			if (tunnel->version == 2) {
+				ret = false;
+			} else {
+				ret = true;
+			}
+
+			sock_put(sk);
+			ppp_release_channels(ppp_chan, 1);
+			return ret;
+		}
+
+		ppp_release_channels(ppp_chan, 1);
+		return false;
+	}
+
+	if (in) {
+		dev_put(in);
+	}
+
+	return false;
+}
+#endif
+
 /*
  * ecm_interface_skip_l2tp_pptp()
  *	skip l2tp/pptp tunnel encapsulated traffic
@@ -1001,7 +1182,7 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	return nii;
 }
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_interface_pppoe_interface_establish()
  *	Returns a reference to a iface of the PPPoE type, possibly creating one if necessary.
@@ -1051,6 +1232,58 @@ static struct ecm_db_iface_instance *ecm_interface_pppoe_interface_establish(str
 	DEBUG_TRACE("%p: pppoe iface established\n", nii);
 	return nii;
 }
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_interface_pppol2tpv2_interface_establish()
+ *	Returns a reference to a iface of the PPPoL2TPV2 type, possibly creating one if necessary.
+ *	Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_pppol2tpv2_interface_establish(struct ecm_db_interface_info_pppol2tpv2 *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish PPPol2tp iface: %s with tunnel id=%u session id %u\n", dev_name, type_info->l2tp.tunnel.tunnel_id,
+				type_info->l2tp.session.session_id);
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_pppol2tpv2(type_info->l2tp.tunnel.tunnel_id, type_info->l2tp.session.session_id);
+	if (ii) {
+		DEBUG_TRACE("%p: iface established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_pppol2tpv2(type_info->l2tp.tunnel.tunnel_id, type_info->l2tp.session.session_id);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+
+	ecm_db_iface_add_pppol2tpv2(nii, type_info, dev_name, mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%p: pppol2tpv2 iface established\n", nii);
+	return nii;
+}
+
 #endif
 
 /*
@@ -1320,7 +1553,7 @@ static struct ecm_db_iface_instance *ecm_interface_tunipip6_interface_establish(
  *	Establish an interface instance for the given interface detail.
  */
 struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_end_connection_instance *feci,
-								struct net_device *dev)
+								struct net_device *dev, struct sk_buff *skb)
 {
 	int32_t dev_interface_num;
 	char *dev_name;
@@ -1337,8 +1570,11 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		struct ecm_db_interface_info_lag lag;			/* type == ECM_DB_IFACE_TYPE_LAG */
 #endif
 		struct ecm_db_interface_info_bridge bridge;		/* type == ECM_DB_IFACE_TYPE_BRIDGE */
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe;		/* type == ECM_DB_IFACE_TYPE_PPPOE */
+#endif
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+		struct ecm_db_interface_info_pppol2tpv2 pppol2tpv2;		/* type == ECM_DB_IFACE_TYPE_PPPOL2TPV2 */
 #endif
 		struct ecm_db_interface_info_unknown unknown;		/* type == ECM_DB_IFACE_TYPE_UNKNOWN */
 		struct ecm_db_interface_info_loopback loopback;		/* type == ECM_DB_IFACE_TYPE_LOOPBACK */
@@ -1359,7 +1595,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	int channel_count;
 	struct ppp_channel *ppp_chan[1];
 	int channel_protocol;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 	struct pppoe_opt addressing;
+#endif
 #endif
 
 	/*
@@ -1382,6 +1620,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	 * Extract from the device more type-specific information
 	 */
 	if (dev_type == ARPHRD_ETHER) {
+
 		/*
 		 * Ethernet - but what sub type?
 		 */
@@ -1405,7 +1644,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * Establish this type of interface
 			 */
 			ii = ecm_interface_vlan_interface_establish(&type_info.vlan, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
-			return ii;
+			goto identifier_update;
 		}
 #endif
 
@@ -1425,7 +1664,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * Establish this type of interface
 			 */
 			ii = ecm_interface_bridge_interface_establish(&type_info.bridge, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
-			return ii;
+			goto identifier_update;
 		}
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
@@ -1445,7 +1684,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * Establish this type of interface
 			 */
 			ii = ecm_interface_lag_interface_establish(&type_info.lag, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
-			return ii;
+			goto identifier_update;
 		}
 #endif
 
@@ -1461,6 +1700,17 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		 * Establish this type of interface
 		 */
 		ii = ecm_interface_ethernet_interface_establish(&type_info.ethernet, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+
+identifier_update:
+		if (ii) {
+			/*
+			 * An interface identifier/ifindex can be change after network restart. Below
+			 * functtion will check interface_identifier present in 'ii' with new dev_interface_num.
+			 * If differ then update new ifindex and update the interface identifier hash table.
+			 */
+			ecm_db_iface_identifier_hash_table_entry_check_and_update(ii, dev_interface_num);
+		}
+
 		return ii;
 	}
 
@@ -1583,6 +1833,90 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	ii = ecm_interface_unknown_interface_establish(&type_info.unknown, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 	return ii;
 #else
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	/*
+	 * ppp_xmit lock is held by linux kernel for l2tp packet in transmit
+	 * direction. we need to check for l2tp packet and avoid calls to
+	 * ppp_is_multilink() and ppp_hold_channels() which acquire same lock
+	 */
+	if (skb && skb->sk && (skb->sk->sk_protocol == IPPROTO_UDP)
+	    && (udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
+		struct sock *sk = NULL;
+		struct inet_sock *inet = NULL;
+		struct l2tp_session *session = NULL;
+		struct l2tp_session *temp_session = NULL;
+		struct l2tp_tunnel *tunnel = NULL;
+		int hash;
+		struct hlist_node *walk = NULL;
+
+		/*
+		 * PPPoL2TPV2 channel
+		 */
+		DEBUG_TRACE("%p:  PPP channel is PPPoL2TPV2 (%s)\n", dev, dev->name);
+
+		/*
+		 * Get the L2TP tunnel socket this packet is associated with
+		 */
+		sk = skb->sk;
+		tunnel = l2tp_sock_to_tunnel(sk);
+		if (tunnel == NULL) {
+			return NULL;
+		}
+
+		/*
+		 * Check L2TPv2 tunnel version
+		 */
+		if (tunnel->version != 2) {
+			sock_put(sk);
+			return NULL;
+		}
+
+		/*
+		 * Find the L2TP session this packet is associated with
+		 */
+		read_lock_bh(&tunnel->hlist_lock);
+		for (hash = 0; hash < L2TP_HASH_SIZE; hash++) {
+			hlist_for_each_entry(temp_session, walk,
+					     &tunnel->session_hlist[hash], hlist) {
+				if (!strcmp(temp_session->ifname, dev_name)) {
+					session = temp_session;
+					break;
+				}
+			}
+		}
+		read_unlock_bh(&tunnel->hlist_lock);
+
+		if (session == NULL) {
+			sock_put(sk);
+			return NULL;
+		}
+
+		inet = inet_sk(sk);
+		l2tp_session_inc_refcount(session);
+
+		type_info.pppol2tpv2.l2tp.tunnel.tunnel_id = tunnel->tunnel_id;
+		type_info.pppol2tpv2.l2tp.tunnel.peer_tunnel_id = tunnel->peer_tunnel_id;
+		type_info.pppol2tpv2.l2tp.session.session_id = session->session_id;
+		type_info.pppol2tpv2.l2tp.session.peer_session_id = session->peer_session_id;
+		type_info.pppol2tpv2.udp.sport = ntohs(inet->inet_sport);
+		type_info.pppol2tpv2.udp.dport = ntohs(inet->inet_sport);
+		type_info.pppol2tpv2.ip.saddr = ntohl(inet->inet_saddr);
+		type_info.pppol2tpv2.ip.daddr = ntohl(inet->inet_daddr);
+
+		l2tp_session_dec_refcount(session);
+		sock_put(sk);
+
+		DEBUG_TRACE("%p: found PPPo2L2TP session\n", dev);
+
+		/*
+		 * Establish this type of interface
+		 */
+		ii = ecm_interface_pppol2tpv2_interface_establish(&type_info.pppol2tpv2, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		return ii;
+	}
+#endif
+
 	/*
 	 * PPP - but what is the channel type?
 	 * First: If this is multi-link then we do not support it
@@ -1622,48 +1956,122 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	 * NOTE: Not all PPP channels support channel specific methods.
 	 */
 	channel_protocol = ppp_channel_get_protocol(ppp_chan[0]);
-	if (channel_protocol != PX_PROTO_OE) {
-		DEBUG_TRACE("Net device: %p PPP channel protocol: %d - Unknown to the ECM\n", dev, channel_protocol);
-		type_info.unknown.os_specific_ident = dev_interface_num;
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	if (channel_protocol == PX_PROTO_OL2TP) {
+		struct ppp_channel *pch = ppp_chan[0];
+		struct sock *sk = NULL;
+		struct sock *tunsk = NULL;
+		struct l2tp_session *session = NULL;
+		struct l2tp_tunnel *tunnel = NULL;
+		struct inet_sock *inet = NULL;
 
 		/*
-		 * Release the channel
+		 * PPPoL2TPV2 channel
+		 */
+		DEBUG_TRACE("Net device: %p PPP channel is PPPoL2TPV2 %s\n", dev, dev->name);
+
+		sk = pch->private;
+		sock_hold(sk);
+
+		/*
+		 * Get L2TP session
+		 */
+		session = (struct l2tp_session *)(sk->sk_user_data);
+		if ((session == NULL) || (session->magic != L2TP_SESSION_MAGIC)) {
+			sock_put(sk);
+			ppp_release_channels(ppp_chan, 1);
+			return NULL;
+		}
+
+		l2tp_session_inc_refcount(session);
+		sock_put(sk);
+
+		/*
+		 * Get L2TPv2 tunnel
+		 */
+		tunnel = session->tunnel;
+		if (tunnel->version != 2) {
+			l2tp_session_dec_refcount(session);
+			ppp_release_channels(ppp_chan, 1);
+			return NULL;
+		}
+
+		tunsk = tunnel->sock;
+		sock_hold(tunsk);
+		inet = inet_sk(tunsk);
+
+		type_info.pppol2tpv2.l2tp.tunnel.tunnel_id = tunnel->tunnel_id;
+		type_info.pppol2tpv2.l2tp.tunnel.peer_tunnel_id = tunnel->peer_tunnel_id;
+		type_info.pppol2tpv2.l2tp.session.session_id = session->session_id;
+		type_info.pppol2tpv2.l2tp.session.peer_session_id = session->peer_session_id;
+		type_info.pppol2tpv2.udp.sport = ntohs(inet->inet_sport);
+		type_info.pppol2tpv2.udp.dport = ntohs(inet->inet_sport);
+		type_info.pppol2tpv2.ip.saddr = ntohl(inet->inet_saddr);
+		type_info.pppol2tpv2.ip.daddr = ntohl(inet->inet_daddr);
+
+		l2tp_session_dec_refcount(session);
+		sock_put(tunsk);
+
+		/*
+		 * Release the channel.  Note that next_dev is still (correctly) held.
 		 */
 		ppp_release_channels(ppp_chan, 1);
+
+		DEBUG_TRACE("Net device: %p PPPo2L2TP session: %d,n", dev, type_info.pppol2tpv2.l2tp.session.peer_session_id);
 
 		/*
 		 * Establish this type of interface
 		 */
-		ii = ecm_interface_unknown_interface_establish(&type_info.unknown, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		ii = ecm_interface_pppol2tpv2_interface_establish(&type_info.pppol2tpv2, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 		return ii;
 	}
+#endif
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+	if (channel_protocol == PX_PROTO_OE) {
+
+		/*
+		 * PPPoE channel
+		 */
+		DEBUG_TRACE("Net device: %p PPP channel is PPPoE\n", dev);
+
+		/*
+		 * Get PPPoE session information and the underlying device it is using.
+		 */
+		pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+		type_info.pppoe.pppoe_session_id = (uint16_t)ntohs((uint16_t)addressing.pa.sid);
+		memcpy(type_info.pppoe.remote_mac, addressing.pa.remote, ETH_ALEN);
+		dev_put(addressing.dev);
+
+		/*
+		 * Release the channel.  Note that next_dev is still (correctly) held.
+		 */
+		ppp_release_channels(ppp_chan, 1);
+
+		DEBUG_TRACE("Net device: %p PPPoE session: %x, remote mac: %pM\n",
+			    dev, type_info.pppoe.pppoe_session_id, type_info.pppoe.remote_mac);
+
+		/*
+		 * Establish this type of interface
+		 */
+		ii = ecm_interface_pppoe_interface_establish(&type_info.pppoe, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		return ii;
+	}
+#endif
+	DEBUG_TRACE("Net device: %p PPP channel protocol: %d - Unknown to the ECM\n", dev, channel_protocol);
+	type_info.unknown.os_specific_ident = dev_interface_num;
 
 	/*
-	 * PPPoE channel
-	 */
-	DEBUG_TRACE("Net device: %p PPP channel is PPPoE\n", dev);
-
-	/*
-	 * Get PPPoE session information and the underlying device it is using.
-	 */
-	pppoe_channel_addressing_get(ppp_chan[0], &addressing);
-	type_info.pppoe.pppoe_session_id = (uint16_t)ntohs((uint16_t)addressing.pa.sid);
-	memcpy(type_info.pppoe.remote_mac, addressing.pa.remote, ETH_ALEN);
-	dev_put(addressing.dev);
-
-	/*
-	 * Release the channel.  Note that next_dev is still (correctly) held.
+	 * Release the channel
 	 */
 	ppp_release_channels(ppp_chan, 1);
-
-	DEBUG_TRACE("Net device: %p PPPoE session: %x, remote mac: %pM\n",
-			dev, type_info.pppoe.pppoe_session_id, type_info.pppoe.remote_mac);
 
 	/*
 	 * Establish this type of interface
 	 */
-	ii = ecm_interface_pppoe_interface_establish(&type_info.pppoe, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+	ii = ecm_interface_unknown_interface_establish(&type_info.unknown, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 	return ii;
+
 #endif
 }
 EXPORT_SYMBOL(ecm_interface_establish_and_ref);
@@ -1679,11 +2087,12 @@ EXPORT_SYMBOL(ecm_interface_establish_and_ref);
  *	given_dest_dev	Netdev pointer for destination interface
  *	br_slave_dev	Netdev pointer to a bridge slave device. It could be NULL in case of pure
  *			routed flow without any bridge interface in destination dev list.
+ *	skb             sk_buff
  */
 static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_front_end_connection_instance *feci, ip_addr_t src_addr,
 								   ip_addr_t dest_addr, struct ecm_db_iface_instance *interface,
 								   struct net_device *given_dest_dev, struct net_device *br_slave_dev,
-								   uint8_t *src_node_addr, bool is_routed)
+								   uint8_t *src_node_addr, bool is_routed, __be16 *layer4hdr, struct sk_buff *skb)
 {
 	struct ecm_db_iface_instance *to_list_single[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance **ifaces;
@@ -1705,7 +2114,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 		/*
 		 * Get the ecm db interface instance for the device at hand
 		 */
-		ii = ecm_interface_establish_and_ref(feci, dest_dev);
+		ii = ecm_interface_establish_and_ref(feci, dest_dev, skb);
 		interfaces_cnt++;
 
 		/*
@@ -1844,11 +2253,11 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 					if (ECM_IP_ADDR_IS_V4(src_addr)) {
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 									   &src_addr_32, &dest_addr_32,
-									   htons((uint16_t)ETH_P_IP), dest_dev);
+									   htons((uint16_t)ETH_P_IP), dest_dev, layer4hdr);
 					} else {
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 									   src_addr, dest_addr,
-									   htons((uint16_t)ETH_P_IPV6), dest_dev);
+									   htons((uint16_t)ETH_P_IPV6), dest_dev, NULL);
 					}
 
 					if (!(next_dev && netif_carrier_ok(next_dev))) {
@@ -1983,7 +2392,6 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 			 */
 			next_dev = addressing.dev;
 
-
 			/*
 			 * Release the channel.  Note that next_dev is still (correctly) held.
 			 */
@@ -2045,7 +2453,8 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 								ip_addr_t packet_src_addr,
 								ip_addr_t packet_dest_addr, uint8_t max_if,
 								uint32_t *dst_if_index_base,
-								uint32_t *interface_first_base)
+								uint32_t *interface_first_base,
+								__be16 *layer4hdr, struct sk_buff *skb)
 {
 	struct ecm_db_iface_instance *to_list_single[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *ifaces;
@@ -2190,7 +2599,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				/*
 				 * Construct a single interface heirarchy of a multicast dev.
 				 */
-				ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, mc_br_slave_dev, NULL, true);
+				ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, mc_br_slave_dev, NULL, true, layer4hdr, skb);
 				if (ii_cnt == ECM_DB_IFACE_HEIRARCHY_MAX) {
 
 					/*
@@ -2226,7 +2635,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			/*
 			 * Construct a single interface heirarchy of a multicast dev.
 			 */
-			ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, NULL, NULL, true);
+			ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, NULL, NULL, true, layer4hdr, skb);
 			if (ii_cnt == ECM_DB_IFACE_HEIRARCHY_MAX) {
 
 				/*
@@ -2274,7 +2683,8 @@ EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_routed);
 int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end_connection_instance *feci,
 						     struct ecm_db_iface_instance *interfaces, struct net_device *dest_dev,
 						     ip_addr_t packet_src_addr, ip_addr_t packet_dest_addr, uint8_t mc_max_dst,
-						     int *mc_dst_if_index_base, uint32_t *interface_first_base, uint8_t *src_node_addr)
+						     int *mc_dst_if_index_base, uint32_t *interface_first_base, uint8_t *src_node_addr,
+						     __be16 *layer4hdr, struct sk_buff *skb)
 {
 	struct ecm_db_iface_instance *to_list_single[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *ifaces;
@@ -2336,7 +2746,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end
 		/*
 		 * Construct a single interface heirarchy of a multicast dev.
 		 */
-		ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, mc_br_slave_dev, src_node_addr, false);
+		ii_cnt = ecm_interface_multicast_heirarchy_construct_single(feci, packet_src_addr, packet_dest_addr, ifaces, dest_dev, mc_br_slave_dev, src_node_addr, false, layer4hdr, skb);
 		if (ii_cnt == ECM_DB_IFACE_HEIRARCHY_MAX) {
 
 			/*
@@ -2400,7 +2810,8 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						int ip_version, int packet_protocol,
 						struct net_device *given_dest_dev,
 						bool is_routed, struct net_device *given_src_dev,
-						uint8_t *dest_node_addr, uint8_t *src_node_addr)
+						uint8_t *dest_node_addr, uint8_t *src_node_addr,
+						__be16 *layer4hdr, struct sk_buff *skb)
 {
 	int protocol;
 	ip_addr_t src_addr;
@@ -2413,6 +2824,10 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	int32_t src_dev_type;
 	int32_t current_interface_index;
 	bool from_local_addr;
+	bool next_dest_addr_valid;
+	bool next_dest_node_addr_valid;
+	ip_addr_t next_dest_addr;
+	uint8_t next_dest_node_addr[ETH_ALEN] = {0};
 
 	/*
 	 * Get a big endian of the IPv4 address we have been given as our starting point.
@@ -2474,12 +2889,29 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
 				dev_hold(dest_dev);
-				DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n",
-						(ip_version == 4) ? "IPV6" : "IPIP",
-						ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+				if (ip_version == 4) {
+					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_DOT(dest_addr), dest_dev, dest_dev->name);
+				} else {
+					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPIP", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+				}
 			}
 		}
 	}
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	/*
+	 * if the address is a local address and indev=l2tp.
+	 */
+	if (skb && skb->sk && (skb->sk->sk_protocol == IPPROTO_UDP) && (udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
+		dev_put(dest_dev);
+		dest_dev = given_dest_dev;
+		if (dest_dev) {
+			dev_hold(dest_dev);
+			DEBUG_TRACE("l2tp packet tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+		}
+	}
+#endif
+
 	if (!dest_dev) {
 		DEBUG_WARN("dest_addr: " ECM_IP_ADDR_OCTAL_FMT " - cannot locate device\n", ECM_IP_ADDR_TO_OCTAL(dest_addr));
 		return ECM_DB_IFACE_HEIRARCHY_MAX;
@@ -2527,9 +2959,11 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			src_dev = given_src_dev;
 			if (src_dev) {
 				dev_hold(src_dev);
-				DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n",
-						(ip_version == 4) ? "IPV6" : "IPIP",
-						ECM_IP_ADDR_TO_OCTAL(src_addr), src_dev, src_dev->name);
+				if (ip_version == 4) {
+					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_DOT(src_addr), src_dev, src_dev->name);
+				} else {
+					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPIP", ECM_IP_ADDR_TO_OCTAL(src_addr), src_dev, src_dev->name);
+				}
 			}
 		}
 	}
@@ -2568,6 +3002,10 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 		}
 	}
 
+	next_dest_addr_valid = true;
+	next_dest_node_addr_valid = false;
+	ECM_IP_ADDR_COPY(next_dest_addr, dest_addr);
+
 	/*
 	 * Iterate until we are done or get to the max number of interfaces we can record.
 	 * NOTE: current_interface_index tracks the position of the first interface position in interfaces[]
@@ -2581,7 +3019,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 		/*
 		 * Get the ecm db interface instance for the device at hand
 		 */
-		ii = ecm_interface_establish_and_ref(feci, dest_dev);
+		ii = ecm_interface_establish_and_ref(feci, dest_dev, skb);
 
 		/*
 		 * If the interface could not be established then we abort
@@ -2613,7 +3051,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			int channel_count;
 			struct ppp_channel *ppp_chan[1];
 			int channel_protocol;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			struct pppoe_opt addressing;
+#endif
 #endif
 
 			DEBUG_TRACE("Net device: %p is type: %d, name: %s\n", dest_dev, dest_dev_type, dest_dev_name);
@@ -2652,17 +3092,10 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					bool on_link;
 					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 					uint8_t mac_addr[ETH_ALEN];
-					if (!ecm_interface_mac_addr_get(dest_addr, mac_addr, &on_link, gw_addr)) {
-						if (ip_version == 4) {
-							DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(dest_addr));
-							ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
-						}
-#ifdef ECM_IPV6_ENABLE
-						if (ip_version == 6) {
-							DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(dest_addr));
-							ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
-						}
-#endif
+
+					if (next_dest_node_addr_valid) {
+						memcpy(mac_addr, next_dest_node_addr, ETH_ALEN);
+					} else if (!next_dest_addr_valid) {
 						dev_put(src_dev);
 						dev_put(dest_dev);
 
@@ -2671,6 +3104,29 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						 */
 						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
+					} else {
+						if (!ecm_interface_mac_addr_get(next_dest_addr, mac_addr, &on_link, gw_addr)) {
+							if (ip_version == 4) {
+								DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT "\n",
+										ECM_IP_ADDR_TO_DOT(dest_addr));
+								ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+							}
+#ifdef ECM_IPV6_ENABLE
+							if (ip_version == 6) {
+								DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT "\n",
+										ECM_IP_ADDR_TO_OCTAL(dest_addr));
+								ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+							}
+#endif
+							dev_put(src_dev);
+							dev_put(dest_dev);
+
+							/*
+							 * Release the interfaces heirarchy we constructed to this point.
+							 */
+							ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+							return ECM_DB_IFACE_HEIRARCHY_MAX;
+						}
 					}
 					next_dev = br_port_dev_get(dest_dev, mac_addr);
 					if (!next_dev) {
@@ -2732,40 +3188,53 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						/*
 						 * Determine destination MAC address for this routed packet
 						 */
-						if (!ecm_interface_mac_addr_get(dest_addr, dest_mac_addr,
-									&dest_on_link, dest_gw_addr)) {
-
-							/*
-							 * Find proper interfce from which to issue ARP
-							 * or neighbour solicitation packet.
-							 */
-							if (dest_dev_master) {
-								master_dev = dest_dev_master;
-							} else {
-								master_dev = dest_dev;
-							}
-
-							dev_hold(master_dev);
-
+						if (next_dest_node_addr_valid) {
+							memcpy(dest_mac_addr, next_dest_node_addr, ETH_ALEN);
+						} else if (!next_dest_addr_valid) {
+							dev_put(src_dev);
+							dev_put(dest_dev);
 							if (dest_dev_master) {
 								dev_put(dest_dev_master);
 							}
 
-							if (ip_version == 4) {
-								DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(dest_addr));
-								ecm_interface_send_arp_request(dest_dev, dest_addr, dest_on_link, dest_gw_addr);
-							}
-#ifdef ECM_IPV6_ENABLE
-							if (ip_version == 6) {
-								DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT "\n",ECM_IP_ADDR_TO_OCTAL(dest_addr));
-								ecm_interface_send_neighbour_solicitation(master_dev, dest_addr);
-							}
-#endif
-							dev_put(src_dev);
-							dev_put(dest_dev);
-							dev_put(master_dev);
 							ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 							return ECM_DB_IFACE_HEIRARCHY_MAX;
+						} else {
+							if (!ecm_interface_mac_addr_get(dest_addr, dest_mac_addr,
+										&dest_on_link, dest_gw_addr)) {
+
+								/*
+								 * Find proper interfce from which to issue ARP
+								 * or neighbour solicitation packet.
+								 */
+								if (dest_dev_master) {
+									master_dev = dest_dev_master;
+								} else {
+									master_dev = dest_dev;
+								}
+
+								dev_hold(master_dev);
+
+								if (dest_dev_master) {
+									dev_put(dest_dev_master);
+								}
+
+								if (ip_version == 4) {
+									DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(dest_addr));
+									ecm_interface_send_arp_request(dest_dev, dest_addr, dest_on_link, dest_gw_addr);
+								}
+#ifdef ECM_IPV6_ENABLE
+								if (ip_version == 6) {
+									DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT "\n",ECM_IP_ADDR_TO_OCTAL(dest_addr));
+									ecm_interface_send_neighbour_solicitation(master_dev, dest_addr);
+								}
+#endif
+								dev_put(src_dev);
+								dev_put(dest_dev);
+								dev_put(master_dev);
+								ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+								return ECM_DB_IFACE_HEIRARCHY_MAX;
+							}
 						}
 
 						if (dest_dev_master) {
@@ -2776,11 +3245,11 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					if (ip_version == 4) {
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 										&src_addr_32, &dest_addr_32,
-										htons((uint16_t)ETH_P_IP), dest_dev);
+										htons((uint16_t)ETH_P_IP), dest_dev, layer4hdr);
 					} else if (ip_version == 6) {
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 										src_addr, dest_addr,
-										htons((uint16_t)ETH_P_IPV6), dest_dev);
+										htons((uint16_t)ETH_P_IPV6), dest_dev, NULL);
 					}
 
 					if (next_dev && netif_carrier_ok(next_dev)) {
@@ -2856,6 +3325,14 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 #ifndef ECM_INTERFACE_PPP_ENABLE
 			DEBUG_TRACE("Net device: %p is UNKNOWN (PPP Unsupported) type: %d\n", dest_dev, dest_dev_type);
 #else
+			DEBUG_TRACE("Net device: %p is PPP\n", dest_dev);
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+			if (skb && skb->sk && (skb->sk->sk_protocol == IPPROTO_UDP) && (udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
+				DEBUG_TRACE("Net device: %p PPP channel is PPPoL2TPV2\n", dest_dev);
+				break;
+			}
+#endif
 			/*
 			 * PPP - but what is the channel type?
 			 * First: If this is multi-link then we do not support it
@@ -2864,8 +3341,6 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				DEBUG_TRACE("Net device: %p is MULTILINK PPP - Unknown to the ECM\n", dest_dev);
 				break;
 			}
-
-			DEBUG_TRACE("Net device: %p is PPP\n", dest_dev);
 
 			/*
 			 * Get the PPP channel and then enquire what kind of channel it is
@@ -2883,39 +3358,58 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			 * NOTE: Not all PPP channels support channel specific methods.
 			 */
 			channel_protocol = ppp_channel_get_protocol(ppp_chan[0]);
-			if (channel_protocol != PX_PROTO_OE) {
-				DEBUG_TRACE("Net device: %p PPP channel protocol: %d - Unknown to the ECM\n",
-						dest_dev, channel_protocol);
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+			if (channel_protocol == PX_PROTO_OL2TP) {
 
 				/*
-				 * Release the channel
+				 * PPPoL2TPV2 channel
 				 */
 				ppp_release_channels(ppp_chan, 1);
+				DEBUG_TRACE("Net device: %p PPP channel is PPPoL2TPV2\n", dest_dev);
 
+				/*
+				 * Release the channel.  Note that next_dev not held.
+				 */
 				break;
 			}
+#endif
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+			if (channel_protocol == PX_PROTO_OE) {
+				/*
+				 * PPPoE channel
+				 */
+				DEBUG_TRACE("Net device: %p PPP channel is PPPoE\n", dest_dev);
+
+				/*
+				 * Get PPPoE session information and the underlying device it is using.
+				 */
+				pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+
+				/*
+				 * Copy the dev hold into this, we will release the hold later
+				 */
+				next_dev = addressing.dev;
+				next_dest_addr_valid = false;
+				next_dest_node_addr_valid = true;
+				memcpy(next_dest_node_addr, addressing.pa.remote, ETH_ALEN);
+
+				/*
+				 * Release the channel.  Note that next_dev is still (correctly) held.
+				 */
+				ppp_release_channels(ppp_chan, 1);
+				break;
+			}
+#endif
+
+			DEBUG_TRACE("Net device: %p PPP channel protocol: %d - Unknown to the ECM\n",
+				    dest_dev, channel_protocol);
 
 			/*
-			 * PPPoE channel
-			 */
-			DEBUG_TRACE("Net device: %p PPP channel is PPPoE\n", dest_dev);
-
-			/*
-			 * Get PPPoE session information and the underlying device it is using.
-			 */
-			pppoe_channel_addressing_get(ppp_chan[0], &addressing);
-
-			/*
-			 * Copy the dev hold into this, we will release the hold later
-			 */
-			next_dev = addressing.dev;
-
-			DEBUG_TRACE("Net device: %p, next device: %p (%s)\n", dest_dev, next_dev, next_dev->name);
-
-			/*
-			 * Release the channel.  Note that next_dev is still (correctly) held.
+			 * Release the channel
 			 */
 			ppp_release_channels(ppp_chan, 1);
+
 #endif
 		} while (false);
 
@@ -3030,7 +3524,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				br_dev_update_stats(dev, &stats);
 				break;
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
 			case ECM_DB_IFACE_TYPE_PPPOE:
 				DEBUG_INFO("PPPOE\n");
 				ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes);
@@ -3152,44 +3646,17 @@ EXPORT_SYMBOL(ecm_interface_multicast_stats_update);
 #endif
 
 /*
- * ecm_interface_regenerate_connection()
- *	Re-generate a specific connection
- */
-void ecm_interface_regenerate_connection(struct ecm_db_connection_instance *ci)
-{
-	struct ecm_front_end_connection_instance *feci;
-
-	DEBUG_TRACE("Regenerate connection: %p\n", ci);
-
-	/*
-	 * Flag the connection as needing re-generation.
-	 * Re-generation occurs when we next see traffic OR an acceleration engine sync for this connection.
-	 * Refer to front end protocol specific process() functions.
-	 */
-	ecm_db_connection_regeneration_needed(ci);
-
-	/*
-	 * If the connection is accelerated then force deceleration.
-	 * Under normal circumstances deceleration would occur on the next sync received,
-	 * however, there is a situation where a sync may not occur if, say, a cable has been pulled.
-	 * The acceleration engine would see no further traffic to trigger sending a sync and so
-	 * re-generation would not occur.
-	 * The connection would stall and no-regeneration would happen leaving the connection in bad state.
-	 * NOTE: We can just call decelerate() upon the front end - if its not accelerated this will have no effect.
-	 */
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	feci->decelerate(feci);
-	feci->deref(feci);
-}
-
-/*
  * ecm_interface_regenerate_connections()
  *	Cause regeneration of all connections that are using the specified interface.
  */
 static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *ii)
 {
 #ifdef ECM_DB_XREF_ENABLE
-	struct ecm_db_connection_instance *ci;
+	struct ecm_db_connection_instance *ci_from;
+	struct ecm_db_connection_instance *ci_to;
+	struct ecm_db_connection_instance *ci_from_nat;
+	struct ecm_db_connection_instance *ci_to_nat;
+	struct ecm_db_connection_instance *ci_mcast __attribute__ ((unused));
 #endif
 
 	DEBUG_TRACE("Regenerate connections using interface: %p\n", ii);
@@ -3201,60 +3668,93 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
 	ecm_db_regeneration_needed();
 #else
 	/*
-	 * Iterate the connections of this interface and cause each one to be re-generated.
-	 * GGG TODO NOTE: If this proves slow (need metrics here) we could just regenerate the "lot" with one very simple call.
-	 * But this would cause re-gen of every connection which may not be appropriate, this here at least keeps things in scope of the interface
-	 * but at the cost of performance.
+	 * If the interface has NO connections then we re-generate all.
+	 */
+	ci_from = ecm_db_iface_connections_from_get_and_ref_first(ii);
+	ci_to = ecm_db_iface_connections_to_get_and_ref_first(ii);
+	ci_from_nat = ecm_db_iface_connections_nat_from_get_and_ref_first(ii);
+	ci_to_nat = ecm_db_iface_connections_nat_to_get_and_ref_first(ii);
+	if (!ci_from && !ci_to && !ci_from_nat && !ci_to_nat) {
+		ecm_db_regeneration_needed();
+		DEBUG_TRACE("%p: Regenerate (ALL) COMPLETE\n", ii);
+		return;
+	}
+
+	/*
+	 * Re-generate all connections associated with this interface
 	 */
 	DEBUG_TRACE("%p: Regenerate 'from' connections\n", ii);
-	ci = ecm_db_iface_connections_from_get_and_ref_first(ii);
-	while (ci) {
+	while (ci_from) {
 		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci);
+		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_from);
 
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci);
-		ecm_db_connection_regeneration_needed(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
+		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_from);
+		ecm_db_connection_regenerate(ci_from);
+		ecm_db_connection_deref(ci_from);
+		ci_from = cin;
 	}
 
 	DEBUG_TRACE("%p: Regenerate 'to' connections\n", ii);
-	ci = ecm_db_iface_connections_to_get_and_ref_first(ii);
-	while (ci) {
+	while (ci_to) {
 		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_to_get_and_ref_next(ci);
+		cin = ecm_db_connection_iface_to_get_and_ref_next(ci_to);
 
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci);
-		ecm_db_connection_regeneration_needed(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
+		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_to);
+		ecm_db_connection_regenerate(ci_to);
+		ecm_db_connection_deref(ci_to);
+		ci_to = cin;
 	}
 
+	/*
+	 * GGG TODO These deprecated lists _nat_ lists will eventually be removed
+	 */
 	DEBUG_TRACE("%p: Regenerate 'from_nat' connections\n", ii);
-	ci = ecm_db_iface_connections_nat_from_get_and_ref_first(ii);
-	while (ci) {
+	while (ci_from_nat) {
 		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_nat_from_get_and_ref_next(ci);
+		cin = ecm_db_connection_iface_nat_from_get_and_ref_next(ci_from_nat);
 
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci);
-		ecm_db_connection_regeneration_needed(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
+		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_from_nat);
+		ecm_db_connection_regenerate(ci_from_nat);
+		ecm_db_connection_deref(ci_from_nat);
+		ci_from_nat = cin;
 	}
 
 	DEBUG_TRACE("%p: Regenerate 'to_nat' connections\n", ii);
-	ci = ecm_db_iface_connections_nat_to_get_and_ref_first(ii);
-	while (ci) {
+	while (ci_to_nat) {
 		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_nat_to_get_and_ref_next(ci);
+		cin = ecm_db_connection_iface_nat_to_get_and_ref_next(ci_to_nat);
 
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci);
-		ecm_db_connection_regeneration_needed(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
+		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_to_nat);
+		ecm_db_connection_regenerate(ci_to_nat);
+		ecm_db_connection_deref(ci_to_nat);
+		ci_to_nat = cin;
+	}
+
+#ifdef ECM_MULTICAST_ENABLE
+	/*
+	 * Multicasts would not have recorded in the lists above.
+	 * Our only way to re-gen those is to iterate all multicasts.
+	 * GGG TODO This will be optimised in a future release.
+	 */
+	ci_mcast = ecm_db_connections_get_and_ref_first();
+	while (ci_mcast) {
+		struct ecm_db_connection_instance *cin;
+
+		/*
+		 * Multicast and NOT flagged for re-gen?
+		 */
+		if (ecm_db_multicast_connection_to_interfaces_set_check(ci_mcast)
+				&& ecm_db_connection_regeneration_required_peek(ci_mcast)) {
+			ecm_db_connection_regenerate(ci_mcast);
+		}
+
+		cin = ecm_db_connection_get_and_ref_next(ci_mcast);
+		ecm_db_connection_deref(ci_mcast);
+		ci_mcast = cin;
 	}
 #endif
 
+#endif
 	DEBUG_TRACE("%p: Regenerate COMPLETE\n", ii);
 }
 
@@ -3725,7 +4225,7 @@ int ecm_interface_init(void)
 	/*
 	 * register for bridge fdb database modificationevents
 	 */
-        br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
+	br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
 #endif
 	return 0;
 }
