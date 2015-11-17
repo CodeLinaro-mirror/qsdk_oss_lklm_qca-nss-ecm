@@ -5604,6 +5604,36 @@ static unsigned int ecm_front_end_ipv4_tcp_process(struct net_device *out_dev, s
 	}
 
 	/*
+	 * In NAT reflection scenarios SNAT rule is getting applied on the packet forwarded with in br-lan after packet
+	 * passed through bridge post routing hook
+	 *
+	 * Example
+	 * Consider following scenario where both WLAN PC and eth1 are part of same bridge
+	 * 192.168.1.3(WLAN PC)<-->192.168.1.1(DUT br-lan)---> 192.168.1.4(Eth1 PC)
+	 * When a DNAT is applied it is observed that following NAT rules are appended in iptables
+	 *
+	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p tcp -m tcp --dport 3389 -m comment --comment "wan" -j SNAT
+	 * 		 --to-source 192.168.1.1
+	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p udp -m udp --dport 3389 -m comment --comment "wan" -j SNAT
+	 * 		 --to-source 192.168.1.1
+	 *
+	 * This Shows that SNAT is getting applied on bridged packet also. However it is observed that
+	 * the SNAT is updated in ct after the packet has crossed this function through bridge hook.
+	 *
+	 * Hence Flushing the connection that was already created earlier if the ip_src_addr_nat value changes for same tuple in
+	 * subsequent packets
+	 */
+	ecm_db_connection_from_address_nat_get(ci, match_addr);
+	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct) {
+		/*
+		 * Force destruction of the connection my making it defunct
+		 */
+		ecm_db_connection_make_defunct(ci);
+		ecm_db_connection_deref(ci);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * Keep connection alive as we have seen activity
 	 */
 	if (!ecm_db_connection_defunct_timer_touch(ci)) {
@@ -6242,6 +6272,36 @@ static unsigned int ecm_front_end_ipv4_udp_process(struct net_device *out_dev, s
 		ecm_db_node_deref(dest_ni);
 		ecm_db_mapping_deref(src_mi);
 		ecm_db_node_deref(src_ni);
+	}
+
+	/*
+	 * In NAT reflection scenarios SNAT rule is getting applied on the packet forwarded with in br-lan after packet
+	 * passed through bridge post routing hook
+	 *
+	 * Example
+	 * Consider following scenario where both WLAN PC and eth1 are part of same bridge
+	 * 192.168.1.3(WLAN PC)<-->192.168.1.1(DUT br-lan)---> 192.168.1.4(Eth1 PC)
+	 * When a DNAT is applied it is observed that following NAT rules are appended in iptables
+	 *
+	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p tcp -m tcp --dport 3389 -m comment --comment "wan" -j SNAT
+	 * 		 --to-source 192.168.1.1
+	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p udp -m udp --dport 3389 -m comment --comment "wan" -j SNAT
+	 * 		 --to-source 192.168.1.1
+	 *
+	 * This Shows that SNAT is getting applied on bridged packet also. However it is observed that
+	 * the SNAT is updated in ct after the packet has crossed this function through bridge hook.
+	 *
+	 * Hence Flushing the connection that was already created earlier if the ip_src_addr_nat value changes for same tuple in
+	 * subsequent packets
+	 */
+	ecm_db_connection_from_address_nat_get(ci, match_addr);
+	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct) {
+		/*
+		 * Force destruction of the connection my making it defunct
+		 */
+		ecm_db_connection_make_defunct(ci);
+		ecm_db_connection_deref(ci);
+		return NF_ACCEPT;
 	}
 
 	/*
