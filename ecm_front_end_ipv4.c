@@ -5604,6 +5604,18 @@ static unsigned int ecm_front_end_ipv4_tcp_process(struct net_device *out_dev, s
 	}
 
 	/*
+	 * Identify which side of the connection is sending.
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
+	 */
+	ecm_db_connection_from_address_get(ci, match_addr);
+	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
 	 * In NAT reflection scenarios SNAT rule is getting applied on the packet forwarded with in br-lan after packet
 	 * passed through bridge post routing hook
 	 *
@@ -5624,7 +5636,7 @@ static unsigned int ecm_front_end_ipv4_tcp_process(struct net_device *out_dev, s
 	 * subsequent packets
 	 */
 	ecm_db_connection_from_address_nat_get(ci, match_addr);
-	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct) {
+	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct && (sender == ECM_TRACKER_SENDER_TYPE_SRC)) {
 		/*
 		 * Force destruction of the connection my making it defunct
 		 */
@@ -5641,17 +5653,6 @@ static unsigned int ecm_front_end_ipv4_tcp_process(struct net_device *out_dev, s
 		return NF_ACCEPT;
 	}
 
-	/*
-	 * Identify which side of the connection is sending.
-	 * NOTE: This may be different than what sender is at the moment
-	 * given the connection we have located.
-	 */
-	ecm_db_connection_from_address_get(ci, match_addr);
-	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
-		sender = ECM_TRACKER_SENDER_TYPE_SRC;
-	} else {
-		sender = ECM_TRACKER_SENDER_TYPE_DEST;
-	}
 
 	/*
 	 * Do we need to action generation change?
@@ -6275,6 +6276,18 @@ static unsigned int ecm_front_end_ipv4_udp_process(struct net_device *out_dev, s
 	}
 
 	/*
+	 * Identify which side of the connection is sending.
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
+	 */
+	ecm_db_connection_from_address_get(ci, match_addr);
+	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
 	 * In NAT reflection scenarios SNAT rule is getting applied on the packet forwarded with in br-lan after packet
 	 * passed through bridge post routing hook
 	 *
@@ -6295,7 +6308,7 @@ static unsigned int ecm_front_end_ipv4_udp_process(struct net_device *out_dev, s
 	 * subsequent packets
 	 */
 	ecm_db_connection_from_address_nat_get(ci, match_addr);
-	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct) {
+	if (!ECM_IP_ADDR_MATCH(ip_src_addr_nat, match_addr) && ct && (sender == ECM_TRACKER_SENDER_TYPE_SRC)) {
 		/*
 		 * Force destruction of the connection my making it defunct
 		 */
@@ -6310,18 +6323,6 @@ static unsigned int ecm_front_end_ipv4_udp_process(struct net_device *out_dev, s
 	if (!ecm_db_connection_defunct_timer_touch(ci)) {
 		ecm_db_connection_deref(ci);
 		return NF_ACCEPT;
-	}
-
-	/*
-	 * Identify which side of the connection is sending.
-	 * NOTE: This may be different than what sender is at the moment
-	 * given the connection we have located.
-	 */
-	ecm_db_connection_from_address_get(ci, match_addr);
-	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
-		sender = ECM_TRACKER_SENDER_TYPE_SRC;
-	} else {
-		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
 
 	/*
