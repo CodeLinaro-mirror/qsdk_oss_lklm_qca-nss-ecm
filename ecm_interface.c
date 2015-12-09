@@ -765,6 +765,7 @@ bool ecm_interface_skip_l2tp_pptp(struct sk_buff *skb, const struct net_device *
 {
 	struct ppp_channel *ppp_chan[1];
 	int px_proto;
+	struct net_device *in;
 
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
@@ -777,20 +778,23 @@ bool ecm_interface_skip_l2tp_pptp(struct sk_buff *skb, const struct net_device *
 		}
 	}
 
+	in = dev_get_by_index(&init_net, skb->skb_iif);
+	if (unlikely(!in)) {
+		return false;
+	}
+
 	/*
-	 * skip second pass of l2tp tunnel encapsulated traffic
+	 * Skip wan to lan l2tp packets
 	 */
-	if (!skb->sk) {
-		return false;
+	if (in->type == ARPHRD_PPP) {
+		if (__ppp_hold_channels((struct net_device *)in, ppp_chan, 1) == 1) {
+			px_proto = ppp_channel_get_protocol(ppp_chan[0]);
+			ppp_release_channels(ppp_chan, 1);
+			dev_put(in);
+			return ((px_proto == PX_PROTO_OL2TP) || (px_proto == PX_PROTO_PPTP));
+		}
 	}
-
-	if (skb->sk->sk_protocol != IPPROTO_UDP) {
-		return false;
-	}
-
-	if (unlikely(udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
-		return true;
-	}
+	dev_put(in);
 
 	return false;
 }
@@ -1994,7 +1998,6 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 			 * Copy the dev hold into this, we will release the hold later
 			 */
 			next_dev = addressing.dev;
-
 
 			/*
 			 * Release the channel.  Note that next_dev is still (correctly) held.
