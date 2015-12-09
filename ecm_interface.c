@@ -43,7 +43,6 @@
 #include <linux/tcp.h>
 #include <linux/if_bridge.h>
 
-
 #include <linux/inetdevice.h>
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 #include <net/ipip.h>
@@ -577,6 +576,7 @@ bool ecm_interface_skip_l2tp_pptp(struct sk_buff *skb, const struct net_device *
 {
 	struct ppp_channel *ppp_chan[1];
 	int px_proto;
+	struct net_device *in;
 
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
@@ -589,20 +589,23 @@ bool ecm_interface_skip_l2tp_pptp(struct sk_buff *skb, const struct net_device *
 		}
 	}
 
+	in = dev_get_by_index(&init_net, skb->skb_iif);
+	if (unlikely(!in)) {
+		return false;
+	}
+
 	/*
-	 * skip second pass of l2tp tunnel encapsulated traffic
+	 * Skip wan to lan l2tp packets
 	 */
-	if (!skb->sk) {
-		return false;
+	if (in->type == ARPHRD_PPP) {
+		if (__ppp_hold_channels((struct net_device *)in, ppp_chan, 1) == 1) {
+			px_proto = ppp_channel_get_protocol(ppp_chan[0]);
+			ppp_release_channels(ppp_chan, 1);
+			dev_put(in);
+			return ((px_proto == PX_PROTO_OL2TP) || (px_proto == PX_PROTO_PPTP));
+		}
 	}
-
-	if (skb->sk->sk_protocol != IPPROTO_UDP) {
-		return false;
-	}
-
-	if (unlikely(udp_sk(skb->sk)->encap_type == UDP_ENCAP_L2TPINUDP)) {
-		return true;
-	}
+	dev_put(in);
 
 	return false;
 }
@@ -1825,7 +1828,6 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 							DEBUG_WARN("Unable to obtain MAC address for "
 										ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(dest_addr));
 
-
 							/*
 							 * Issue an ARP request, select the src_ip from which to issue the request.
 							 */
@@ -1870,7 +1872,6 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_db_iface_instance *interfac
 
 							DEBUG_TRACE("Send ARP for %pI4 using src_ip as %pI4\n", &ipv4_addr, &src_ip);
 							arp_send(ARPOP_REQUEST, ETH_P_ARP, ipv4_addr, master_dev, src_ip, NULL, NULL, NULL);
-
 
 							dev_put(src_dev);
 							dev_put(dest_dev);
@@ -2428,7 +2429,6 @@ void ecm_interface_stop(int num)
 }
 EXPORT_SYMBOL(ecm_interface_stop);
 
-
 /*
  * ecm_interface_set_stop()
  */
@@ -2477,7 +2477,6 @@ static void ecm_interface_dev_release(struct device *dev)
 {
 
 }
-
 
 /*
  * ecm_interfae_node_br_fdb_notify_event()
