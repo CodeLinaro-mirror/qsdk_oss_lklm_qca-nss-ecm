@@ -863,10 +863,14 @@ static struct ecm_db_node_instance *ecm_front_end_ipv6_node_establish_and_ref(st
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			if (!ecm_interface_mac_addr_get(addr, node_addr, &on_link, gw_addr)) {
 				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
-				if (ecm_front_end_is_bridge_port(dev)) {
-					ecm_front_end_ipv6_send_neighbour_solicitation(dev->master, addr);
-				} else {
+				if (!ecm_front_end_is_bridge_port(dev)) {
 					ecm_front_end_ipv6_send_neighbour_solicitation(dev, addr);
+				} else {
+					struct net_device *master;
+					master = ecm_interface_get_and_hold_dev_master(dev);
+					DEBUG_ASSERT(master, "Expected a master\n");
+					ecm_front_end_ipv6_send_neighbour_solicitation(master, addr);
+					dev_put(master);
 				}
 				return NULL;
 			}
@@ -3227,9 +3231,6 @@ static void ecm_front_end_ipv6_connection_udp_front_end_accelerate(struct ecm_fr
 			"egress_outer_vlan_tag: %u\n"
 			"rule_flags: %x\n"
 			"valid_flags: %x\n"
-
-
-
 			"return_pppoe_session_id: %u\n"
 			"return_pppoe_remote_mac: %pM\n"
 			"flow_pppoe_session_id: %u\n"
@@ -3238,7 +3239,6 @@ static void ecm_front_end_ipv6_connection_udp_front_end_accelerate(struct ecm_fr
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n",
-
 			fecui,
 			fecui->ci,
 			nircm->tuple.protocol,
@@ -3480,8 +3480,6 @@ static void ecm_front_end_ipv6_connection_udp_front_end_decelerate(struct ecm_fr
 
 	nirdm = &nim.msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)IPPROTO_UDP;
-
-
 
 	/*
 	 * Get addressing information
@@ -4856,7 +4854,6 @@ static void ecm_front_end_ipv6_connection_non_ported_front_end_decelerate(struct
 	nirdm = &nim.msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)protocol;
 
-
 	/*
 	 * Get addressing information
 	 */
@@ -5150,7 +5147,6 @@ static int ecm_front_end_ipv6_connection_non_ported_front_end_xml_state_get(stru
 			stats.nss_nack_total,
 			stats.nss_nack,
 			stats.nss_nack_limit);
-
 }
 
 /*
@@ -5241,6 +5237,8 @@ static struct ecm_classifier_instance *ecm_front_end_ipv6_assign_classifier(stru
 		return (struct ecm_classifier_instance *)cnli;
 	}
 #endif
+
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_DSCP) {
 		struct ecm_classifier_dscp_instance *cdscpi;
 		cdscpi = ecm_classifier_dscp_instance_alloc(ci);
@@ -5252,6 +5250,7 @@ static struct ecm_classifier_instance *ecm_front_end_ipv6_assign_classifier(stru
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cdscpi);
 		return (struct ecm_classifier_instance *)cdscpi;
 	}
+#endif
 
 #ifdef ECM_CLASSIFIER_HYFI_ENABLE
 	if (type == ECM_CLASSIFIER_TYPE_HYFI) {
@@ -7194,11 +7193,19 @@ static unsigned int ecm_front_end_ipv6_ip_process(struct net_device *out_dev, st
  * ecm_front_end_ipv6_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 static unsigned int ecm_front_end_ipv6_post_routing_hook(unsigned int hooknum,
 				struct sk_buff *skb,
 				const struct net_device *in_unused,
 				const struct net_device *out,
 				int (*okfn)(struct sk_buff *))
+#else
+static unsigned int ecm_front_end_ipv6_post_routing_hook(const struct nf_hook_ops *ops,
+				struct sk_buff *skb,
+				const struct net_device *in_unused,
+				const struct net_device *out,
+				int (*okfn)(struct sk_buff *))
+#endif
 {
 	struct net_device *in;
 	bool can_accel = true;
@@ -7263,11 +7270,19 @@ static unsigned int ecm_front_end_ipv6_post_routing_hook(unsigned int hooknum,
  * These may have come from another bridged interface or from a non-bridged interface.
  * Conntrack information may be available or not if this skb is bridged.
  */
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hooknum,
 					struct sk_buff *skb,
 					const struct net_device *in_unused,
 					const struct net_device *out,
 					int (*okfn)(struct sk_buff *))
+#else
+static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(const struct nf_hook_ops *ops,
+					struct sk_buff *skb,
+					const struct net_device *in_unused,
+					const struct net_device *out,
+					int (*okfn)(struct sk_buff *))
+#endif
 {
 	struct ethhdr *skb_eth_hdr;
 	uint16_t eth_type;
@@ -7336,15 +7351,17 @@ static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hoo
 	 *	Process.
 	 *
 	 * Begin by identifying case 1.
-	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out->master is the 'bridge'.
+	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out interface's master is the 'bridge'.
 	 */
-	bridge = out->master;
+	bridge = ecm_interface_get_and_hold_dev_master((struct net_device *)out);
+	DEBUG_ASSERT(bridge, "Expected bridge\n");
 	in = dev_get_by_index(&init_net, skb->skb_iif);
 	if  (!in) {
 		/*
 		 * Case 1.
 		 */
-		DEBUG_TRACE("Local traffic: %p, ignoring traffic to bridge: %p (%s) \n", skb, bridge, bridge->name);
+		DEBUG_TRACE("Local traffic: %p, ignoring traffic to bridge: %p (%s)\n", skb, bridge, bridge->name);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 	dev_put(in);
@@ -7355,14 +7372,16 @@ static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hoo
 	 * Case 3:
 	 *	If the packet was not local (case 1) or routed (case 2) then we process.
 	 */
-	in = br_port_dev_get(out->master, skb_eth_hdr->h_source);
+	in = br_port_dev_get(bridge, skb_eth_hdr->h_source);
 	if (!in) {
 		DEBUG_TRACE("skb: %p, no in device for bridge: %p (%s)\n", skb, bridge, bridge->name);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 	if (in == out) {
 		DEBUG_TRACE("skb: %p, bridge: %p (%s), port bounce on %p (%s)\n", skb, bridge, bridge->name, out, out->name);
 		dev_put(in);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
@@ -7371,6 +7390,7 @@ static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hoo
 		 */
 		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
 		dev_put(in);
+		dev_put(bridge);
 		return NF_ACCEPT;
 	}
 
@@ -7379,7 +7399,7 @@ static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hoo
 	 * TODO: For the kernel versions later than 3.6.x, the API needs vlan id.
 	 * 	 For now, we are passing 0, but this needs to be handled later.
 	 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 	if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest)) {
 #else
 	if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
@@ -7396,6 +7416,7 @@ static unsigned int ecm_front_end_ipv6_bridge_post_routing_hook(unsigned int hoo
 	result = ecm_front_end_ipv6_ip_process((struct net_device *)out, in,
 							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, skb);
 	dev_put(in);
+	dev_put(bridge);
 	return result;
 }
 
@@ -7644,7 +7665,11 @@ sync_conntrack:
 		spin_unlock_bh(&ct->lock);
 	}
 
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 	acct = nf_conn_acct_find(ct);
+#else
+	acct = nf_conn_acct_find(ct)->counter;
+#endif
 	if (acct) {
 		spin_lock_bh(&ct->lock);
 		atomic64_add(sync->flow_rx_packet_count, &acct[IP_CT_DIR_ORIGINAL].packets);
