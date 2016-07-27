@@ -1373,6 +1373,10 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
+		/*
+		 * Update the accel engine interface identifier, just in case it was changed.
+		 */
+		ecm_db_iface_ae_interface_identifier_set(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -2958,7 +2962,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				return 0;
 			}
 
-			if (!mfc_update) {
+			if (in_dev && !mfc_update) {
 				if_num = ecm_interface_multicast_check_for_src_ifindex(mc_dst_if_index, if_num, in_dev->ifindex);
 			}
 
@@ -3164,7 +3168,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end
 		dev_put(mc_br_slave_dev);
 	}
 
-	return ii_cnt;
+	return valid_if;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_bridged);
 
@@ -3317,8 +3321,9 @@ static struct net_device *ecm_interface_should_update_egress_device_bridged(
 int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
 						struct ecm_db_iface_instance *interfaces[],
 						struct net_device *const_if, struct net_device *other_if,
-						ip_addr_t packet_src_addr,
-						ip_addr_t packet_dest_addr,
+						ip_addr_t lookup_src_addr,
+						ip_addr_t lookup_dest_addr,
+						ip_addr_t real_dest_addr,
 						int ip_version, int packet_protocol,
 						struct net_device *given_dest_dev,
 						bool is_routed, struct net_device *given_src_dev,
@@ -3341,14 +3346,15 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	ip_addr_t next_dest_addr;
 	uint8_t next_dest_node_addr[ETH_ALEN] = {0};
 	struct net_device *bridge;
+	struct net_device *top_dev_vlan = NULL;
 	uint32_t serial = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get a big endian of the IPv4 address we have been given as our starting point.
 	 */
 	protocol = packet_protocol;
-	ECM_IP_ADDR_COPY(src_addr, packet_src_addr);
-	ECM_IP_ADDR_COPY(dest_addr, packet_dest_addr);
+	ECM_IP_ADDR_COPY(src_addr, lookup_src_addr);
+	ECM_IP_ADDR_COPY(dest_addr, lookup_dest_addr);
 
 	if (ip_version == 4) {
 		DEBUG_TRACE("Construct interface heirarchy for from src_addr: " ECM_IP_ADDR_DOT_FMT " to dest_addr: " ECM_IP_ADDR_DOT_FMT ", protocol: %d (serial %u)\n",
@@ -3656,6 +3662,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					dev_hold(next_dev);
 					DEBUG_TRACE("Net device: %p is VLAN, slave dev: %p (%s)\n",
 							dest_dev, next_dev, next_dev->name);
+					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
+						top_dev_vlan = dest_dev;
+					}
 					break;
 				}
 #endif
@@ -3733,7 +3742,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 					if (ip_version == 4) {
 						ECM_IP_ADDR_TO_NIN4_ADDR(src_addr_32, src_addr);
-						ECM_IP_ADDR_TO_NIN4_ADDR(dest_addr_32, dest_addr);
+						ECM_IP_ADDR_TO_NIN4_ADDR(dest_addr_32, real_dest_addr);
 					}
 
 					if (!is_routed) {
@@ -3753,6 +3762,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						} else {
 							memcpy(src_mac_addr, dest_dev->dev_addr, ETH_ALEN);
 							master_dev = dest_dev;
+							if (top_dev_vlan) {
+								master_dev = top_dev_vlan;
+							}
 							dev_hold(master_dev);
 						}
 
@@ -3822,7 +3834,7 @@ lag_success:
 										htons((uint16_t)ETH_P_IP), dest_dev, layer4hdr);
 					} else if (ip_version == 6) {
 						ECM_IP_ADDR_TO_NIN6_ADDR(src_addr6, src_addr);
-						ECM_IP_ADDR_TO_NIN6_ADDR(dest_addr6, dest_addr);
+						ECM_IP_ADDR_TO_NIN6_ADDR(dest_addr6, real_dest_addr);
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 									   src_addr6.s6_addr, dest_addr6.s6_addr,
 									   htons((uint16_t)ETH_P_IPV6), dest_dev, layer4hdr);
@@ -5373,6 +5385,25 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 static struct notifier_block ecm_interface_node_br_fdb_update_nb = {
 	.notifier_call = ecm_interface_node_br_fdb_notify_event,
 };
+
+static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ctx)
+{
+	struct br_fdb_event *fe = (struct br_fdb_event *)ctx;
+
+	if ((event != BR_FDB_EVENT_DEL) || fe->is_local) {
+		DEBUG_WARN("local fdb or not deleting event, ignore\n");
+		return NOTIFY_DONE;
+	}
+
+	return ecm_interface_node_br_fdb_notify_event(nb, event, fe->addr);
+}
+
+static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
+	.notifier_call = ecm_interface_node_br_fdb_delete_event,
+};
+
 #endif
 
 #ifdef ECM_MULTICAST_ENABLE
@@ -5735,6 +5766,7 @@ int ecm_interface_init(void)
 	 * register for bridge fdb database modificationevents
 	 */
 	br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
+	br_fdb_register_notify(&ecm_interface_node_br_fdb_delete_nb);
 #endif
 #ifdef ECM_DB_XREF_ENABLE
 	neigh_mac_update_register_notify(&ecm_interface_neigh_mac_update_nb);
@@ -5764,6 +5796,7 @@ void ecm_interface_exit(void)
 	 * unregister for bridge fdb update events
 	 */
         br_fdb_update_unregister_notify(&ecm_interface_node_br_fdb_update_nb);
+	br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 #endif
 }
 EXPORT_SYMBOL(ecm_interface_exit);
