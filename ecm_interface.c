@@ -5103,7 +5103,7 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 					       void *data)
 {
 	uint8_t *mac =  (uint8_t *)data;
-	struct ecm_db_node_instance *node = NULL;
+	struct ecm_db_node_instance *ni = NULL;
 
 	if(unlikely(!mac)) {
 		DEBUG_WARN("mac address passed to ecm_interface_node_br_fdb_notify_event is null \n");
@@ -5113,19 +5113,25 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 	/*
 	 * find node instance corresponding to mac address
 	 */
-	node = ecm_db_node_find_and_ref(mac);
+	ni = ecm_db_node_chain_get_and_ref_first(mac);
+	while (ni) {
+		struct ecm_db_node_instance *nin;
 
-	if(unlikely(!node)) {
-		DEBUG_WARN("node address is null\n");
-		return NOTIFY_DONE;
+		if (ecm_db_node_is_mac_addr_equal(ni, mac)) {
+			DEBUG_INFO("FDB updated for node %pM\n", mac);
+			ecm_db_traverse_node_from_connection_list_and_decelerate(ni);
+			ecm_db_traverse_node_to_connection_list_and_decelerate(ni);
+			ecm_db_traverse_node_from_nat_connection_list_and_decelerate(ni);
+			ecm_db_traverse_node_to_nat_connection_list_and_decelerate(ni);
+		}
+
+		/*
+		 * Get next node in the chain
+		 */
+		nin = ecm_db_node_chain_get_and_ref_next(ni);
+		ecm_db_node_deref(ni);
+		ni = nin;
 	}
-	DEBUG_INFO("FDB updated for node %pM\n", mac);
-	ecm_db_traverse_node_from_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_from_nat_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_nat_connection_list_and_decelerate(node);
-
-	ecm_db_node_deref(node);
 
 	return NOTIFY_DONE;
 }
