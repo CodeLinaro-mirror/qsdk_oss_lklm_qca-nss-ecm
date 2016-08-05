@@ -844,7 +844,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	}
 
 	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv6_retry_regen;
@@ -854,7 +854,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv6_retry_regen;
@@ -959,6 +959,16 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 
 	/*
+	 * Do not accelerate flows to/from any virtual tunnel or tap devices.
+	 */
+	if ((in_dev->priv_flags & IFF_TUN_TAP) ||
+			(out_dev->priv_flags & IFF_TUN_TAP)) {
+
+		DEBUG_TRACE("virtual tunnels are not accelerated by ECM\n");
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
@@ -1016,7 +1026,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * Check for a multicast Destination address here.
 	 */
 	ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.in6);
-	if (ecm_ip_addr_is_multicast(ip_dest_addr)) {
+	if (ecm_ip_addr_is_multicast(ip_dest_addr) && (skb->pkt_type == PACKET_MULTICAST)) {
 		DEBUG_TRACE("skb %p multicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
 
 		return ecm_nss_multicast_ipv6_connection_process(out_dev,

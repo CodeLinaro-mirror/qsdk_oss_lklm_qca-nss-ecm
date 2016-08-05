@@ -38,6 +38,12 @@
 #include <linux/in.h>
 #include <linux/udp.h>
 #include <linux/tcp.h>
+#include <linux/kernel.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#include <linux/socket.h>
+#include <linux/wireless.h>
+
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 #include <linux/if_bridge.h>
 #endif
@@ -108,6 +114,16 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_interface.h"
+
+/*
+ * Wifi event handler structure.
+ */
+struct ecm_interface_wifi_event {
+	struct task_struct *thread;
+	struct socket *sock;
+};
+
+static struct ecm_interface_wifi_event __ewn;
 
 #ifdef ECM_IPV6_ENABLE
 /*
@@ -1373,6 +1389,10 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
+		/*
+		 * Update the accel engine interface identifier, just in case it was changed.
+		 */
+		ecm_db_iface_ae_interface_identifier_set(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -2958,7 +2978,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				return 0;
 			}
 
-			if (!mfc_update) {
+			if (in_dev && !mfc_update) {
 				if_num = ecm_interface_multicast_check_for_src_ifindex(mc_dst_if_index, if_num, in_dev->ifindex);
 			}
 
@@ -3164,7 +3184,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end
 		dev_put(mc_br_slave_dev);
 	}
 
-	return ii_cnt;
+	return valid_if;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_bridged);
 
@@ -3317,8 +3337,9 @@ static struct net_device *ecm_interface_should_update_egress_device_bridged(
 int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
 						struct ecm_db_iface_instance *interfaces[],
 						struct net_device *const_if, struct net_device *other_if,
-						ip_addr_t packet_src_addr,
-						ip_addr_t packet_dest_addr,
+						ip_addr_t lookup_src_addr,
+						ip_addr_t lookup_dest_addr,
+						ip_addr_t real_dest_addr,
 						int ip_version, int packet_protocol,
 						struct net_device *given_dest_dev,
 						bool is_routed, struct net_device *given_src_dev,
@@ -3341,14 +3362,15 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	ip_addr_t next_dest_addr;
 	uint8_t next_dest_node_addr[ETH_ALEN] = {0};
 	struct net_device *bridge;
+	struct net_device *top_dev_vlan = NULL;
 	uint32_t serial = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get a big endian of the IPv4 address we have been given as our starting point.
 	 */
 	protocol = packet_protocol;
-	ECM_IP_ADDR_COPY(src_addr, packet_src_addr);
-	ECM_IP_ADDR_COPY(dest_addr, packet_dest_addr);
+	ECM_IP_ADDR_COPY(src_addr, lookup_src_addr);
+	ECM_IP_ADDR_COPY(dest_addr, lookup_dest_addr);
 
 	if (ip_version == 4) {
 		DEBUG_TRACE("Construct interface heirarchy for from src_addr: " ECM_IP_ADDR_DOT_FMT " to dest_addr: " ECM_IP_ADDR_DOT_FMT ", protocol: %d (serial %u)\n",
@@ -3656,6 +3678,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					dev_hold(next_dev);
 					DEBUG_TRACE("Net device: %p is VLAN, slave dev: %p (%s)\n",
 							dest_dev, next_dev, next_dev->name);
+					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
+						top_dev_vlan = dest_dev;
+					}
 					break;
 				}
 #endif
@@ -3733,7 +3758,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 					if (ip_version == 4) {
 						ECM_IP_ADDR_TO_NIN4_ADDR(src_addr_32, src_addr);
-						ECM_IP_ADDR_TO_NIN4_ADDR(dest_addr_32, dest_addr);
+						ECM_IP_ADDR_TO_NIN4_ADDR(dest_addr_32, real_dest_addr);
 					}
 
 					if (!is_routed) {
@@ -3753,6 +3778,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						} else {
 							memcpy(src_mac_addr, dest_dev->dev_addr, ETH_ALEN);
 							master_dev = dest_dev;
+							if (top_dev_vlan) {
+								master_dev = top_dev_vlan;
+							}
 							dev_hold(master_dev);
 						}
 
@@ -3822,7 +3850,7 @@ lag_success:
 										htons((uint16_t)ETH_P_IP), dest_dev, layer4hdr);
 					} else if (ip_version == 6) {
 						ECM_IP_ADDR_TO_NIN6_ADDR(src_addr6, src_addr);
-						ECM_IP_ADDR_TO_NIN6_ADDR(dest_addr6, dest_addr);
+						ECM_IP_ADDR_TO_NIN6_ADDR(dest_addr6, real_dest_addr);
 						next_dev = bond_get_tx_dev(NULL, src_mac_addr, dest_mac_addr,
 									   src_addr6.s6_addr, dest_addr6.s6_addr,
 									   htons((uint16_t)ETH_P_IPV6), dest_dev, layer4hdr);
@@ -5326,12 +5354,44 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 }
 
 /*
+ * ecm_interface_node_connections_decelerate()
+ *	Decelerate the connections on this node.
+ */
+static void ecm_interface_node_connections_decelerate(uint8_t *mac)
+{
+	struct ecm_db_node_instance *node = NULL;
+
+	if (unlikely(!mac)) {
+		DEBUG_WARN("mac address is null\n");
+		return;
+	}
+
+	/*
+	 * find node instance corresponding to mac address
+	 */
+	node = ecm_db_node_find_and_ref(mac);
+
+	if (unlikely(!node)) {
+		DEBUG_WARN("node address is null\n");
+		return;
+	}
+
+	ecm_db_traverse_node_from_connection_list_and_decelerate(node);
+	ecm_db_traverse_node_to_connection_list_and_decelerate(node);
+	ecm_db_traverse_node_from_nat_connection_list_and_decelerate(node);
+	ecm_db_traverse_node_to_nat_connection_list_and_decelerate(node);
+
+	ecm_db_node_deref(node);
+}
+
+/*
  * struct notifier_block ecm_interface_netdev_notifier
  *	Registration for net device changes of state.
  */
 static struct notifier_block ecm_interface_netdev_notifier __read_mostly = {
 	.notifier_call		= ecm_interface_netdev_notifier_callback,
 };
+
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 /*
  * ecm_interfae_node_br_fdb_notify_event()
@@ -5343,35 +5403,34 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 					       void *data)
 {
 	uint8_t *mac =  (uint8_t *)data;
-	struct ecm_db_node_instance *node = NULL;
 
-	if(unlikely(!mac)) {
-		DEBUG_WARN("mac address passed to ecm_interface_node_br_fdb_notify_event is null \n");
-		return NOTIFY_DONE;
-	}
-
-	/*
-	 * find node instance corresponding to mac address
-	 */
-	node = ecm_db_node_find_and_ref(mac);
-
-	if(unlikely(!node)) {
-		DEBUG_WARN("node address is null\n");
-		return NOTIFY_DONE;
-	}
 	DEBUG_INFO("FDB updated for node %pM\n", mac);
-	ecm_db_traverse_node_from_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_from_nat_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_nat_connection_list_and_decelerate(node);
 
-	ecm_db_node_deref(node);
+	ecm_interface_node_connections_decelerate(mac);
 
 	return NOTIFY_DONE;
 }
 
 static struct notifier_block ecm_interface_node_br_fdb_update_nb = {
 	.notifier_call = ecm_interface_node_br_fdb_notify_event,
+};
+
+static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ctx)
+{
+	struct br_fdb_event *fe = (struct br_fdb_event *)ctx;
+
+	if ((event != BR_FDB_EVENT_DEL) || fe->is_local) {
+		DEBUG_WARN("local fdb or not deleting event, ignore\n");
+		return NOTIFY_DONE;
+	}
+
+	return ecm_interface_node_br_fdb_notify_event(nb, event, fe->addr);
+}
+
+static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
+	.notifier_call = ecm_interface_node_br_fdb_delete_event,
 };
 #endif
 
@@ -5664,7 +5723,6 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 						       unsigned long val,
 						       void *data)
 {
-	struct ecm_db_node_instance *node = NULL;
 	struct neigh_mac_update *nmu = (struct neigh_mac_update *)data;
 
 	/*
@@ -5688,22 +5746,8 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 
 	DEBUG_TRACE("old mac: %pM new mac: %pM\n", nmu->old_mac, nmu->update_mac);
 
-	/*
-	 * find node instance corresponding to old mac address
-	 */
-	node = ecm_db_node_find_and_ref((uint8_t *)nmu->old_mac);
-
-	if (unlikely(!node)) {
-		DEBUG_WARN("node address is null\n");
-		return NOTIFY_DONE;
-	}
-	DEBUG_INFO("%p: decelerate the connections for node %pM\n", node, nmu->old_mac);
-	ecm_db_traverse_node_from_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_from_nat_connection_list_and_decelerate(node);
-	ecm_db_traverse_node_to_nat_connection_list_and_decelerate(node);
-
-	ecm_db_node_deref(node);
+	DEBUG_INFO("neigh mac update notify for node %pM\n", nmu->old_mac);
+	ecm_interface_node_connections_decelerate((uint8_t *)nmu->old_mac);
 
 	return NOTIFY_DONE;
 }
@@ -5716,6 +5760,241 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
 	.notifier_call = ecm_interface_neigh_mac_update_notify_event,
 };
 #endif
+
+/*
+ * ecm_interface_wifi_event_iwevent
+ *	wireless event handler
+ */
+static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, size_t len)
+{
+	struct iw_event iwe_buf, *iwe = &iwe_buf;
+	char *pos, *end;
+
+	pos = buf;
+	end = buf + len;
+	while (pos + IW_EV_LCP_LEN <= end) {
+
+		/*
+		 * Copy the base data structure to get iwe->len
+		 */
+		memcpy(&iwe_buf, pos, IW_EV_LCP_LEN);
+
+		/*
+		 * Check that len is valid and that we have that much in the buffer.
+		 *
+		 */
+		if (iwe->len < IW_EV_LCP_LEN) {
+			return -1;
+		}
+
+		if ((iwe->len > sizeof (struct iw_event)) || (iwe->len + pos) > end) {
+			return -1;
+		}
+
+		/*
+		 * Do the copy again with the full length.
+		 */
+		memcpy(&iwe_buf, pos, iwe->len);
+
+		if (iwe->cmd == IWEVREGISTERED) {
+			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
+		} else if (iwe->cmd == IWEVEXPIRED) {
+			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
+			ecm_interface_node_connections_decelerate((uint8_t *)iwe->u.addr.sa_data);
+		} else {
+			DEBUG_INFO("iwe->cmd is %d for STA %pM\n", iwe->cmd, (unsigned char *) iwe->u.addr.sa_data);
+		}
+
+		pos += iwe->len;
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wifi_event_newlink
+ *	Link event handler
+ */
+static int ecm_interface_wifi_event_newlink(struct ifinfomsg *ifi, unsigned char *buf, size_t len)
+{
+	struct rtattr *attr;
+	int attrlen, rta_len;
+
+	DEBUG_TRACE("Event from interface %d\n", ifi->ifi_index);
+
+	attrlen = len;
+	attr = (struct rtattr *) buf;
+	rta_len = RTA_ALIGN(sizeof(struct rtattr));
+
+	while (RTA_OK(attr, attrlen)) {
+		if (attr->rta_type == IFLA_WIRELESS) {
+			ecm_interface_wifi_event_iwevent(ifi->ifi_index, ((char *) attr) + rta_len, attr->rta_len - rta_len);
+		}
+		attr = RTA_NEXT(attr, attrlen);
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wifi_event_handler
+ *	Netlink event handler
+ */
+static int ecm_interface_wifi_event_handler(unsigned char *buf, int len)
+{
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	int left;
+
+	nlh = (struct nlmsghdr *) buf;
+	left = len;
+
+	while (NLMSG_OK(nlh, left)) {
+		switch (nlh->nlmsg_type) {
+		case RTM_NEWLINK:
+		case RTM_DELLINK:
+			if (NLMSG_PAYLOAD(nlh, 0) < sizeof(struct ifinfomsg)) {
+				DEBUG_INFO("invalid netlink message\n");
+				break;
+			}
+
+			ifi = NLMSG_DATA(nlh);
+			DEBUG_INFO("ifi->ifi_family: %d\n", ifi->ifi_family);
+			if (ifi->ifi_family != AF_BRIDGE) {
+				ecm_interface_wifi_event_newlink(ifi, (u8 *)ifi + NLMSG_ALIGN(sizeof(struct ifinfomsg)),
+					NLMSG_PAYLOAD(nlh, sizeof(struct ifinfomsg)));
+			}
+			break;
+		}
+
+		nlh = NLMSG_NEXT(nlh, left);
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wifi_event_rx
+ *	Receive netlink message from socket
+ */
+static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *addr, unsigned char *buf, int len)
+{
+	struct msghdr msg;
+	struct iovec  iov;
+	mm_segment_t oldfs;
+	int size;
+
+	iov.iov_base = buf;
+	iov.iov_len  = len;
+
+	msg.msg_flags = 0;
+	msg.msg_name  = addr;
+	msg.msg_namelen = sizeof(struct sockaddr_nl);
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0))
+	msg.msg_iov   = &iov;
+	msg.msg_iovlen = 1;
+#else
+	iov_iter_init(&msg.msg_iter, READ, &iov, 1, 1);
+#endif
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
+	set_fs(oldfs);
+
+	return size;
+}
+
+/*
+ * ecm_interface_wifi_event_thread
+ */
+static void ecm_interface_wifi_event_thread(void)
+{
+	int err;
+	int size;
+	struct sockaddr_nl saddr;
+	unsigned char buf[512];
+	int len = sizeof(buf);
+
+	allow_signal(SIGKILL|SIGSTOP);
+	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &__ewn.sock);
+	if (err < 0) {
+		DEBUG_ERROR("failed to create sock\n");
+		goto exit1;
+	}
+
+	memset(&saddr, 0, sizeof(struct sockaddr));
+	saddr.nl_family = AF_NETLINK;
+	saddr.nl_groups = RTNLGRP_LINK;
+	saddr.nl_pid    = current->pid;
+
+	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
+	if (err < 0) {
+		DEBUG_ERROR("failed to bind sock\n");
+		goto exit2;
+	}
+
+	DEBUG_INFO("ecm_interface_wifi_event thread started\n");
+	while (!kthread_should_stop()) {
+		size = ecm_interface_wifi_event_rx(__ewn.sock, &saddr, buf, len);
+		DEBUG_TRACE("got a netlink msg with len %d\n", size);
+
+		if (signal_pending(current))
+			break;
+
+		if (size < 0) {
+			DEBUG_WARN("netlink rx error\n");
+		} else {
+			ecm_interface_wifi_event_handler(buf, size);
+		}
+	}
+
+	DEBUG_INFO("ecm_interface_wifi_event thread stopped\n");
+exit2:
+	sock_release(__ewn.sock);
+exit1:
+	__ewn.sock = NULL;
+
+	return;
+}
+
+/*
+ * ecm_interface_wifi_event_start()
+ */
+int ecm_interface_wifi_event_start(void)
+{
+	if (__ewn.thread) {
+		return 0;
+	}
+
+	__ewn.thread = kthread_run((void *)ecm_interface_wifi_event_thread, NULL, "ECM_wifi_event");
+	if (IS_ERR(__ewn.thread)) {
+		DEBUG_ERROR("Unable to start kernel thread\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wifi_event_stop()
+ */
+int ecm_interface_wifi_event_stop(void)
+{
+	int err;
+
+	if (__ewn.thread == NULL) {
+		return 0;
+	}
+
+	DEBUG_INFO("kill ecm_interface_wifi_event thread\n");
+	force_sig(SIGKILL, __ewn.thread);
+	err = kthread_stop(__ewn.thread);
+	__ewn.thread = NULL;
+
+	return err;
+}
 
 /*
  * ecm_interface_init()
@@ -5735,10 +6014,13 @@ int ecm_interface_init(void)
 	 * register for bridge fdb database modificationevents
 	 */
 	br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
+	br_fdb_register_notify(&ecm_interface_node_br_fdb_delete_nb);
 #endif
 #ifdef ECM_DB_XREF_ENABLE
 	neigh_mac_update_register_notify(&ecm_interface_neigh_mac_update_nb);
 #endif
+	ecm_interface_wifi_event_start();
+
 	return 0;
 }
 EXPORT_SYMBOL(ecm_interface_init);
@@ -5764,6 +6046,8 @@ void ecm_interface_exit(void)
 	 * unregister for bridge fdb update events
 	 */
         br_fdb_update_unregister_notify(&ecm_interface_node_br_fdb_update_nb);
+	br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 #endif
+	ecm_interface_wifi_event_stop();
 }
 EXPORT_SYMBOL(ecm_interface_exit);

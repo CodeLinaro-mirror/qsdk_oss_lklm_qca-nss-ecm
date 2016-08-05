@@ -799,7 +799,9 @@ not_relevant:
 	pcci->process_response.process_actions = 0;
 	*process_response = pcci->process_response;
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
-	ecm_db_connection_deref(ci);
+	if (ci) {
+		ecm_db_connection_deref(ci);
+	}
 	return;
 
 deny_accel:
@@ -975,10 +977,6 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	 * Output our last process response
 	 */
 	if ((result = ecm_classifier_process_response_state_get(sfi, &process_response))) {
-		return result;
-	}
-
-	if ((result = ecm_state_prefix_remove(sfi))) {
 		return result;
 	}
 
