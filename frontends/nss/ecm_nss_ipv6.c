@@ -155,10 +155,10 @@ struct workqueue_struct *ecm_nss_ipv6_workqueue;
 struct delayed_work ecm_nss_ipv6_work;
 struct nss_ipv6_msg *ecm_nss_ipv6_sync_req_msg;
 static unsigned long int ecm_nss_ipv6_next_req_time;
+static unsigned long int ecm_nss_ipv6_roll_check_jiffies;
 static unsigned long int ecm_nss_ipv6_stats_request_success = 0;	/* Number of success stats request */
 static unsigned long int ecm_nss_ipv6_stats_request_fail = 0;		/* Number of failed stats request */
 static unsigned long int ecm_nss_ipv6_stats_request_nack = 0;		/* Number of NACK'd stats request */
-static bool ecm_nss_ipv6_stats_request_in_progress = false;		/* If a request is holding in nss or not */
 
 /*
  * NSS driver linkage
@@ -1814,11 +1814,6 @@ static void ecm_nss_ipv6_connection_sync_many_callback(void *app_data, struct ns
 	int i;
 
 	/*
-	 * The request message returned from NSS, so ECM can be removed safely
-	 */
-	ecm_nss_ipv6_stats_request_in_progress = false;
-
-	/*
 	 * If ECM is terminating, don't process this last stats
 	 */
 	if (ecm_nss_ipv6_terminate_pending) {
@@ -1865,10 +1860,16 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 	 */
 	if (nicsm_req->index == 0) {
 		current_jiffies = jiffies;
+
+		if (time_is_after_jiffies(ecm_nss_ipv6_roll_check_jiffies))  {
+			ecm_nss_ipv6_next_req_time = 0;
+		}
+
 		if (ecm_nss_ipv6_next_req_time > current_jiffies) {
 			msleep(jiffies_to_msecs(ecm_nss_ipv6_next_req_time - current_jiffies));
 		}
-		ecm_nss_ipv6_next_req_time = jiffies + ECM_NSS_IPV6_STATS_SYNC_PERIOD;
+		ecm_nss_ipv6_roll_check_jiffies = jiffies;
+		ecm_nss_ipv6_next_req_time = ecm_nss_ipv6_roll_check_jiffies + ECM_NSS_IPV6_STATS_SYNC_PERIOD;
 	}
 
 	while (retry) {
@@ -1877,7 +1878,6 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 		}
 		nss_tx_status = nss_ipv6_tx_with_size(ecm_nss_ipv6_nss_ipv6_mgr, ecm_nss_ipv6_sync_req_msg, PAGE_SIZE);
 		if (nss_tx_status == NSS_TX_SUCCESS) {
-			ecm_nss_ipv6_stats_request_in_progress = true;
 			ecm_nss_ipv6_stats_request_success++;
 			return;
 		}
@@ -2247,6 +2247,11 @@ static bool ecm_nss_ipv6_sync_queue_init(void)
 		return false;
 	}
 
+	/*
+	 * Register the conn_sync_many message callback
+	 */
+	nss_ipv6_conn_sync_many_notify_register(ecm_nss_ipv6_connection_sync_many_callback);
+
 	nss_ipv6_msg_init(ecm_nss_ipv6_sync_req_msg, NSS_IPV6_RX_INTERFACE,
 		NSS_IPV6_TX_CONN_STATS_SYNC_MANY_MSG,
 		sizeof(struct nss_ipv6_conn_sync_many_msg),
@@ -2263,6 +2268,7 @@ static bool ecm_nss_ipv6_sync_queue_init(void)
 
 	ecm_nss_ipv6_workqueue = create_singlethread_workqueue("ecm_nss_ipv6_workqueue");
 	if (!ecm_nss_ipv6_workqueue) {
+		nss_ipv6_conn_sync_many_notify_unregister();
 		kfree(ecm_nss_ipv6_sync_req_msg);
 		return false;
 	}
@@ -2279,12 +2285,10 @@ static bool ecm_nss_ipv6_sync_queue_init(void)
 static void ecm_nss_ipv6_sync_queue_exit(void)
 {
 	/*
-	 * We need to make sure the request message returned before we exit
+	 * Unregister the conn_sync_many message callback
 	 * Otherwise nss will call our callback which does not exist anymore
 	 */
-	while(ecm_nss_ipv6_stats_request_in_progress) {
-		usleep_range(ECM_NSS_IPV6_STATS_SYNC_UDELAY - 100, ECM_NSS_IPV6_STATS_SYNC_UDELAY);
-	}
+	nss_ipv6_conn_sync_many_notify_unregister();
 
 	/*
 	 * Cancel the conn sync req work and destroy workqueue
@@ -2393,6 +2397,13 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 #endif
+	/*
+	 * Register this module with the Linux NSS Network driver.
+	 * Notify manager should be registered before the netfilter hooks. Because there
+	 * is a possibility that the ECM can try to send acceleration messages to the
+	 * acceleration engine without having an acceleration engine manager.
+	 */
+	ecm_nss_ipv6_nss_ipv6_mgr = nss_ipv6_notify_register(ecm_nss_ipv6_net_dev_callback, NULL);
 
 	/*
 	 * Register netfilter hooks
@@ -2400,17 +2411,13 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	result = nf_register_hooks(ecm_nss_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
 	if (result < 0) {
 		DEBUG_ERROR("Can't register netfilter hooks.\n");
+		nss_ipv6_notify_unregister();
 		goto task_cleanup;
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
 	ecm_nss_multicast_ipv6_init();
 #endif
-
-	/*
-	 * Register this module with the Linux NSS Network driver
-	 */
-	ecm_nss_ipv6_nss_ipv6_mgr = nss_ipv6_notify_register(ecm_nss_ipv6_net_dev_callback, NULL);
 
 	if (!ecm_nss_ipv6_sync_queue_init()) {
 		DEBUG_ERROR("Failed to create ecm ipv6 connection sync workqueue\n");
