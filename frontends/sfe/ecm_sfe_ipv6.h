@@ -166,8 +166,6 @@ static inline bool ecm_sfe_ipv6_accel_pending_clear(struct ecm_front_end_connect
 extern int ecm_sfe_ipv6_conntrack_event(unsigned long events, struct nf_conn *ct);
 extern void ecm_sfe_ipv6_accel_done_time_update(struct ecm_front_end_connection_instance *feci);
 extern void ecm_sfe_ipv6_decel_done_time_update(struct ecm_front_end_connection_instance *feci);
-extern struct ecm_classifier_instance *ecm_sfe_ipv6_assign_classifier(struct ecm_db_connection_instance *ci, ecm_classifier_type_t type);
-extern bool ecm_sfe_ipv6_reclassify(struct ecm_db_connection_instance *ci, int assignment_count, struct ecm_classifier_instance *assignments[]);
 extern void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *in_dev, __be16 *layer4hdr, struct sk_buff *skb);
 extern struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
@@ -177,5 +175,4 @@ extern struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct e
 extern struct ecm_db_host_instance *ecm_sfe_ipv6_host_establish_and_ref(ip_addr_t addr);
 extern struct ecm_db_mapping_instance *ecm_sfe_ipv6_mapping_establish_and_ref(ip_addr_t addr, int port);
 extern int ecm_sfe_ipv6_init(struct dentry *dentry);
-extern void ecm_sfe_ipv6_stop(int);
 extern void ecm_sfe_ipv6_exit(void);

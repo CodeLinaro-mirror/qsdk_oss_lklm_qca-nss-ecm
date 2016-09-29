@@ -87,21 +87,10 @@
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
-#include "ecm_classifier_default.h"
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
 #endif
-#ifdef ECM_CLASSIFIER_HYFI_ENABLE
-#include "ecm_classifier_hyfi.h"
-#endif
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
-#include "ecm_classifier_dscp.h"
-#endif
-#ifdef ECM_CLASSIFIER_PCC_ENABLE
-#include "ecm_classifier_pcc.h"
-#endif
 #include "ecm_interface.h"
-#include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
 #include "ecm_sfe_ported_ipv6.h"
 #ifdef ECM_MULTICAST_ENABLE
@@ -110,8 +99,8 @@
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_sfe_non_ported_ipv6.h"
 #endif
-
 #include "ecm_front_end_common.h"
+#include "ecm_front_end_ipv6.h"
 
 int ecm_sfe_ipv6_no_action_limit_default = 250;		/* Default no-action limit. */
 int ecm_sfe_ipv6_driver_fail_limit_default = 250;		/* Default driver fail limit. */
@@ -160,11 +149,6 @@ static int ecm_sfe_ipv6_reject_acceleration_for_ipsec;		/* Don't accelerate IPSE
  * Debugfs dentry object.
  */
 static struct dentry *ecm_sfe_ipv6_dentry;
-
-/*
- * General operational control
- */
-static int ecm_sfe_ipv6_stopped = 0;			/* When non-zero further traffic will not be processed */
 
 /*
  * ecm_sfe_ipv6_node_establish_and_ref()
@@ -315,6 +299,7 @@ done:
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
 		DEBUG_TRACE("%p: node established\n", ni);
+		ecm_db_iface_deref(ii);
 		return ni;
 	}
 
@@ -517,148 +502,6 @@ void ecm_sfe_ipv6_decel_done_time_update(struct ecm_front_end_connection_instanc
 }
 
 /*
- * ecm_sfe_ipv6_assign_classifier()
- *	Instantiate and assign classifier of type upon the connection, also returning it if it could be allocated.
- */
-struct ecm_classifier_instance *ecm_sfe_ipv6_assign_classifier(struct ecm_db_connection_instance *ci, ecm_classifier_type_t type)
-{
-	DEBUG_TRACE("%p: Assign classifier of type: %d\n", ci, type);
-	DEBUG_ASSERT(type != ECM_CLASSIFIER_TYPE_DEFAULT, "Must never need to instantiate default type in this way");
-
-#ifdef ECM_CLASSIFIER_PCC_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_PCC) {
-		struct ecm_classifier_pcc_instance *pcci;
-		pcci = ecm_classifier_pcc_instance_alloc(ci);
-		if (!pcci) {
-			DEBUG_TRACE("%p: Failed to create Parental Controls classifier\n", ci);
-			return NULL;
-		}
-		DEBUG_TRACE("%p: Created Parental Controls classifier: %p\n", ci, pcci);
-		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)pcci);
-		return (struct ecm_classifier_instance *)pcci;
-	}
-#endif
-
-#ifdef ECM_CLASSIFIER_NL_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_NL) {
-		struct ecm_classifier_nl_instance *cnli;
-		cnli = ecm_classifier_nl_instance_alloc(ci);
-		if (!cnli) {
-			DEBUG_TRACE("%p: Failed to create Netlink classifier\n", ci);
-			return NULL;
-		}
-		DEBUG_TRACE("%p: Created Netlink classifier: %p\n", ci, cnli);
-		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cnli);
-		return (struct ecm_classifier_instance *)cnli;
-	}
-#endif
-
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_DSCP) {
-		struct ecm_classifier_dscp_instance *cdscpi;
-		cdscpi = ecm_classifier_dscp_instance_alloc(ci);
-		if (!cdscpi) {
-			DEBUG_TRACE("%p: Failed to create DSCP classifier\n", ci);
-			return NULL;
-		}
-		DEBUG_TRACE("%p: Created DSCP classifier: %p\n", ci, cdscpi);
-		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cdscpi);
-		return (struct ecm_classifier_instance *)cdscpi;
-	}
-#endif
-
-#ifdef ECM_CLASSIFIER_HYFI_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_HYFI) {
-		struct ecm_classifier_hyfi_instance *chfi;
-		chfi = ecm_classifier_hyfi_instance_alloc(ci);
-		if (!chfi) {
-			DEBUG_TRACE("%p: Failed to create HyFi classifier\n", ci);
-			return NULL;
-		}
-		DEBUG_TRACE("%p: Created HyFi classifier: %p\n", ci, chfi);
-		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)chfi);
-		return (struct ecm_classifier_instance *)chfi;
-	}
-#endif
-
-	// GGG TODO Add other classifier types.
-	DEBUG_ASSERT(NULL, "%p: Unsupported type: %d\n", ci, type);
-	return NULL;
-}
-
-/*
- * ecm_sfe_ipv6_reclassify()
- *	Signal reclassify upon the assigned classifiers.
- *
- * Classifiers that unassigned themselves we TRY to re-instantiate them.
- * Returns false if the function is not able to instantiate all missing classifiers.
- * This function does not release and references to classifiers in the assignments[].
- */
-bool ecm_sfe_ipv6_reclassify(struct ecm_db_connection_instance *ci, int assignment_count, struct ecm_classifier_instance *assignments[])
-{
-	ecm_classifier_type_t classifier_type;
-	int i;
-	bool full_reclassification = true;
-
-	/*
-	 * assignment_count will always be <= the number of classifier types available
-	 */
-	for (i = 0, classifier_type = ECM_CLASSIFIER_TYPE_DEFAULT; i < assignment_count; ++i, ++classifier_type) {
-		ecm_classifier_type_t aci_type;
-		struct ecm_classifier_instance *aci;
-
-		aci = assignments[i];
-		aci_type = aci->type_get(aci);
-		DEBUG_TRACE("%p: Reclassify: %d\n", ci, aci_type);
-		aci->reclassify(aci);
-
-		/*
-		 * If the connection has a full complement of assigned classifiers then these will match 1:1 with the classifier_type (all in same order).
-		 * If not, we have to create the missing ones.
-		 */
-		if (aci_type == classifier_type) {
-			continue;
-		}
-
-		/*
-		 * Need to instantiate the missing classifier types until we get to the same type as aci_type then we are back in sync to continue reclassification
-		 */
-		while (classifier_type != aci_type) {
-			struct ecm_classifier_instance *naci;
-			DEBUG_TRACE("%p: Instantiate missing type: %d\n", ci, classifier_type);
-			DEBUG_ASSERT(classifier_type < ECM_CLASSIFIER_TYPES, "Algorithm bad");
-
-			naci = ecm_sfe_ipv6_assign_classifier(ci, classifier_type);
-			if (!naci) {
-				full_reclassification = false;
-			} else {
-				naci->deref(naci);
-			}
-
-			classifier_type++;
-		}
-	}
-
-	/*
-	 * Add missing types
-	 */
-	for (; classifier_type < ECM_CLASSIFIER_TYPES; ++classifier_type) {
-		struct ecm_classifier_instance *naci;
-		DEBUG_TRACE("%p: Instantiate missing type: %d\n", ci, classifier_type);
-
-		naci = ecm_sfe_ipv6_assign_classifier(ci, classifier_type);
-		if (!naci) {
-			full_reclassification = false;
-		} else {
-			naci->deref(naci);
-		}
-	}
-
-	DEBUG_TRACE("%p: reclassify done: %u\n", ci, full_reclassification);
-	return full_reclassification;
-}
-
-/*
  * ecm_sfe_ipv6_connection_regenerate()
  *	Re-generate a connection.
  *
@@ -791,7 +634,7 @@ void ecm_sfe_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	 * Reclassify
 	 */
 	DEBUG_INFO("%p: reclassify\n", ci);
-	if (!ecm_sfe_ipv6_reclassify(ci, assignment_count, assignments)) {
+	if (!ecm_classifier_reclassify(ci, assignment_count, assignments)) {
 		/*
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
@@ -1049,7 +892,6 @@ static unsigned int ecm_sfe_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 	struct net_device *in;
 	bool can_accel = true;
 	unsigned int result;
-	unsigned int conn_count;
 
 	DEBUG_TRACE("%p: Routing: %s\n", out, out->name);
 
@@ -1062,21 +904,12 @@ static unsigned int ecm_sfe_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_sfe_ipv6_lock);
-	if (unlikely(ecm_sfe_ipv6_stopped)) {
+	if (unlikely(ecm_front_end_ipv6_stopped)) {
 		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return NF_ACCEPT;
 	}
 	spin_unlock_bh(&ecm_sfe_ipv6_lock);
-
-	/*
-	 * If we have exceeded the conntrack connection limit then do not process.
-	 */
-	conn_count = (unsigned int)ecm_db_connection_count_get();
-	if (conn_count >= nf_conntrack_max) {
-		DEBUG_WARN("ECM Connection count limit reached: db: %u, ct: %u\n", conn_count, nf_conntrack_max);
-		return NF_ACCEPT;
-	}
 
 	/*
 	 * Don't process broadcast or multicast
@@ -1141,6 +974,8 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 	struct in6_addr group6 __attribute__((unused));
 	struct in6_addr origin6 __attribute__((unused));
 	struct ecm_classifier_rule_sync class_sync;
+	int flow_dir;
+	int return_dir;
 
 	/*
 	 * Only respond to sync messages
@@ -1393,6 +1228,8 @@ sync_conntrack:
 	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
 	DEBUG_TRACE("%p: SFE Sync: conntrack connection\n", ct);
 
+	ecm_front_end_flow_and_return_directions_get(ct, flow_ip, 6, &flow_dir, &return_dir);
+
 	/*
 	 * Only update if this is not a fixed timeout
 	 */
@@ -1419,34 +1256,34 @@ sync_conntrack:
 #endif
 	if (acct) {
 		spin_lock_bh(&ct->lock);
-		atomic64_add(sync->flow_rx_packet_count, &acct[IP_CT_DIR_ORIGINAL].packets);
-		atomic64_add(sync->flow_rx_byte_count, &acct[IP_CT_DIR_ORIGINAL].bytes);
+		atomic64_add(sync->flow_rx_packet_count, &acct[flow_dir].packets);
+		atomic64_add(sync->flow_rx_byte_count, &acct[flow_dir].bytes);
 
-		atomic64_add(sync->return_rx_packet_count, &acct[IP_CT_DIR_REPLY].packets);
-		atomic64_add(sync->return_rx_byte_count, &acct[IP_CT_DIR_REPLY].bytes);
+		atomic64_add(sync->return_rx_packet_count, &acct[return_dir].packets);
+		atomic64_add(sync->return_rx_byte_count, &acct[return_dir].bytes);
 		spin_unlock_bh(&ct->lock);
 	}
 
 	switch (sync->protocol) {
 	case IPPROTO_TCP:
 		spin_lock_bh(&ct->lock);
-		if (ct->proto.tcp.seen[0].td_maxwin < sync->flow_max_window) {
-			ct->proto.tcp.seen[0].td_maxwin = sync->flow_max_window;
+		if (ct->proto.tcp.seen[flow_dir].td_maxwin < sync->flow_max_window) {
+			ct->proto.tcp.seen[flow_dir].td_maxwin = sync->flow_max_window;
 		}
-		if ((int32_t)(ct->proto.tcp.seen[0].td_end - sync->flow_end) < 0) {
-			ct->proto.tcp.seen[0].td_end = sync->flow_end;
+		if ((int32_t)(ct->proto.tcp.seen[flow_dir].td_end - sync->flow_end) < 0) {
+			ct->proto.tcp.seen[flow_dir].td_end = sync->flow_end;
 		}
-		if ((int32_t)(ct->proto.tcp.seen[0].td_maxend - sync->flow_max_end) < 0) {
-			ct->proto.tcp.seen[0].td_maxend = sync->flow_max_end;
+		if ((int32_t)(ct->proto.tcp.seen[flow_dir].td_maxend - sync->flow_max_end) < 0) {
+			ct->proto.tcp.seen[flow_dir].td_maxend = sync->flow_max_end;
 		}
-		if (ct->proto.tcp.seen[1].td_maxwin < sync->return_max_window) {
-			ct->proto.tcp.seen[1].td_maxwin = sync->return_max_window;
+		if (ct->proto.tcp.seen[return_dir].td_maxwin < sync->return_max_window) {
+			ct->proto.tcp.seen[return_dir].td_maxwin = sync->return_max_window;
 		}
-		if ((int32_t)(ct->proto.tcp.seen[1].td_end - sync->return_end) < 0) {
-			ct->proto.tcp.seen[1].td_end = sync->return_end;
+		if ((int32_t)(ct->proto.tcp.seen[return_dir].td_end - sync->return_end) < 0) {
+			ct->proto.tcp.seen[return_dir].td_end = sync->return_end;
 		}
-		if ((int32_t)(ct->proto.tcp.seen[1].td_maxend - sync->return_max_end) < 0) {
-			ct->proto.tcp.seen[1].td_maxend = sync->return_max_end;
+		if ((int32_t)(ct->proto.tcp.seen[return_dir].td_maxend - sync->return_max_end) < 0) {
+			ct->proto.tcp.seen[return_dir].td_maxend = sync->return_max_end;
 		}
 		spin_unlock_bh(&ct->lock);
 		break;
@@ -1476,130 +1313,6 @@ static struct nf_hook_ops ecm_sfe_ipv6_netfilter_hooks[] __read_mostly = {
 		.priority       = NF_IP6_PRI_NAT_SRC + 1,
 	},
 };
-
-/*
- * ecm_sfe_ipv6_conntrack_event_destroy()
- *	Handles conntrack destroy events
- */
-static void ecm_sfe_ipv6_conntrack_event_destroy(struct nf_conn *ct)
-{
-	struct ecm_db_connection_instance *ci;
-	struct ecm_front_end_connection_instance *feci;
-
-	DEBUG_INFO("Destroy event for ct: %p\n", ct);
-
-	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
-	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
-		return;
-	}
-	DEBUG_INFO("%p: Connection defunct %p\n", ct, ci);
-
-	/*
-	 * If this connection is accelerated then we need to issue a destroy command
-	 */
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	feci->decelerate(feci);
-	feci->deref(feci);
-
-	/*
-	 * Force destruction of the connection my making it defunct
-	 */
-	ecm_db_connection_make_defunct(ci);
-	ecm_db_connection_deref(ci);
-}
-
-#if defined(CONFIG_NF_CONNTRACK_MARK)
-/*
- * ecm_sfe_ipv6_conntrack_event_mark()
- *	Handles conntrack mark events
- */
-static void ecm_sfe_ipv6_conntrack_event_mark(struct nf_conn *ct)
-{
-	struct ecm_db_connection_instance *ci;
-	struct ecm_classifier_instance *__attribute__((unused))cls;
-
-	DEBUG_INFO("Mark event for ct: %p\n", ct);
-
-	/*
-	 * Ignore transitions to zero
-	 */
-	if (ct->mark == 0) {
-		return;
-	}
-
-	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
-	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
-		return;
-	}
-
-#ifdef ECM_CLASSIFIER_NL_ENABLE
-	/*
-	 * As of now, only the Netlink classifier is interested in conmark changes
-	 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
-	 */
-	cls = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
-	if (cls) {
-		ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
-		cls->deref(cls);
-	}
-#endif
-	/*
-	 * All done
-	 */
-	ecm_db_connection_deref(ci);
-}
-#endif
-
-/*
- * ecm_sfe_ipv6_conntrack_event()
- *	Callback event invoked when conntrack connection state changes, currently we handle destroy events to quickly release state
- */
-int ecm_sfe_ipv6_conntrack_event(unsigned long events, struct nf_conn *ct)
-{
-	/*
-	 * If operations have stopped then do not process event
-	 */
-	spin_lock_bh(&ecm_sfe_ipv6_lock);
-	if (unlikely(ecm_sfe_ipv6_stopped)) {
-		DEBUG_WARN("Ignoring event - stopped\n");
-		spin_unlock_bh(&ecm_sfe_ipv6_lock);
-		return NOTIFY_DONE;
-	}
-	spin_unlock_bh(&ecm_sfe_ipv6_lock);
-
-	if (!ct) {
-		DEBUG_WARN("Error: no ct\n");
-		return NOTIFY_DONE;
-	}
-
-	/*
-	 * handle destroy events
-	 */
-	if (events & (1 << IPCT_DESTROY)) {
-		DEBUG_TRACE("%p: Event is destroy\n", ct);
-		ecm_sfe_ipv6_conntrack_event_destroy(ct);
-	}
-
-#if defined(CONFIG_NF_CONNTRACK_MARK)
-	/*
-	 * handle mark change events
-	 */
-	if (events & (1 << IPCT_MARK)) {
-		DEBUG_TRACE("%p: Event is mark\n", ct);
-		ecm_sfe_ipv6_conntrack_event_mark(ct);
-	}
-#endif
-	return NOTIFY_DONE;
-}
-EXPORT_SYMBOL(ecm_sfe_ipv6_conntrack_event);
-
-void ecm_sfe_ipv6_stop(int num)
-{
-	ecm_sfe_ipv6_stopped = num;
-}
-EXPORT_SYMBOL(ecm_sfe_ipv6_stop);
 
 /*
  * ecm_sfe_ipv6_get_accel_limit_mode()
@@ -1758,12 +1471,6 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 	if (!ecm_sfe_ipv6_dentry) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 directory in debugfs\n");
 		return result;
-	}
-
-	if (!debugfs_create_u32("stop", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_stopped)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 stop file in debugfs\n");
-		goto task_cleanup;
 	}
 
 #ifdef CONFIG_XFRM

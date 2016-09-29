@@ -48,6 +48,11 @@
 #include "ecm_front_end_ipv4.h"
 
 /*
+ * General operational control
+ */
+int ecm_front_end_ipv4_stopped = 0;	/* When non-zero further traffic will not be processed */
+
+/*
  * ecm_front_end_ipv4_interface_construct_ip_addr_set()
  *	Sets the IP addresses.
  *
@@ -343,25 +348,7 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
  */
 void ecm_front_end_ipv4_stop(int num)
 {
-	/*
-	 * If the device tree is used, check which accel engine will be stopped.
-	 * For ipq8064 platforms, we will stop NSS.
-	 */
-#ifdef CONFIG_OF
-	/*
-	 * Check the other platforms and use the correct APIs for those platforms.
-	 */
-	if (!of_machine_is_compatible("qcom,ipq8064") &&
-		!of_machine_is_compatible("qcom,ipq8062") &&
-		!of_machine_is_compatible("qcom,ipq807x")) {
-		ecm_sfe_ipv4_stop(num);
-	} else {
-		ecm_nss_ipv4_stop(num);
-	}
-#else
-	ecm_nss_ipv4_stop(num);
-#endif
-
+	ecm_front_end_ipv4_stopped = num;
 }
 
 /*
@@ -369,24 +356,21 @@ void ecm_front_end_ipv4_stop(int num)
  */
 int ecm_front_end_ipv4_init(struct dentry *dentry)
 {
-	/*
-	 * If the device tree is used, check which accel engine can be used.
-	 * For ipq8064 platform, we will use NSS.
-	 */
-#ifdef CONFIG_OF
-	/*
-	 * Check the other platforms and use the correct APIs for those platforms.
-	 */
-	if (!of_machine_is_compatible("qcom,ipq8064") &&
-		!of_machine_is_compatible("qcom,ipq8062") &&
-		!of_machine_is_compatible("qcom,ipq807x")) {
-		return ecm_sfe_ipv4_init(dentry);
-	} else {
-		return ecm_nss_ipv4_init(dentry);
+	if (!debugfs_create_u32("front_end_ipv4_stop", S_IRUGO | S_IWUSR, dentry,
+					(u32 *)&ecm_front_end_ipv4_stopped)) {
+		DEBUG_ERROR("Failed to create ecm front end ipv4 stop file in debugfs\n");
+		return -1;
 	}
-#else
-	return ecm_nss_ipv4_init(dentry);
-#endif
+
+	switch (ecm_front_end_type_get()) {
+	case ECM_FRONT_END_TYPE_NSS:
+		return ecm_nss_ipv4_init(dentry);
+	case ECM_FRONT_END_TYPE_SFE:
+		return ecm_sfe_ipv4_init(dentry);
+	default:
+		DEBUG_ERROR("Failed to init ipv4 front end\n");
+		return -1;
+	}
 }
 
 /*
@@ -394,23 +378,16 @@ int ecm_front_end_ipv4_init(struct dentry *dentry)
  */
 void ecm_front_end_ipv4_exit(void)
 {
-	/*
-	 * If the device tree is used, check which accel engine will be exited.
-	 * For ipq8064 platforms, we will exit NSS.
-	 */
-#ifdef CONFIG_OF
-	/*
-	 * Check the other platforms and use the correct APIs for those platforms.
-	 */
-	if (!of_machine_is_compatible("qcom,ipq8064") &&
-		!of_machine_is_compatible("qcom,ipq8062") &&
-		!of_machine_is_compatible("qcom,ipq807x")) {
-		ecm_sfe_ipv4_exit();
-	} else {
+	switch (ecm_front_end_type_get()) {
+	case ECM_FRONT_END_TYPE_NSS:
 		ecm_nss_ipv4_exit();
+		break;
+	case ECM_FRONT_END_TYPE_SFE:
+		ecm_sfe_ipv4_exit();
+		break;
+	default:
+		DEBUG_ERROR("Failed to exit from front end\n");
+		break;
 	}
-#else
-	ecm_nss_ipv4_exit();
-#endif
 }
 

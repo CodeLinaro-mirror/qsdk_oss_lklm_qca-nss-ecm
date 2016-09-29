@@ -35,8 +35,10 @@ ecm-y := \
 	 frontends/ecm_front_end_ipv6.o \
 	 frontends/ecm_front_end_common.o \
 	 ecm_db.o \
+	 ecm_classifier.o \
 	 ecm_classifier_default.o \
 	 ecm_interface.o \
+	 ecm_conntrack_notifier.o \
 	 ecm_init.o
 
 # #############################################################################
@@ -48,7 +50,6 @@ ECM_FRONT_END_NSS_ENABLE=y
 endif
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
-ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_conntrack_notifier.o
 ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
 
 # #############################################################################
@@ -62,7 +63,6 @@ endif
 endif
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
-ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_conntrack_notifier.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
 
 # #############################################################################
@@ -284,6 +284,7 @@ ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 # file.
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
+ccflags-y += -DECM_CLASSIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1

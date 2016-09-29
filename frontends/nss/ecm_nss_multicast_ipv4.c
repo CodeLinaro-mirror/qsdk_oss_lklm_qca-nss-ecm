@@ -1978,7 +1978,7 @@ static void ecm_nss_multicast_ipv4_connection_regenerate(struct ecm_db_connectio
 	 * Reclassify
 	 */
 	DEBUG_INFO("%p: reclassify\n", ci);
-	if (!ecm_nss_ipv4_reclassify(ci, assignment_count, assignments)) {
+	if (!ecm_classifier_reclassify(ci, assignment_count, assignments)) {
 		/*
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
@@ -2329,6 +2329,7 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv4_node_establish_and_re
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
 		DEBUG_TRACE("%p: node established\n", ni);
+		ecm_db_iface_deref(ii);
 		return ni;
 	}
 
@@ -2904,7 +2905,7 @@ unsigned int ecm_nss_multicast_ipv4_connection_process(struct net_device *out_de
 		 * NOTE: Default classifier is a special case considered previously
 		 */
 		for (classifier_type = ECM_CLASSIFIER_TYPE_DEFAULT + 1; classifier_type < ECM_CLASSIFIER_TYPES; ++classifier_type) {
-			struct ecm_classifier_instance *aci = ecm_nss_ipv4_assign_classifier(nci, classifier_type);
+			struct ecm_classifier_instance *aci = ecm_classifier_assign_classifier(nci, classifier_type);
 			if (aci) {
 				aci->deref(aci);
 			} else {

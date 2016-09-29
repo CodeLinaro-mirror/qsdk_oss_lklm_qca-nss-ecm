@@ -76,6 +76,7 @@
 #include "ecm_tracker.h"
 #include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_front_end_common.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -879,24 +880,28 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: TCP Accel no ct from conn %p to get window data\n", npci, feci->ci);
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SEQ_CHECK;
 		} else {
-			spin_lock_bh(&ct->lock);
-			DEBUG_TRACE("%p: TCP Accel Get window data from ct %p for conn %p\n", npci, ct, feci->ci);
+			int flow_dir;
+			int return_dir;
 
-			nircm->tcp_rule.flow_window_scale = ct->proto.tcp.seen[0].td_scale;
-			nircm->tcp_rule.flow_max_window = ct->proto.tcp.seen[0].td_maxwin;
-			nircm->tcp_rule.flow_end = ct->proto.tcp.seen[0].td_end;
-			nircm->tcp_rule.flow_max_end = ct->proto.tcp.seen[0].td_maxend;
-			nircm->tcp_rule.return_window_scale = ct->proto.tcp.seen[1].td_scale;
-			nircm->tcp_rule.return_max_window = ct->proto.tcp.seen[1].td_maxwin;
-			nircm->tcp_rule.return_end = ct->proto.tcp.seen[1].td_end;
-			nircm->tcp_rule.return_max_end = ct->proto.tcp.seen[1].td_maxend;
+			ecm_front_end_flow_and_return_directions_get(ct, src_ip, 6, &flow_dir, &return_dir);
+
+			DEBUG_TRACE("%p: TCP Accel Get window data from ct %p for conn %p\n", npci, ct, feci->ci);
+			spin_lock_bh(&ct->lock);
+			nircm->tcp_rule.flow_window_scale = ct->proto.tcp.seen[flow_dir].td_scale;
+			nircm->tcp_rule.flow_max_window = ct->proto.tcp.seen[flow_dir].td_maxwin;
+			nircm->tcp_rule.flow_end = ct->proto.tcp.seen[flow_dir].td_end;
+			nircm->tcp_rule.flow_max_end = ct->proto.tcp.seen[flow_dir].td_maxend;
+			nircm->tcp_rule.return_window_scale = ct->proto.tcp.seen[return_dir].td_scale;
+			nircm->tcp_rule.return_max_window = ct->proto.tcp.seen[return_dir].td_maxwin;
+			nircm->tcp_rule.return_end = ct->proto.tcp.seen[return_dir].td_end;
+			nircm->tcp_rule.return_max_end = ct->proto.tcp.seen[return_dir].td_maxend;
 #ifdef ECM_OPENWRT_SUPPORT
 			if (nf_ct_tcp_be_liberal || nf_ct_tcp_no_window_check
 #else
 			if (nf_ct_tcp_be_liberal
 #endif
-					|| (ct->proto.tcp.seen[0].flags & IP_CT_TCP_FLAG_BE_LIBERAL)
-					|| (ct->proto.tcp.seen[1].flags & IP_CT_TCP_FLAG_BE_LIBERAL)) {
+					|| (ct->proto.tcp.seen[flow_dir].flags & IP_CT_TCP_FLAG_BE_LIBERAL)
+					|| (ct->proto.tcp.seen[return_dir].flags & IP_CT_TCP_FLAG_BE_LIBERAL)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SEQ_CHECK;
 			} else {
 #ifdef CONFIG_XFRM
@@ -1885,14 +1890,6 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		}
 		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
-		if (!ecm_front_end_ipv6_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
-							in_dev, out_dev,
-							ip_src_addr, ip_dest_addr,
-							&efeici)) {
-			DEBUG_WARN("ECM front end ipv6 interface construct set failed\n");
-			return NF_ACCEPT;
-		}
-
 		/*
 		 * Does this connection have a conntrack entry?
 		 */
@@ -1904,7 +1901,6 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 				spin_lock_bh(&ct->lock);
 				if (ct->proto.tcp.state >= TCP_CONNTRACK_FIN_WAIT && ct->proto.tcp.state <= TCP_CONNTRACK_CLOSE) {
 					spin_unlock_bh(&ct->lock);
-					ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 					DEBUG_TRACE("%p: Connection in termination state %#X\n", ct, ct->proto.tcp.state);
 					return NF_ACCEPT;
 				}
@@ -1917,7 +1913,6 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		 */
 		nci = ecm_db_connection_alloc();
 		if (!nci) {
-			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to allocate connection\n");
 			return NF_ACCEPT;
 		}
@@ -1928,7 +1923,6 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv6_connection_instance_alloc(nci, protocol, can_accel);
 		if (!feci) {
 			ecm_db_connection_deref(nci);
-			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to allocate front end\n");
 			return NF_ACCEPT;
 		}
@@ -1942,6 +1936,15 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 			((struct ecm_sfe_ported_ipv6_connection_instance *)feci)->return_ipsec_state = ECM_SFE_IPSEC_STATE_TO_ENCRYPT;
 		}
 #endif
+		if (!ecm_front_end_ipv6_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
+							in_dev, out_dev,
+							ip_src_addr, ip_dest_addr,
+							&efeici)) {
+			feci->deref(feci);
+			ecm_db_connection_deref(nci);
+			DEBUG_WARN("ECM front end ipv6 interface construct set failed\n");
+			return NF_ACCEPT;
+		}
 
 		/*
 		 * Get the src and destination mappings
@@ -2043,7 +2046,7 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 		 * NOTE: Default classifier is a special case considered previously
 		 */
 		for (classifier_type = ECM_CLASSIFIER_TYPE_DEFAULT + 1; classifier_type < ECM_CLASSIFIER_TYPES; ++classifier_type) {
-			struct ecm_classifier_instance *aci = ecm_sfe_ipv6_assign_classifier(nci, classifier_type);
+			struct ecm_classifier_instance *aci = ecm_classifier_assign_classifier(nci, classifier_type);
 			if (aci) {
 				aci->deref(aci);
 			} else {
