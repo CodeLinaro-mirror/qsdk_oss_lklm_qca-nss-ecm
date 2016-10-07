@@ -116,9 +116,6 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 # Define ECM_INTERFACE_MAP_T_ENABLE=y in order
 # to enable support for MAP-T interface.
 # #############################################################################
-ifneq ($(findstring 3.14, $(KERNELVERSION)),)
-ECM_INTERFACE_MAP_T_ENABLE=y
-endif
 ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 
 # #############################################################################
@@ -147,6 +144,7 @@ ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 MCS_CONFIG:=$(shell  grep "CONFIG_PACKAGE_kmod-qca-mcs=y" $(TOPDIR)/.config)
 MCS_ENABLED:=CONFIG_PACKAGE_kmod-qca-mcs=y
 ifeq ($(MCS_CONFIG),$(MCS_ENABLED))
+ECM_MULTICAST_ENABLE=y
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
@@ -322,4 +320,3 @@ ccflags-y += -DECM_OPENWRT_SUPPORT=1
 ccflags-y += -I$(obj)/ -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe
 
 obj ?= .
-
