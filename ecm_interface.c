@@ -2422,7 +2422,6 @@ identifier_update:
 #endif
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 	if (channel_protocol == PX_PROTO_OE) {
-
 		/*
 		 * PPPoE channel
 		 */
@@ -4925,7 +4924,6 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				stats.tx_bytes = tx_bytes;
 				br_dev_update_stats(dev, &stats);
 				break;
-
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			case ECM_DB_IFACE_TYPE_PPPOE:
 				DEBUG_INFO("PPPOE\n");

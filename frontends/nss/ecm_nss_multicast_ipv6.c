@@ -547,9 +547,6 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-				struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				struct ecm_db_interface_info_vlan vlan_info;
 #endif
@@ -608,13 +605,18 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				}
 
 				/*
-				 * Copy pppoe session info to the creation structure.
+				 * Set the PPPoE rule creation structure.
 				 */
-				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
-				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-
-				DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", nmci, create->if_rule[valid_vif_idx].pppoe_session_id, create->if_rule[valid_vif_idx].pppoe_remote_mac);
+				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
+					DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+							nmci, create->if_rule[valid_vif_idx].pppoe_if_num);
+					rule_invalid = true;
+					break;
+				}
+				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
+				DEBUG_TRACE("%p: PPPoE - exist pppoe_if_num: %d\n", nmci,
+							create->if_rule[valid_vif_idx].pppoe_if_num);
 #else
 				DEBUG_TRACE("%p: PPPoE - unsupported\n", nmci);
 				rule_invalid = true;
@@ -1034,9 +1036,6 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-				struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				struct ecm_db_interface_info_vlan vlan_info;
 				struct net_device *vlan_out_dev = NULL;
@@ -1100,13 +1099,18 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				}
 
 				/*
-				 * Copy pppoe session info to the creation structure.
+				 * Set the PPPoE rule creation structure.
 				 */
-				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
-				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
+					DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+							nmci, create->if_rule[valid_vif_idx].pppoe_if_num);
+					rule_invalid = true;
+					break;
+				}
 				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
-				DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", nmci, create->if_rule[valid_vif_idx].pppoe_session_id, create->if_rule[valid_vif_idx].pppoe_remote_mac);
+				DEBUG_TRACE("%p: PPPoE - exist if_num: %d\n", nmci,
+							create->if_rule[valid_vif_idx].pppoe_if_num);
 #else
 				DEBUG_TRACE("%p: PPPoE - unsupported\n", nmci);
 				rule_invalid = true;
