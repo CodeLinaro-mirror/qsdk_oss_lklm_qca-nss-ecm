@@ -58,6 +58,7 @@
 #include <linux/netfilter/nf_conntrack_zones_common.h>
 #endif
 #include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_timeout.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -1659,6 +1660,37 @@ sync_conntrack:
 		}
 		spin_unlock_bh(&ct->lock);
 		break;
+	case IPPROTO_UDP:
+		/*
+		 * In Linux connection track, UDP flow has two timeout values:
+		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout:
+		 * 	this is for uni-direction UDP flow, normally its value is 60 seconds
+		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout_stream:
+		 * 	this is for bi-direction UDP flow, normally its value is 180 seconds
+		 *
+		 * Linux will update timer of UDP flow to stream timeout once it seen packets
+		 * in reply direction. But if flow is accelerated by NSS or SFE, Linux won't
+		 * see any packets. So we have to do the same thing in our stats sync message.
+		 */
+		if (!test_bit(IPS_ASSURED_BIT, &ct->status) && acct) {
+			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
+
+			if (reply_pkts != 0) {
+				struct nf_conntrack_l4proto *l4proto;
+				unsigned int *timeouts;
+
+				set_bit(IPS_SEEN_REPLY_BIT, &ct->status);
+				set_bit(IPS_ASSURED_BIT, &ct->status);
+
+				l4proto = __nf_ct_l4proto_find(AF_INET6, IPPROTO_UDP);
+				timeouts = nf_ct_timeout_lookup(&init_net, ct, l4proto);
+
+				spin_lock_bh(&ct->lock);
+				ct->timeout.expires = jiffies + timeouts[UDP_CT_REPLIED];
+				spin_unlock_bh(&ct->lock);
+			}
+		}
+		break;
 	}
 
 	/*
@@ -1726,7 +1758,7 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 	/*
 	 * Prepare a nss_ipv6_msg with CONN_STATS_SYNC_MANY request
 	 */
-	struct nss_ipv6_conn_sync_many_msg *nicsm_req = &ecm_nss_ipv6_sync_req_msg->msg.conn_stats_many;;
+	struct nss_ipv6_conn_sync_many_msg *nicsm_req = &ecm_nss_ipv6_sync_req_msg->msg.conn_stats_many;
 	nss_tx_status_t nss_tx_status;
 	int retry = 3;
 	unsigned long int current_jiffies;
