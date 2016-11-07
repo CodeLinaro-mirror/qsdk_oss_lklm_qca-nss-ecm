@@ -55,6 +55,7 @@
 #include <linux/netfilter/nf_conntrack_zones_common.h>
 #endif
 #include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_timeout.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -249,6 +250,13 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 			       ECM_IP_ADDR_TO_DOT(local_ip), ECM_IP_ADDR_TO_DOT(remote_ip), ECM_IP_ADDR_TO_DOT(addr));
 
 			local_dev = ecm_interface_dev_find_by_local_addr(local_ip);
+			if (!local_dev) {
+				DEBUG_WARN("Failed to find local netdevice of l2tp tunnel for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
+				return NULL;
+			}
+
+			DEBUG_TRACE("local_dev found is %s\n", local_dev->name);
+
 			if (local_dev->type == ARPHRD_PPP) {
 				struct ppp_channel *ppp_chan[1];
 				struct pppoe_opt addressing;
@@ -282,13 +290,6 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 				break;
 #endif
 			}
-
-			if (!local_dev) {
-				DEBUG_WARN("Failed to find local netdevice of l2tp tunnel for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
-				return NULL;
-			}
-
-			DEBUG_TRACE("local_dev found is %s\n", local_dev->name);
 
 			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
@@ -1998,6 +1999,37 @@ sync_conntrack:
 			ct->proto.tcp.seen[return_dir].td_maxend = sync->return_max_end;
 		}
 		spin_unlock_bh(&ct->lock);
+		break;
+	case IPPROTO_UDP:
+		/*
+		 * In Linux connection track, UDP flow has two timeout values:
+		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout:
+		 * 	this is for uni-direction UDP flow, normally its value is 60 seconds
+		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout_stream:
+		 * 	this is for bi-direction UDP flow, normally its value is 180 seconds
+		 *
+		 * Linux will update timer of UDP flow to stream timeout once it seen packets
+		 * in reply direction. But if flow is accelerated by NSS or SFE, Linux won't
+		 * see any packets. So we have to do the same thing in our stats sync message.
+		 */
+		if (!test_bit(IPS_ASSURED_BIT, &ct->status) && acct) {
+			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
+
+			if (reply_pkts != 0) {
+				struct nf_conntrack_l4proto *l4proto;
+				unsigned int *timeouts;
+
+				set_bit(IPS_SEEN_REPLY_BIT, &ct->status);
+				set_bit(IPS_ASSURED_BIT, &ct->status);
+
+				l4proto = __nf_ct_l4proto_find(AF_INET, IPPROTO_UDP);
+				timeouts = nf_ct_timeout_lookup(&init_net, ct, l4proto);
+
+				spin_lock_bh(&ct->lock);
+				ct->timeout.expires = jiffies + timeouts[UDP_CT_REPLIED];
+				spin_unlock_bh(&ct->lock);
+			}
+		}
 		break;
 	}
 
