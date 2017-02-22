@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -2168,7 +2168,7 @@ identifier_update:
 	 */
 
 	if ((dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
-		if (skb->skb_iif == dev->ifindex) {
+		if (skb && (skb->skb_iif == dev->ifindex)) {
 			struct pppol2tp_common_addr info;
 
 			if (__ppp_is_multilink(dev) > 0) {
