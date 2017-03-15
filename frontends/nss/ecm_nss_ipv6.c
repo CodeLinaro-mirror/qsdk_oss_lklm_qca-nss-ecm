@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -371,6 +371,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
+		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
@@ -844,6 +845,17 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 			(out_dev->priv_flags & IFF_TUN_TAP)) {
 
 		DEBUG_TRACE("virtual tunnels are not accelerated by ECM\n");
+		return NF_ACCEPT;
+	}
+
+	/*
+	 * If it's an IPSec pass-through flow, don't accelerate it.
+	 */
+	if ((ip_hdr.protocol == IPPROTO_ESP) &&
+		(in_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE) &&
+		(out_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE)) {
+
+		DEBUG_TRACE("ipsec pass through flow\n");
 		return NF_ACCEPT;
 	}
 

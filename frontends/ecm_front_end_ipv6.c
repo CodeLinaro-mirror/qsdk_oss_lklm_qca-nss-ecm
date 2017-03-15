@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -74,7 +74,7 @@ static void ecm_front_end_ipv6_interface_construct_ip_addr_set(struct ecm_front_
  * Sets the net device fields of the ecm_front_end_interface_construct_instance
  * with the given net devices.
  */
-static void ecm_fron_end_ipv6_interface_construct_netdev_set(struct ecm_front_end_interface_construct_instance *efeici,
+static void ecm_front_end_ipv6_interface_construct_netdev_set(struct ecm_front_end_interface_construct_instance *efeici,
 							struct net_device *from, struct net_device *from_other,
 							struct net_device *to, struct net_device *to_other)
 {
@@ -109,7 +109,7 @@ void ecm_front_end_ipv6_interface_construct_netdev_hold(struct ecm_front_end_int
 }
 
 /*
- * ecm_front_end_ipv6_interface_construct_set()
+ * ecm_front_end_ipv6_interface_construct_set_and_hold()
  *	Sets the IPv6 ECM front end interface construct instance,
  *	and holds the net devices.
  */
@@ -121,6 +121,7 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	struct dst_entry *dst = skb_dst(skb);
 	struct rt6_info *rt = (struct rt6_info *)dst;
 	ip_addr_t rt_dst_addr;
+	struct net_device *rt_iif_dev = NULL;
 	struct net_device *from = NULL;
 	struct net_device *from_other = NULL;
 	struct net_device *to = NULL;
@@ -153,9 +154,20 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			return false;
 		}
 
+		/*
+		 * If the flow is routed, extract the route information from the skb.
+		 * Print the extracted information for debug purpose.
+		 */
+		rt_iif_dev = dev_get_by_index(&init_net, skb->skb_iif);
+		if (!rt_iif_dev) {
+			DEBUG_WARN("No rt_iif dev\n");
+			return false;
+		}
+
 		DEBUG_TRACE("in_dev: %s\n", in_dev->name);
 		DEBUG_TRACE("out_dev: %s\n", out_dev->name);
 		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
+		DEBUG_TRACE("rt_iif_dev: %s\n", rt_iif_dev->name);
 		DEBUG_TRACE("%p: rt6i_dst.addr: %pi6\n", rt, &rt->rt6i_dst.addr);
 		DEBUG_TRACE("%p: rt6i_src.addr: %pi6\n", rt, &rt->rt6i_src.addr);
 		DEBUG_TRACE("%p: rt6i_gateway: %pi6\n", rt, &rt->rt6i_gateway);
@@ -164,11 +176,6 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 
 		DEBUG_INFO("ip_src_addr: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(ip_src_addr));
 		DEBUG_INFO("ip_dest_addr: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
-
-		if (dst->dev == skb->dev) {
-			DEBUG_TRACE("input dev and output dev are equal\n");
-			return false;
-		}
 
 		/*
 		 * If the destination host is behind a gateway, use the gateway address as destination
@@ -180,21 +187,28 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			}
 		}
 
-		from = skb->dev;
+		from = rt_iif_dev;
 		from_other = dst->dev;
 		to = dst->dev;
-		to_other = skb->dev;
+		to_other = rt_iif_dev;
 
 		ECM_IP_ADDR_COPY(from_mac_lookup, ip_src_addr);
 		ECM_IP_ADDR_COPY(to_mac_lookup, rt_dst_addr);
 	}
 
-	ecm_fron_end_ipv6_interface_construct_netdev_set(efeici, from, from_other,
+	ecm_front_end_ipv6_interface_construct_netdev_set(efeici, from, from_other,
 								to, to_other);
 
 	ecm_front_end_ipv6_interface_construct_netdev_hold(efeici);
 
 	ecm_front_end_ipv6_interface_construct_ip_addr_set(efeici, from_mac_lookup, to_mac_lookup);
+
+	/*
+	 * Release the iff_dev which was hold by the dev_get_by_index() call.
+	 */
+	if (rt_iif_dev) {
+		dev_put(rt_iif_dev);
+	}
 
 	return true;
 }

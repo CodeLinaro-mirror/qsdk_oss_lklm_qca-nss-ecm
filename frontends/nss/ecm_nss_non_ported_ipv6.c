@@ -1678,7 +1678,7 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-	if ((protocol == IPPROTO_IPIP)) {
+	if ((protocol == IPPROTO_IPIP || protocol == IPPROTO_ESP)) {
 		src_port = 0;
 		dest_port = 0;
 	} else {
