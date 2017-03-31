@@ -115,6 +115,7 @@ int ecm_nss_ipv6_nack_limit_default = 250;			/* Default nack limit. */
 int ecm_nss_ipv6_accelerated_count = 0;			/* Total offloads */
 int ecm_nss_ipv6_pending_accel_count = 0;			/* Total pending offloads issued to the NSS / awaiting completion */
 int ecm_nss_ipv6_pending_decel_count = 0;			/* Total pending deceleration requests issued to the NSS / awaiting completion */
+int ecm_nss_ipv6_vlan_passthrough_enable = 0;		/* VLAN passthrough feature enable or disable flag */
 
 /*
  * Limiting the acceleration of connections.
@@ -2178,6 +2179,12 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_nss_ipv6_dentry,
 					NULL, &ecm_nss_ipv6_stats_request_counter_fops)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv6 stats_request_counter file in debugfs\n");
+		goto task_cleanup;
+	}
+
+	if (!debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_nss_ipv6_dentry,
+					(u32 *)&ecm_nss_ipv6_vlan_passthrough_enable)) {
+		DEBUG_ERROR("Failed to create ecm nss ipv6 vlan passthrough file in debugfs\n");
 		goto task_cleanup;
 	}
 
