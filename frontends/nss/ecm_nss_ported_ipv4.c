@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -599,7 +599,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%p: IPSEC - additional unsupported\n", npci);
 				break;
 			}
-			nircm->conn_rule.flow_interface_num = ECM_INTERFACE_IPSEC_IF_NUM;;
+			nircm->conn_rule.flow_interface_num = ECM_INTERFACE_IPSEC_IF_NUM;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: IPSEC - unsupported\n", npci);

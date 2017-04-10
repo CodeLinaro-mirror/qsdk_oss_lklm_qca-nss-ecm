@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -105,7 +105,6 @@ static int ecm_conntrack_notifier_stopped = 0;	/* When non-zero further traffic 
 static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 {
 	struct ecm_db_connection_instance *ci;
-	struct ecm_front_end_connection_instance *feci;
 
 	DEBUG_INFO("Destroy event for ct: %p\n", ct);
 
@@ -117,14 +116,7 @@ static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 	DEBUG_INFO("%p: Connection defunct %p\n", ct, ci);
 
 	/*
-	 * If this connection is accelerated then we need to issue a destroy command
-	 */
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	feci->decelerate(feci);
-	feci->deref(feci);
-
-	/*
-	 * Force destruction of the connection my making it defunct
+	 * Force destruction of the connection by making it defunct
 	 */
 	ecm_db_connection_make_defunct(ci);
 	ecm_db_connection_deref(ci);
@@ -220,7 +212,6 @@ EXPORT_SYMBOL(ecm_conntrack_ipv6_event);
 static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 {
 	struct ecm_db_connection_instance *ci;
-	struct ecm_front_end_connection_instance *feci;
 
 	DEBUG_INFO("Destroy event for ct: %p\n", ct);
 
@@ -232,14 +223,7 @@ static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 	DEBUG_INFO("%p: Connection defunct %p\n", ct, ci);
 
 	/*
-	 * If this connection is accelerated then we need to issue a destroy command
-	 */
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	feci->decelerate(feci);
-	feci->deref(feci);
-
-	/*
-	 * Force destruction of the connection my making it defunct
+	 * Force destruction of the connection by making it defunct
 	 */
 	ecm_db_connection_make_defunct(ci);
 	ecm_db_connection_deref(ci);

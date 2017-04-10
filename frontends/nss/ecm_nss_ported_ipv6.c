@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1026,6 +1026,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%p: connection:%p regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_nss_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		kfree(nim);
 		return;
 	}
 
@@ -1282,7 +1283,7 @@ static void ecm_nss_ported_ipv6_connection_decelerate(struct ecm_front_end_conne
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
-	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);;
+	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * Get addressing information
