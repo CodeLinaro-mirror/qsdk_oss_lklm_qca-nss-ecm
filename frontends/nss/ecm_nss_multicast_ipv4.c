@@ -60,6 +60,11 @@
 #endif
 
 /*
+ * General operational control
+ */
+int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not be processed */
+
+/*
  * Debug output levels
  * 0 = OFF
  * 1 = ASSERTS / ERRORS
@@ -3537,6 +3542,7 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 			if_cnt = ecm_interface_multicast_heirarchy_construct_bridged(feci, to_list, brdev, src_ip, dest_ip, mc_update.if_join_cnt, mc_update.join_dev, to_list_first, src_node_addr, layer4hdr, NULL);
 			if (if_cnt == 0) {
 				DEBUG_WARN("Failed to obtain 'to_mcast_update' heirarchy list\n");
+				feci->decelerate(feci);
 				feci->deref(feci);
 				ecm_db_multicast_connection_deref(tuple_instance);
 				kfree(to_list);
@@ -3786,6 +3792,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 				vif_cnt = ecm_interface_multicast_heirarchy_construct_routed(feci, to_list, NULL, src_ip, dest_ip, mc_update.if_join_cnt, mc_update.join_dev, to_list_first, true, layer4hdr, NULL);
 				if (vif_cnt == 0) {
 					DEBUG_WARN("Failed to obtain 'to_mcast_update' heirarchy list\n");
+					feci->decelerate(feci);
 					feci->deref(feci);
 					ecm_db_multicast_connection_deref(tuple_instance);
 					kfree(to_list);
@@ -3941,11 +3948,25 @@ bool ecm_nss_multicast_ipv4_debugfs_init(struct dentry *dentry)
 }
 
 /*
+ * ecm_nss_multicast_ipv4_stop()
+ */
+void ecm_nss_multicast_ipv4_stop(int num)
+{
+	ecm_front_end_ipv4_mc_stopped = num;
+}
+
+/*
  * ecm_nss_multicast_ipv4_init()
  * 	Register the callbacks for MCS snooper and MFC update
  */
-void ecm_nss_multicast_ipv4_init(void)
+int ecm_nss_multicast_ipv4_init(struct dentry *dentry)
 {
+	if (!debugfs_create_u32("ecm_nss_multicast_ipv4_stop", S_IRUGO | S_IWUSR, dentry,
+					(u32 *)&ecm_front_end_ipv4_mc_stopped)) {
+		DEBUG_ERROR("Failed to create ecm front end ipv4 mc stop file in debugfs\n");
+		return -1;
+	}
+
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
@@ -3955,6 +3976,7 @@ void ecm_nss_multicast_ipv4_init(void)
 	 * Register multicast update callbacks to MFC
 	 */
 	ipmr_register_mfc_event_offload_callback(ecm_mfc_update_event_callback);
+	return 0;
 }
 
 /*

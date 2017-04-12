@@ -25,6 +25,6 @@ extern unsigned int ecm_nss_multicast_ipv4_connection_process(struct net_device 
 
 extern bool ecm_nss_multicast_ipv4_debugfs_init(struct dentry *dentry);
 
-extern void ecm_nss_multicast_ipv4_init(void);
+extern int ecm_nss_multicast_ipv4_init(struct dentry *dentry);
 
 extern void ecm_nss_multicast_ipv4_exit(void);

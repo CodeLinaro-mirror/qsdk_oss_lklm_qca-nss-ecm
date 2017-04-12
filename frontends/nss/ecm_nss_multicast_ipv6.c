@@ -91,6 +91,11 @@
 #include "ecm_nss_common.h"
 
 /*
+ * General operational control
+ */
+int ecm_front_end_ipv6_mc_stopped = 0;	/* When non-zero further traffic will not be processed */
+
+/*
  * Magic numbers
  */
 #define ECM_NSS_MULTICAST_IPV6_CONNECTION_INSTANCE_MAGIC 0xED13
@@ -3317,6 +3322,7 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 			if_cnt = ecm_interface_multicast_heirarchy_construct_bridged(feci, to_list, brdev, src_ip, dest_ip, mc_sync.if_join_cnt, mc_sync.join_dev, to_list_first, src_node_addr, NULL, NULL);
 			if (if_cnt == 0) {
 				DEBUG_WARN("Failed to obtain 'to_mcast_update' heirarchy list\n");
+				feci->decelerate(feci);
 				feci->deref(feci);
 				ecm_db_multicast_connection_deref(tuple_instance);
 				kfree(to_list);
@@ -3562,6 +3568,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 				vif_cnt = ecm_interface_multicast_heirarchy_construct_routed(feci, to_list, NULL, src_ip, dest_ip, mc_sync.if_join_cnt, mc_sync.join_dev, to_list_first, true, NULL, NULL);
 				if (vif_cnt == 0) {
 					DEBUG_WARN("Failed to obtain 'to_mcast_update' heirarchy list\n");
+					feci->decelerate(feci);
 					feci->deref(feci);
 					ecm_db_multicast_connection_deref(tuple_instance);
 					kfree(to_list);
@@ -3721,11 +3728,25 @@ bool ecm_nss_multicast_ipv6_debugfs_init(struct dentry *dentry)
 }
 
 /*
+ * ecm_nss_multicast_ipv6_stop()
+ */
+void ecm_nss_multicast_ipv6_stop(int num)
+{
+	ecm_front_end_ipv6_mc_stopped = num;
+}
+
+/*
  * ecm_nss_multicast_ipv6_init()
  * 	Register the callbacks for MCS snooper and MFC update
  */
-void ecm_nss_multicast_ipv6_init(void)
+int ecm_nss_multicast_ipv6_init(struct dentry *dentry)
 {
+	if (!debugfs_create_u32("ecm_nss_multicast_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
+					(u32 *)&ecm_front_end_ipv6_mc_stopped)) {
+		DEBUG_ERROR("Failed to create ecm front end ipv6 mc stop file in debugfs\n");
+		return -1;
+	}
+
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
@@ -3735,6 +3756,7 @@ void ecm_nss_multicast_ipv6_init(void)
 	 * Register multicast update callbacks to MFC
 	 */
 	ip6mr_register_mfc_event_offload_callback(ecm_nss_multicast_ipv6_mfc_update_event_callback);
+	return 0;
 }
 
 /*

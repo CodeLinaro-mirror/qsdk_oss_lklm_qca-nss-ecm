@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -426,9 +426,22 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	}
 
 	/*
+	 * Get NSS interface ID of the top interface in heirarchy
+	 */
+	from_nss_iface = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+	to_nss_iface = to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+	nircm->nexthop_rule.flow_nexthop = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
+	nircm->nexthop_rule.return_nexthop = ecm_db_iface_ae_interface_identifier_get(to_nss_iface);
+
+	/*
 	 * New rule being created
 	 */
 	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_CONN_VALID;
+
+	/*
+	 * Set Nexthop interface number valid flag
+	 */
+	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_NEXTHOP_VALID;
 
 	/*
 	 * Set interface numbers involved in accelerating this connection.
@@ -907,6 +920,8 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"to_mac: %pM\n"
 			"src_iface_num: %u\n"
 			"dest_iface_num: %u\n"
+			"src_nexthop_num: %u\n"
+			"dest_nexthop_num: %u\n"
 			"ingress_inner_vlan_tag: %u\n"
 			"egress_inner_vlan_tag: %u\n"
 			"ingress_outer_vlan_tag: %u\n"
@@ -932,6 +947,8 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->conn_rule.return_mac,
 			nircm->conn_rule.flow_interface_num,
 			nircm->conn_rule.return_interface_num,
+			nircm->nexthop_rule.flow_nexthop,
+			nircm->nexthop_rule.return_nexthop,
 			nircm->vlan_primary_rule.ingress_vlan_tag,
 			nircm->vlan_primary_rule.egress_vlan_tag,
 			nircm->vlan_secondary_rule.ingress_vlan_tag,

@@ -1058,6 +1058,11 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
 		return NF_ACCEPT;
 	}
+#else
+	if ((skb->pkt_type == PACKET_MULTICAST) && unlikely(ecm_front_end_ipv6_mc_stopped)) {
+		DEBUG_TRACE("Multicast frontend stopped, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
 #endif
 
 #ifdef ECM_INTERFACE_PPP_ENABLE
@@ -1197,6 +1202,11 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 #ifndef ECM_MULTICAST_ENABLE
 	if (skb->pkt_type == PACKET_MULTICAST) {
 		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
+		return NF_ACCEPT;
+	}
+#else
+	if ((skb->pkt_type == PACKET_MULTICAST) && unlikely(ecm_front_end_ipv6_mc_stopped)) {
+		DEBUG_TRACE("Multicast frontend stopped, ignoring: %p\n", skb);
 		return NF_ACCEPT;
 	}
 #endif
@@ -2203,7 +2213,14 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
-	ecm_nss_multicast_ipv6_init();
+	result = ecm_nss_multicast_ipv6_init(ecm_nss_ipv6_dentry);
+	if (result < 0) {
+		DEBUG_ERROR("Failed to init ecm ipv6 multicast frontend\n");
+		nss_ipv6_notify_unregister();
+		nf_unregister_hooks(ecm_nss_ipv6_netfilter_hooks,
+				ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
+		goto task_cleanup;
+	}
 #endif
 
 	if (!ecm_nss_ipv6_sync_queue_init()) {

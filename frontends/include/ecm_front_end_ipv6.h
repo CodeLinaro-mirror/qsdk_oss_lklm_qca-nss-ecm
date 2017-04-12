@@ -16,6 +16,10 @@
 
 extern int ecm_front_end_ipv6_stopped;	/* When non-zero further traffic will not be processed */
 
+#ifdef ECM_MULTICAST_ENABLE
+extern int ecm_front_end_ipv6_mc_stopped;	/* When non-zero further traffic will not be processed */
+#endif
+
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_ipv6.h"
 #else
