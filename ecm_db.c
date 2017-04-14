@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -11871,28 +11871,6 @@ static inline struct ecm_db_connection_instance *ecm_db_node_to_nat_connection_g
 }
 
 /*
- * ecm_db_connection_decelerate_and_defunct()
- *	decelerate and defunct a connection
- */
-static inline void ecm_db_connection_decelerate_and_defunct(struct ecm_db_connection_instance *ci)
-{
-	struct ecm_front_end_connection_instance *feci = NULL;
-
-	if(unlikely(!ci)) {
-		DEBUG_WARN("%p: ecm db connection instance pointer is null\n", ci);
-		return;
-	}
-
-	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-
-	feci->decelerate(feci);
-	feci->deref(feci);
-	ecm_db_connection_make_defunct(ci);
-}
-
-/*
  * ecm_db_should_keep_connection()
  *	check if any classifier believes this connection should
  *	be kept
@@ -11922,11 +11900,11 @@ static bool ecm_db_should_keep_connection(
 }
 
 /*
- * ecm_db_traverse_node_from_connection_list_and_decelerate()
- *	traverse from_list of a node and calls ecm_db_connection_decelerate_and_defunct()
+ * ecm_db_traverse_node_from_connection_list_and_defunct()
+ *	traverse from_list of a node and calls ecm_db_connection_make_defunct()
  *	for each entry
  */
-void ecm_db_traverse_node_from_connection_list_and_decelerate(
+void ecm_db_traverse_node_from_connection_list_and_defunct(
 	struct ecm_db_node_instance *node)
 {
 	struct ecm_db_connection_instance *ci = NULL;
@@ -11940,7 +11918,7 @@ void ecm_db_traverse_node_from_connection_list_and_decelerate(
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
 			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_decelerate_and_defunct(ci);
+			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
@@ -11949,15 +11927,15 @@ void ecm_db_traverse_node_from_connection_list_and_decelerate(
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting node's from connection list complete\n", node);
+	DEBUG_INFO("%p: Defuncting from node connection list complete\n", node);
 }
 
 /*
- * ecm_db_traverse_node_to_connection_list_and_decelerate()
- *	traverse to_list of a node and calls ecm_db_connection_decelerate_and_defunct()
+ * ecm_db_traverse_node_to_connection_list_and_defunct()
+ *	traverse to_list of a node and calls ecm_db_connection_make_defunct()
  *	for each entry
  */
-void ecm_db_traverse_node_to_connection_list_and_decelerate(
+void ecm_db_traverse_node_to_connection_list_and_defunct(
 	struct ecm_db_node_instance *node)
 {
 	struct ecm_db_connection_instance *ci = NULL;
@@ -11971,7 +11949,7 @@ void ecm_db_traverse_node_to_connection_list_and_decelerate(
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
 			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_decelerate_and_defunct(ci);
+			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
@@ -11980,15 +11958,15 @@ void ecm_db_traverse_node_to_connection_list_and_decelerate(
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting node's to connection list complete\n", node);
+	DEBUG_INFO("%p: Defuncting to node connection list complete\n", node);
 }
 
 /*
- * ecm_db_traverse_node_from_nat_connection_list_and_decelerate()
- *	traverse from_nat_list of a node and calls ecm_db_connection_decelerate_and_defunct()
+ * ecm_db_traverse_node_from_nat_connection_list_and_defunct()
+ *	traverse from_nat_list of a node and calls ecm_db_connection_make_defunct()
  *	for each entry
  */
-void ecm_db_traverse_node_from_nat_connection_list_and_decelerate(
+void ecm_db_traverse_node_from_nat_connection_list_and_defunct(
 	struct ecm_db_node_instance *node)
 {
 	struct ecm_db_connection_instance *ci = NULL;
@@ -12002,7 +11980,7 @@ void ecm_db_traverse_node_from_nat_connection_list_and_decelerate(
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
 			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_decelerate_and_defunct(ci);
+			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
@@ -12011,15 +11989,15 @@ void ecm_db_traverse_node_from_nat_connection_list_and_decelerate(
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting node's from nat connection list complete\n", node);
+	DEBUG_INFO("%p: Defuncting from_nat node connection list complete\n", node);
 }
 
 /*
- * ecm_db_traverse_node_to_nat_connection_list_and_decelerate()
- *	traverse to_nat_list of a node and calls ecm_db_connection_decelerate_and_defunct()
+ * ecm_db_traverse_node_to_nat_connection_list_and_defunct()
+ *	traverse to_nat_list of a node and calls ecm_db_connection_make_defunct()
  *	for each entry
  */
-void ecm_db_traverse_node_to_nat_connection_list_and_decelerate(
+void ecm_db_traverse_node_to_nat_connection_list_and_defunct(
 	struct ecm_db_node_instance *node)
 {
 	struct ecm_db_connection_instance *ci = NULL;
@@ -12033,7 +12011,7 @@ void ecm_db_traverse_node_to_nat_connection_list_and_decelerate(
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
 			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_decelerate_and_defunct(ci);
+			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
@@ -12042,7 +12020,7 @@ void ecm_db_traverse_node_to_nat_connection_list_and_decelerate(
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting to node's nat connection list complete\n", node);
+	DEBUG_INFO("%p: Defuncting to_nat node connection list complete\n", node);
 }
 #endif
 
