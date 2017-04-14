@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -219,7 +219,7 @@ static void ecm_nss_bond_notifier_bond_delete_by_mac(uint8_t *mac)
 {
 	DEBUG_INFO("Bond notifier for node %pM\n", mac);
 
-	ecm_interface_node_connections_decelerate(mac);
+	ecm_interface_node_connections_defunct(mac);
 }
 
 void ecm_nss_bond_notifier_stop(int num)

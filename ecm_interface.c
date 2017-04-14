@@ -5290,10 +5290,10 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 }
 
 /*
- * ecm_interface_node_connections_decelerate()
- *	Decelerate the connections on this node.
+ * ecm_interface_node_connections_defunct()
+ *	Defunct the connections on this node.
  */
-void ecm_interface_node_connections_decelerate(uint8_t *mac)
+void ecm_interface_node_connections_defunct(uint8_t *mac)
 {
 	struct ecm_db_node_instance *ni = NULL;
 
@@ -5307,10 +5307,10 @@ void ecm_interface_node_connections_decelerate(uint8_t *mac)
 		struct ecm_db_node_instance *nin;
 
 		if (ecm_db_node_is_mac_addr_equal(ni, mac)) {
-			ecm_db_traverse_node_from_connection_list_and_decelerate(ni);
-			ecm_db_traverse_node_to_connection_list_and_decelerate(ni);
-			ecm_db_traverse_node_from_nat_connection_list_and_decelerate(ni);
-			ecm_db_traverse_node_to_nat_connection_list_and_decelerate(ni);
+			ecm_db_traverse_node_from_connection_list_and_defunct(ni);
+			ecm_db_traverse_node_to_connection_list_and_defunct(ni);
+			ecm_db_traverse_node_from_nat_connection_list_and_defunct(ni);
+			ecm_db_traverse_node_to_nat_connection_list_and_defunct(ni);
 		}
 
 		/*
@@ -5321,7 +5321,7 @@ void ecm_interface_node_connections_decelerate(uint8_t *mac)
 		ni = nin;
 	}
 }
-EXPORT_SYMBOL(ecm_interface_node_connections_decelerate);
+EXPORT_SYMBOL(ecm_interface_node_connections_defunct);
 
 /*
  * struct notifier_block ecm_interface_netdev_notifier
@@ -5345,7 +5345,7 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 
 	DEBUG_INFO("FDB updated for node %pM\n", mac);
 
-	ecm_interface_node_connections_decelerate(mac);
+	ecm_interface_node_connections_defunct(mac);
 
 	return NOTIFY_DONE;
 }
@@ -5686,7 +5686,7 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 	DEBUG_TRACE("old mac: %pM new mac: %pM\n", nmu->old_mac, nmu->update_mac);
 
 	DEBUG_INFO("neigh mac update notify for node %pM\n", nmu->old_mac);
-	ecm_interface_node_connections_decelerate((uint8_t *)nmu->old_mac);
+	ecm_interface_node_connections_defunct((uint8_t *)nmu->old_mac);
 
 	return NOTIFY_DONE;
 }
@@ -5739,7 +5739,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
 		} else if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_decelerate((uint8_t *)iwe->u.addr.sa_data);
+			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data);
 		} else {
 			DEBUG_INFO("iwe->cmd is %d for STA %pM\n", iwe->cmd, (unsigned char *) iwe->u.addr.sa_data);
 		}

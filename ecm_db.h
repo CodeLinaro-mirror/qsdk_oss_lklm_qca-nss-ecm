@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -28,10 +28,10 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 uint32_t ecm_db_time_get(void);
 void ecm_db_connection_defunct_all(void);
 #ifdef ECM_DB_XREF_ENABLE
-void ecm_db_traverse_node_from_connection_list_and_decelerate(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_to_connection_list_and_decelerate(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_from_nat_connection_list_and_decelerate(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_to_nat_connection_list_and_decelerate(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_from_connection_list_and_defunct(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_to_connection_list_and_defunct(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_from_nat_connection_list_and_defunct(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_to_nat_connection_list_and_defunct(struct ecm_db_node_instance *node);
 #endif
 int ecm_db_connection_count_get(void);
 

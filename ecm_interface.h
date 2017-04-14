@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -106,4 +106,4 @@ void ecm_interface_dev_regenerate_connections(struct net_device *dev);
 struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr);
 bool ecm_interface_find_gateway(ip_addr_t addr, ip_addr_t gw_addr);
 void ecm_interface_dev_defunct_connections(struct net_device *dev);
-void ecm_interface_node_connections_decelerate(uint8_t *mac);
+void ecm_interface_node_connections_defunct(uint8_t *mac);
