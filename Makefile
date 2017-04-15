@@ -56,10 +56,8 @@ ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
 # Define ECM_FRONT_END_SFE_ENABLE=y in order to select
 # sfe as ECM's front end.
 # #############################################################################
-ifeq ($(findstring 4.4., $(KERNELVERSION)),)
 ifeq ($(ECM_FRONT_END_SFE_ENABLE),)
 ECM_FRONT_END_SFE_ENABLE=y
-endif
 endif
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
