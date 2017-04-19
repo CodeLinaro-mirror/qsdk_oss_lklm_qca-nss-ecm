@@ -322,7 +322,7 @@ static void ecm_nss_ported_ipv6_connection_callback(void *app_data, struct nss_i
  */
 static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
 									struct ecm_classifier_process_response *pr,
-									struct nf_conn *ct, bool is_l2_encap)
+									struct nf_conn *ct, bool is_l2_encap, struct sk_buff *skb)
 {
 	struct ecm_nss_ported_ipv6_connection_instance *npci = (struct ecm_nss_ported_ipv6_connection_instance *)feci;
 	uint16_t regen_occurrances;
@@ -843,6 +843,28 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= NSS_IPV6_RULE_CREATE_DSCP_MARKING_VALID;
 	}
 #endif
+	if (ecm_nss_ipv6_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
+	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED) &&
+	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED)) {
+		int vlan_present = 0;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+		vlan_present = vlan_tx_tag_present(skb);
+#else
+		vlan_present = skb_vlan_tag_present(skb);
+#endif
+		if (vlan_present) {
+			uint32_t vlan_value;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
+			vlan_value = (ETH_P_8021Q << 16) | vlan_tx_tag_get(skb);
+#else
+			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
+#endif
+			nircm->vlan_primary_rule.ingress_vlan_tag = vlan_value;
+			nircm->vlan_primary_rule.egress_vlan_tag = vlan_value;
+			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_VLAN_VALID;
+		}
+	}
+
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -969,10 +991,10 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			"dest_iface_num: %u\n"
 			"src_nexthop_num: %u\n"
 			"dest_nexthop_num: %u\n"
-			"ingress_inner_vlan_tag: %u\n"
-			"egress_inner_vlan_tag: %u\n"
-			"ingress_outer_vlan_tag: %u\n"
-			"egress_outer_vlan_tag: %u\n"
+			"ingress_inner_vlan_tag: %x\n"
+			"egress_inner_vlan_tag: %x\n"
+			"ingress_outer_vlan_tag: %x\n"
+			"egress_outer_vlan_tag: %x\n"
 			"rule_flags: %x\n"
 			"valid_flags: %x\n"
 			"return_pppoe_session_id: %u\n"
@@ -2304,7 +2326,7 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 		struct ecm_front_end_connection_instance *feci;
 		DEBUG_TRACE("%p: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ecm_nss_ported_ipv6_connection_accelerate(feci, &prevalent_pr, ct, is_l2_encap);
+		ecm_nss_ported_ipv6_connection_accelerate(feci, &prevalent_pr, ct, is_l2_encap, skb);
 		feci->deref(feci);
 	}
 	ecm_db_connection_deref(ci);

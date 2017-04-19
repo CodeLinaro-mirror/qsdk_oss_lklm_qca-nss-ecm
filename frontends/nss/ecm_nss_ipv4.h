@@ -35,6 +35,12 @@ extern int ecm_nss_ipv4_pending_decel_count;			/* Total pending deceleration req
 extern uint32_t ecm_nss_ipv4_accel_limit_mode;
 
 /*
+ * Flag to enable/disable bridge VLAN passthrough feature.
+ * By default this feature is disabled.
+ */
+extern int ecm_nss_ipv4_vlan_passthrough_enable;
+
+/*
  * Locking of the classifier - concurrency control for file global parameters.
  * NOTE: It is safe to take this lock WHILE HOLDING a feci->lock.  The reverse is NOT SAFE.
  */
