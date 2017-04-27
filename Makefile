@@ -45,23 +45,23 @@ ecm-y := \
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
 # nss as ECM's front end.
 # #############################################################################
-ifeq ($(ECM_FRONT_END_NSS_ENABLE),)
+ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64))
 ECM_FRONT_END_NSS_ENABLE=y
-endif
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
+endif
 
 # #############################################################################
 # Define ECM_FRONT_END_SFE_ENABLE=y in order to select
 # sfe as ECM's front end.
 # #############################################################################
-ifeq ($(ECM_FRONT_END_SFE_ENABLE),)
+ifeq ($(SoC),$(filter $(SoC),ipq806x ipq40xx))
 ECM_FRONT_END_SFE_ENABLE=y
-endif
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
+endif
 
 # #############################################################################
 # Define ECM_INTERFACE_BOND_ENABLE=y in order to enable
