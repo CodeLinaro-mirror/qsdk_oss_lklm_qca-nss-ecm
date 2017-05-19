@@ -379,7 +379,6 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 {
 	struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci = (struct ecm_sfe_non_ported_ipv4_connection_instance *)feci;
 	uint16_t regen_occurrances;
-	int protocol;
 	int32_t from_ifaces_first;
 	int32_t to_ifaces_first;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -412,18 +411,6 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 * changes during rule creation.
 	 */
 	regen_occurrances = ecm_db_connection_regeneration_occurrances_get(feci->ci);
-
-	/*
-	 * For non-ported protocols we only support IPv6 in 4 or ESP
-	 */
-	protocol = ecm_db_connection_protocol_get(feci->ci);
-	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP)) {
-		spin_lock_bh(&feci->lock);
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE;
-		spin_unlock_bh(&feci->lock);
-		DEBUG_TRACE("%p: unsupported protocol: %d\n", nnpci, protocol);
-		return;
-	}
 
 	/*
 	 * Test if acceleration is permitted
@@ -888,7 +875,7 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Set protocol
 	 */
-	nircm->tuple.protocol = (int32_t)protocol;
+	nircm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * The flow_ip is where the connection established from
@@ -1259,18 +1246,8 @@ static void ecm_sfe_non_ported_ipv4_connection_decelerate(struct ecm_front_end_c
 	struct sfe_ipv4_rule_destroy_msg *nirdm;
 	ip_addr_t addr;
 	sfe_tx_status_t sfe_tx_status;
-	int protocol;
 
 	DEBUG_CHECK_MAGIC(nnpci, ECM_SFE_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
-
-	/*
-	 * For non-ported protocols we only support IPv6 in 4 or ESP
-	 */
-	protocol = ecm_db_connection_protocol_get(feci->ci);
-	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP)) {
-		DEBUG_TRACE("%p: unsupported protocol: %d\n", nnpci, protocol);
-		return;
-	}
 
 	/*
 	 * If decelerate is in error or already pending then ignore
@@ -1322,7 +1299,7 @@ static void ecm_sfe_non_ported_ipv4_connection_decelerate(struct ecm_front_end_c
 			(void *)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
-	nirdm->tuple.protocol = (int32_t)protocol;
+	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * Get addressing information
@@ -1338,7 +1315,7 @@ static void ecm_sfe_non_ported_ipv4_connection_decelerate(struct ecm_front_end_c
 			"protocol: %d\n"
 			"src_ip: %pI4:%d\n"
 			"dest_ip: %pI4:%d\n",
-			nnpci, feci->ci, protocol,
+			nnpci, feci->ci, nirdm->tuple.protocol,
 			&nirdm->tuple.flow_ip, nirdm->tuple.flow_ident,
 			&nirdm->tuple.return_ip, nirdm->tuple.return_ident);
 
@@ -1755,32 +1732,19 @@ unsigned int ecm_sfe_non_ported_ipv4_process(struct net_device *out_dev, struct 
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-	if ((protocol == IPPROTO_IPV6) || (protocol == IPPROTO_ESP)) {
-		src_port = 0;
-		src_port_nat = 0;
-		dest_port = 0;
-		dest_port_nat = 0;
-	} else {
-		/*
-		 * Do not accelerate the non-ported connections except the ones we handle.
-		 */
-		can_accel = false;
-
-		/*
-		 * port numbers are just the negative protocol number equivalents for now.
-		 * GGG They could eventually be used as protocol specific identifiers such as icmp id's etc.
-		 */
-		src_port = -protocol;
-		src_port_nat = -protocol;
-		dest_port = -protocol;
-		dest_port_nat = -protocol;
+	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP)) {
+		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
+		return NF_ACCEPT;
 	}
 
-	DEBUG_TRACE("Non ported src: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dest: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dir %d\n",
-				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), src_port, src_port_nat, ECM_IP_ADDR_TO_DOT(ip_dest_addr),
-				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), dest_port, dest_port_nat, ecm_dir);
+	src_port = 0;
+	src_port_nat = 0;
+	dest_port = 0;
+	dest_port_nat = 0;
 
-
+	DEBUG_TRACE("Non ported src: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "), dest: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "), dir %d\n",
+				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), ECM_IP_ADDR_TO_DOT(ip_dest_addr),
+				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), ecm_dir);
 
 	ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
 
@@ -1956,12 +1920,7 @@ unsigned int ecm_sfe_non_ported_ipv4_process(struct net_device *out_dev, struct 
 		 * NOTE: For SIT tunnels use the in_dev instead of in_dev_nat
 		 */
 		DEBUG_TRACE("%p: Create the 'from NAT' interface heirarchy list\n", nci);
-		if ((protocol == IPPROTO_IPV6) || (protocol == IPPROTO_ESP)) {
-			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev, is_routed, in_dev, src_node_addr_nat, dest_node_addr_nat, NULL, skb);
-		} else {
-			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev, src_node_addr_nat, dest_node_addr_nat, NULL, skb);
-		}
-
+		from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev, is_routed, in_dev, src_node_addr_nat, dest_node_addr_nat, NULL, skb);
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_mapping_deref(dest_mi);
 			ecm_db_node_deref(dest_ni);

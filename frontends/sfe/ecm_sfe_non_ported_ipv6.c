@@ -316,7 +316,6 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 {
 	struct ecm_sfe_non_ported_ipv6_connection_instance *nnpci = (struct ecm_sfe_non_ported_ipv6_connection_instance *)feci;
 	uint16_t regen_occurrances;
-	int protocol;
 	int32_t from_ifaces_first;
 	int32_t to_ifaces_first;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -348,18 +347,6 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * changes during rule creation.
 	 */
 	regen_occurrances = ecm_db_connection_regeneration_occurrances_get(feci->ci);
-
-	/*
-	 * For non-ported protocols we only support IPv6 in 4 or ESP
-	 */
-	protocol = ecm_db_connection_protocol_get(feci->ci);
-	if ((protocol != IPPROTO_IPIP) && (protocol != IPPROTO_ESP)) {
-		spin_lock_bh(&feci->lock);
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE;
-		spin_unlock_bh(&feci->lock);
-		DEBUG_TRACE("%p: unsupported protocol: %d\n", nnpci, protocol);
-		return;
-	}
 
 	/*
 	 * Test if acceleration is permitted
@@ -825,7 +812,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Set protocol
 	 */
-	nircm->tuple.protocol = (int32_t)protocol;
+	nircm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * The flow_ip is where the connection established from
@@ -1151,18 +1138,8 @@ static void ecm_sfe_non_ported_ipv6_connection_decelerate(struct ecm_front_end_c
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
 	sfe_tx_status_t sfe_tx_status;
-	int protocol;
 
 	DEBUG_CHECK_MAGIC(nnpci, ECM_SFE_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
-
-	/*
-	 * For non-ported protocols we only support IPIP.
-	 */
-	protocol = ecm_db_connection_protocol_get(feci->ci);
-	if ((protocol != IPPROTO_IPIP)) {
-		DEBUG_TRACE("%p: unsupported protocol: %d\n", nnpci, protocol);
-		return;
-	}
 
 	/*
 	 * If decelerate is in error or already pending then ignore
@@ -1214,7 +1191,7 @@ static void ecm_sfe_non_ported_ipv6_connection_decelerate(struct ecm_front_end_c
 			(void *)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
-	nirdm->tuple.protocol = (int32_t)protocol;
+	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * Get addressing information
@@ -1642,29 +1619,21 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
 
-	DEBUG_TRACE("Non-ported protocol src: " ECM_IP_ADDR_OCTAL_FMT ", dest: " ECM_IP_ADDR_OCTAL_FMT "\n",
-				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
-
 	/*
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-	if ((protocol == IPPROTO_IPIP)) {
-		src_port = 0;
-		dest_port = 0;
-	} else {
-		/*
-		 * Do not accelerate the non-ported connections except the ones we handle.
-		 */
-		can_accel = false;
-
-		/*
-		 * port numbers are just the negative protocol number equivalents for now.
-		 * GGG They could eventually be used as protocol specific identifiers such as icmp id's etc.
-		 */
-		src_port = -protocol;
-		dest_port = -protocol;
+	if ((protocol != IPPROTO_IPIP)) {
+		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
+		return NF_ACCEPT;
 	}
+
+	src_port = 0;
+	dest_port = 0;
+
+	DEBUG_TRACE("Non-ported protocol src: " ECM_IP_ADDR_OCTAL_FMT ", dest: " ECM_IP_ADDR_OCTAL_FMT "\n",
+				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
+
 	ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
 
 	/*
