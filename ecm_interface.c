@@ -907,7 +907,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	 */
 	ECM_IP_ADDR_TO_NIN6_ADDR(dst_addr, addr);
 	addrconf_addr_solict_mult(&dst_addr, &mc_dst_addr);
-	ret = ipv6_dev_get_saddr(netf, dev, &dst_addr, 0, &src_addr);
+	ret = ipv6_dev_get_saddr(netf, dev, &mc_dst_addr, 0, &src_addr);
 
 	/*
 	 * Find the route entry
