@@ -24,6 +24,13 @@ struct ecm_tracker_instance;
 #define ECM_TRACKER_CONNECTION_TRACKING_LIMIT_DEFAULT (1024 * 1024)
 #define ECM_TRACKER_CONNECTION_TRACKING_LIMIT_MAX ECM_TRACKER_GLOBAL_DATA_LIMIT_DEFAULT
 
+/*
+ * Definitions for IPv6 version-class-flow_label field.
+ */
+#define ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_MASK 0xC0
+#define ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_SHIFT 6
+#define ECM_TRACKER_IPV6_PRIORITY_SHIFT 2
+
 enum ecm_tracker_sender_types {
 	ECM_TRACKER_SENDER_TYPE_SRC = 0,		/* Sender of tracked data is the source of the connection (who established the connection) */
 	ECM_TRACKER_SENDER_TYPE_DEST = 1,	/* Sender of tracked data is the destination of the connection (to whom connection was established) */
@@ -142,6 +149,7 @@ struct ecm_tracker_ip_header {
 	ip_addr_t dest_addr;		/* ECM ip address equivalent */
 	int protocol;			/* The upper layer transport protocol */
 	bool fragmented;		/* True when fragmented */
+	uint8_t dscp;			/* DSCP field from the packet */
 	uint8_t ds;			/* DS field from packet */
 	uint8_t ttl;			/* v4 TTL or v6 hop limit */
 	uint32_t ip_header_length;	/* Length of the IP header plus any variable sized intrinsically attached options */

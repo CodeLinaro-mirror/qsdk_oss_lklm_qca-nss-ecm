@@ -909,6 +909,19 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 		return NF_ACCEPT;
 	}
 
+	/*
+	 * If the DSCP value of the packet maps to the NOT accel action type,
+	 * do not accelerate the packet and let it go through the
+	 * slow path.
+	 */
+	if (ip_hdr.protocol == IPPROTO_UDP) {
+		uint8_t action = nss_dscp2pri_get_action(ip_hdr.dscp);
+		if (action == NSS_DSCP2PRI_ACTION_NOT_ACCEL) {
+			DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
+			return NF_ACCEPT;
+		}
+	}
+
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %p is fragmented\n", skb);
 		return NF_ACCEPT;
