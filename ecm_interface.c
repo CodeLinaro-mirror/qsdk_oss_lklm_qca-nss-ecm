@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -5395,9 +5395,10 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 {
 	uint8_t *mac =  (uint8_t *)data;
 
-	DEBUG_INFO("FDB updated for node %pM\n", mac);
-
-	ecm_interface_node_connections_decelerate(mac);
+	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
+		DEBUG_INFO("FDB updated for node %pM\n", mac);
+		ecm_interface_node_connections_decelerate(mac);
+	}
 
 	return NOTIFY_DONE;
 }
