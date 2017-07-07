@@ -5343,9 +5343,10 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 {
 	uint8_t *mac =  (uint8_t *)data;
 
-	DEBUG_INFO("FDB updated for node %pM\n", mac);
-
-	ecm_interface_node_connections_defunct(mac);
+	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
+		DEBUG_INFO("FDB updated for node %pM\n", mac);
+		ecm_interface_node_connections_defunct(mac);
+	}
 
 	return NOTIFY_DONE;
 }
