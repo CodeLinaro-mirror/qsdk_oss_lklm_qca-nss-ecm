@@ -1951,7 +1951,11 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 */
 			memcpy(type_info.vlan.address, dev->dev_addr, 6);
 			type_info.vlan.vlan_tag = vlan_dev_vlan_id(dev);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0))
 			type_info.vlan.vlan_tpid = ETH_P_8021Q;
+#else
+			type_info.vlan.vlan_tpid = ntohs(vlan_dev_vlan_proto(dev));
+#endif
 			DEBUG_TRACE("Net device: %p is VLAN, mac: %pM, vlan_id: %x vlan_tpid: %x\n",
 					dev, type_info.vlan.address, type_info.vlan.vlan_tag, type_info.vlan.vlan_tpid);
 
