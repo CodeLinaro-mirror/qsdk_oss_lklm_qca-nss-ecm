@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -64,6 +64,22 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev(struct net_devi
 }
 
 /*
+ * ecm_nss_common_get_interface_number_by_dev_type()
+ *	Returns the acceleration engine interface number based on the net_device object and type.
+ */
+static inline int32_t ecm_nss_common_get_interface_number_by_dev_type(struct net_device *dev, uint32_t type)
+{
+	/*
+	 * nss_interface_num for all IPsec tunnels will always be the one specific to acceleration engine.
+	 */
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
+		return ECM_INTERFACE_IPSEC_IF_NUM;
+	}
+
+	return nss_cmn_get_interface_number_by_dev_and_type(dev, type);
+}
+
+/*
  * ecm_nss_common_connection_regenerate()
  *	Re-generate a specific connection in NSS front end
  */
@@ -75,4 +91,32 @@ static inline void ecm_nss_common_connection_regenerate(struct ecm_front_end_con
 	 * Refer to front end protocol specific process() functions.
 	 */
 	ecm_db_connection_regeneration_needed(ci);
+}
+
+/*
+ * ecm_nss_common_get_interface_type()
+ *	Gets the NSS interface type based on some features.
+ *
+ * TODO: For now the feature is the IP version and the net device type. It can be changed
+ * in the future for other needs.
+ */
+static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_connection_instance *feci, int32_t dev_type)
+{
+	switch (dev_type) {
+	case ARPHRD_SIT:
+		if (feci->ip_version == 4) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_OUTER;
+		}
+
+		if (feci->ip_version == 6) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_INNER;
+		}
+	default:
+		break;
+	}
+
+	/*
+	 * By default.
+	 */
+	return NSS_DYNAMIC_INTERFACE_TYPE_NONE;
 }
