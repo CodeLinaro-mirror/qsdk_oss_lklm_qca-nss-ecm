@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014,2015,2017 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -383,7 +383,7 @@ struct ecm_db_interface_info_tunipip6 {			/* type == ECM_DB_IFACE_TYPE_TUNIPIP6 
  */
 static inline struct ecm_db_iface_instance *ecm_db_multicast_if_heirarchy_get(struct ecm_db_iface_instance *heirarchy_base, uint32_t index)
 {
-	uint32_t *heirarchy_instance = (uint32_t *)heirarchy_base;
+	unsigned long *heirarchy_instance = (unsigned long *)heirarchy_base;
 	DEBUG_ASSERT(heirarchy_instance, "Bad memory, multicast interfaces list has been already freed\n");
 	DEBUG_ASSERT((index <= ECM_DB_MULTICAST_IF_MAX), "Bad index %u\n", index);
 	return (struct ecm_db_iface_instance *)(heirarchy_instance + (index * ECM_DB_IFACE_HEIRARCHY_MAX));
@@ -395,10 +395,10 @@ static inline struct ecm_db_iface_instance *ecm_db_multicast_if_heirarchy_get(st
  */
 static inline struct ecm_db_iface_instance *ecm_db_multicast_if_instance_get_at_index(struct ecm_db_iface_instance *heirarchy_start, uint32_t index)
 {
-	uint32_t *iface_instance = (uint32_t *)heirarchy_start;
+	unsigned long *iface_instance = (unsigned long *)heirarchy_start;
 	DEBUG_ASSERT(iface_instance, "Bad memory, multicast interfaces list has been already freed\n");
 	DEBUG_ASSERT((index <= ECM_DB_IFACE_HEIRARCHY_MAX), "Bad first %u\n", index);
-	return ((struct ecm_db_iface_instance *)(iface_instance + index));
+	return (struct ecm_db_iface_instance *)(iface_instance + index);
 }
 
 /*
@@ -428,7 +428,7 @@ static inline int32_t *ecm_db_multicast_if_num_get_at_index(int32_t *if_num, uin
  */
 static inline void ecm_db_multicast_copy_if_heirarchy(struct ecm_db_iface_instance *if_hr[], struct ecm_db_iface_instance *heirarchy_start)
 {
-	uint32_t *iface_instance = (uint32_t *)heirarchy_start;
+	unsigned long *iface_instance = (unsigned long *)heirarchy_start;
 	struct ecm_db_iface_instance **heirarchy;
 	int i;
 
