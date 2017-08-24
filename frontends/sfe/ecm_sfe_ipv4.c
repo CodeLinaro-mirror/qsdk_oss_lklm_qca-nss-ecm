@@ -1533,12 +1533,11 @@ sync_conntrack:
 		unsigned long int delta_jiffies;
 
 		/*
-		 * Convert ms ticks from the SFE to jiffies.  We know that inc_ticks is small
+		 * Convert ms ticks from the SFE to jiffies. We know that inc_ticks is small
 		 * and we expect HZ to be small too so we can multiply without worrying about
 		 * wrap-around problems.  We add a rounding constant to ensure that the different
 		 * time bases don't cause truncation errors.
 		 */
-		DEBUG_ASSERT(HZ <= 100000, "Bad HZ\n");
 		delta_jiffies = ((sync->inc_ticks * HZ) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC;
 
 		spin_lock_bh(&ct->lock);

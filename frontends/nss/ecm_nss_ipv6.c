@@ -1387,6 +1387,8 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	struct ecm_classifier_rule_sync class_sync;
 	int flow_dir;
 	int return_dir;
+	unsigned long int delta_jiffies;
+	int elapsed;
 
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
@@ -1408,9 +1410,23 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident);
 	if (!ci) {
 		DEBUG_TRACE("%p: NSS Sync: no connection\n", sync);
-		goto sync_conntrack;
+		return;
 	}
+
 	DEBUG_TRACE("%p: Sync conn %p\n", sync, ci);
+
+	/*
+	 * Get the elapsed time since the last sync and add this elapsed time
+	 * to the conntrack's timeout while updating it. If the return value is
+	 * a negative value which means the timer is not in a valid state, just
+	 * return here and do not update the defunct timer and the conntrack.
+	 */
+	elapsed = ecm_db_connection_elapsed_defunct_timer(ci);
+	if (elapsed < 0) {
+		ecm_db_connection_deref(ci);
+		return;
+	}
+	delta_jiffies = elapsed * HZ;
 
 	/*
 	 * Keep connection alive and updated
@@ -1650,23 +1666,14 @@ sync_conntrack:
 
 	/*
 	 * Only update if this is not a fixed timeout
+	 * delta_jiffies is the elapsed time since the last sync of this connection.
 	 */
 	if (!test_bit(IPS_FIXED_TIMEOUT_BIT, &ct->status)) {
-		unsigned long int delta_jiffies;
-
-		/*
-		 * Convert ms ticks from the NSS to jiffies. We know that inc_ticks is small
-		 * and we expect HZ to be small too so we can multiply without worrying about
-		 * wrap-around problems. We add a rounding constant to ensure that the different
-		 * time bases don't cause truncation errors.
-		 */
-		DEBUG_ASSERT(HZ <= 100000, "Bad HZ\n");
-		delta_jiffies = ((sync->inc_ticks * HZ) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC;
-
 		spin_lock_bh(&ct->lock);
 		ct->timeout.expires += delta_jiffies;
 		spin_unlock_bh(&ct->lock);
 	}
+
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	acct = nf_conn_acct_find(ct);
 #else

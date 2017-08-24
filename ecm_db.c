@@ -83,6 +83,13 @@
 #endif
 
 /*
+ * Check the configured HZ value.
+ */
+#if HZ > 100000
+#error "Bad HZ value"
+#endif
+
+/*
  * Global lists.
  * All instances are inserted into global list - this allows easy iteration of all instances of a particular type.
  * The list is doubly linked for fast removal.  The list is in no particular order.
@@ -1034,6 +1041,46 @@ static void ecm_db_connection_defunct_callback(void *arg)
 
 	ecm_db_connection_deref(ci);
 }
+
+/*
+ * ecm_db_connection_elapsed_defunct_timer()
+ *	Returns the elapsed time of defunct timer.
+ * If the timer is already expired and not removed from the database, the
+ * function returns a negative value. The caller MUST handle this return value.
+ */
+int ecm_db_connection_elapsed_defunct_timer(struct ecm_db_connection_instance *ci)
+{
+	long int expires_in;
+	int elapsed;
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	/*
+	 * Do some sanity checks.
+	 * If it is not in a timer group, which means already expired, or the
+	 * connection has not been fully created yet. Just return 0.
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	if (ci->defunct_timer.group == ECM_DB_TIMER_GROUPS_MAX) {
+		spin_unlock_bh(&ecm_db_lock);
+		return -1;
+	}
+
+	/*
+	 * Already expired, but not removed from the database completely.
+	 */
+	expires_in = (long int)(ci->defunct_timer.timeout - ecm_db_time);
+	if (expires_in < 0) {
+		spin_unlock_bh(&ecm_db_lock);
+		return -1;
+	}
+
+	elapsed = ecm_db_timer_groups[ci->defunct_timer.group].time - expires_in;
+	spin_unlock_bh(&ecm_db_lock);
+
+	return elapsed;
+}
+EXPORT_SYMBOL(ecm_db_connection_elapsed_defunct_timer);
 
 /*
  * ecm_db_connection_defunct_timer_reset()

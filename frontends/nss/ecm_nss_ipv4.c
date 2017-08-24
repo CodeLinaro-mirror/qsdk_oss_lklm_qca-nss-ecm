@@ -1721,6 +1721,8 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 	struct ecm_classifier_rule_sync class_sync;
 	int flow_dir;
 	int return_dir;
+	unsigned long int delta_jiffies;
+	int elapsed;
 
 	/*
 	 * Look up ecm connection with a view to synchronising the connection, classifier and data tracker.
@@ -1764,9 +1766,24 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 #endif
 	if (!ci) {
 		DEBUG_TRACE("%p: NSS Sync: no connection\n", sync);
-		goto sync_conntrack;
+		return;
 	}
+
 	DEBUG_TRACE("%p: Sync conn %p\n", sync, ci);
+
+	/*
+	 * Get the elapsed time since the last sync and add this elapsed time
+	 * to the conntrack's timeout while updating it. If the return value is
+	 * a negative value which means the timer is not in a valid state, just
+	 * return here and do not update the defunct timer and the conntrack.
+	 */
+	elapsed = ecm_db_connection_elapsed_defunct_timer(ci);
+	if (elapsed < 0) {
+		ecm_db_connection_deref(ci);
+		return;
+	}
+	DEBUG_TRACE("%p: elapsed: %d\n", ci, elapsed);
+	delta_jiffies = elapsed * HZ;
 
 	/*
 	 * Keep connection alive and updated
@@ -2007,19 +2024,9 @@ sync_conntrack:
 
 	/*
 	 * Only update if this is not a fixed timeout
+	 * delta_jiffies is the elapsed time since the last sync of this connection.
 	 */
 	if (!test_bit(IPS_FIXED_TIMEOUT_BIT, &ct->status)) {
-		unsigned long int delta_jiffies;
-
-		/*
-		 * Convert ms ticks from the NSS to jiffies.  We know that inc_ticks is small
-		 * and we expect HZ to be small too so we can multiply without worrying about
-		 * wrap-around problems.  We add a rounding constant to ensure that the different
-		 * time bases don't cause truncation errors.
-		 */
-		DEBUG_ASSERT(HZ <= 100000, "Bad HZ\n");
-		delta_jiffies = ((sync->inc_ticks * HZ) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC;
-
 		spin_lock_bh(&ct->lock);
 		ct->timeout.expires += delta_jiffies;
 		spin_unlock_bh(&ct->lock);
