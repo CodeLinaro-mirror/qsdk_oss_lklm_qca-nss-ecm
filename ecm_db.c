@@ -1126,14 +1126,31 @@ EXPORT_SYMBOL(ecm_db_connection_timer_group_get);
  */
 void ecm_db_connection_make_defunct(struct ecm_db_connection_instance *ci)
 {
+	struct ecm_front_end_connection_instance *feci;
+	ecm_front_end_acceleration_mode_t accel_mode;
+
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
 
 	if (ci->defunct) {
 		ci->defunct(ci->feci);
 	}
 
-	if (ecm_db_timer_group_entry_remove(&ci->defunct_timer)) {
-		ecm_db_connection_deref(ci);
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	accel_mode = feci->accel_state_get(feci);
+	feci->deref(feci);
+
+	/*
+	 * It is possible that the defunct process fails and re-try is in progress.
+	 * In that case, the connection's defunct timer is reset to defunct re-try
+	 * timeout value and the connection waits for the next defunct call. So, we
+	 * should remove the timer from the timer group, if the re-acceleration for this
+	 * connection is not possible which means "decel pending" or one of the
+	 * "accel fail" modes. Otherwise, the timer will be removed and re-try will not happen.
+	 */
+	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
+		if (ecm_db_timer_group_entry_remove(&ci->defunct_timer)) {
+			ecm_db_connection_deref(ci);
+		}
 	}
 }
 EXPORT_SYMBOL(ecm_db_connection_make_defunct);
@@ -12453,6 +12470,12 @@ int ecm_db_init(struct dentry *dentry)
 	ecm_db_timer_groups[ECM_DB_TIMER_GROUPS_CONNECTION_SDP_TIMEOUT].tg = ECM_DB_TIMER_GROUPS_CONNECTION_SDP_TIMEOUT;
 	ecm_db_timer_groups[ECM_DB_TIMER_GROUPS_CONNECTION_SIP_TIMEOUT].time = ECM_DB_CONNECTION_SIP_TIMEOUT;
 	ecm_db_timer_groups[ECM_DB_TIMER_GROUPS_CONNECTION_SIP_TIMEOUT].tg = ECM_DB_TIMER_GROUPS_CONNECTION_SIP_TIMEOUT;
+
+	/*
+	 * Defunct re-try timeout (5 seconds)
+	 */
+	ecm_db_timer_groups[ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT].time = ECM_DB_CONNECTION_DEFUNCT_RETRY_TIMEOUT;
+	ecm_db_timer_groups[ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT].tg = ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT;
 
 	/*
 	 * Reset connection by protocol counters

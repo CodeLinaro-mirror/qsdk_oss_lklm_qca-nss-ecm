@@ -105,6 +105,7 @@ typedef void (*ecm_db_iface_listener_removed_callback_t)(void *arg, struct ecm_d
 #define ECM_DB_CONNECTION_SDP_TIMEOUT 120
 #define ECM_DB_CONNECTION_SIP_TIMEOUT 28800
 #define ECM_DB_CONNECTION_BITTORRENT_TIMEOUT 120
+#define ECM_DB_CONNECTION_DEFUNCT_RETRY_TIMEOUT 5
 
 /*
  * Timer groups.
@@ -135,6 +136,7 @@ enum ecm_db_timer_groups {
 	ECM_DB_TIMER_GROUPS_CONNECTION_SIP_TIMEOUT,		/* SIP timeout */
 	ECM_DB_TIMER_GROUPS_CONNECTION_IGMP_TIMEOUT,		/* IGMP timeout */
 	ECM_DB_TIMER_GROUPS_CONNECTION_BITTORRENT_TIMEOUT,	/* Bittorrent connections timeout */
+	ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT,	/* Defunct retry timeout */
 	ECM_DB_TIMER_GROUPS_MAX					/* Always the last one */
 };
 typedef enum ecm_db_timer_groups ecm_db_timer_group_t;

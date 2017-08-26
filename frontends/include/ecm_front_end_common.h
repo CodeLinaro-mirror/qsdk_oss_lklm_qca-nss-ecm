@@ -171,3 +171,4 @@ static inline void ecm_front_end_flow_and_return_directions_get(struct nf_conn *
 extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
+extern void ecm_front_end_destroy_failure_handle(struct ecm_front_end_connection_instance *feci);

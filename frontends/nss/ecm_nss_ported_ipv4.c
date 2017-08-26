@@ -1487,14 +1487,7 @@ static void ecm_nss_ported_ipv4_connection_decelerate(struct ecm_front_end_conne
 	/*
 	 * TX failed
 	 */
-	spin_lock_bh(&feci->lock);
-	feci->stats.driver_fail_total++;
-	feci->stats.driver_fail++;
-	if (feci->stats.driver_fail >= feci->stats.driver_fail_limit) {
-		DEBUG_WARN("%p: Decel failed - driver fail limit\n", npci);
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
-	}
-	spin_unlock_bh(&feci->lock);
+	ecm_front_end_destroy_failure_handle(feci);
 
 	/*
 	 * Could not send the request, decrement the decel pending counter
