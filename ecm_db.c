@@ -12193,23 +12193,24 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 					      host1_port,
 					      host2_port);
 }
- /*
-  * ecm_db_iproute_connection_cmp()
-  *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
-  *     function.
-  */
-static int ecm_db_iproute_connection_cmp(struct nf_conn *i, void *data)
+
+/*
+ * ecm_db_iproute_connection_cmp_and_kill()
+ *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
+ *     function.
+ */
+static int ecm_db_iproute_connection_cmp_and_kill(struct nf_conn *i, void *data)
 {
 	struct ecm_db_connection_instance *ci;
 
 	/*
 	 * Go through the conntarck entries and if they are found in ECM db,
-	 * decelerate and defunct the connection.
+	 * let the netfilter conntrack kill it..
 	 */
 	ci = ecm_db_connection_ipv4_from_ct_get_and_ref(i);
 	if (ci) {
-		ecm_db_connection_make_defunct(ci);
 		ecm_db_connection_deref(ci);
+		return 1;
 	}
 
 	return 0;
@@ -12226,9 +12227,9 @@ static int ecm_db_iproute_table_update_event(struct notifier_block *nb,
 	DEBUG_TRACE("iproute table update event\n");
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
-	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp, 0);
+	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp_and_kill, 0);
 #else
-	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp, 0, 0, 0);
+	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp_and_kill, 0, 0, 0);
 #endif
 	return NOTIFY_DONE;
 }
@@ -12237,23 +12238,23 @@ static struct notifier_block ecm_db_iproute_table_update_nb = {
 	.notifier_call = ecm_db_iproute_table_update_event,
 };
 
- /*
-  * ecm_db_ip6route_connection_cmp()
-  *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
-  *     function.
-  */
-static int ecm_db_ip6route_connection_cmp(struct nf_conn *i, void *data)
+/*
+ * ecm_db_ip6route_connection_cmp_and_kill()
+ *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
+ *     function.
+ */
+static int ecm_db_ip6route_connection_cmp_and_kill(struct nf_conn *i, void *data)
 {
 	struct ecm_db_connection_instance *ci;
 
 	/*
 	 * Go through the conntarck entries and if they are found in ECM db,
-	 * decelerate and defunct the connection.
+	 * let the netfilter conntrack kill it..
 	 */
 	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(i);
 	if (ci) {
-		ecm_db_connection_make_defunct(ci);
 		ecm_db_connection_deref(ci);
+		return 1;
 	}
 
 	return 0;
@@ -12270,9 +12271,9 @@ static int ecm_db_ip6route_table_update_event(struct notifier_block *nb,
 	DEBUG_TRACE("ip6route table update event\n");
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
-	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp, 0);
+	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0);
 #else
-	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp, 0, 0, 0);
+	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0, 0, 0);
 #endif
 	return NOTIFY_DONE;
 }
