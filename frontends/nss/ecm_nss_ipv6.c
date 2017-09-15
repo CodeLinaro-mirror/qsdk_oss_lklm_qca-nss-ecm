@@ -837,8 +837,8 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * slow path.
 	 */
 	if (ip_hdr.protocol == IPPROTO_UDP) {
-		uint8_t action = nss_dscp2pri_get_action(ip_hdr.dscp);
-		if (action == NSS_DSCP2PRI_ACTION_NOT_ACCEL) {
+		uint8_t action = nss_ipv6_dscp_action_get(ip_hdr.dscp);
+		if (action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
 			DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
 			return NF_ACCEPT;
 		}
