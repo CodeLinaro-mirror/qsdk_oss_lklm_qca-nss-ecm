@@ -906,6 +906,16 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 static uint32_t ecm_db_jhash_rnd __read_mostly;
 
 /*
+ * Max work count for IPv6 route change event handler.
+ */
+#define ECM_DB_IP6ROUTE_MAX_WORK_COUNT	16
+
+/*
+ * IPv6 rount change event work counter.
+ */
+static atomic_t ecm_db_ip6route_work_count;
+
+/*
  * ecm_db_connection_count_get()
  *	Return the connection count
  */
@@ -12203,6 +12213,10 @@ static int ecm_db_iproute_connection_cmp_and_kill(struct nf_conn *i, void *data)
 {
 	struct ecm_db_connection_instance *ci;
 
+	if (nf_ct_l3num(i) != AF_INET) {
+		return 0;
+	}
+
 	/*
 	 * Go through the conntarck entries and if they are found in ECM db,
 	 * let the netfilter conntrack kill it..
@@ -12247,6 +12261,10 @@ static int ecm_db_ip6route_connection_cmp_and_kill(struct nf_conn *i, void *data
 {
 	struct ecm_db_connection_instance *ci;
 
+	if (nf_ct_l3num(i) != AF_INET6) {
+		return 0;
+	}
+
 	/*
 	 * Go through the conntarck entries and if they are found in ECM db,
 	 * let the netfilter conntrack kill it..
@@ -12261,20 +12279,56 @@ static int ecm_db_ip6route_connection_cmp_and_kill(struct nf_conn *i, void *data
 }
 
 /*
- * ecm_db_ip6route_table_update_event()
- *	This is a call back for "routing table update event for IPv6"
+ * ecm_db_ip6route_table_iterate_cleanup_work()
+ *	Clean up work function for IPv6 route change event.
  */
-static int ecm_db_ip6route_table_update_event(struct notifier_block *nb,
-					       unsigned long event,
-					       void *ptr)
+static void ecm_db_ip6route_table_iterate_cleanup_work(struct work_struct *work)
 {
-	DEBUG_TRACE("ip6route table update event\n");
+	DEBUG_TRACE("ip6route table iterate cleanup work\n");
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
 	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0);
 #else
 	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0, 0, 0);
 #endif
+	kfree(work);
+	atomic_dec(&ecm_db_ip6route_work_count);
+}
+
+/*
+ * ecm_db_ip6route_table_update_event()
+ *	This is a callback for "routing table update event for IPv6"
+ *
+ * ipv6 route change notifier is an atomic notifier, i.e. we cannot
+ * schedule.
+ *
+ * Unfortunately, nf_ct_iterate_cleanup can run for a long
+ * time if there are lots of conntracks and the system
+ * handles high softirq load, so it frequently calls cond_resched
+ * while iterating the conntrack table.
+ *
+ * So we defer nf_ct_iterate_cleanup walk to the system workqueue.
+ */
+static int ecm_db_ip6route_table_update_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ptr)
+{
+	struct work_struct *work;
+
+	DEBUG_TRACE("ip6route table update event\n");
+
+	if (atomic_read(&ecm_db_ip6route_work_count) >= ECM_DB_IP6ROUTE_MAX_WORK_COUNT)
+		return NOTIFY_DONE;
+
+
+	work = kmalloc(sizeof(*work), GFP_ATOMIC);
+	if (work) {
+		atomic_inc(&ecm_db_ip6route_work_count);
+
+		INIT_WORK(work, ecm_db_ip6route_table_iterate_cleanup_work);
+		schedule_work(work);
+	}
+
 	return NOTIFY_DONE;
 }
 
