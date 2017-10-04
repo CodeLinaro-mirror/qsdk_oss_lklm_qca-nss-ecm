@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -105,7 +105,7 @@ static inline bool ecm_front_end_acceleration_rejected(struct sk_buff *skb)
 		return true;
 	}
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 12, 0))
 	acct = nf_conn_acct_find(ct);
 #else
 	acct = nf_conn_acct_find(ct)->counter;

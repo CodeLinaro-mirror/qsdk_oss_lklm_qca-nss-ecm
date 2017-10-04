@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -215,7 +215,8 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 #ifdef CONFIG_OF
 	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
-				of_machine_is_compatible("qcom,ipq807x");
+				of_machine_is_compatible("qcom,ipq807x") ||
+				of_machine_is_compatible("qcom,fsm9010");
 #else
 	bool nss_supported = true;
 #endif
