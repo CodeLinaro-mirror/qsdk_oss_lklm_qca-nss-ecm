@@ -481,6 +481,12 @@ version_check_done:
 		ip_hdr->fragmented = (ntohs(v4_hdr->frag_off) & 0x3fff)? true : false;
 
 		/*
+		 * DSCP value is the 6 most significant bits of tos field, so left shifting
+		 * the tos value by 2 gives the DSCP value.
+		 */
+		ip_hdr->dscp = v4_hdr->tos >> 2;
+
+		/*
 		 * DS field
 		 */
 		ip_hdr->ds = ipv4_get_dsfield(v4_hdr);
@@ -549,6 +555,26 @@ version_check_done:
 		DEBUG_WARN("%p: v6 invalid total len: %u skb len: %u\n", skb, ip_hdr->total_length, skb->len);
 		return false;
 	}
+
+	/*
+	 * In IPv6 header, the version-class-flow_label is organized as:
+	 * version: u8:4
+	 * priority: u8:4
+	 * flow_lbl[3]
+	 *
+	 * Version(31-28), CLASS(27-20), FLOW(19-0)
+	 *
+	 * The dscp value is the most 6 significant bit of traffic-class field. Its 4-bits
+	 * belong to the priority field of the IPv6 header, the other 2-bits belong to the
+	 * flow_lbl[0]. So, to calculate the dscp value, we need to right shift the priority by 2 and OR
+	 * it with flow_lbl[0]'s most 2 significant bits.
+	 *
+	 * ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_MASK 0xC0
+	 * ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_SHIFT 6
+	 * ECM_TRACKER_IPV6_PRIORITY_SHIFT 2
+	 */
+	ip_hdr->dscp = (v6_hdr->priority << ECM_TRACKER_IPV6_PRIORITY_SHIFT) |
+			((v6_hdr->flow_lbl[0] & ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_MASK) >> ECM_TRACKER_IPV6_FLOW_LBL_PRIORITY_SHIFT);
 
 	/*
 	 * DS field
