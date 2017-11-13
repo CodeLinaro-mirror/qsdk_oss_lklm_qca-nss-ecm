@@ -2007,6 +2007,23 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		}
 #endif
 
+#ifdef ECM_INTERFACE_GRE_ENABLE
+		/*
+		 * GRE TAP?
+		 */
+		if (dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)) {
+			/*
+			 * GRE TAP interface is handled as ethernet interface, however it is possible
+			 * that the acceleration engine may not be ready yet to handle the connection.
+			 * In this case the acceleration engine interface is not found for this type and
+			 * we should wait until it is ready.
+			 */
+			if (ae_interface_num < 0) {
+				DEBUG_TRACE("GRE interface is not ready yet\n");
+				return NULL;
+			}
+		}
+#endif
 		/*
 		 * ETHERNET!
 		 * Just plain ethernet it seems
@@ -3378,7 +3395,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (dest_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP))) {
+				((ip_version == 6) && (protocol == IPPROTO_IPIP))
+#ifdef ECM_INTERFACE_GRE_ENABLE
+				|| ((protocol == IPPROTO_GRE) && (given_dest_dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)))) {
+#else
+		{
+#endif
 			dev_put(dest_dev);
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
@@ -3458,7 +3480,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (src_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP))) {
+				((ip_version == 6) && (protocol == IPPROTO_IPIP))
+#ifdef ECM_INTERFACE_GRE_ENABLE
+				|| ((protocol == IPPROTO_GRE) && (given_src_dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)))) {
+#else
+		{
+#endif
 			dev_put(src_dev);
 			src_dev = given_src_dev;
 			if (src_dev) {

@@ -115,6 +115,13 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_GRE_ENABLE=y in order
+# to enable support for GRE interface.
+# #############################################################################
+ECM_INTERFACE_GRE_ENABLE=y
+ccflags-$(ECM_INTERFACE_GRE_ENABLE) += -DECM_INTERFACE_GRE_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
 # to enable support for SIT interface.
 # #############################################################################

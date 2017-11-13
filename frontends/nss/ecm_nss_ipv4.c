@@ -955,8 +955,21 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * false then don't accelerate it.
 	 */
 	if ((ip_hdr.protocol == IPPROTO_GRE) && !ecm_interface_is_pptp(skb, out_dev)) {
+#ifdef ECM_INTERFACE_GRE_ENABLE
+		/*
+		 * But if any of the input or output interface is a GRE V4 TAP interface
+		 * we can continue to accelerate it.
+		 */
+		if (!(in_dev->priv_flags & IFF_GRE_V4_TAP) && !(out_dev->priv_flags & IFF_GRE_V4_TAP)) {
+			DEBUG_TRACE("PPTP GRE pass through flow\n");
+			return NF_ACCEPT;
+		}
+
+		DEBUG_TRACE("GRE TAP tunnel flow\n");
+#else
 		DEBUG_TRACE("PPTP GRE pass through flow\n");
 		return NF_ACCEPT;
+#endif
 	}
 
 	/*
@@ -1599,7 +1612,7 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(const struct nf_hook_o
 	}
 	eth_type = ntohs(skb_eth_hdr->h_proto);
 	if (unlikely((eth_type != 0x0800) && (eth_type != ETH_P_PPP_SES))) {
-		DEBUG_TRACE("%p: Not IP/PPPoE session\n", skb);
+		DEBUG_TRACE("%p: Not IP/PPPoE session: %d\n", skb, eth_type);
 		return NF_ACCEPT;
 	}
 
@@ -2121,7 +2134,6 @@ static void ecm_nss_ipv4_net_dev_callback(void *app_data, struct nss_ipv4_msg *n
 	 * Only respond to sync messages
 	 */
 	if (nim->cm.type != NSS_IPV4_RX_CONN_STATS_SYNC_MSG) {
-		DEBUG_TRACE("Ignoring nim: %p - not sync: %d", nim, nim->cm.type);
 		return;
 	}
 	sync = &nim->msg.conn_stats;
