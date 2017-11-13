@@ -1742,7 +1742,6 @@ static void ecm_nss_ipv6_net_dev_callback(void *app_data, struct nss_ipv6_msg *n
 	 * Only respond to sync messages
 	 */
 	if (nim->cm.type != NSS_IPV6_RX_CONN_STATS_SYNC_MSG) {
-		DEBUG_TRACE("Ignoring nim: %p - not sync: %d", nim, nim->cm.type);
 		return;
 	}
 	sync = &nim->msg.conn_stats;

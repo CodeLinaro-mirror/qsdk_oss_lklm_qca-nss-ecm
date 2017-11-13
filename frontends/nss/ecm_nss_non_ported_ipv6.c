@@ -1653,8 +1653,21 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
 	if (protocol != IPPROTO_IPIP) {
+#ifdef ECM_INTERFACE_GRE_ENABLE
+		/*
+		 * If protocol is GRE and one of the input and output devices are GRE_V6_TAP device,
+		 * continue to accelerate the connection. ECM supports this configuration.
+		 */
+		if (protocol != IPPROTO_GRE || (!(in_dev->priv_flags & IFF_GRE_V6_TAP) && !(out_dev->priv_flags & IFF_GRE_V6_TAP))) {
+			DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
+			return NF_ACCEPT;
+		}
+
+		DEBUG_TRACE("GRE TAP tunnel flow\n");
+#else
 		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
 		return NF_ACCEPT;
+#endif
 	}
 
 	src_port = 0;

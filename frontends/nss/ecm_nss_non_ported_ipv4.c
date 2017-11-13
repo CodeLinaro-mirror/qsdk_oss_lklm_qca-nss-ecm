@@ -1834,7 +1834,7 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-#ifdef ECM_INTERFACE_PPTP_ENABLE
+#if defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_ENABLE)
 	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP) && (protocol != IPPROTO_GRE)) {
 #else
 	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP)) {
