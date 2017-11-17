@@ -272,6 +272,13 @@ ECM_BAND_STEERING_ENABLE=y
 ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 
 # #############################################################################
+# Define ECM_DB_PMTU_EVENT_ENABLE=y in order to enable
+# Path MTU handling in ECM.
+# #############################################################################
+ECM_DB_PMTU_EVENT_ENABLE=n
+ccflags-$(ECM_DB_PMTU_EVENT_ENABLE) += -DECM_DB_PMTU_EVENT_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.

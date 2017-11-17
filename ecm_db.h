@@ -116,6 +116,11 @@ bool ecm_db_timer_group_entry_reset(struct ecm_db_timer_group_entry *tge, ecm_db
 bool ecm_db_timer_group_entry_remove(struct ecm_db_timer_group_entry *tge);
 bool ecm_db_timer_group_entry_touch(struct ecm_db_timer_group_entry *tge);
 
+#ifdef ECM_DB_PMTU_EVENT_ENABLE
+bool ecm_db_connection_check_valid_pmtu(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_set_pmtu_expiry(struct ecm_db_connection_instance *ci, struct sk_buff *skb);
+#endif
+
 int ecm_db_mapping_connections_total_count_get(struct ecm_db_mapping_instance *mi);
 
 struct ecm_db_host_instance *ecm_db_mapping_host_get_and_ref(struct ecm_db_mapping_instance *mi);

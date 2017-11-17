@@ -575,6 +575,9 @@ struct ecm_db_connection_instance {
 	int protocol;						/* RO: Protocol of the connection */
 	ecm_db_direction_t direction;				/* RO: 'Direction' of connection establishment. */
 	bool is_routed;						/* RO: True when connection is routed, false when not */
+#ifdef ECM_DB_PMTU_EVENT_ENABLE
+	unsigned long pmtu_expiry_time;				/* Expiry time in jiffies. */
+#endif
 
 	/*
 	 * Connection endpoint mapping
@@ -1072,6 +1075,44 @@ ecm_db_timer_group_t ecm_db_connection_timer_group_get(struct ecm_db_connection_
 	return tg;
 }
 EXPORT_SYMBOL(ecm_db_connection_timer_group_get);
+
+#ifdef ECM_DB_PMTU_EVENT_ENABLE
+/*
+ * ecm_db_connection_check_valid_pmtu()
+ * 	Check whether the connection has PMTU associated during creation
+ */
+bool ecm_db_connection_check_valid_pmtu(struct ecm_db_connection_instance *ci)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	if (ci->pmtu_expiry_time) {
+		spin_unlock_bh(&ecm_db_lock);
+		return true;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	return false;
+}
+
+/*
+ * ecm_db_connection_set_pmtu_expiry()
+ * 	Cache PMTU expiry time in the connection database
+ */
+void ecm_db_connection_set_pmtu_expiry(struct ecm_db_connection_instance *ci, struct sk_buff *skb)
+{
+	struct dst_entry *dst;
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	dst = skb_dst(skb);
+	if (!dst || !dst->expires || !time_after(dst->expires, jiffies))
+		return;
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->pmtu_expiry_time = dst->expires;
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("PMTU valid entry is present %d jiffies:%d\n", (uint32_t)dst->expires, (uint32_t)jiffies);
+}
+#endif
 
 /*
  * ecm_db_connection_make_defunct()
@@ -12378,6 +12419,43 @@ static struct notifier_block ecm_db_ip6route_table_update_nb = {
 	.notifier_call = ecm_db_ip6route_table_update_event,
 };
 
+#ifdef ECM_DB_PMTU_EVENT_ENABLE
+static int ecm_db_ipv4_pmtu_expiry_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ptr)
+{
+	ip_addr_t addr;
+
+	DEBUG_TRACE("PMTU expired for IP address: %pI4\n", (uint32_t *)ptr);
+	ECM_NIN4_ADDR_TO_IP_ADDR(addr, *(uint32_t *)ptr);
+	ecm_db_host_to_connections_defunct(addr);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block ecm_db_ipv4_pmtu_expiry_nb = {
+	.notifier_call = ecm_db_ipv4_pmtu_expiry_event,
+};
+
+static int ecm_db_ipv6_pmtu_expiry_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ptr)
+{
+	struct in6_addr dest_addr;
+	ip_addr_t addr;
+
+	memcpy(&dest_addr, ptr, sizeof(struct in6_addr));
+
+	DEBUG_TRACE("PMTU expired for IP address %pI6c\n", (struct in6_addr *)ptr);
+	ECM_NIN6_ADDR_TO_IP_ADDR(addr, dest_addr);
+	ecm_db_host_to_connections_defunct(addr);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block ecm_db_ipv6_pmtu_expiry_nb = {
+	.notifier_call = ecm_db_ipv6_pmtu_expiry_event,
+};
+#endif
+
 /*
  * ecm_db_init()
  */
@@ -12585,6 +12663,11 @@ int ecm_db_init(struct dentry *dentry)
 	ip_rt_register_notifier(&ecm_db_iproute_table_update_nb);
 	rt6_register_notifier(&ecm_db_ip6route_table_update_nb);
 
+#if defined(ECM_DB_PMTU_EVENT_ENABLE)
+	ip_rt_register_pmtu_expiry_notifier(&ecm_db_ipv4_pmtu_expiry_nb);
+	rt6_register_pmtu_expiry_notifier(&ecm_db_ipv6_pmtu_expiry_nb);
+#endif
+
 	return 0;
 
 init_cleanup_9:
@@ -12658,5 +12741,10 @@ void ecm_db_exit(void)
 	 */
 	ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
 	rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
+
+#ifdef ECM_DB_PMTU_EVENT_ENABLE
+	ip_rt_unregister_pmtu_expiry_notifier(&ecm_db_ipv4_pmtu_expiry_nb);
+	rt6_unregister_pmtu_expiry_notifier(&ecm_db_ipv6_pmtu_expiry_nb);
+#endif
 }
 EXPORT_SYMBOL(ecm_db_exit);
