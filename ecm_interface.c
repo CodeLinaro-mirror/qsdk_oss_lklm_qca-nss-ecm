@@ -143,6 +143,15 @@ static DEFINE_SPINLOCK(ecm_interface_lock);			/* Protect against SMP access betw
 static bool ecm_interface_terminate_pending = false;		/* True when the user has signalled we should quit */
 
 /*
+ * Source interface check flag.
+ *	If it is enabled, the acceleration engine will check the flow's interface to see
+ *	whether it matches with the rule's source interface or not.
+ */
+int ecm_interface_src_check;
+
+static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table header */
+
+/*
  * ecm_interface_get_and_hold_dev_master()
  *	Returns the master device of a net device if any.
  */
@@ -5968,6 +5977,71 @@ int ecm_interface_wifi_event_stop(void)
 }
 
 /*
+ * ecm_interface_src_check_handler()
+ *	Source interface check sysctl node handler.
+ */
+static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ecm_interface_src_check;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+		DEBUG_WARN("Source interface check is for NSS only.\n");
+		return -EINVAL;
+	}
+
+	if ((ecm_interface_src_check != 1) && (ecm_interface_src_check != 0)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_interface_src_check = current_value;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_interface_table[] = {
+	{
+		.procname		= "src_interface_check",
+		.data			= &ecm_interface_src_check,
+		.maxlen			= sizeof(int),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_src_check_handler,
+	},
+	{ }
+};
+
+static struct ctl_table ecm_interface_root_dir[] = {
+	{
+		.procname		= "ecm",
+		.mode			= 0555,
+		.child			= ecm_interface_table,
+	},
+	{ }
+};
+
+static struct ctl_table ecm_interface_root[] = {
+	{
+		.procname		= "net",
+		.mode			= 0555,
+		.child			= ecm_interface_root_dir,
+	},
+	{ }
+};
+
+/*
  * ecm_interface_init()
  */
 int ecm_interface_init(void)
@@ -5975,9 +6049,15 @@ int ecm_interface_init(void)
 	int result;
 	DEBUG_INFO("ECM Interface init\n");
 
+	/*
+	 * Register sysctl table.
+	 */
+	ecm_interface_ctl_table_header = register_sysctl_table(ecm_interface_root);
+
 	result = register_netdevice_notifier(&ecm_interface_netdev_notifier);
 	if (result != 0) {
 		DEBUG_ERROR("Failed to register netdevice notifier %d\n", result);
+		unregister_sysctl_table(ecm_interface_ctl_table_header);
 		return result;
 	}
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
@@ -6020,5 +6100,12 @@ void ecm_interface_exit(void)
 	br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 #endif
 	ecm_interface_wifi_event_stop();
+
+	/*
+	 * Unregister sysctl table.
+	 */
+	if (ecm_interface_ctl_table_header) {
+		unregister_sysctl_table(ecm_interface_ctl_table_header);
+	}
 }
 EXPORT_SYMBOL(ecm_interface_exit);

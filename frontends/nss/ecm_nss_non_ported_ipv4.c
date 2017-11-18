@@ -904,6 +904,11 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		}
 	}
 
+	if (ecm_interface_src_check) {
+		DEBUG_INFO("%p: Source interface check flag is enabled\n", nnpci);
+		nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
+	}
+
 	/*
 	 * Set up the flow and return qos tags
 	 */

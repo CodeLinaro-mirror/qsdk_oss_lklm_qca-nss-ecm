@@ -14,6 +14,8 @@
  **************************************************************************
  */
 
+extern int ecm_interface_src_check;	/* Source interface check flag */
+
 /*
  * struct ecm_interface_route
  *	An ecm route supports either v4 or v6 routing information
