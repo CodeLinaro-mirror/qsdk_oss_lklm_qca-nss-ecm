@@ -825,6 +825,11 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		}
 	}
 
+	if (ecm_interface_src_check) {
+		DEBUG_INFO("%p: Source interface check flag is enabled\n", npci);
+		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
+	}
+
 	/*
 	 * Set up the flow and return qos tags
 	 */
