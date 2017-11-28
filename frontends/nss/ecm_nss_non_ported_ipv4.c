@@ -387,7 +387,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	uint8_t from_nss_iface_address[ETH_ALEN];
 	uint8_t to_nss_iface_address[ETH_ALEN];
 	ip_addr_t addr;
-#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE)
+#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_ENABLE)
 	struct net_device *dev __attribute__((unused));
 #endif
 	struct nss_ipv4_msg *nim;
@@ -405,6 +405,9 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	struct ecm_db_interface_info_pptp pptp_info;
 	bool is_from_ii_type_pptp = false;
+#endif
+#ifdef ECM_INTERFACE_GRE_ENABLE
+	bool is_from_ii_type_gre = false;
 #endif
 
 	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
@@ -546,6 +549,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_in_dev = NULL;
 #endif
+
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", nnpci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -575,6 +579,16 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: Ethernet - ignore additional\n", nnpci);
 				break;
 			}
+
+#ifdef ECM_INTERFACE_GRE_ENABLE
+			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+			if (dev) {
+				if (dev->priv_flags & IFF_GRE_V4_TAP) {
+					is_from_ii_type_gre = true;
+				}
+				dev_put(dev);
+			}
+#endif
 
 			/*
 			 * Can only handle one MAC, the first outermost mac.
@@ -925,10 +939,25 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	if (unlikely(is_from_ii_type_pptp)) {
 		dev = ecm_interface_dev_find_by_local_addr(addr);
-		if (likely(dev)) {
-			nircm->conn_rule.flow_mtu = dev->mtu;
-			dev_put(dev);
+		if (unlikely(!dev)) {
+			DEBUG_TRACE("%p: Unable to find PPTP tunnel's link interface for ip address " ECM_IP_ADDR_DOT_FMT "\n",
+				    nnpci, ECM_IP_ADDR_TO_DOT(addr));
+			goto non_ported_accel_bad_rule;
 		}
+		nircm->conn_rule.flow_mtu = dev->mtu;
+		dev_put(dev);
+	}
+#endif
+#ifdef ECM_INTERFACE_GRE_ENABLE
+	if (unlikely(is_from_ii_type_gre)) {
+		dev = ecm_interface_dev_find_by_local_addr(addr);
+		if (unlikely(!dev)) {
+			DEBUG_TRACE("%p: Unable to find GRE tunnel's link interface for ip address " ECM_IP_ADDR_DOT_FMT "\n",
+				    nnpci, ECM_IP_ADDR_TO_DOT(addr));
+			goto non_ported_accel_bad_rule;
+		}
+		nircm->conn_rule.flow_mtu = dev->mtu;
+		dev_put(dev);
 	}
 #endif
 	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.flow_ip, addr);
@@ -1921,7 +1950,6 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 			DEBUG_WARN("ECM front end ipv4 interface construct set failed for routed traffic\n");
 			return NF_ACCEPT;
 		}
-
 
 		/*
 		 * Get the src and destination mappings.
