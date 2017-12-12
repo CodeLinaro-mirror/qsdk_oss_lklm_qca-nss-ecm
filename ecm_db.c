@@ -3356,6 +3356,12 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		ecm_db_iface_deref(ci->to_nat_interfaces[i]);
 	}
 
+#ifdef ECM_MULTICAST_ENABLE
+	/*
+	 * Remove references to the multicast interfaces of this connection.
+	 */
+	ecm_db_multicast_connection_to_interfaces_clear(ci);
+#endif
 	/*
 	 * We can now destroy the instance
 	 */
