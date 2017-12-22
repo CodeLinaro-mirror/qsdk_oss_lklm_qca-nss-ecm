@@ -334,6 +334,10 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
 	ecm_front_end_acceleration_mode_t result_mode;
+#ifdef ECM_INTERFACE_GRE_ENABLE
+	bool is_from_ii_type_gre = false;
+	struct net_device *dev;
+#endif
 
 	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
 
@@ -504,6 +508,16 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: Ethernet - ignore additional\n", nnpci);
 				break;
 			}
+
+#ifdef ECM_INTERFACE_GRE_ENABLE
+			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+			if (dev) {
+				if (dev->priv_flags & IFF_GRE_V6_TAP) {
+					is_from_ii_type_gre = true;
+				}
+				dev_put(dev);
+			}
+#endif
 
 			/*
 			 * Can only handle one MAC, the first outermost mac.
@@ -873,6 +887,18 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * Get MTU information
 	 */
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_from_iface_mtu_get(feci->ci);
+#ifdef ECM_INTERFACE_GRE_ENABLE
+	if (unlikely(is_from_ii_type_gre)) {
+		dev = ecm_interface_dev_find_by_local_addr(src_ip);
+		if (unlikely(!dev)) {
+			DEBUG_TRACE("%p: Unable to find GRE tunnel's link interface for ip address " ECM_IP_ADDR_OCTAL_FMT "\n",
+				    nnpci, ECM_IP_ADDR_TO_OCTAL(src_ip));
+			goto non_ported_accel_bad_rule;
+		}
+		nircm->conn_rule.flow_mtu = dev->mtu;
+		dev_put(dev);
+	}
+#endif
 	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_to_iface_mtu_get(feci->ci);
 
 	/*
