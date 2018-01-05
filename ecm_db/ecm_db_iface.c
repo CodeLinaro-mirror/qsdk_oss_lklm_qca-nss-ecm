@@ -784,6 +784,39 @@ static int ecm_db_iface_rawip_state_get(struct ecm_db_iface_instance *ii, struct
 }
 #endif
 
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * ecm_db_iface_ovpn_state_get()
+ *	Return OVPN interface state
+ */
+static int ecm_db_iface_ovpn_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	struct ecm_db_interface_info_ovpn type_info;
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(&type_info, &ii->type_info, sizeof(struct ecm_db_interface_info_ovpn));
+	spin_unlock_bh(&ecm_db_lock);
+
+	result = ecm_state_prefix_add(sfi, "ovpn");
+	if (result) {
+		return result;
+	}
+
+	result = ecm_db_iface_state_get_base(ii, sfi);
+	if (result) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "tun_ifnum", "%u", type_info.tun_ifnum))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
+
 /*
  * ecm_db_iface_state_get()
  *	Obtain state for the interface.
@@ -1137,6 +1170,20 @@ static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_tunipip6(ip_a
 	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
 }
 #endif
+#endif
+
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * ecm_db_iface_generate_hash_index_ovpn()
+ * 	Calculate the hash index.
+ */
+static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_ovpn(int32_t tun_ifnum)
+{
+	uint32_t hash_val;
+
+	hash_val = (uint32_t)jhash_1word((uint32_t)tun_ifnum, ecm_db_jhash_rnd);
+	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
+}
 #endif
 
 /*
@@ -2149,6 +2196,47 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_rawip(uint8_t *address)
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_rawip);
 #endif
 
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * ecm_db_iface_find_and_ref_ovpn()
+ *	Lookup and return OVPN iface reference
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovpn(int32_t tun_ifnum)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Lookup OVPN iface with ifnum: %d\n", tun_ifnum);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ovpn(tun_ifnum);
+
+	/*
+	 * Iterate the chain looking for a host with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_OVPN)
+				|| ii->type_info.ovpn.tun_ifnum != tun_ifnum) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("iface found %p\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Iface not found\n");
+	return NULL;
+}
+EXPORT_SYMBOL(ecm_db_iface_find_and_ref_ovpn);
+#endif
+
 #ifdef ECM_DB_XREF_ENABLE
 /*
  * ecm_db_iface_connections_get_and_ref_first()
@@ -2429,6 +2517,7 @@ void ecm_db_iface_add_lag(struct ecm_db_iface_instance *ii, uint8_t *address, ch
 	li = ecm_db_listeners_get_and_ref_first();
 	while (li) {
 		struct ecm_db_listener_instance *lin;
+
 		if (li->iface_added) {
 			li->iface_added(li->arg, ii);
 		}
@@ -3965,6 +4054,122 @@ void ecm_db_iface_add_rawip(struct ecm_db_iface_instance *ii, uint8_t *address, 
 	}
 }
 EXPORT_SYMBOL(ecm_db_iface_add_rawip);
+#endif
+
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * ecm_db_iface_add_ovpn()
+ *	Add OVPN interface instance into the database
+ */
+void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
+				struct ecm_db_interface_info_ovpn *type_info, char *name,
+				int32_t mtu, int32_t interface_identifier,
+				ecm_db_iface_final_callback_t final, void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	ecm_db_iface_id_hash_t iface_id_hash_index;
+	struct ecm_db_listener_instance *li;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%p: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%p: inserted\n", ii);
+	DEBUG_ASSERT(name, "%p: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_OVPN;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_ovpn_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strcpy(ii->name, name);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = type_info->tun_ifnum;
+
+	/*
+	 * Type specific info to be copied
+	 */
+	ii->type_info.ovpn = *type_info;
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ovpn(type_info->tun_ifnum);
+	ii->hash_index = hash_index;
+
+	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
+	ii->iface_id_hash_index = iface_id_hash_index;
+
+	/*
+	 * Add into the global list
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
+	ii->prev = NULL;
+	ii->next = ecm_db_interfaces;
+	if (ecm_db_interfaces) {
+		ecm_db_interfaces->prev = ii;
+	}
+	ecm_db_interfaces = ii;
+
+	/*
+	 * Insert into chain
+	 */
+	ii->hash_next = ecm_db_iface_table[hash_index];
+	if (ecm_db_iface_table[hash_index]) {
+		ecm_db_iface_table[hash_index]->hash_prev = ii;
+	}
+	ecm_db_iface_table[hash_index] = ii;
+	ecm_db_iface_table_lengths[hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
+
+	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
+
+	/*
+	 * Insert into interface identifier chain
+	 */
+	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
+	if (ecm_db_iface_id_table[iface_id_hash_index]) {
+		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
+	}
+	ecm_db_iface_id_table[iface_id_hash_index] = ii;
+	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
+
+	/*
+	 * Set time of addition
+	 */
+	ii->time_added = ecm_db_time;
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Throw add event to the listeners
+	 */
+	DEBUG_TRACE("%p: Throw iface added event\n", ii);
+	li = ecm_db_listeners_get_and_ref_first();
+	while (li) {
+		struct ecm_db_listener_instance *lin;
+
+		if (li->iface_added) {
+			li->iface_added(li->arg, ii);
+		}
+
+		/*
+		 * Get next listener
+		 */
+		lin = ecm_db_listener_get_and_ref_next(li);
+		ecm_db_listener_deref(li);
+		li = lin;
+	}
+}
+EXPORT_SYMBOL(ecm_db_iface_add_ovpn);
 #endif
 
 /*

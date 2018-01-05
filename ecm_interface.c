@@ -115,6 +115,9 @@
 #include "ecm_db.h"
 #include "ecm_interface.h"
 #include "exports/ecm_interface_ipsec.h"
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+#include "ecm_interface_ovpn.h"
+#endif
 
 /*
  * Wifi event handler structure.
@@ -158,6 +161,77 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
 int ecm_interface_src_check;
 
 static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table header */
+
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * Callback structure to support OVPN offload.
+ */
+static struct ecm_interface_ovpn ovpn;
+
+/*
+ * ecm_interface_ovpn_register
+ */
+int ecm_interface_ovpn_register(struct ecm_interface_ovpn *ovpn_cb)
+{
+	spin_lock_bh(&ecm_interface_lock);
+	if (ovpn.ovpn_update_route) {
+		spin_unlock_bh(&ecm_interface_lock);
+		DEBUG_ERROR("OVPN callbacks are registered\n");
+		return -1;
+	}
+
+	ovpn.ovpn_update_route = ovpn_cb->ovpn_update_route;
+	ovpn.ovpn_get_ifnum = ovpn_cb->ovpn_get_ifnum;
+	spin_unlock_bh(&ecm_interface_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_interface_ovpn_register);
+
+/*
+ * ecm_interface_ovpn_unregister
+ */
+void ecm_interface_ovpn_unregister(void)
+{
+	spin_lock_bh(&ecm_interface_lock);
+	ovpn.ovpn_update_route = NULL;
+	ovpn.ovpn_get_ifnum = NULL;
+	spin_unlock_bh(&ecm_interface_lock);
+}
+EXPORT_SYMBOL(ecm_interface_ovpn_unregister);
+
+/*
+ * ecm_interface_ovpn_get_ifnum
+ */
+static int ecm_interface_ovpn_get_ifnum(struct net_device *dev, struct sk_buff *skb, struct net_device **tun_dev)
+{
+	int ret = -1;
+
+	DEBUG_TRACE("Calling registered function to get OVPN ifnum.\n");
+
+	spin_lock_bh(&ecm_interface_lock);
+	if (likely(ovpn.ovpn_get_ifnum)) {
+		ret = ovpn.ovpn_get_ifnum(dev, skb, tun_dev);
+	}
+	spin_unlock_bh(&ecm_interface_lock);
+
+	return ret;
+}
+
+/*
+ * ecm_interface_ovpn_update_route
+ */
+static void ecm_interface_ovpn_update_route(struct net_device *dev, uint32_t *from_addr, uint32_t *to_addr, int version)
+{
+	DEBUG_TRACE("Calling registered function to update OVPN route entry.\n");
+
+	spin_lock_bh(&ecm_interface_lock);
+	if (likely(ovpn.ovpn_update_route)) {
+		ovpn.ovpn_update_route(dev, from_addr, to_addr, version);
+	}
+	spin_unlock_bh(&ecm_interface_lock);
+}
+#endif
 
 /*
  * ecm_interface_get_and_hold_dev_master()
@@ -2038,6 +2112,58 @@ static struct ecm_db_iface_instance *ecm_interface_rawip_interface_establish(str
 }
 #endif
 
+
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+/*
+ * ecm_interface_ovpn_interface_establish()
+ *	Returns reference to iface of the OVPN type.
+ */
+static struct ecm_db_iface_instance *ecm_interface_ovpn_interface_establish(struct ecm_db_interface_info_ovpn *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish OVPN iface: %s with ae_interface_num : %d, MTU: %d, if num: %d\n",
+			dev_name, type_info->tun_ifnum, mtu, dev_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_ovpn(type_info->tun_ifnum);
+	if (ii) {
+		DEBUG_TRACE("%p: iface established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_ovpn(type_info->tun_ifnum);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+
+	ecm_db_iface_add_ovpn(nii, type_info, dev_name, mtu, dev_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%p: ovpn iface established\n", nii);
+	return nii;
+}
+#endif
+
 /*
  * ecm_interface_establish_and_ref()
  *	Establish an interface instance for the given interface detail.
@@ -2091,6 +2217,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #endif
 #ifdef ECM_INTERFACE_RAWIP_ENABLE
 		struct ecm_db_interface_info_rawip rawip;		/* type == ECM_DB_IFACE_TYPE_RAWIP */
+#endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+		struct ecm_db_interface_info_ovpn ovpn;			/* type == ECM_DB_IFACE_TYPE_OVPN */
 #endif
 	} type_info;
 
@@ -2469,6 +2598,26 @@ identifier_update:
                  * Establish this type of interface
                  */
                 ii = ecm_interface_rawip_interface_establish(&type_info.rawip, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		return ii;
+	}
+#endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+	/*
+	 * OVPN Tunnel?
+	 */
+	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags & IFF_TUN_TAP)) {
+		struct net_device *tun_dev = NULL;
+
+		DEBUG_TRACE("Net device: %p is OVPN type: %d\n", dev, dev_type);
+
+		ae_interface_num = ecm_interface_ovpn_get_ifnum(dev, skb, &tun_dev);
+		if ((ae_interface_num <= 0) || !tun_dev) {
+			DEBUG_WARN("%p: Couldn't get OVPN acceleration interface number\n", dev);
+			return NULL;
+		}
+
+		type_info.ovpn.tun_ifnum = ae_interface_num;
+		ii = ecm_interface_ovpn_interface_establish(&type_info.ovpn, tun_dev->name, tun_dev->ifindex, dev_mtu);
 		return ii;
 	}
 #endif
@@ -3732,12 +3881,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (dest_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP))
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
-				|| ((protocol == IPPROTO_GRE))) {
-#else
-		) {
-#endif
+		    ((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
+					  (protocol == IPPROTO_GRE) ||
+		    ((given_dest_dev->type == ARPHRD_NONE) && (given_dest_dev->priv_flags & IFF_TUN_TAP))) {
 			dev_put(dest_dev);
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
@@ -3817,12 +3963,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (src_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP))
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
-				|| ((protocol == IPPROTO_GRE))) {
-#else
-		) {
-#endif
+		    ((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
+					  (protocol == IPPROTO_GRE) ||
+		    ((given_src_dev->type == ARPHRD_NONE) && (given_src_dev->priv_flags & IFF_TUN_TAP))) {
 			dev_put(src_dev);
 			src_dev = given_src_dev;
 			if (src_dev) {
@@ -4265,6 +4408,15 @@ lag_success:
 			 */
 			if (dest_dev_type == ARPHRD_RAWIP) {
 				DEBUG_TRACE("%p: Net device: %p is RAWIP type: %d\n", feci, dest_dev, dest_dev_type);
+				break;
+			}
+#endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+			/*
+			 * OVPN ?
+			 */
+			if ((dest_dev_type == ARPHRD_NONE) && (dest_dev->priv_flags & IFF_TUN_TAP)) {
+				DEBUG_TRACE("Net device: %p is OVPN, device name: %s\n", dest_dev, dest_dev->name);
 				break;
 			}
 #endif
@@ -5166,13 +5318,35 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 EXPORT_SYMBOL(ecm_interface_multicast_from_heirarchy_construct);
 #endif
 
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+static void ecm_interface_ovpn_stats_update(struct net_device *dev, ip_addr_t from_addr, ip_addr_t to_addr)
+{
+	struct in6_addr from_addr6, to_addr6;
+
+	if (ECM_IP_ADDR_IS_V4(from_addr)) {
+		__be32 ip_from_addr, ip_to_addr;
+
+		DEBUG_TRACE("IPv4 Address: " ECM_IP_ADDR_DOT_FMT " : " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(from_addr), ECM_IP_ADDR_TO_DOT(to_addr));
+		ECM_IP_ADDR_TO_NIN4_ADDR(ip_from_addr, from_addr);
+		ECM_IP_ADDR_TO_NIN4_ADDR(ip_to_addr, to_addr);
+		ecm_interface_ovpn_update_route(dev, &ip_from_addr, &ip_to_addr, 4);
+		return;
+	}
+
+	DEBUG_TRACE("IPv6 Address: " ECM_IP_ADDR_OCTAL_FMT " : " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(from_addr), ECM_IP_ADDR_TO_OCTAL(to_addr));
+	ECM_IP_ADDR_TO_NIN6_ADDR(from_addr6, from_addr);
+	ECM_IP_ADDR_TO_NIN6_ADDR(to_addr6, to_addr);
+	ecm_interface_ovpn_update_route(dev, (uint32_t *)&from_addr6, (uint32_t *)&to_addr6, 6);
+}
+#endif
+
 /*
  * ecm_interface_list_stats_update()
  *	Given an interface list, walk the interfaces and update the stats for certain types.
  */
-static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_iface_instance *iface_list[], uint8_t *mac_addr,
-					bool is_mcast_flow, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets, uint32_t rx_bytes,
-					bool is_ported)
+static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_iface_instance *iface_list[],
+					uint8_t *mac_addr, bool is_mcast_flow, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets,
+					uint32_t rx_bytes, bool is_ported, struct ecm_db_connection_instance *ci)
 {
 	int list_index;
 
@@ -5236,6 +5410,17 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes, 0, 0, 0, 0);
 				break;
 #endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+			case ECM_DB_IFACE_TYPE_OVPN: {
+				ip_addr_t from_addr, to_addr;
+
+				DEBUG_INFO("OVPN\n");
+				ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, from_addr);
+				ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, to_addr);
+				ecm_interface_ovpn_stats_update(dev, from_addr, to_addr);
+			}
+			break;
+#endif
 			default:
 				/*
 				 * TODO: Extend it accordingly
@@ -5281,7 +5466,7 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, mac_addr);
-	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
+	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported, ci);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
@@ -5292,7 +5477,7 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update to interface stats\n", ci);
 	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, mac_addr);
-	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported);
+	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported, ci);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 }
 EXPORT_SYMBOL(ecm_interface_stats_update);
@@ -5336,7 +5521,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, mac_addr);
-	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
+	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported, ci);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
@@ -5360,7 +5545,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 		if (to_ifaces_first[if_index] < ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ii_temp = ecm_db_multicast_if_heirarchy_get(to_ifaces, if_index);
 			ecm_db_multicast_copy_if_heirarchy(to_list_single, ii_temp);
-			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported);
+			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported, ci);
 		}
 	}
 

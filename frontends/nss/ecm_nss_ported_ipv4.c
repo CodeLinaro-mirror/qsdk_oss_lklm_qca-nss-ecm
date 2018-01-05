@@ -651,7 +651,15 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: L2TPV2 - unsupported\n", npci);
 #endif
 			break;
-
+		case ECM_DB_IFACE_TYPE_OVPN:
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+			DEBUG_TRACE("%p: OVPN interface\n", npci);
+			nircm->conn_rule.flow_interface_num = nss_qvpn_ifnum_with_core_id(from_nss_iface_id);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: OVPN - unsupported\n", npci);
+#endif
+			break;
 		default:
 			DEBUG_TRACE("%p: Ignoring: %d (%s)\n", npci, ii_type, ii_name);
 		}
@@ -832,6 +840,15 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: IPSEC - unsupported\n", npci);
 #endif
 			break;
+		case ECM_DB_IFACE_TYPE_OVPN:
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+			DEBUG_TRACE("%p: OVPN interface\n", npci);
+			nircm->conn_rule.return_interface_num = nss_qvpn_ifnum_with_core_id(to_nss_iface_id);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: OVPN - unsupported\n", npci);
+#endif
+			break;
 		default:
 			DEBUG_TRACE("%p: Ignoring: %d (%s)\n", npci, ii_type, ii_name);
 		}
@@ -842,7 +859,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		interface_type_counts[ii_type]++;
 	}
 	if (rule_invalid) {
-		DEBUG_WARN("%p: from/src Rule invalid\n", npci);
+		DEBUG_WARN("%p: to/dest Rule invalid\n", npci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 		goto ported_accel_bad_rule;
