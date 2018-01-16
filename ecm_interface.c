@@ -5164,6 +5164,15 @@ static void ecm_interface_defunct_connections(struct ecm_db_iface_instance *ii)
 	ci_to_nat = ecm_db_iface_connections_nat_to_get_and_ref_first(ii);
 
 	/*
+	 * Defunct ALL if all the four connection instances are NULL
+	 */
+	if (!ci_from && !ci_to && !ci_from_nat && !ci_to_nat) {
+		ecm_db_connection_defunct_all();
+		DEBUG_TRACE("%p: Defunct (ALL) COMPLETE\n", ii);
+		return;
+	}
+
+	/*
 	 * Defunct all connections associated with this interface
 	 */
 	DEBUG_TRACE("%p: Defunct 'from' connections\n", ii);
