@@ -38,6 +38,7 @@ int ecm_db_connection_count_get(void);
 void ecm_db_connection_data_totals_update_dropped(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets);
 void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets);
 
+void ecm_db_connection_defunct_timer_remove_and_set(struct ecm_db_connection_instance *ci, ecm_db_timer_group_t tg);
 int ecm_db_connection_elapsed_defunct_timer(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_defunct_timer_reset(struct ecm_db_connection_instance *ci, ecm_db_timer_group_t tg);
 bool ecm_db_connection_defunct_timer_touch(struct ecm_db_connection_instance *ci);
