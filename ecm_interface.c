@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1769,7 +1769,7 @@ static struct ecm_db_iface_instance *ecm_interface_sit_interface_establish(struc
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_sit(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_sit(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		return ii;
@@ -1788,7 +1788,7 @@ static struct ecm_db_iface_instance *ecm_interface_sit_interface_establish(struc
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_sit(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_sit(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -2103,6 +2103,7 @@ identifier_update:
 		struct ip_tunnel *tunnel;
 		struct ip_tunnel_6rd_parm *ip6rd;
 		const struct iphdr  *tiph;
+		int interface_type;
 
 		DEBUG_TRACE("Net device: %p is SIT (6-in-4) type: %d\n", dev, dev_type);
 
@@ -2125,6 +2126,9 @@ identifier_update:
 		type_info.sit.prefix[3] = ntohl(ip6rd->prefix.s6_addr32[3]);
 		type_info.sit.ttl = tiph->ttl;
 		type_info.sit.tos = tiph->tos;
+
+		interface_type = feci->ae_interface_type_get(feci, dev_type);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
 		ii = ecm_interface_sit_interface_establish(&type_info.sit, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 		return ii;

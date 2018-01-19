@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -68,6 +68,16 @@ static inline int32_t ecm_sfe_common_get_interface_number_by_dev(struct net_devi
 }
 
 /*
+ * ecm_sfe_common_get_interface_number_by_dev_type()
+ *	Returns the acceleration engine interface number based on the net_device object and type.
+ */
+static inline int32_t ecm_sfe_common_get_interface_number_by_dev_type(struct net_device *dev, uint32_t type)
+{
+
+	return ecm_sfe_common_get_interface_number_by_dev(dev);
+}
+
+/*
  * ecm_sfe_common_connection_regenerate()
  *	Re-generate a specific connection in SFE front end
  */
@@ -90,4 +100,19 @@ static inline void ecm_sfe_common_connection_regenerate(struct ecm_front_end_con
 	 * NOTE: We can just call decelerate() upon the front end - if its not accelerated this will have no effect.
 	 */
 	feci->decelerate(feci);
+}
+
+/*
+ * ecm_sfe_common_get_interface_type()
+ *	Gets the SFE interface type based on some features.
+ *
+ * NOTE: There is no type for SFE now. This function is implemented just to
+ * use it for the feci callback.
+ */
+static inline int32_t ecm_sfe_common_get_interface_type(struct ecm_front_end_connection_instance *feci, int32_t dev_type)
+{
+	/*
+	 * By default return 0. SFE driver doesn't have any interface type.
+	 */
+	return 0;
 }

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -95,6 +95,8 @@ typedef int (*ecm_front_end_connection_state_get_callback_t)(struct ecm_front_en
 											 */
 #endif
 typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_get_method_t)(struct net_device *dev);
+typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_type_get_method_t)(struct net_device *dev, uint32_t type);
+typedef int32_t (*ecm_front_end_connection_ae_interface_type_get_method_t)(struct ecm_front_end_connection_instance *feci, int32_t dev_type);
 typedef void (*ecm_front_end_connection_regenerate_method_t)(struct ecm_front_end_connection_instance *feci, struct ecm_db_connection_instance *ci);
 
 /*
@@ -137,6 +139,10 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_accel_ceased_method_t accel_ceased;		/* Acceleration has stopped */
 	ecm_front_end_connection_ae_interface_number_by_dev_get_method_t ae_interface_number_by_dev_get;
 										/* Get the acceleration engine interface number from the dev instance */
+	ecm_front_end_connection_ae_interface_number_by_dev_type_get_method_t ae_interface_number_by_dev_type_get;
+										/* Get the acceleration engine interface number from the dev instance and type */
+	ecm_front_end_connection_ae_interface_type_get_method_t ae_interface_type_get;
+										/* Get the acceleration engine interface type */
 	ecm_front_end_connection_regenerate_method_t regenerate;
 										/* regenerate a connection */
 #ifdef ECM_STATE_OUTPUT_ENABLE
@@ -151,6 +157,7 @@ struct ecm_front_end_connection_instance {
 	/*
 	 * Common control items to all front end instances
 	 */
+	int ip_version;						/* RO: The version of IP protocol this instance was established for */
 	struct ecm_db_connection_instance *ci;			/* RO: The connection instance relating to this instance. */
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */

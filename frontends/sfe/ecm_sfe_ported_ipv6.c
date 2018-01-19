@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2017 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1660,6 +1660,8 @@ static struct ecm_sfe_ported_ipv6_connection_instance *ecm_sfe_ported_ipv6_conne
 	 */
 	feci->ci = ci;
 
+	feci->ip_version = 6;
+
 	/*
 	 * Populate the methods and callbacks
 	 */
@@ -1673,6 +1675,8 @@ static struct ecm_sfe_ported_ipv6_connection_instance *ecm_sfe_ported_ipv6_conne
 	feci->state_get = ecm_sfe_ported_ipv6_connection_state_get;
 #endif
 	feci->ae_interface_number_by_dev_get = ecm_sfe_common_get_interface_number_by_dev;
+	feci->ae_interface_number_by_dev_type_get = ecm_sfe_common_get_interface_number_by_dev_type;
+	feci->ae_interface_type_get = ecm_sfe_common_get_interface_type;
 	feci->regenerate = ecm_sfe_common_connection_regenerate;
 
 	if (protocol == IPPROTO_TCP) {

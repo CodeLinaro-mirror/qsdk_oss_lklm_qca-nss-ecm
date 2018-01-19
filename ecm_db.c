@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -5089,7 +5089,7 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_ipsec_tunnel);
  * ecm_db_iface_find_and_ref_sit()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_sit(ip_addr_t saddr, ip_addr_t daddr)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_sit(ip_addr_t saddr, ip_addr_t daddr, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -5110,7 +5110,8 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_sit(ip_addr_t saddr, ip_
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_SIT)
 				|| !ECM_IP_ADDR_MATCH(ii->type_info.sit.saddr, saddr)
-				|| !ECM_IP_ADDR_MATCH(ii->type_info.sit.daddr, daddr)) {
+				|| !ECM_IP_ADDR_MATCH(ii->type_info.sit.daddr, daddr)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}
