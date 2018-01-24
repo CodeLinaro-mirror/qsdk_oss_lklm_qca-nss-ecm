@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -117,10 +117,11 @@ static void ecm_nss_non_ported_ipv4_sit_set_peer(struct ecm_nss_non_ported_ipv4_
 	struct ecm_db_iface_instance *from_nss_iface;
 	int32_t from_ifaces_first;
 	const struct ipv6hdr *iph6;
-	uint16_t interface_number;
+	int32_t interface_number;
 	ecm_db_iface_type_t ii_type;
 	ip_addr_t addr;
 	nss_tx_status_t nss_tx_status;
+	struct net_device *dev;
 
 	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
 	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(nnpci->base.ci, from_ifaces);
@@ -150,8 +151,23 @@ static void ecm_nss_non_ported_ipv4_sit_set_peer(struct ecm_nss_non_ported_ipv4_
 	}
 	ecm_db_connection_to_address_get(nnpci->base.ci, addr);
 
-	interface_number = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
-	nss_tun6rd_msg_init(&tun6rdmsg, interface_number, NSS_TUN6RD_ADD_UPDATE_PEER,
+	/*
+	 * This message is sent to the NSS through the INNER interface, but we are now in the process
+	 * context of OUTER interface. To get the INNER interface number from the NSS, we use the
+	 * actual net device object and the INNER interface type.
+	 */
+	interface_number = ecm_db_iface_interface_identifier_get(from_nss_iface);
+	dev = dev_get_by_index(&init_net, (uint32_t)interface_number);
+	if (!dev) {
+		DEBUG_WARN("%p: Unable to find the net device with interface index %d\n", nnpci, interface_number);
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		return;
+	}
+
+	interface_number = ecm_nss_common_get_interface_number_by_dev_type(dev, NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_INNER);
+	dev_put(dev);
+
+	nss_tun6rd_msg_init(&tun6rdmsg, (uint16_t)interface_number, NSS_TUN6RD_ADD_UPDATE_PEER,
 			sizeof(struct nss_tun6rd_set_peer_msg), NULL, NULL);
 
 	tun6rdpeer = &tun6rdmsg.msg.peer;
@@ -1813,6 +1829,8 @@ static struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ip
 	 */
 	feci->ci = ci;
 
+	feci->ip_version = 4;
+
 	/*
 	 * Populate the methods and callbacks
 	 */
@@ -1826,6 +1844,8 @@ static struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ip
 	feci->state_get = ecm_nss_non_ported_ipv4_connection_state_get;
 #endif
 	feci->ae_interface_number_by_dev_get = ecm_nss_common_get_interface_number_by_dev;
+	feci->ae_interface_number_by_dev_type_get = ecm_nss_common_get_interface_number_by_dev_type;
+	feci->ae_interface_type_get = ecm_nss_common_get_interface_type;
 	feci->regenerate = ecm_nss_common_connection_regenerate;
 
 	return nnpci;
