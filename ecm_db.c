@@ -1702,8 +1702,8 @@ EXPORT_SYMBOL(ecm_db_connection_from_address_get);
 void ecm_db_connection_from_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from);
-	DEBUG_CHECK_MAGIC(ci->mapping_from->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from->host);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from->host);
 	ECM_IP_ADDR_COPY(addr, ci->mapping_nat_from->host->address);
 }
 EXPORT_SYMBOL(ecm_db_connection_from_address_nat_get);
@@ -1728,8 +1728,8 @@ EXPORT_SYMBOL(ecm_db_connection_to_address_get);
 void ecm_db_connection_to_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to);
-	DEBUG_CHECK_MAGIC(ci->mapping_to->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to->host);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to->host);
 	ECM_IP_ADDR_COPY(addr, ci->mapping_nat_to->host->address);
 }
 EXPORT_SYMBOL(ecm_db_connection_to_address_nat_get);
@@ -1753,7 +1753,7 @@ EXPORT_SYMBOL(ecm_db_connection_to_port_get);
 int ecm_db_connection_to_port_nat_get(struct ecm_db_connection_instance *ci)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to);
 	return ci->mapping_nat_to->port;
 }
 EXPORT_SYMBOL(ecm_db_connection_to_port_nat_get);
@@ -1777,7 +1777,7 @@ EXPORT_SYMBOL(ecm_db_connection_from_port_get);
 int ecm_db_connection_from_port_nat_get(struct ecm_db_connection_instance *ci)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from);
 	return ci->mapping_nat_from->port;
 }
 EXPORT_SYMBOL(ecm_db_connection_from_port_nat_get);
