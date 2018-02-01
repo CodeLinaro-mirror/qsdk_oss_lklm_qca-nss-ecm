@@ -2639,12 +2639,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 		ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list);
 		dest_ni = ecm_nss_multicast_ipv6_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
 		if (!dest_ni) {
-			for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
-				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, vif);
-				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, vif);
-				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-			}
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
 			feci->deref(feci);
@@ -2659,12 +2653,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 		DEBUG_TRACE("%p: Create dest mapping\n", nci);
 		dest_mi = ecm_nss_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
 		if (!dest_mi) {
-			for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
-				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, vif);
-				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, vif);
-				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-			}
 			ecm_db_node_deref(dest_ni);
 			ecm_db_mapping_deref(src_mi);
 			ecm_db_node_deref(src_ni);
@@ -2682,12 +2670,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 		 */
 		dci = ecm_classifier_default_instance_alloc(nci, IPPROTO_UDP, ecm_dir, src_port, dest_port);
 		if (!dci) {
-			for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
-				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, vif);
-				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, vif);
-				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-			}
 			ecm_db_mapping_deref(dest_mi);
 			ecm_db_node_deref(dest_ni);
 			ecm_db_mapping_deref(src_mi);
@@ -2712,12 +2694,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 				aci->deref(aci);
 			} else {
 				dci->base.deref((struct ecm_classifier_instance *)dci);
-				for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
-					to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, vif);
-					ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-					to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, vif);
-					ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-				}
 				ecm_db_mapping_deref(dest_mi);
 				ecm_db_node_deref(dest_ni);
 				ecm_db_mapping_deref(src_mi);
@@ -2748,13 +2724,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			 * Another cpu created the same connection before us - use the one we just found
 			 */
 			spin_unlock_bh(&ecm_nss_ipv6_lock);
-			for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
-				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, vif);
-				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, vif);
-				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-			}
-
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ecm_db_connection_deref(nci);
 		} else {
@@ -2864,6 +2833,16 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			ret = ecm_db_multicast_connection_to_interfaces_reset(ci, to_list, to_list_first);
 
 			/*
+			 * De-ref the destination interface list
+			 */
+			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, i);
+				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
+				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, i);
+				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
+			}
+
+			/*
 			 * if a bridge dev is present in the MFC destination then set the
 			 * ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG in tuple_instance
 			 */
@@ -2880,17 +2859,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 				ecm_db_multicast_tuple_instance_flags_set(tuple_instance, ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG);
 				ecm_db_multicast_connection_deref(tuple_instance);
 			}
-
-			/*
-			 * De-ref the destination interface list
-			 */
-			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
-				to_list_single = ecm_db_multicast_if_heirarchy_get(to_list, i);
-				ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list_single);
-				to_first = ecm_db_multicast_if_first_get_at_index(to_list_first, i);
-				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
-			}
-
 			kfree(to_list);
 			kfree(to_list_first);
 
