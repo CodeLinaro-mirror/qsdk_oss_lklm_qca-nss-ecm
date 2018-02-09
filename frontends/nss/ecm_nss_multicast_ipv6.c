@@ -145,7 +145,7 @@ static int ecm_nss_multicast_ipv6_interface_heirarchy_construct(struct ecm_front
 static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, struct nss_ipv6_msg *nim)
 {
 	struct nss_ipv6_mc_rule_create_msg *nircm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv6_connection_instance *nmci;
@@ -221,7 +221,7 @@ static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, st
 static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, struct nss_ipv6_msg *nim)
 {
 	struct nss_ipv6_mc_rule_create_msg *__attribute__((unused))nircm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv6_connection_instance *nmci;
@@ -455,7 +455,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	nss_ipv6_msg_init(nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_MC_RULE_MSG,
 			sizeof(struct nss_ipv6_mc_rule_create_msg),
 			ecm_nss_multicast_ipv6_connection_update_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
 
@@ -912,7 +912,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	nss_ipv6_msg_init(nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_MC_RULE_MSG,
 			sizeof(struct nss_ipv6_mc_rule_create_msg),
 			 ecm_nss_multicast_ipv6_connection_create_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
 
@@ -1377,7 +1377,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, struct nss_ipv6_msg *nim)
 {
 	struct nss_ipv6_rule_destroy_msg *nirdm = &nim->msg.rule_destroy;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv6_connection_instance *nmci;
@@ -1551,7 +1551,7 @@ static void ecm_nss_multicast_ipv6_connection_decelerate(struct ecm_front_end_co
 	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
 			sizeof(struct nss_ipv6_rule_destroy_msg),
 			ecm_nss_multicast_ipv6_connection_destroy_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
