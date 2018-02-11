@@ -447,7 +447,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 */
 	regen_occurrances = ecm_db_connection_regeneration_occurrances_get(feci->ci);
 
-	nim = (struct nss_ipv6_msg *)vzalloc(sizeof(struct nss_ipv6_msg));
+	nim = (struct nss_ipv6_msg *)kzalloc(sizeof(struct nss_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
 		return -1;
 	}
@@ -465,7 +465,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	ret = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(feci->ci, &to_ifaces, &to_ifaces_first);
 	if (ret == 0) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in to_interfaces list!\n", nmci);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -473,7 +473,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in from_interfaces list!\n", nmci);
 		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -489,7 +489,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
                 DEBUG_TRACE("%p: from_nss_iface_id: %d\n", nmci, from_nss_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		vfree(nim);
+		kfree(nim);
 		return -1;
         }
 
@@ -590,7 +590,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				if (to_nss_iface_id < 0) {
 					DEBUG_TRACE("%p: to_nss_iface_id: %d\n", nmci, to_nss_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-					vfree(nim);
+					kfree(nim);
 					return -1;
 			        }
 
@@ -663,7 +663,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 		if (rule_invalid) {
 			DEBUG_WARN("%p: to/dest Rule invalid\n", nmci);
 			ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-			vfree(nim);
+			kfree(nim);
 			return -1;
 		}
 
@@ -786,7 +786,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%p: connection:%p regen occurred - aborting accel rule.\n", feci, feci->ci);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -813,7 +813,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 		spin_lock_bh(&feci->lock);
 		nmci->base.stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&feci->lock);
-		vfree(nim);
+		kfree(nim);
 		return 0;
 	}
 
@@ -827,7 +827,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 */
 	ecm_db_connection_deref(feci->ci);
 
-	vfree(nim);
+	kfree(nim);
 
 	/*
 	 * TX failed
@@ -3213,7 +3213,11 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 		if (if_num == 0) {
 			/*
 			 * If there are no routed interfaces, then decelerate. Else
-			 * we let MFC update callback handle this
+			 * we first send an update message to the firmware for the
+			 * interface that have left, before issuing a decelerate
+			 * at a later point via the MFC callback. This is because
+			 * there might be a few seconds delay before MFC issues
+			 * the delete callback
 			 */
 			if (!is_routed) {
 				/*
@@ -3231,9 +3235,6 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 				tuple_instance = tuple_instance_next;
 				continue;
 			}
-
-			ecm_db_multicast_connection_deref(tuple_instance);
-			return;
 		}
 
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
