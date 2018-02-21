@@ -135,7 +135,7 @@ static void ecm_nss_bond_notifier_bond_link_down(struct net_device *slave_dev)
 		DEBUG_WARN("No master dev\n");
 		return;
 	}
-	ecm_interface_dev_regenerate_connections(master);
+	ecm_interface_dev_defunct_connections(master);
 	dev_put(master);
 }
 
@@ -171,7 +171,7 @@ static void ecm_nss_bond_notifier_bond_link_up(struct net_device *slave_dev)
 		DEBUG_WARN("No master dev\n");
 		return;
 	}
-	ecm_interface_dev_regenerate_connections(master);
+	ecm_interface_dev_defunct_connections(master);
 	dev_put(master);
 }
 
