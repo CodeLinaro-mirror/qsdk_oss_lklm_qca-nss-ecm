@@ -12178,16 +12178,21 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 	ECM_NIN6_ADDR_TO_IP_ADDR(host1_addr, orig_tuple.src.u3.in6);
 	ECM_NIN6_ADDR_TO_IP_ADDR(host2_addr, reply_tuple.src.u3.in6);
 	protocol = orig_tuple.dst.protonum;
-	if (protocol == IPPROTO_TCP) {
+	switch (protocol) {
+	case IPPROTO_TCP:
 		host1_port = ntohs(orig_tuple.src.u.tcp.port);
 		host2_port = ntohs(reply_tuple.src.u.tcp.port);
-	} else if (protocol == IPPROTO_UDP) {
+		break;
+	case IPPROTO_UDP:
 		host1_port = ntohs(orig_tuple.src.u.udp.port);
 		host2_port = ntohs(reply_tuple.src.u.udp.port);
-	} else if ((protocol == IPPROTO_IPIP)) {
+		break;
+	case IPPROTO_IPIP:
+	case IPPROTO_GRE:
 		host1_port = 0;
 		host2_port = 0;
-	} else {
+		break;
+	default:
 		host1_port = -protocol;
 		host2_port = -protocol;
 	}
@@ -12231,16 +12236,22 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 	ECM_NIN4_ADDR_TO_IP_ADDR(host1_addr, orig_tuple.src.u3.ip);
 	ECM_NIN4_ADDR_TO_IP_ADDR(host2_addr, reply_tuple.src.u3.ip);
 	protocol = orig_tuple.dst.protonum;
-	if (protocol == IPPROTO_TCP) {
+	switch (protocol) {
+	case IPPROTO_TCP:
 		host1_port = ntohs(orig_tuple.src.u.tcp.port);
 		host2_port = ntohs(reply_tuple.src.u.tcp.port);
-	} else if (protocol == IPPROTO_UDP) {
+		break;
+	case IPPROTO_UDP:
 		host1_port = ntohs(orig_tuple.src.u.udp.port);
 		host2_port = ntohs(reply_tuple.src.u.udp.port);
-	} else if ((protocol == IPPROTO_IPV6) || (protocol == IPPROTO_ESP)) {
+		break;
+	case IPPROTO_IPV6:
+	case IPPROTO_ESP:
+	case IPPROTO_GRE:
 		host1_port = 0;
 		host2_port = 0;
-	} else {
+		break;
+	default:
 		host1_port = -protocol;
 		host2_port = -protocol;
 	}
