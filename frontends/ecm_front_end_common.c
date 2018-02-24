@@ -110,8 +110,8 @@ void ecm_front_end_destroy_failure_handle(struct ecm_front_end_connection_instan
 	spin_unlock_bh(&feci->lock);
 
 	/*
-	 * Reset the defunct timer to a smaller timeout value so that the connection will be
+	 * Set the defunct timer to a smaller timeout value so that the connection will be
 	 * tried to be defuncted again, when the timeout expires (its value is 5 seconds).
 	 */
-	ecm_db_connection_defunct_timer_reset(feci->ci, ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT);
+	ecm_db_connection_defunct_timer_remove_and_set(feci->ci, ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT);
 }

@@ -1040,6 +1040,8 @@ EXPORT_SYMBOL(ecm_db_connection_front_end_get_and_ref);
  */
 static void ecm_db_connection_defunct_callback(void *arg)
 {
+	struct ecm_front_end_connection_instance *feci;
+	ecm_front_end_acceleration_mode_t accel_mode;
 	struct ecm_db_connection_instance *ci = (struct ecm_db_connection_instance *)arg;
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
 
@@ -1049,7 +1051,20 @@ static void ecm_db_connection_defunct_callback(void *arg)
 		ci->defunct(ci->feci);
 	}
 
-	ecm_db_connection_deref(ci);
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	accel_mode = feci->accel_state_get(feci);
+	feci->deref(feci);
+
+	/*
+	 * It is possible that the defunct process fails and re-try is in progress.
+	 * In that case we set the accel mode of the connection to
+	 * ECM_FRONT_END_ACCELERATION_MODE_ACCEL so that in the next destroy try the connection
+	 * status would be correct. So, if the accel_mode is ECM_FRONT_END_ACCELERATION_MODE_ACCEL,
+	 * we shouldn't release the last reference count.
+	 */
+	if (accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+		ecm_db_connection_deref(ci);
+	}
 }
 
 /*
@@ -1687,8 +1702,8 @@ EXPORT_SYMBOL(ecm_db_connection_from_address_get);
 void ecm_db_connection_from_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from);
-	DEBUG_CHECK_MAGIC(ci->mapping_from->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from->host);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from->host);
 	ECM_IP_ADDR_COPY(addr, ci->mapping_nat_from->host->address);
 }
 EXPORT_SYMBOL(ecm_db_connection_from_address_nat_get);
@@ -1713,8 +1728,8 @@ EXPORT_SYMBOL(ecm_db_connection_to_address_get);
 void ecm_db_connection_to_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to);
-	DEBUG_CHECK_MAGIC(ci->mapping_to->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to->host);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to->host, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to->host);
 	ECM_IP_ADDR_COPY(addr, ci->mapping_nat_to->host->address);
 }
 EXPORT_SYMBOL(ecm_db_connection_to_address_nat_get);
@@ -1738,7 +1753,7 @@ EXPORT_SYMBOL(ecm_db_connection_to_port_get);
 int ecm_db_connection_to_port_nat_get(struct ecm_db_connection_instance *ci)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_to);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_to, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_to);
 	return ci->mapping_nat_to->port;
 }
 EXPORT_SYMBOL(ecm_db_connection_to_port_nat_get);
@@ -1762,7 +1777,7 @@ EXPORT_SYMBOL(ecm_db_connection_from_port_get);
 int ecm_db_connection_from_port_nat_get(struct ecm_db_connection_instance *ci)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	DEBUG_CHECK_MAGIC(ci->mapping_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_from);
+	DEBUG_CHECK_MAGIC(ci->mapping_nat_from, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", ci->mapping_nat_from);
 	return ci->mapping_nat_from->port;
 }
 EXPORT_SYMBOL(ecm_db_connection_from_port_nat_get);
@@ -2383,6 +2398,42 @@ void ecm_db_timer_group_entry_set(struct ecm_db_timer_group_entry *tge, ecm_db_t
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_timer_group_entry_set);
+
+/*
+ * ecm_db_connection_defunct_timer_remove_and_set()
+ *	Move the connection to a new timer group.
+ *
+ * Before setting the new group, check if the timer group is set. If it is set,
+ * remove it first from the current group.
+ *
+ */
+void ecm_db_connection_defunct_timer_remove_and_set(struct ecm_db_connection_instance *ci, ecm_db_timer_group_t tg)
+{
+	struct ecm_db_timer_group_entry *tge;
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	DEBUG_TRACE("%p: ecm_db_connection_defunct_timer_remove_and_set\n", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	tge = &ci->defunct_timer;
+	if (tge->group == tg) {
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("%p: timer group is aslready equal to %d\n", ci, tg);
+		return;
+	}
+
+	if (tge->group != ECM_DB_TIMER_GROUPS_MAX) {
+		_ecm_db_timer_group_entry_remove(tge);
+	}
+
+	/*
+	 * Set new group
+	 */
+	_ecm_db_timer_group_entry_set(tge, tg);
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("%p: New timer group is: %d\n", ci, tge->group);
+}
+EXPORT_SYMBOL(ecm_db_connection_defunct_timer_remove_and_set);
 
 /*
  * ecm_db_timer_group_entry_init()
