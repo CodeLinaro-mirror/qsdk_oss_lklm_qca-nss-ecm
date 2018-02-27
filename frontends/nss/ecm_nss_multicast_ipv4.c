@@ -139,7 +139,7 @@ static int32_t ecm_nss_multicast_connection_to_interface_heirarchy_construct(str
 static void ecm_nss_multicast_ipv4_connection_update_callback(void *app_data, struct nss_ipv4_msg *nim)
 {
 	struct nss_ipv4_mc_rule_create_msg *nircm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci;
@@ -210,7 +210,7 @@ static void ecm_nss_multicast_ipv4_connection_update_callback(void *app_data, st
 static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, struct nss_ipv4_msg *nim)
 {
 	struct nss_ipv4_mc_rule_create_msg *__attribute__((unused))nircm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci;
@@ -431,7 +431,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	 */
 	regen_occurrances = ecm_db_connection_regeneration_occurrances_get(feci->ci);
 
-	nim = (struct nss_ipv4_msg *)vzalloc(sizeof(struct nss_ipv4_msg));
+	nim = (struct nss_ipv4_msg *)kzalloc(sizeof(struct nss_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
 		return -1;
 	}
@@ -439,7 +439,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	nss_ipv4_msg_init(nim, NSS_IPV4_RX_INTERFACE, NSS_IPV4_TX_CREATE_MC_RULE_MSG,
 			sizeof(struct nss_ipv4_mc_rule_create_msg),
 			ecm_nss_multicast_ipv4_connection_update_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
 
@@ -449,7 +449,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	ret = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(feci->ci, &to_ifaces, &to_ifaces_first);
 	if (ret == 0) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in to_interfaces list!\n", nmci);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -457,7 +457,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in from_interfaces list!\n", nmci);
 		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -478,7 +478,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 		spin_unlock_bh(&feci->lock);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		vfree(nim);
+		kfree(nim);
 		return -1;
         }
 
@@ -579,7 +579,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 				if (to_nss_iface_id < 0) {
 					DEBUG_TRACE("%p: to_nss_iface_id: %d\n", nmci, to_nss_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-					vfree(nim);
+					kfree(nim);
 					return -1;
 			        }
 
@@ -650,7 +650,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 		if (rule_invalid) {
 			DEBUG_WARN("%p: to/dest Rule invalid\n", nmci);
 			ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-			vfree(nim);
+			kfree(nim);
 			return -1;
 		}
 
@@ -771,7 +771,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%p: connection:%p regen occurred - aborting accel rule.\n", feci, feci->ci);
-		vfree(nim);
+		kfree(nim);
 		return -1;
 	}
 
@@ -798,7 +798,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 		spin_lock_bh(&feci->lock);
 		nmci->base.stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&feci->lock);
-		vfree(nim);
+		kfree(nim);
 		return 0;
 	}
 
@@ -812,7 +812,7 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	 */
 	ecm_db_connection_deref(feci->ci);
 
-	vfree(nim);
+	kfree(nim);
 
 	/*
 	 * TX failed
@@ -901,7 +901,7 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	nss_ipv4_msg_init(nim, NSS_IPV4_RX_INTERFACE, NSS_IPV4_TX_CREATE_MC_RULE_MSG,
 			sizeof(struct nss_ipv4_mc_rule_create_msg),
 			 ecm_nss_multicast_ipv4_connection_create_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
 
@@ -1425,7 +1425,7 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 static void ecm_nss_multicast_ipv4_connection_destroy_callback(void *app_data, struct nss_ipv4_msg *nim)
 {
 	struct nss_ipv4_rule_destroy_msg * __attribute__((unused))nirdm = &nim->msg.rule_destroy;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci;
@@ -1594,7 +1594,7 @@ static void ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_co
 	nss_ipv4_msg_init(&nim, NSS_IPV4_RX_INTERFACE, NSS_IPV4_TX_DESTROY_RULE_MSG,
 			sizeof(struct nss_ipv4_rule_destroy_msg),
 			ecm_nss_multicast_ipv4_connection_destroy_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
@@ -3421,7 +3421,11 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 		if (if_num == 0) {
 			/*
 			 * If there are no routed interfaces, then decelerate. Else
-			 * we let MFC update callback handle this
+			 * we first send an update message to the firmware for the
+			 * interface that have left, before issuing a decelerate
+			 * at a later point via the MFC callback. This is because
+			 * there might be a few seconds delay before MFC issues
+			 * the delete callback
 			 */
 			if (!is_routed) {
 				/*
@@ -3439,9 +3443,6 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 				tuple_instance = tuple_instance_next;
 				continue;
 			}
-
-			ecm_db_multicast_connection_deref(tuple_instance);
-			return;
 		}
 
 		memset(&mc_update, 0, sizeof(mc_update));

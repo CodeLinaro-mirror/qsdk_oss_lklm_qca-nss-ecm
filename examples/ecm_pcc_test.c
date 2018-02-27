@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -646,10 +646,10 @@ static int ecm_pcc_test_rule_seq_show(struct seq_file *m, void *v)
 			rule->proto,
 			rule->src_mac,
 			&rule->src_addr,
-			rule->src_port,
+			ntohs(rule->src_port),
 			rule->dest_mac,
 			&rule->dest_addr,
-			rule->dest_port,
+			ntohs(rule->dest_port),
 			rule->ipv
 			);
 
