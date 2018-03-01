@@ -3831,8 +3831,8 @@ lag_fail:
 								ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 								return ECM_DB_IFACE_HEIRARCHY_MAX;
 							}
-							dev_put(master_dev);
 						}
+						dev_put(master_dev);
 					}
 lag_success:
 					if (ip_version == 4) {
