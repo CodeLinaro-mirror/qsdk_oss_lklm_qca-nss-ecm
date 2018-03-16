@@ -76,6 +76,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 bool ecm_interface_multicast_find_updates_to_iface_list(struct ecm_db_connection_instance *ci, struct ecm_multicast_if_update *, uint32_t flags, bool is_br_snooper, uint32_t *dst_dev, uint32_t max_to_dev);
 
 bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if);
+bool ecm_interface_multicast_is_iface_type(int32_t mc_if_index[], int32_t max_if_index, unsigned short type);
 
 int32_t ecm_interface_multicast_check_for_src_ifindex(int32_t mc_if_index[], int32_t max_if_index, int32_t if_num);
 int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
