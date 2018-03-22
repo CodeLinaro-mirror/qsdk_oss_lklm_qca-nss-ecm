@@ -3248,46 +3248,50 @@ static bool ecm_interface_multicast_get_next_node_mac_address(
  * ecm_interface_get_next_node_mac_address()
  *	Get the MAC address of the next node
  */
-static bool ecm_interface_get_next_node_mac_address(
-	ip_addr_t dest_addr, struct net_device *dest_dev, int ip_version,
-	uint8_t *mac_addr)
+static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
+					struct net_device *dest_dev,
+					int ip_version, uint8_t *mac_addr)
 {
-	if (!ecm_interface_mac_addr_get_no_route(dest_dev, dest_addr, mac_addr)) {
-		/*
-		 * MAC address look up failed. The host IP address may not be in the
-		 * neighbour table. So, let's send an ARP or neighbour solicitation
-		 * request to this host IP address, so in the subsequent lookups it can be
-		 * found.
-		 */
-		if (ip_version == 4) {
-			ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
-			bool on_link = true;
+	ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
+	bool on_link = true;
 
-			DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT " send ARP request\n",
-				ECM_IP_ADDR_TO_DOT(dest_addr));
-
-			if (ecm_interface_find_gateway(dest_addr, gw_addr)) {
-				on_link = false;
-			}
-
-			if (ecm_interface_mac_addr_get_no_route(dest_dev, gw_addr, mac_addr)) {
-				DEBUG_TRACE("Found the mac address for gateway\n");
-				return true;
-			}
-
-			ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
-		}
-#ifdef ECM_IPV6_ENABLE
-		if (ip_version == 6) {
-			DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT " send neighbour solicitation request\n",
-				ECM_IP_ADDR_TO_OCTAL(dest_addr));
-			ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
-		}
-#endif
-		return false;
+	if (ecm_interface_mac_addr_get_no_route(dest_dev, dest_addr, mac_addr)) {
+		return true;
 	}
 
-	return true;
+	/*
+	 * MAC address look up failed. The host IP address may not be in the
+	 * neighbour table. So, let's send an ARP or neighbour solicitation
+	 * request to this host IP address, so in the subsequent lookups it can be
+	 * found.
+	 *
+	 * If we have a gateway address, try one more time with that address.
+	 * If it fails, send the request with the current dest_addr or
+	 * found gateway address.
+	 */
+	if (ecm_interface_find_gateway(dest_addr, gw_addr)) {
+		on_link = false;
+		if (ecm_interface_mac_addr_get_no_route(dest_dev, gw_addr, mac_addr)) {
+			DEBUG_TRACE("Found the mac address for the gateway\n");
+			return true;
+		}
+	}
+
+	if (ip_version == 4) {
+		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT " send ARP request\n",
+				ECM_IP_ADDR_TO_DOT(dest_addr));
+		ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+	}
+
+#ifdef ECM_IPV6_ENABLE
+	if (ip_version == 6) {
+		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT  " send solicitation request\n",
+				ECM_IP_ADDR_TO_OCTAL(dest_addr));
+		ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+	}
+#endif
+
+	return false;
 }
 
 /*
