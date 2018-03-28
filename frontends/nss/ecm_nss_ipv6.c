@@ -925,24 +925,27 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		}
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
 	/*
 	 * Check for a multicast Destination address here.
 	 */
 	ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.in6);
-	if (ecm_ip_addr_is_multicast(ip_dest_addr) && (skb->pkt_type == PACKET_MULTICAST)) {
+	if (ecm_ip_addr_is_multicast(ip_dest_addr)) {
 		DEBUG_TRACE("skb %p multicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
+#ifdef ECM_MULTICAST_ENABLE
 
-		return ecm_nss_multicast_ipv6_connection_process(out_dev,
-				in_dev,
-				src_node_addr,
-				dest_node_addr,
-				can_accel, is_routed, skb,
-				&ip_hdr,
-				ct, sender,
-				&orig_tuple, &reply_tuple);
-	}
+		if (unlikely(ecm_front_end_ipv6_mc_stopped)) {
+			DEBUG_TRACE("%p: Multicast disabled by ecm_front_end_ipv6_mc_stopped = %d\n", skb, ecm_front_end_ipv6_mc_stopped);
+			return NF_ACCEPT;
+		}
+
+		return ecm_nss_multicast_ipv6_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
+								 can_accel, is_routed, skb, &ip_hdr, ct, sender,
+								 &orig_tuple, &reply_tuple);
+#else
+		return NF_ACCEPT;
 #endif
+	}
+
 	/*
 	 * Work out if this packet involves routing or not.
 	 */
@@ -1079,18 +1082,6 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 
-#ifndef ECM_MULTICAST_ENABLE
-	if (skb->pkt_type == PACKET_MULTICAST) {
-		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
-		return NF_ACCEPT;
-	}
-#else
-	if ((skb->pkt_type == PACKET_MULTICAST) && unlikely(ecm_front_end_ipv6_mc_stopped)) {
-		DEBUG_TRACE("Multicast frontend stopped, ignoring: %p\n", skb);
-		return NF_ACCEPT;
-	}
-#endif
-
 #ifdef ECM_INTERFACE_PPP_ENABLE
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
 	/*
@@ -1224,18 +1215,6 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
 		return NF_ACCEPT;
 	}
-
-#ifndef ECM_MULTICAST_ENABLE
-	if (skb->pkt_type == PACKET_MULTICAST) {
-		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
-		return NF_ACCEPT;
-	}
-#else
-	if ((skb->pkt_type == PACKET_MULTICAST) && unlikely(ecm_front_end_ipv6_mc_stopped)) {
-		DEBUG_TRACE("Multicast frontend stopped, ignoring: %p\n", skb);
-		return NF_ACCEPT;
-	}
-#endif
 
 #ifdef ECM_INTERFACE_PPP_ENABLE
 	/*
