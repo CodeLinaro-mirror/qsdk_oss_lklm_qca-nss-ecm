@@ -5313,6 +5313,47 @@ struct ecm_db_node_instance *ecm_db_connection_node_from_get_and_ref(struct ecm_
 EXPORT_SYMBOL(ecm_db_connection_node_from_get_and_ref);
 
 #ifdef ECM_DB_XREF_ENABLE
+
+/*
+ * ecm_db_host_mappings_get_and_ref_first()
+ *	Return a reference to the first mapping of this host
+ */
+static struct ecm_db_mapping_instance *ecm_db_host_mappings_get_and_ref_first(struct ecm_db_host_instance *hi)
+{
+	struct ecm_db_mapping_instance *mi = NULL;
+
+	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", hi);
+
+	spin_lock_bh(&ecm_db_lock);
+	mi = hi->mappings;
+	if (mi) {
+		_ecm_db_mapping_ref(mi);
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	return mi;
+}
+
+/*
+ * ecm_db_host_mapping_get_and_ref_next()
+ *	Return the next host mapping in the list given a mapping
+ */
+static struct ecm_db_mapping_instance *ecm_db_host_mapping_get_and_ref_next(struct ecm_db_mapping_instance *mi)
+{
+	struct ecm_db_mapping_instance *nmi = NULL;
+
+	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
+
+	spin_lock_bh(&ecm_db_lock);
+	nmi = mi->mapping_next;
+	if (nmi) {
+		_ecm_db_mapping_ref(nmi);
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	return nmi;
+}
+
 /*
  * ecm_db_mapping_connections_from_get_and_ref_first()
  *	Return a reference to the first connection made from this mapping
@@ -12026,6 +12067,122 @@ void ecm_db_traverse_node_to_nat_connection_list_and_defunct(
 	}
 	DEBUG_INFO("%p: Defuncting to_nat node connection list complete\n", node);
 }
+
+/*
+ * ecm_db_traverse_host_to_connection_list_and_defunct()
+ *	Defunct all to_connections for a host
+ *
+ * Traverse the hosts mappings and for every mapping traverse
+ * to_connections and for each entry call ecm_db_connection_make_defunct()
+ */
+static void ecm_db_traverse_host_to_connection_list_and_defunct(
+				struct ecm_db_host_instance *hi)
+{
+	struct ecm_db_mapping_instance *mi = NULL;
+
+	/*
+	 * Iterate all mappings
+	 */
+	mi = ecm_db_host_mappings_get_and_ref_first(hi);
+	while (mi) {
+		struct ecm_db_connection_instance *ci = NULL;
+		struct ecm_db_mapping_instance *min;
+		DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed\n", mi);
+
+		/*
+		 * Iterate all to_connections
+		 */
+		ci = ecm_db_mapping_connections_to_get_and_ref_first(mi);
+		while (ci) {
+			struct ecm_db_connection_instance *cin;
+			DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed\n", ci);
+
+			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
+			ecm_db_connection_make_defunct(ci);
+
+			cin = ecm_db_connection_mapping_to_get_and_ref_next(ci);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+
+		min = ecm_db_host_mapping_get_and_ref_next(mi);
+		ecm_db_mapping_deref(mi);
+		mi = min;
+	}
+	DEBUG_INFO("%p: Defuncting to host connection list complete\n", hi);
+}
+
+/*
+ * ecm_db_traverse_host_to_nat_connection_list_and_defunct()
+ *	Defunct all to_nat_connections for a host
+ *
+ * Traverse the hosts mappings and for every mapping traverse
+ * to_nat_connections and for each entry call ecm_db_connection_make_defunct()
+ */
+static void ecm_db_traverse_host_to_nat_connection_list_and_defunct(
+				struct ecm_db_host_instance *hi)
+{
+	struct ecm_db_mapping_instance *mi = NULL;
+
+	/*
+	 * Iterate all mappings
+	 */
+	mi = ecm_db_host_mappings_get_and_ref_first(hi);
+	while (mi) {
+		struct ecm_db_connection_instance *ci = NULL;
+		struct ecm_db_mapping_instance *min;
+
+		DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed\n", mi);
+
+		/*
+		 * Iterate all to nat connections for the mapping
+		 */
+		ci = ecm_db_mapping_connections_nat_to_get_and_ref_first(mi);
+		while (ci) {
+			struct ecm_db_connection_instance *cin;
+			DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed\n", ci);
+
+			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
+			ecm_db_connection_make_defunct(ci);
+
+			cin = ecm_db_connection_mapping_nat_to_get_and_ref_next(ci);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+
+		min = ecm_db_host_mapping_get_and_ref_next(mi);
+		ecm_db_mapping_deref(mi);
+		mi = min;
+	}
+	DEBUG_INFO("%p: Defuncting to_nat host connection list complete\n", hi);
+}
+
+/*
+ * ecm_db_host_to_connections_defunct()
+ *	Defunct the connections to this host (ip address).
+ *
+ * Note: The IP address should be in Host byte order.
+ */
+void ecm_db_host_to_connections_defunct(ip_addr_t addr)
+{
+	struct ecm_db_host_instance *hi = NULL;
+
+	if (unlikely(ECM_IP_ADDR_IS_NULL(addr))) {
+		DEBUG_WARN("Invalid IP address - 0.0.0.0\n");
+		return;
+	}
+
+	hi = ecm_db_host_find_and_ref(addr);
+	if (!hi) {
+		return;
+	}
+
+	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed\n", hi);
+	ecm_db_traverse_host_to_connection_list_and_defunct(hi);
+	ecm_db_traverse_host_to_nat_connection_list_and_defunct(hi);
+	ecm_db_host_deref(hi);
+}
+
 #endif
 
 /*
