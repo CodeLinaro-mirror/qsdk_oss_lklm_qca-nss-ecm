@@ -193,6 +193,13 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	struct inet6_dev *ip6_inetdev;
 #endif
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+	struct net_device *in;
+	struct ip_tunnel *gre4_tunnel;
+	struct ip6_tnl *gre6_tunnel;
+	ip_addr_t local_gre_tun_ip;
+#endif
+
 #if defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_MAP_T_ENABLE)
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 	struct ppp_channel *ppp_chan[1];
@@ -357,6 +364,58 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 
 #else
 			DEBUG_TRACE("MAP-T interface unsupported\n");
+			return NULL;
+#endif
+		case ECM_DB_IFACE_TYPE_GRE_TUN:
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			in = dev_get_by_index(&init_net, skb->skb_iif);
+			if (!in) {
+				DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
+				return NULL;
+			}
+
+			switch(in->type) {
+			case ARPHRD_IPGRE:
+				gre4_tunnel = netdev_priv(in);
+				if (!gre4_tunnel) {
+					dev_put(in);
+					DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not initialized\n");
+					return NULL;
+				}
+				ECM_NIN4_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre4_tunnel->parms.iph.saddr);
+				dev_put(in);
+				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
+				if (!in) {
+					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_gre_tun_ip));
+					return NULL;
+				}
+				break;
+
+			case ARPHRD_IP6GRE:
+				gre6_tunnel = netdev_priv(in);
+				if (!gre6_tunnel) {
+					dev_put(in);
+					DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not initialized\n");
+					return NULL;
+				}
+				ECM_NIN6_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre6_tunnel->parms.laddr);
+				dev_put(in);
+				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
+				if (!in) {
+					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(local_gre_tun_ip));
+					return NULL;
+				}
+				break;
+
+			default:
+				DEBUG_TRACE("establish node with physical netdev: %s\n", in->name);
+			}
+			memcpy(node_addr, in->dev_addr, ETH_ALEN);
+			dev_put(in);
+			done = true;
+			break;
+#else
+			DEBUG_TRACE("GRE interface unsupported\n");
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_VLAN:
@@ -865,11 +924,37 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * If it's an IPSec pass-through flow, don't accelerate it.
 	 */
 	if ((ip_hdr.protocol == IPPROTO_ESP) &&
-		(in_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE) &&
-		(out_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE)) {
+			(in_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE) &&
+			(out_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE)) {
 
 		DEBUG_TRACE("ipsec pass through flow\n");
 		return NF_ACCEPT;
+	}
+
+	/*
+	 * If it's a PPTP GRE/GRE pass-through flow then check if out_dev or
+	 * in_dev are not a PPTP device. If ecm_interface_is_pptp() return
+	 * false then don't accelerate it.
+	 */
+	if ((ip_hdr.protocol == IPPROTO_GRE) && !ecm_interface_is_pptp(skb, out_dev)) {
+		/*
+		 * If any of the input or output interface is a GRE V4 TAP/TUN interface
+		 * we can continue to accelerate it.
+		 */
+		if ((in_dev->priv_flags & IFF_GRE_V4_TAP) || (out_dev->priv_flags & IFF_GRE_V4_TAP)) {
+#ifndef ECM_INTERFACE_GRE_TAP_ENABLE
+			DEBUG_TRACE("GRE TAP acceleration is disabled\n");
+			return NF_ACCEPT;
+#endif
+			DEBUG_TRACE("GRE TAP flow\n");
+		} else {
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			DEBUG_TRACE("GRE TUN flow\n");
+#else
+			DEBUG_TRACE("PPTP GRE pass through flow\n");
+			return NF_ACCEPT;
+#endif
+		}
 	}
 
 	/*
@@ -948,8 +1033,8 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		}
 
 		return ecm_nss_multicast_ipv6_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
-								 can_accel, is_routed, skb, &ip_hdr, ct, sender,
-								 &orig_tuple, &reply_tuple);
+				can_accel, is_routed, skb, &ip_hdr, ct, sender,
+				&orig_tuple, &reply_tuple);
 #else
 		return NF_ACCEPT;
 #endif
@@ -997,9 +1082,9 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 
 	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
-				ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
-				ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
-				orig_tuple.dst.protonum, sender, ecm_dir);
+			ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
+			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
+			orig_tuple.dst.protonum, sender, ecm_dir);
 	/*
 	 * Non-unicast source or destination packets are ignored
 	 * NOTE: Only need to check the non-nat src/dest addresses here.
@@ -1029,13 +1114,13 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 	return ecm_nss_non_ported_ipv6_process(out_dev, in_dev,
-				src_node_addr,
-				dest_node_addr,
-				can_accel, is_routed, is_l2_encap, skb,
-				&ip_hdr,
-				ct, sender, ecm_dir,
-				&orig_tuple, &reply_tuple,
-				ip_src_addr, ip_dest_addr);
+			src_node_addr,
+			dest_node_addr,
+			can_accel, is_routed, is_l2_encap, skb,
+			&ip_hdr,
+			ct, sender, ecm_dir,
+			&orig_tuple, &reply_tuple,
+			ip_src_addr, ip_dest_addr);
 #else
 	return NF_ACCEPT;
 #endif

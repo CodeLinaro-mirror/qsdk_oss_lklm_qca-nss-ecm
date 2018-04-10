@@ -403,7 +403,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	uint8_t from_nss_iface_address[ETH_ALEN];
 	uint8_t to_nss_iface_address[ETH_ALEN];
 	ip_addr_t addr;
-#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_ENABLE)
+#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	struct net_device *dev __attribute__((unused));
 #endif
 	struct nss_ipv4_msg *nim;
@@ -422,7 +422,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	struct ecm_db_interface_info_pptp pptp_info;
 	bool is_from_ii_type_pptp = false;
 #endif
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) ||  defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	bool is_from_ii_type_gre = false;
 #endif
 
@@ -596,7 +596,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
 				if (dev->priv_flags & IFF_GRE_V4_TAP) {
@@ -612,6 +612,12 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			ecm_db_iface_ethernet_address_get(ii, from_nss_iface_address);
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", nnpci, from_nss_iface_address);
 			break;
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+		case ECM_DB_IFACE_TYPE_GRE_TUN:
+			is_from_ii_type_gre = true;
+			break;
+#endif
+
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
@@ -797,6 +803,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			ecm_db_iface_ethernet_address_get(ii, to_nss_iface_address);
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", nnpci, to_nss_iface_address);
 			break;
+
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
@@ -969,7 +976,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		dev_put(dev);
 	}
 #endif
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	if (unlikely(is_from_ii_type_gre)) {
 		dev = ecm_interface_dev_find_by_local_addr(addr);
 		if (unlikely(!dev)) {
@@ -1882,7 +1889,7 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-#if defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_ENABLE)
+#if defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP) && (protocol != IPPROTO_GRE)) {
 #else
 	if ((protocol != IPPROTO_IPV6) && (protocol != IPPROTO_ESP)) {

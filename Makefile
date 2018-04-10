@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018, The Linux Foundation. All rights reserved.
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -122,11 +122,18 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 
 # #############################################################################
-# Define ECM_INTERFACE_GRE_ENABLE=y in order
-# to enable support for GRE interface.
+# Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
+# to enable support for GRE TAP interface.
 # #############################################################################
-ECM_INTERFACE_GRE_ENABLE=y
-ccflags-$(ECM_INTERFACE_GRE_ENABLE) += -DECM_INTERFACE_GRE_ENABLE
+ECM_INTERFACE_GRE_TAP_ENABLE=y
+ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
+
+# #############################################################################
+# Define ECM_INTERFACE_GRE_TUN_ENABLE=y in order
+# to enable support for GRE TUN interface.
+# #############################################################################
+ECM_INTERFACE_GRE_TUN_ENABLE=y
+ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order

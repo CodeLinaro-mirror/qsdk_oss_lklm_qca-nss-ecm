@@ -335,7 +335,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
 	ecm_front_end_acceleration_mode_t result_mode;
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	bool is_from_ii_type_gre = false;
 	struct net_device *dev;
 #endif
@@ -510,7 +510,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
 				if (dev->priv_flags & IFF_GRE_V6_TAP) {
@@ -525,6 +525,11 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 */
 			ecm_db_iface_ethernet_address_get(ii, from_nss_iface_address);
 			DEBUG_TRACE("%p: Ethernet - mac: %pM\n", nnpci, from_nss_iface_address);
+			break;
+		case ECM_DB_IFACE_TYPE_GRE_TUN:
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			is_from_ii_type_gre = true;
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
@@ -888,7 +893,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * Get MTU information
 	 */
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	if (unlikely(is_from_ii_type_gre)) {
 		dev = ecm_interface_dev_find_by_local_addr(src_ip);
 		if (unlikely(!dev)) {
@@ -1682,17 +1687,16 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
 	if ((protocol != IPPROTO_IPIP && protocol != IPPROTO_ESP)) {
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 		/*
-		 * If protocol is GRE and one of the input and output devices are GRE_V6_TAP device,
-		 * continue to accelerate the connection. ECM supports this configuration.
+		 * If protocol is GRE, continue to accelerate the connection. ECM supports this configuration.
 		 */
-		if (protocol != IPPROTO_GRE || (!(in_dev->priv_flags & IFF_GRE_V6_TAP) && !(out_dev->priv_flags & IFF_GRE_V6_TAP))) {
+		if (protocol != IPPROTO_GRE) {
 			DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
 			return NF_ACCEPT;
 		}
 
-		DEBUG_TRACE("GRE TAP tunnel flow\n");
+		DEBUG_TRACE("GRE TAP/TUN flow\n");
 #else
 		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
 		return NF_ACCEPT;

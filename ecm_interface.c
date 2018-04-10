@@ -1632,6 +1632,60 @@ static struct ecm_db_iface_instance *ecm_interface_pptp_interface_establish(stru
 }
 #endif
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+/*
+ * ecm_interface_gre_tun_interface_establish()
+ *	Returns a reference to a iface of the gre type, possibly creating one if necessary.
+ *	Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_gre_tun_interface_establish(struct ecm_db_interface_info_gre_tun *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Establish GRE TUN iface: %s   MTU: %d, if num: %d, accel engine if id: %d\n",
+			dev_name, mtu, dev_interface_num, ae_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index);
+	if (ii) {
+		DEBUG_TRACE("%p: iface established\n", ii);
+		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
+		return ii;
+	}
+	ecm_db_iface_add_gre_tun(nii, type_info, dev_name,
+			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%p: gre iface established\n", nii);
+	return nii;
+}
+#endif
+
 /*
  * ecm_interface_unknown_interface_establish()
  *	Returns a reference to a iface of the UNKNOWN type, possibly creating one if necessary.
@@ -1928,6 +1982,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 		struct ecm_db_interface_info_map_t map_t;		/* type == ECM_DB_IFACE_TYPE_MAP_T */
 #endif
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+		struct ecm_db_interface_info_gre_tun gre_tun;			/* type == ECM_DB_IFACE_TYPE_GRE */
+#endif
 		struct ecm_db_interface_info_unknown unknown;		/* type == ECM_DB_IFACE_TYPE_UNKNOWN */
 		struct ecm_db_interface_info_loopback loopback;		/* type == ECM_DB_IFACE_TYPE_LOOPBACK */
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
@@ -1943,6 +2000,10 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #endif
 	} type_info;
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+	struct ip_tunnel *gre4_tunnel;
+	struct ip6_tnl *gre6_tunnel;
+#endif
 #ifdef ECM_INTERFACE_PPP_ENABLE
 	int channel_count;
 	struct ppp_channel *ppp_chan[1];
@@ -2052,7 +2113,8 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		}
 #endif
 
-#ifdef ECM_INTERFACE_GRE_ENABLE
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+
 		/*
 		 * GRE TAP?
 		 */
@@ -2064,7 +2126,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * we should wait until it is ready.
 			 */
 			if (ae_interface_num < 0) {
-				DEBUG_TRACE("GRE interface is not ready yet\n");
+				DEBUG_TRACE("GRE TAP interface is not ready yet\n");
 				return NULL;
 			}
 		}
@@ -2199,6 +2261,44 @@ identifier_update:
 		return ii;
 	}
 #endif
+#endif
+
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+	if ((dev_type == ARPHRD_IPGRE) || (dev_type == ARPHRD_IP6GRE)) {
+		if (ae_interface_num < 0) {
+			DEBUG_TRACE("GRE TUN interface is not ready yet\n");
+			return NULL;
+		}
+
+		type_info.gre_tun.if_index = dev_interface_num;
+		if (dev_type == ARPHRD_IPGRE) {
+			gre4_tunnel = netdev_priv(dev);
+			if (!gre4_tunnel) {
+				DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not ready\n");
+				return NULL;
+			}
+			ECM_NIN4_ADDR_TO_IP_ADDR(type_info.gre_tun.local_ip, gre4_tunnel->parms.iph.saddr);
+			ECM_NIN4_ADDR_TO_IP_ADDR(type_info.gre_tun.remote_ip, gre4_tunnel->parms.iph.daddr);
+		} else {
+			gre6_tunnel = netdev_priv(dev);
+			if (!gre6_tunnel) {
+				DEBUG_WARN("failed to obtain node address for host. GREv6 tunnel not ready\n");
+				return NULL;
+			}
+			ECM_NIN6_ADDR_TO_IP_ADDR(type_info.gre_tun.local_ip, gre6_tunnel->parms.laddr);
+			ECM_NIN6_ADDR_TO_IP_ADDR(type_info.gre_tun.remote_ip, gre6_tunnel->parms.raddr);
+		}
+
+		ii = ecm_interface_gre_tun_interface_establish(&type_info.gre_tun, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		if (ii) {
+			/*
+			 * The ifindex of a virtual netdevice like a GRE tunnel session can change if it is destroyed
+			 * and comes up again. Detect if the ifindex has changed and update it if required
+			 */
+			ecm_db_iface_identifier_hash_table_entry_check_and_update(ii, dev_interface_num);
+		}
+		return ii;
+	}
 #endif
 
 	/*
@@ -2347,7 +2447,6 @@ identifier_update:
 		return ii;
 	}
 #endif
-
 	/*
 	 * PPP - but what is the channel type?
 	 * First: If this is multi-link then we do not support it
@@ -3449,19 +3548,19 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	if (dest_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
 				((ip_version == 6) && (protocol == IPPROTO_IPIP))
-#ifdef ECM_INTERFACE_GRE_ENABLE
-				|| ((protocol == IPPROTO_GRE) && (given_dest_dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)))) {
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
+				|| ((protocol == IPPROTO_GRE))) {
 #else
-		{
+		) {
 #endif
 			dev_put(dest_dev);
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
 				dev_hold(dest_dev);
 				if (ip_version == 4) {
-					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_DOT(dest_addr), dest_dev, dest_dev->name);
+					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV4", ECM_IP_ADDR_TO_DOT(dest_addr), dest_dev, dest_dev->name);
 				} else {
-					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPIP", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+					DEBUG_TRACE("HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
 				}
 			}
 		}
@@ -3534,19 +3633,19 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	if (src_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
 				((ip_version == 6) && (protocol == IPPROTO_IPIP))
-#ifdef ECM_INTERFACE_GRE_ENABLE
-				|| ((protocol == IPPROTO_GRE) && (given_src_dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)))) {
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
+				|| ((protocol == IPPROTO_GRE))) {
 #else
-		{
+		) {
 #endif
 			dev_put(src_dev);
 			src_dev = given_src_dev;
 			if (src_dev) {
 				dev_hold(src_dev);
 				if (ip_version == 4) {
-					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_DOT(src_addr), src_dev, src_dev->name);
+					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_DOT_FMT " uses dev: %p(%s)\n", "IPV4", ECM_IP_ADDR_TO_DOT(src_addr), src_dev, src_dev->name);
 				} else {
-					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPIP", ECM_IP_ADDR_TO_OCTAL(src_addr), src_dev, src_dev->name);
+					DEBUG_TRACE("HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %p(%s)\n", "IPV6", ECM_IP_ADDR_TO_OCTAL(src_addr), src_dev, src_dev->name);
 				}
 			}
 		}
@@ -3916,6 +4015,16 @@ lag_success:
 				DEBUG_TRACE("Net device: %p is ETHERNET\n", dest_dev);
 				break;
 			}
+
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			/*
+			 * GRE Tunnel?
+			 */
+			if ((dest_dev_type == ARPHRD_IPGRE) || (dest_dev_type == ARPHRD_IP6GRE)) {
+				DEBUG_TRACE("Net device: %p is GRE Tunnel type: %d\n", dest_dev, dest_dev_type);
+				break;
+			}
+#endif
 
 			/*
 			 * LOOPBACK?

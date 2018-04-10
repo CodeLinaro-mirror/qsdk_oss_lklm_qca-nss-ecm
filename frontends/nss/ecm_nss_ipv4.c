@@ -183,10 +183,15 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 	struct net_device *local_dev;
 #endif
 
-#if defined(ECM_INTERFACE_MAP_T_ENABLE)
+#if defined(ECM_INTERFACE_MAP_T_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	struct net_device *in;
 #endif
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+	struct ip_tunnel *gre4_tunnel;
+	struct ip6_tnl *gre6_tunnel;
+	ip_addr_t local_gre_tun_ip;
+#endif
 	DEBUG_INFO("Establish node for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
 
 	/*
@@ -385,6 +390,58 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 			DEBUG_TRACE("MAP-T interface unsupported\n");
 			return NULL;
 #endif
+		case ECM_DB_IFACE_TYPE_GRE_TUN:
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			in = dev_get_by_index(&init_net, skb->skb_iif);
+			if (!in) {
+				DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
+				return NULL;
+			}
+
+			switch(in->type) {
+			case ARPHRD_IPGRE:
+				gre4_tunnel = netdev_priv(in);
+				if (!gre4_tunnel) {
+					dev_put(in);
+					DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not initialized\n");
+					return NULL;
+				}
+				ECM_NIN4_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre4_tunnel->parms.iph.saddr);
+				dev_put(in);
+				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
+				if (!in) {
+					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_gre_tun_ip));
+					return NULL;
+				}
+				break;
+
+			case ARPHRD_IP6GRE:
+				gre6_tunnel = netdev_priv(in);
+				if (!gre6_tunnel) {
+					dev_put(in);
+					DEBUG_WARN("failed to obtain node address for host. GREv6 tunnel not initialized\n");
+					return NULL;
+				}
+				ECM_NIN6_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre6_tunnel->parms.laddr);
+				dev_put(in);
+				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
+				if (!in) {
+					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(local_gre_tun_ip));
+					return NULL;
+				}
+				break;
+
+			default:
+				DEBUG_TRACE("establish node with physical netdev: %s\n", in->name);
+			}
+			memcpy(node_addr, in->dev_addr, ETH_ALEN);
+			dev_put(in);
+			done = true;
+			break;
+#else
+			DEBUG_TRACE("GRE Tunnel interface unsupported\n");
+			return NULL;
+#endif
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			/*
@@ -501,7 +558,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%p: node established\n", nni);
+	DEBUG_TRACE("%p: node established, node address: %pM\n", nni, node_addr);
 	return nni;
 }
 
@@ -955,21 +1012,24 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * false then don't accelerate it.
 	 */
 	if ((ip_hdr.protocol == IPPROTO_GRE) && !ecm_interface_is_pptp(skb, out_dev)) {
-#ifdef ECM_INTERFACE_GRE_ENABLE
 		/*
-		 * But if any of the input or output interface is a GRE V4 TAP interface
+		 * If any of the input or output interface is a GRE V4 TAP/TUN interface
 		 * we can continue to accelerate it.
 		 */
-		if (!(in_dev->priv_flags & IFF_GRE_V4_TAP) && !(out_dev->priv_flags & IFF_GRE_V4_TAP)) {
+		if ((in_dev->priv_flags & IFF_GRE_V4_TAP) || (out_dev->priv_flags & IFF_GRE_V4_TAP)) {
+#ifndef ECM_INTERFACE_GRE_TAP_ENABLE
+			DEBUG_TRACE("GRE TAP acceleration is disabled\n");
+			return NF_ACCEPT;
+#endif
+			DEBUG_TRACE("GRE TAP flow\n");
+		} else {
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			DEBUG_TRACE("GRE TUN flow\n");
+#else
 			DEBUG_TRACE("PPTP GRE pass through flow\n");
 			return NF_ACCEPT;
-		}
-
-		DEBUG_TRACE("GRE TAP tunnel flow\n");
-#else
-		DEBUG_TRACE("PPTP GRE pass through flow\n");
-		return NF_ACCEPT;
 #endif
+		}
 	}
 
 	/*

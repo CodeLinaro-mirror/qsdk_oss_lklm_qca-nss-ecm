@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014,2015,2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014,2015,2017-2018 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -264,6 +264,7 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_PPPOL2TPV2,			/* Interface is a PPPoL2TPV2 interface (a specific form of PPP that we recognise in the ECM) */
 	ECM_DB_IFACE_TYPE_PPTP,				/* Interface is a PPTP interface */
 	ECM_DB_IFACE_TYPE_MAP_T,			/* Interface is a MAP-T interface */
+	ECM_DB_IFACE_TYPE_GRE_TUN,			/* Interface is a GRE tunnel interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -336,7 +337,14 @@ struct ecm_db_interface_info_pptp {
 struct ecm_db_interface_info_map_t {                  /* type == ECM_DB_IFACE_TYPE_MAP_T */
 	int32_t if_index;
 };
+#endif
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+struct ecm_db_interface_info_gre_tun {			/* type == ECM_DB_IFACE_TYPE_GRE_TUN */
+	int32_t if_index;
+	ip_addr_t local_ip;
+	ip_addr_t remote_ip;
+};
 #endif
 
 struct ecm_db_interface_info_unknown {			/* type == ECM_DB_IFACE_TYPE_UNKNOWN */

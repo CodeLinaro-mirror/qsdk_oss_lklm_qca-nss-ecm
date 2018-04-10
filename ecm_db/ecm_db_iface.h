@@ -105,6 +105,9 @@ struct ecm_db_iface_instance {
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 		struct ecm_db_interface_info_map_t map_t;		/* type == ECM_DB_IFACE_TYPE_MAP_T */
 #endif
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+		struct ecm_db_interface_info_gre_tun gre_tun;		/* type == ECM_DB_IFACE_TYPE_GRE_TUN */
+#endif
 		struct ecm_db_interface_info_unknown unknown;		/* type == ECM_DB_IFACE_TYPE_UNKNOWN */
 		struct ecm_db_interface_info_loopback loopback;		/* type == ECM_DB_IFACE_TYPE_LOOPBACK */
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
@@ -216,6 +219,15 @@ void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii,
 			    struct ecm_db_interface_info_map_t *map_t_info, char *name,
 			    int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,
 			    ecm_db_iface_final_callback_t final, void *arg);
+#endif
+
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index);
+void ecm_db_iface_gre_tun_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_gre_tun *gre_tun_info);
+void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii,
+				struct ecm_db_interface_info_gre_tun *gre_tun_info, char *name,
+				int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,
+				ecm_db_iface_final_callback_t final, void *arg);
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
