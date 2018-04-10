@@ -175,7 +175,8 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 		DEBUG_ASSERT(ecm_classifier_dscp_instances == cdscpi, "%p: list bad %p\n", cdscpi, ecm_classifier_dscp_instances);
 		ecm_classifier_dscp_instances = cdscpi->next;
 	}
-
+	cdscpi->next = NULL;
+	cdscpi->prev = NULL;
 	spin_unlock_bh(&ecm_classifier_dscp_lock);
 
 	/*
