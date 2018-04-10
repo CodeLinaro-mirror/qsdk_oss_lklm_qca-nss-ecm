@@ -2935,6 +2935,8 @@ static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connecti
 	if (cci->ca_next) {
 		cci->ca_next->ca_prev = cci->ca_prev;
 	}
+	cci->ca_next = NULL;
+	cci->ca_prev = NULL;
 
 #ifdef ECM_DB_CTA_TRACK_ENABLE
 	/*
@@ -3057,6 +3059,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->hash_next) {
 			ci->hash_next->hash_prev = ci->hash_prev;
 		}
+		ci->hash_prev = NULL;
+		ci->hash_next = NULL;
 		ecm_db_connection_table_lengths[ci->hash_index]--;
 		DEBUG_ASSERT(ecm_db_connection_table_lengths[ci->hash_index] >= 0, "%p: invalid table len %d\n", ci, ecm_db_connection_table_lengths[ci->hash_index]);
 
@@ -3072,6 +3076,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->serial_hash_next) {
 			ci->serial_hash_next->serial_hash_prev = ci->serial_hash_prev;
 		}
+		ci->serial_hash_prev = NULL;
+		ci->serial_hash_next = NULL;
 		ecm_db_connection_serial_table_lengths[ci->serial_hash_index]--;
 		DEBUG_ASSERT(ecm_db_connection_serial_table_lengths[ci->serial_hash_index] >= 0, "%p: invalid table len %d\n", ci, ecm_db_connection_serial_table_lengths[ci->serial_hash_index]);
 
@@ -3087,6 +3093,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->next) {
 			ci->next->prev = ci->prev;
 		}
+		ci->prev = NULL;
+		ci->next = NULL;
 
 #ifdef ECM_DB_XREF_ENABLE
 		/*
@@ -3101,6 +3109,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->from_next) {
 			ci->from_next->from_prev = ci->from_prev;
 		}
+		ci->from_prev = NULL;
+		ci->from_next = NULL;
 
 		/*
 		 * Remove connection from the "to" mapping connection list
@@ -3114,6 +3124,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->to_next) {
 			ci->to_next->to_prev = ci->to_prev;
 		}
+		ci->to_prev = NULL;
+		ci->to_next = NULL;
 
 		/*
 		 * Remove connection from the "from" NAT mapping connection list
@@ -3127,6 +3139,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->from_nat_next) {
 			ci->from_nat_next->from_nat_prev = ci->from_nat_prev;
 		}
+		ci->from_nat_prev = NULL;
+		ci->from_nat_next = NULL;
 
 		/*
 		 * Remove connection from the "to" NAT mapping connection list
@@ -3140,6 +3154,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->to_nat_next) {
 			ci->to_nat_next->to_nat_prev = ci->to_nat_prev;
 		}
+		ci->to_nat_prev = NULL;
+		ci->to_nat_next = NULL;
 
 		/*
 		 * Remove connection from the "from" iface connection list
@@ -3155,6 +3171,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->iface_from_next) {
 			ci->iface_from_next->iface_from_prev = ci->iface_from_prev;
 		}
+		ci->iface_from_prev = NULL;
+		ci->iface_from_next = NULL;
 
 		/*
 		 * Remove connection from the "to" iface connection list
@@ -3170,6 +3188,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->iface_to_next) {
 			ci->iface_to_next->iface_to_prev = ci->iface_to_prev;
 		}
+		ci->iface_to_prev = NULL;
+		ci->iface_to_next = NULL;
 
 		/*
 		 * Remove connection from the "from" NAT iface connection list
@@ -3185,6 +3205,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->iface_from_nat_next) {
 			ci->iface_from_nat_next->iface_from_nat_prev = ci->iface_from_nat_prev;
 		}
+		ci->iface_from_nat_prev = NULL;
+		ci->iface_from_nat_next = NULL;
 
 		/*
 		 * Remove connection from the "to" NAT iface connection list
@@ -3200,6 +3222,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->iface_to_nat_next) {
 			ci->iface_to_nat_next->iface_to_nat_prev = ci->iface_to_nat_prev;
 		}
+		ci->iface_to_nat_prev = NULL;
+		ci->iface_to_nat_next = NULL;
 
 		/*
 		 * Remove connection from its "from node" node connection list
@@ -3213,6 +3237,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->node_from_next) {
 			ci->node_from_next->node_from_prev = ci->node_from_prev;
 		}
+		ci->node_from_prev = NULL;
+		ci->node_from_next = NULL;
 		ci->from_node->from_connections_count--;
 		DEBUG_ASSERT(ci->from_node->from_connections_count >= 0, "%p: bad count\n", ci);
 
@@ -3228,6 +3254,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->node_to_next) {
 			ci->node_to_next->node_to_prev = ci->node_to_prev;
 		}
+		ci->node_to_prev = NULL;
+		ci->node_to_next = NULL;
 		ci->to_node->to_connections_count--;
 		DEBUG_ASSERT(ci->to_node->to_connections_count >= 0, "%p: bad count\n", ci);
 
@@ -3243,6 +3271,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->node_from_nat_next) {
 			ci->node_from_nat_next->node_from_nat_prev = ci->node_from_nat_prev;
 		}
+		ci->node_from_nat_prev = NULL;
+		ci->node_from_nat_next = NULL;
 		ci->from_nat_node->from_nat_connections_count--;
 		DEBUG_ASSERT(ci->from_nat_node->from_nat_connections_count >= 0, "%p: bad count\n", ci);
 
@@ -3258,6 +3288,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->node_to_nat_next) {
 			ci->node_to_nat_next->node_to_nat_prev = ci->node_to_nat_prev;
 		}
+		ci->node_to_nat_prev = NULL;
+		ci->node_to_nat_next = NULL;
 		ci->to_nat_node->to_nat_connections_count--;
 		DEBUG_ASSERT(ci->to_nat_node->to_nat_connections_count >= 0, "%p: bad count\n", ci);
 #endif
@@ -3342,7 +3374,6 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	}
 	spin_unlock_bh(&ecm_db_lock);
 #endif
-
 	/*
 	 * Throw final event
 	 */
@@ -3486,6 +3517,8 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 		if (mi->next) {
 			mi->next->prev = mi->prev;
 		}
+		mi->prev = NULL;
+		mi->next = NULL;
 
 		/*
 		 * Unlink it from the mapping hash table
@@ -3619,6 +3652,8 @@ int ecm_db_host_deref(struct ecm_db_host_instance *hi)
 		if (hi->next) {
 			hi->next->prev = hi->prev;
 		}
+		hi->prev = NULL;
+		hi->next = NULL;
 
 		/*
 		 * Unlink it from the host hash table
@@ -3730,6 +3765,8 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		if (ni->next) {
 			ni->next->prev = ni->prev;
 		}
+		ni->prev = NULL;
+		ni->next = NULL;
 
 		/*
 		 * Link out of hash table
@@ -3866,6 +3903,8 @@ int ecm_db_iface_deref(struct ecm_db_iface_instance *ii)
 		if (ii->next) {
 			ii->next->prev = ii->prev;
 		}
+		ii->prev = NULL;
+		ii->next = NULL;
 
 		/*
 		 * Link out of hash table
