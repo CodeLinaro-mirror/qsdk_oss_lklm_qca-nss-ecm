@@ -2395,7 +2395,7 @@ identifier_update:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-	if ((protocol == IPPROTO_GRE) && skb && v4_hdr) {
+	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags & IFF_PPP_PPTP)) {
 		struct gre_hdr_pptp *gre_hdr;
 		uint16_t proto;
 		int ret;
@@ -3584,7 +3584,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	/*
 	 * if the address is a local address and indev=PPTP.
 	 */
-	if (protocol == IPPROTO_GRE && given_dest_dev && given_dest_dev->type == ARPHRD_PPP) {
+	if (protocol == IPPROTO_GRE && given_dest_dev && (given_dest_dev->priv_flags & IFF_PPP_PPTP)){
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -4095,7 +4095,7 @@ lag_success:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-			if (protocol == IPPROTO_GRE && dest_dev && dest_dev->type == ARPHRD_PPP) {
+			if (protocol == IPPROTO_GRE && dest_dev && (dest_dev->priv_flags & IFF_PPP_PPTP)) {
 				DEBUG_TRACE("Net device: %p PPP channel is PPTP\n", dest_dev);
 				break;
 			}
