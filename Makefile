@@ -34,7 +34,14 @@ ecm-y := \
 	 frontends/ecm_front_end_ipv4.o \
 	 frontends/ecm_front_end_ipv6.o \
 	 frontends/ecm_front_end_common.o \
-	 ecm_db.o \
+	 ecm_db/ecm_db.o \
+	 ecm_db/ecm_db_connection.o \
+	 ecm_db/ecm_db_mapping.o \
+	 ecm_db/ecm_db_host.o \
+	 ecm_db/ecm_db_node.o \
+	 ecm_db/ecm_db_iface.o \
+	 ecm_db/ecm_db_listener.o \
+	 ecm_db/ecm_db_timer.o \
 	 ecm_classifier.o \
 	 ecm_classifier_default.o \
 	 ecm_interface.o \
@@ -150,6 +157,7 @@ ifeq ($(MCS_CONFIG),$(MCS_ENABLED))
 ECM_MULTICAST_ENABLE=y
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
+ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
 ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
 endif
 endif
@@ -318,6 +326,6 @@ ccflags-y += -DECM_INTERFACE_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATE_DEBUG_LEVEL=1
 ccflags-y += -DECM_OPENWRT_SUPPORT=1
 
-ccflags-y += -I$(obj)/ -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe
+ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe
 
 obj ?= .

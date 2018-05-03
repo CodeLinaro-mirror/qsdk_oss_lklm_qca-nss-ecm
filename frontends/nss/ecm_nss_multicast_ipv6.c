@@ -1950,13 +1950,13 @@ ecm_multicast_ipv6_regen_done:
 	/*
 	 * Re-generation of state is successful.
 	 */
-	ecm_db_conection_regeneration_completed(ci);
+	ecm_db_connection_regeneration_completed(ci);
 
 	return;
 
 ecm_multicast_ipv6_retry_regen:
 	feci->deref(feci);
-	ecm_db_conection_regeneration_failed(ci);
+	ecm_db_connection_regeneration_failed(ci);
 	return;
 }
 
