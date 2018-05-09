@@ -4867,7 +4867,8 @@ EXPORT_SYMBOL(ecm_interface_multicast_from_heirarchy_construct);
  *	Given an interface list, walk the interfaces and update the stats for certain types.
  */
 static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_iface_instance *iface_list[], uint8_t *mac_addr,
-					bool is_mcast_flow, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets, uint32_t rx_bytes)
+					bool is_mcast_flow, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets, uint32_t rx_bytes,
+					bool is_ported)
 {
 	int list_index;
 
@@ -4898,7 +4899,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			 * Note: A bridge port can be of different interface type, e.g VLAN, ethernet.
 			 * This check, therefore, should be performed for all interface types.
 			 */
-			if (is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+			if (is_ported && is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
 				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
 				br_refresh_fdb_entry(dev, mac_addr);
 			}
@@ -4959,6 +4960,15 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	int from_ifaces_first;
 	int to_ifaces_first;
 	uint8_t mac_addr[ETH_ALEN];
+	bool is_ported = false;
+	uint8_t protocol = ecm_db_connection_protocol_get(ci);
+
+	/*
+	 * Set is_ported flag based on protocol
+	 */
+	if ((protocol == IPPROTO_UDP) || (protocol == IPPROTO_TCP)) {
+		is_ported = true;
+	}
 
 	/*
 	 * Iterate the 'from' side interfaces and update statistics and state for the real HLOS interfaces
@@ -4968,7 +4978,7 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
 	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(ci, from_ifaces);
 	ecm_db_connection_from_node_address_get(ci, mac_addr);
-	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes);
+	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
@@ -4979,7 +4989,7 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update to interface stats\n", ci);
 	to_ifaces_first = ecm_db_connection_to_interfaces_get_and_ref(ci, to_ifaces);
 	ecm_db_connection_to_node_address_get(ci, mac_addr);
-	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes);
+	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 }
 EXPORT_SYMBOL(ecm_interface_stats_update);
@@ -5005,6 +5015,15 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 	int if_index;
 	int ret;
 	uint8_t mac_addr[ETH_ALEN];
+	bool is_ported = false;
+	uint8_t protocol = ecm_db_connection_protocol_get(ci);
+
+	/*
+	 * Set is_ported flag based on protocol
+	 */
+	if (protocol == IPPROTO_UDP) {
+		is_ported = true;
+	}
 
 	/*
 	 * Iterate the 'from' side interfaces and update statistics and state for the real HLOS interfaces
@@ -5014,7 +5033,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
 	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(ci, from_ifaces);
 	ecm_db_connection_from_node_address_get(ci, mac_addr);
-	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes);
+	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
@@ -5038,7 +5057,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 		if (to_ifaces_first[if_index] < ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ii_temp = ecm_db_multicast_if_heirarchy_get(to_ifaces, if_index);
 			ecm_db_multicast_copy_if_heirarchy(to_list_single, ii_temp);
-			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes);
+			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported);
 		}
 	}
 
