@@ -64,16 +64,10 @@ struct ecm_db_connection_instance {
 
 	/*
 	 * Connection endpoint mapping
+	 * NOTE: For non-NAT connections mapping[ECM_DB_OBJ_DIR_FROM_NAT] and mapping[ECM_DB_OBJ_DIR_TO_NAT]
+	 * would be identical to the endpoint mappings.
 	 */
-	struct ecm_db_mapping_instance *mapping_from;		/* The connection was established from this mapping */
-	struct ecm_db_mapping_instance *mapping_to;		/* The connection was established to this mapping */
-
-	/*
-	 * Connection endpoint mapping for NAT purposes
-	 * NOTE: For non-NAT connections these would be identical to the endpoint mappings.
-	 */
-	struct ecm_db_mapping_instance *mapping_nat_from;	/* The connection was established from this mapping */
-	struct ecm_db_mapping_instance *mapping_nat_to;		/* The connection was established to this mapping */
+	struct ecm_db_mapping_instance *mapping[ECM_DB_OBJ_DIR_MAX];	/* The connection was established on this mapping in the specified direction */
 
 	/*
 	 * From / To Node (NAT and non-NAT).
@@ -84,10 +78,7 @@ struct ecm_db_connection_instance {
 	 * from different nodes / MAC addresses because of this the unique element here is the connection
 	 * and so we record the node information directly here.
 	 */
-	struct ecm_db_node_instance *from_node;			/* Node from which this connection was established */
-	struct ecm_db_node_instance *to_node;			/* Node to which this connection was established */
-	struct ecm_db_node_instance *from_nat_node;		/* Node from which this connection was established */
-	struct ecm_db_node_instance *to_nat_node;		/* Node to which this connection was established */
+	struct ecm_db_node_instance *node[ECM_DB_OBJ_DIR_MAX];	/* Node which this connection was established in the specified direction */
 
 #ifdef ECM_DB_XREF_ENABLE
 	/*
@@ -95,81 +86,38 @@ struct ecm_db_connection_instance {
 	 * Also mappings keep lists of connections made to/from them so that they may be iterated
 	 * to determine associated connections in each direction/situation (e.g. "defuncting all connections made to/from a mapping").
 	 */
-	struct ecm_db_connection_instance *from_next;		/* Next connection made from the same mapping */
-	struct ecm_db_connection_instance *from_prev;		/* Previous connection made from the same mapping */
-	struct ecm_db_connection_instance *to_next;		/* Next connection made to the same mapping */
-	struct ecm_db_connection_instance *to_prev;		/* Previous connection made to the same mapping */
-
-	struct ecm_db_connection_instance *from_nat_next;	/* Next connection made from the same mapping */
-	struct ecm_db_connection_instance *from_nat_prev;	/* Previous connection made from the same mapping */
-	struct ecm_db_connection_instance *to_nat_next;		/* Next connection made to the same mapping */
-	struct ecm_db_connection_instance *to_nat_prev;		/* Previous connection made to the same mapping */
+	struct ecm_db_connection_instance *mapping_next[ECM_DB_OBJ_DIR_MAX];	/* Next connection made on the same mapping in the specified direction */
+	struct ecm_db_connection_instance *mapping_prev[ECM_DB_OBJ_DIR_MAX];	/* Previous connection made on the same mapping in the specified direction */
 
 	/*
 	 * Connection endpoint interface
+	 * NOTE: For non-NAT connections from/to would be identical to the endpoint interface.
 	 * GGG TODO Deprecated - use interface lists instead.
 	 * To be removed when interface heirarchies are implemented to provide the same functionality.
 	 */
-	struct ecm_db_connection_instance *iface_from_next;	/* Next connection made from the same interface */
-	struct ecm_db_connection_instance *iface_from_prev;	/* Previous connection made from the same interface */
-	struct ecm_db_connection_instance *iface_to_next;	/* Next connection made to the same interface */
-	struct ecm_db_connection_instance *iface_to_prev;	/* Previous connection made to the same interface */
-
-	/*
-	 * Connection endpoint interface for NAT purposes
-	 * NOTE: For non-NAT connections these would be identical to the endpoint interface.
-	 * GGG TODO Deprecated - use interface lists instead.
-	 * To be removed when interface heirarchies are implemented to provide the same functionality.
-	 */
-	struct ecm_db_connection_instance *iface_from_nat_next;	/* Next connection made from the same interface */
-	struct ecm_db_connection_instance *iface_from_nat_prev;	/* Previous connection made from the same interface */
-	struct ecm_db_connection_instance *iface_to_nat_next;	/* Next connection made to the same interface */
-	struct ecm_db_connection_instance *iface_to_nat_prev;	/* Previous connection made to the same interface */
+	struct ecm_db_connection_instance *iface_next[ECM_DB_OBJ_DIR_MAX];	/* Next connection made on the same interface with the specified direction*/
+	struct ecm_db_connection_instance *iface_prev[ECM_DB_OBJ_DIR_MAX];	/* Previous connection made on the same interface with the specified direction */
 
 	/*
 	 * As well as keeping a reference to the node which this connection uses the nodes
 	 * also keep lists of connections made from/to them.
 	 */
-	struct ecm_db_connection_instance *node_from_next;	/* Next connection in the nodes from_connections list */
-	struct ecm_db_connection_instance *node_from_prev;	/* Prev connection in the nodes from_connections list */
-	struct ecm_db_connection_instance *node_to_next;	/* Next connection in the nodes to_connections list */
-	struct ecm_db_connection_instance *node_to_prev;	/* Prev connection in the nodes to_connections list */
-
-	struct ecm_db_connection_instance *node_from_nat_next;	/* Next connection in the nodes from_nat_connections list */
-	struct ecm_db_connection_instance *node_from_nat_prev;	/* Prev connection in the nodes from_nat_connections list */
-	struct ecm_db_connection_instance *node_to_nat_next;	/* Next connection in the nodes to_nat_connections list */
-	struct ecm_db_connection_instance *node_to_nat_prev;	/* Prev connection in the nodes to_nat_connections list */
+	struct ecm_db_connection_instance *node_next[ECM_DB_OBJ_DIR_MAX];	/* Next connection in the nodes specified direction list */
+	struct ecm_db_connection_instance *node_prev[ECM_DB_OBJ_DIR_MAX];	/* Prev connection in the nodes specified direction list */
 #endif
-
 	/*
 	 * From / To interfaces list
-	 */
-	struct ecm_db_iface_instance *from_interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-								/* The outermost to innnermost interface this connection is using in the from path.
-								 * Relationships are recorded from [ECM_DB_IFACE_HEIRARCHY_MAX - 1] to [0]
-								 */
-	int32_t from_interface_first;				/* The index of the first interface in the list */
-	bool from_interface_set;				/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
-	struct ecm_db_iface_instance *to_interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-								/* The outermost to innnermost interface this connection is using in the to path */
-	int32_t to_interface_first;				/* The index of the first interface in the list */
-	bool to_interface_set;					/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
-
-	/*
-	 * From / To NAT interfaces list
+	 * From NAT / To NAT interfaces list
 	 * GGG TODO Not sure if NAT interface lists are necessary or appropriate or practical.
 	 * Needs to be assessed if it gives any clear benefit and possibly remove these if not.
 	 */
-	struct ecm_db_iface_instance *from_nat_interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-								/* The outermost to innnermost interface this connection is using in the from path.
+	struct ecm_db_iface_instance *interfaces[ECM_DB_OBJ_DIR_MAX][ECM_DB_IFACE_HEIRARCHY_MAX];
+								/* The outermost to innnermost interface this connection is using in the specified direction
+								 * which is defined in the first dimension of the array.
 								 * Relationships are recorded from [ECM_DB_IFACE_HEIRARCHY_MAX - 1] to [0]
 								 */
-	int32_t from_nat_interface_first;			/* The index of the first interface in the list */
-	bool from_nat_interface_set;				/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
-	struct ecm_db_iface_instance *to_nat_interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-								/* The outermost to innnermost interface this connection is using in the to path */
-	int32_t to_nat_interface_first;				/* The index of the first interface in the list */
-	bool to_nat_interface_set;				/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
+	int32_t interface_first[ECM_DB_OBJ_DIR_MAX];	/* The index of the first interface in the list */
+	bool interface_set[ECM_DB_OBJ_DIR_MAX];		/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
 
 #ifdef ECM_MULTICAST_ENABLE
 	/*
@@ -267,6 +215,7 @@ struct ecm_db_connection_instance {
 #define ECM_DB_CONNECTION_FLAGS_INSERTED 1			/* Connection is inserted into connection database tables */
 
 int _ecm_db_connection_count_get(void);
+
 int ecm_db_connection_count_get(void);
 int ecm_db_connection_count_by_protocol_get(int protocol);
 struct ecm_front_end_connection_instance *ecm_db_connection_front_end_get_and_ref(struct ecm_db_connection_instance *ci);
@@ -289,30 +238,17 @@ void ecm_db_connection_data_stats_get(struct ecm_db_connection_instance *ci,
 
 uint32_t ecm_db_connection_serial_get(struct ecm_db_connection_instance *ci);
 
-void ecm_db_connection_from_address_get(struct ecm_db_connection_instance *ci, ip_addr_t addr);
-void ecm_db_connection_to_address_get(struct ecm_db_connection_instance *ci, ip_addr_t addr);
-void ecm_db_connection_from_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr);
-void ecm_db_connection_to_address_nat_get(struct ecm_db_connection_instance *ci, ip_addr_t addr);
+void ecm_db_connection_address_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, ip_addr_t addr);
 
-int ecm_db_connection_from_port_get(struct ecm_db_connection_instance *ci);
-int ecm_db_connection_to_port_get(struct ecm_db_connection_instance *ci);
-int ecm_db_connection_from_port_nat_get(struct ecm_db_connection_instance *ci);
-int ecm_db_connection_to_port_nat_get(struct ecm_db_connection_instance *ci);
+int ecm_db_connection_port_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-void ecm_db_connection_from_node_address_get(struct ecm_db_connection_instance *ci, uint8_t *address_buffer);
-void ecm_db_connection_to_node_address_get(struct ecm_db_connection_instance *ci, uint8_t *address_buffer);
-void ecm_db_connection_from_nat_node_address_get(struct ecm_db_connection_instance *ci, uint8_t *address_buffer);
-void ecm_db_connection_to_nat_node_address_get(struct ecm_db_connection_instance *ci, uint8_t *address_buffer);
+void ecm_db_connection_node_address_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, uint8_t *address_buffer);
 
-void ecm_db_connection_from_iface_name_get(struct ecm_db_connection_instance *ci, char *name_buffer);
-void ecm_db_connection_to_iface_name_get(struct ecm_db_connection_instance *ci, char *name_buffer);
+void ecm_db_connection_iface_name_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, char *name_buffer);
 
-int ecm_db_connection_from_iface_mtu_get(struct ecm_db_connection_instance *ci);
-int ecm_db_connection_to_iface_mtu_get(struct ecm_db_connection_instance *ci);
+int ecm_db_connection_iface_mtu_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-ecm_db_iface_type_t ecm_db_connection_from_iface_type_get(struct ecm_db_connection_instance *ci);
-ecm_db_iface_type_t ecm_db_connection_to_iface_type_get(struct ecm_db_connection_instance *ci);
-ecm_db_iface_type_t ecm_db_connection_iface_type_get(struct ecm_db_iface_instance *ii);
+ecm_db_iface_type_t ecm_db_connection_iface_type_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
 uint16_t ecm_db_connection_regeneration_occurrances_get(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_regeneration_completed(struct ecm_db_connection_instance *ci);
@@ -345,54 +281,28 @@ struct ecm_db_connection_instance *ecm_db_connection_find_and_ref(ip_addr_t host
 								  int host1_port,
 								  int host2_port);
 
-struct ecm_db_node_instance *ecm_db_connection_node_from_get_and_ref(struct ecm_db_connection_instance *ci);
-struct ecm_db_node_instance *ecm_db_connection_node_to_get_and_ref(struct ecm_db_connection_instance *ci);
+struct ecm_db_node_instance *ecm_db_connection_node_get_and_ref(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-struct ecm_db_mapping_instance *ecm_db_connection_mapping_from_get_and_ref(struct ecm_db_connection_instance *ci);
-struct ecm_db_mapping_instance *ecm_db_connection_mapping_to_get_and_ref(struct ecm_db_connection_instance *ci);
-struct ecm_db_mapping_instance *ecm_db_connection_mapping_nat_from_get_and_ref(struct ecm_db_connection_instance *ci);
-struct ecm_db_mapping_instance *ecm_db_connection_mapping_nat_to_get_and_ref(struct ecm_db_connection_instance *ci);
+struct ecm_db_mapping_instance *ecm_db_connection_mapping_get_and_ref(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-struct ecm_db_connection_instance *ecm_db_connection_iface_from_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_iface_to_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_iface_nat_from_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_iface_nat_to_get_and_ref_next(struct ecm_db_connection_instance *ci);
+struct ecm_db_connection_instance *ecm_db_connection_iface_get_and_ref_next(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-struct ecm_db_connection_instance *ecm_db_connection_mapping_from_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_mapping_to_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_mapping_nat_from_get_and_ref_next(struct ecm_db_connection_instance *ci);
-struct ecm_db_connection_instance *ecm_db_connection_mapping_nat_to_get_and_ref_next(struct ecm_db_connection_instance *ci);
+struct ecm_db_connection_instance *ecm_db_connection_mapping_get_and_ref_next(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
 void ecm_db_connection_interfaces_deref(struct ecm_db_iface_instance *interfaces[], int32_t first);
 
-void ecm_db_connection_from_interfaces_reset(struct ecm_db_connection_instance *ci,
-					     struct ecm_db_iface_instance *interfaces[], int32_t new_first);
-void ecm_db_connection_to_interfaces_reset(struct ecm_db_connection_instance *ci,
-					   struct ecm_db_iface_instance *interfaces[], int32_t new_first);
-void ecm_db_connection_from_nat_interfaces_reset(struct ecm_db_connection_instance *ci,
-						 struct ecm_db_iface_instance *interfaces[], int32_t new_first);
-void ecm_db_connection_to_nat_interfaces_reset(struct ecm_db_connection_instance *ci,
-					       struct ecm_db_iface_instance *interfaces[], int32_t new_first);
+void ecm_db_connection_interfaces_reset(struct ecm_db_connection_instance *ci,
+					struct ecm_db_iface_instance *interfaces[], int32_t new_first, ecm_db_obj_dir_t dir);
 
-void ecm_db_connection_from_interfaces_clear(struct ecm_db_connection_instance *ci);
-void ecm_db_connection_to_interfaces_clear(struct ecm_db_connection_instance *ci);
-void ecm_db_connection_from_nat_interfaces_clear(struct ecm_db_connection_instance *ci);
-void ecm_db_connection_to_nat_interfaces_clear(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_interfaces_clear(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-bool ecm_db_connection_from_interfaces_set_check(struct ecm_db_connection_instance *ci);
-bool ecm_db_connection_to_interfaces_set_check(struct ecm_db_connection_instance *ci);
-bool ecm_db_connection_from_nat_interfaces_set_check(struct ecm_db_connection_instance *ci);
-bool ecm_db_connection_to_nat_interfaces_set_check(struct ecm_db_connection_instance *ci);
+bool ecm_db_connection_interfaces_set_check(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-int32_t ecm_db_connection_from_interfaces_get_count(struct ecm_db_connection_instance *ci);
-int32_t ecm_db_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci);
-int32_t ecm_db_connection_from_nat_interfaces_get_count(struct ecm_db_connection_instance *ci);
-int32_t ecm_db_connection_to_nat_interfaces_get_count(struct ecm_db_connection_instance *ci);
+int32_t ecm_db_connection_interfaces_get_count(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
-int32_t ecm_db_connection_from_interfaces_get_and_ref(struct ecm_db_connection_instance *ci, struct ecm_db_iface_instance *interfaces[]);
-int32_t ecm_db_connection_to_interfaces_get_and_ref(struct ecm_db_connection_instance *ci, struct ecm_db_iface_instance *interfaces[]);
-int32_t ecm_db_connection_from_nat_interfaces_get_and_ref(struct ecm_db_connection_instance *ci, struct ecm_db_iface_instance *interfaces[]);
-int32_t ecm_db_connection_to_nat_interfaces_get_and_ref(struct ecm_db_connection_instance *ci, struct ecm_db_iface_instance *interfaces[]);
+int32_t ecm_db_connection_interfaces_get_and_ref(struct ecm_db_connection_instance *ci,
+						 struct ecm_db_iface_instance *interfaces[],
+						 ecm_db_obj_dir_t dir);
 
 void ecm_db_connection_classifier_assign(struct ecm_db_connection_instance *ci,
 					 struct ecm_classifier_instance *new_ca);
@@ -420,14 +330,8 @@ void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_
 
 struct ecm_db_connection_instance *ecm_db_connection_alloc(void);
 void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
-			   struct ecm_db_mapping_instance *mapping_from,
-			   struct ecm_db_mapping_instance *mapping_to,
-			   struct ecm_db_mapping_instance *mapping_nat_from,
-			   struct ecm_db_mapping_instance *mapping_nat_to,
-			   struct ecm_db_node_instance *from_node,
-			   struct ecm_db_node_instance *to_node,
-			   struct ecm_db_node_instance *from_nat_node,
-			   struct ecm_db_node_instance *to_nat_node,
+			   struct ecm_db_mapping_instance *mapping[],
+			   struct ecm_db_node_instance *node[],
 			   int ip_version, int protocol, ecm_db_direction_t dir,
 			   ecm_db_connection_final_callback_t final,
 			   ecm_db_connection_defunct_callback_t defunct,

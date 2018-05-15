@@ -102,6 +102,15 @@ static inline ecm_db_node_hash_t ecm_db_node_generate_hash_index(uint8_t *addres
 }
 
 /*
+ * _ecm_db_node_count_get()
+ *	Return the node count (lockless).
+ */
+int _ecm_db_node_count_get(void)
+{
+	return ecm_db_node_count;
+}
+
+/*
  * _ecm_db_node_ref()
  */
 void _ecm_db_node_ref(struct ecm_db_node_instance *ni)
@@ -216,6 +225,9 @@ EXPORT_SYMBOL(ecm_db_node_get_and_ref_next);
  */
 int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 {
+#if (DEBUG_LEVEL >= 1)
+	int dir;
+#endif
 	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed\n", ni);
 
 	spin_lock_bh(&ecm_db_lock);
@@ -230,10 +242,11 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 	}
 
 #ifdef ECM_DB_XREF_ENABLE
-	DEBUG_ASSERT((ni->from_connections == NULL) && (ni->from_connections_count == 0), "%p: from_connections not null\n", ni);
-	DEBUG_ASSERT((ni->to_connections == NULL) && (ni->to_connections_count == 0), "%p: to_connections not null\n", ni);
-	DEBUG_ASSERT((ni->from_nat_connections == NULL) && (ni->from_nat_connections_count == 0), "%p: from_nat_connections not null\n", ni);
-	DEBUG_ASSERT((ni->to_nat_connections == NULL) && (ni->to_nat_connections_count == 0), "%p: to_nat_connections not null\n", ni);
+#if (DEBUG_LEVEL >= 1)
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%p: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
+	}
+#endif
 #endif
 
 	/*
@@ -472,6 +485,9 @@ EXPORT_SYMBOL(ecm_db_node_iface_get_and_ref);
 void ecm_db_node_add(struct ecm_db_node_instance *ni, struct ecm_db_iface_instance *ii, uint8_t *address,
 					ecm_db_node_final_callback_t final, void *arg)
 {
+#if (DEBUG_LEVEL >= 1)
+	int dir;
+#endif
 	ecm_db_node_hash_t hash_index;
 	struct ecm_db_listener_instance *li;
 
@@ -482,10 +498,11 @@ void ecm_db_node_add(struct ecm_db_node_instance *ni, struct ecm_db_iface_instan
 	DEBUG_ASSERT((ni->iface == NULL), "%p: iface not null\n", ni);
 	DEBUG_ASSERT(!(ni->flags & ECM_DB_NODE_FLAGS_INSERTED), "%p: inserted\n", ni);
 #ifdef ECM_DB_XREF_ENABLE
-	DEBUG_ASSERT((ni->from_connections == NULL) && (ni->from_connections_count == 0), "%p: from_connections not null\n", ni);
-	DEBUG_ASSERT((ni->to_connections == NULL) && (ni->to_connections_count == 0), "%p: to_connections not null\n", ni);
-	DEBUG_ASSERT((ni->from_nat_connections == NULL) && (ni->from_nat_connections_count == 0), "%p: from_nat_connections not null\n", ni);
-	DEBUG_ASSERT((ni->to_nat_connections == NULL) && (ni->to_nat_connections_count == 0), "%p: to_nat_connections not null\n", ni);
+#if (DEBUG_LEVEL >= 1)
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%p: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
+	}
+#endif
 #endif
 	spin_unlock_bh(&ecm_db_lock);
 
@@ -577,10 +594,8 @@ int ecm_db_node_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_nod
 	int result;
 	char address[ECM_MAC_ADDR_STR_BUFF_SIZE];
 #ifdef ECM_DB_XREF_ENABLE
-	int from_connections_count;
-	int to_connections_count;
-	int from_nat_connections_count;
-	int to_nat_connections_count;
+	int dir;
+	int connections_count[ECM_DB_OBJ_DIR_MAX];
 #endif
 	uint32_t time_added;
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
@@ -604,10 +619,9 @@ int ecm_db_node_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_nod
 	 */
 #ifdef ECM_DB_XREF_ENABLE
 	spin_lock_bh(&ecm_db_lock);
-	from_connections_count = ni->from_connections_count;
-	to_connections_count = ni->to_connections_count;
-	from_nat_connections_count = ni->from_nat_connections_count;
-	to_nat_connections_count = ni->to_nat_connections_count;
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		connections_count[dir] = ni->connections_count[dir];
+	}
 	spin_unlock_bh(&ecm_db_lock);
 #endif
 	time_added = ni->time_added;
@@ -631,17 +645,10 @@ int ecm_db_node_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_nod
 		return result;
 	}
 #ifdef ECM_DB_XREF_ENABLE
-	if ((result = ecm_state_write(sfi, "from_connections_count", "%d", from_connections_count))) {
-		return result;
-	}
-	if ((result = ecm_state_write(sfi, "to_connections_count", "%d", to_connections_count))) {
-		return result;
-	}
-	if ((result = ecm_state_write(sfi, "from_nat_connections_count", "%d", from_nat_connections_count))) {
-		return result;
-	}
-	if ((result = ecm_state_write(sfi, "to_nat_connections_count", "%d", to_nat_connections_count))) {
-		return result;
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		if ((result = ecm_state_write(sfi, "%s_connections_count", "%d", ecm_db_obj_dir_strings[dir], connections_count[dir]))) {
+			return result;
+		}
 	}
 #endif
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
@@ -738,15 +745,17 @@ EXPORT_SYMBOL(ecm_db_node_alloc);
 
 #ifdef ECM_DB_XREF_ENABLE
 /*
- * ecm_db_node_from_connections_get_and_ref_first()
- *	Obtain a ref to the first connection instance of "from list" of node, if any
+ * ecm_db_node_connections_get_and_ref_first()
+ *	Obtain a ref to the first connection instance of node on this direction, if any
  */
-static inline struct ecm_db_connection_instance *ecm_db_node_from_connections_get_and_ref_first(struct ecm_db_node_instance *node)
+static inline struct ecm_db_connection_instance *
+ecm_db_node_connections_get_and_ref_first(struct ecm_db_node_instance *node,
+					  ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *ci;
 	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", node);
 	spin_lock_bh(&ecm_db_lock);
-	ci = node->from_connections;
+	ci = node->connections[dir];
 	if (ci) {
 		_ecm_db_connection_ref(ci);
 	}
@@ -755,117 +764,17 @@ static inline struct ecm_db_connection_instance *ecm_db_node_from_connections_ge
 }
 
 /*
- * ecm_db_node_from_connection_get_and_ref_next()
- *	Return the next connection in the "from list" of given a connection
+ * ecm_db_node_connection_get_and_ref_next()
+ *	Return the next connection in the specified direction of given a connection
  */
-static inline struct ecm_db_connection_instance *ecm_db_node_from_connection_get_and_ref_next(struct ecm_db_connection_instance *ci)
+static inline struct ecm_db_connection_instance *
+ecm_db_node_connection_get_and_ref_next(struct ecm_db_connection_instance *ci,
+					ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *cin;
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
 	spin_lock_bh(&ecm_db_lock);
-	cin = ci->node_from_next;
-	if (cin) {
-		_ecm_db_connection_ref(cin);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return cin;
-}
-
-/*
- * ecm_db_node_to_connections_get_and_ref_first()
- *	Obtain a ref to the first connection instance of a "to list" of node, if any
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_to_connections_get_and_ref_first(struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci;
-	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", node);
-	spin_lock_bh(&ecm_db_lock);
-	ci = node->to_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return ci;
-}
-
-/*
- * ecm_db_node_to_connection_get_and_ref_next()
- *	Return the next connection in the "to list" of given a connection
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_to_connection_get_and_ref_next(struct ecm_db_connection_instance *ci)
-{
-	struct ecm_db_connection_instance *cin;
-	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	spin_lock_bh(&ecm_db_lock);
-	cin = ci->node_to_next;
-	if (cin) {
-		_ecm_db_connection_ref(cin);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return cin;
-}
-
-/*
- * ecm_db_node_from_nat_connections_get_and_ref_first()
- *	Obtain a ref to the first connection instance of a "from_nat list" of node, if any
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_from_nat_connections_get_and_ref_first(struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci;
-	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", node);
-	spin_lock_bh(&ecm_db_lock);
-	ci = node->from_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return ci;
-}
-
-/*
- * ecm_db_node_from_nat_connection_get_and_ref_next()
- *	Return the next connection in the "from nat list" of given a connection
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_from_nat_connection_get_and_ref_next(struct ecm_db_connection_instance *ci)
-{
-	struct ecm_db_connection_instance *cin;
-	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	spin_lock_bh(&ecm_db_lock);
-	cin = ci->node_from_nat_next;
-	if (cin) {
-		_ecm_db_connection_ref(cin);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return cin;
-}
-
-/*
- * ecm_db_node_to_nat_connections_get_and_ref_first()
- *	Obtain a ref to the first connection instance of a "to_nat list" of node, if any
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_to_nat_connections_get_and_ref_first(struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci;
-	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", node);
-	spin_lock_bh(&ecm_db_lock);
-	ci = node->to_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-	return ci;
-}
-
-/*
- * ecm_db_node_to_nat_connection_get_and_ref_next()
- *	Return the next connection in the "to nat list" of given a connection
- */
-static inline struct ecm_db_connection_instance *ecm_db_node_to_nat_connection_get_and_ref_next(struct ecm_db_connection_instance *ci)
-{
-	struct ecm_db_connection_instance *cin;
-	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
-	spin_lock_bh(&ecm_db_lock);
-	cin = ci->node_to_nat_next;
+	cin = ci->node_next[dir];
 	if (cin) {
 		_ecm_db_connection_ref(cin);
 	}
@@ -903,19 +812,19 @@ static bool ecm_db_should_keep_connection(
 }
 
 /*
- * ecm_db_traverse_node_from_connection_list_and_defunct()
- *	traverse from_list of a node and calls ecm_db_connection_make_defunct()
+ * ecm_db_traverse_node_connection_list_and_defunct()
+ *	traverse a node in the specified direction  and calls ecm_db_connection_make_defunct()
  *	for each entry
  */
-void ecm_db_traverse_node_from_connection_list_and_defunct(
-	struct ecm_db_node_instance *node)
+void ecm_db_traverse_node_connection_list_and_defunct(
+	struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *ci = NULL;
 
 	/*
 	 * Iterate all from connections
 	 */
-	ci = ecm_db_node_from_connections_get_and_ref_first(node);
+	ci = ecm_db_node_connections_get_and_ref_first(node, dir);
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
 
@@ -926,115 +835,14 @@ void ecm_db_traverse_node_from_connection_list_and_defunct(
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
 
-		cin = ecm_db_node_from_connection_get_and_ref_next(ci);
+		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
 	DEBUG_INFO("%p: Defuncting from node connection list complete\n", node);
 }
 
-/*
- * ecm_db_traverse_node_to_connection_list_and_defunct()
- *	traverse to_list of a node and calls ecm_db_connection_make_defunct()
- *	for each entry
- */
-void ecm_db_traverse_node_to_connection_list_and_defunct(
-	struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci = NULL;
-
-	/*
-	 * Iterate all to connections
-	 */
-	ci = ecm_db_node_to_connections_get_and_ref_first(node);
-	while (ci) {
-		struct ecm_db_connection_instance *cin;
-
-		if (!ecm_db_should_keep_connection(ci, node->address)) {
-			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_make_defunct(ci);
-		} else {
-			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
-		}
-
-		cin = ecm_db_node_to_connection_get_and_ref_next(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
-	}
-	DEBUG_INFO("%p: Defuncting to node connection list complete\n", node);
-}
-
-/*
- * ecm_db_traverse_node_from_nat_connection_list_and_defunct()
- *	traverse from_nat_list of a node and calls ecm_db_connection_make_defunct()
- *	for each entry
- */
-void ecm_db_traverse_node_from_nat_connection_list_and_defunct(
-	struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci = NULL;
-
-	/*
-	 * Iterate all from nat connections
-	 */
-	ci = ecm_db_node_from_nat_connections_get_and_ref_first(node);
-	while (ci) {
-		struct ecm_db_connection_instance *cin;
-
-		if (!ecm_db_should_keep_connection(ci, node->address)) {
-			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_make_defunct(ci);
-		} else {
-			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
-		}
-
-		cin = ecm_db_node_from_nat_connection_get_and_ref_next(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
-	}
-	DEBUG_INFO("%p: Defuncting from_nat node connection list complete\n", node);
-}
-
-/*
- * ecm_db_traverse_node_to_nat_connection_list_and_defunct()
- *	traverse to_nat_list of a node and calls ecm_db_connection_make_defunct()
- *	for each entry
- */
-void ecm_db_traverse_node_to_nat_connection_list_and_defunct(
-	struct ecm_db_node_instance *node)
-{
-	struct ecm_db_connection_instance *ci = NULL;
-
-	/*
-	 * Iterate all to nat connections
-	 */
-	ci = ecm_db_node_to_nat_connections_get_and_ref_first(node);
-	while (ci) {
-		struct ecm_db_connection_instance *cin;
-
-		if (!ecm_db_should_keep_connection(ci, node->address)) {
-			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
-			ecm_db_connection_make_defunct(ci);
-		} else {
-			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
-		}
-
-		cin = ecm_db_node_to_nat_connection_get_and_ref_next(ci);
-		ecm_db_connection_deref(ci);
-		ci = cin;
-	}
-	DEBUG_INFO("%p: Defuncting to_nat node connection list complete\n", node);
-}
 #endif
-
-/*
- * _ecm_db_node_count_get()
- *	Return the node count (lockless).
- */
-int _ecm_db_node_count_get(void)
-{
-	return ecm_db_node_count;
-}
 
 /*
  * ecm_db_node_init()

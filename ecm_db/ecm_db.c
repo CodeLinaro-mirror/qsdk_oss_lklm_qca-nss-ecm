@@ -97,6 +97,17 @@ uint32_t ecm_db_jhash_rnd __read_mostly;
 static atomic_t ecm_db_ip6route_work_count;
 
 /*
+ * ecm_db_obj_dir_strings[]
+ *      Common array that maps the object direction to a string
+ */
+char *ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_MAX] = {
+        "FROM",
+        "TO",
+        "FROM_NAT",
+        "TO_NAT"
+};
+
+/*
  * ecm_db_adv_stats_state_write()
  *	Write out advanced stats state
  */

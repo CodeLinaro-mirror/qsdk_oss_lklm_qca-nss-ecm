@@ -102,6 +102,15 @@ static inline ecm_db_mapping_hash_t ecm_db_mapping_generate_hash_index(ip_addr_t
 }
 
 /*
+ * _ecm_db_mapping_count_get()
+ *	Return the mapping count (lockless).
+ */
+int _ecm_db_mapping_count_get(void)
+{
+	return ecm_db_mapping_count;
+}
+
+/*
  * _ecm_db_mapping_ref()
  */
 void _ecm_db_mapping_ref(struct ecm_db_mapping_instance *mi)
@@ -173,18 +182,9 @@ int ecm_db_mapping_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_
 	int result;
 	int port;
 	char address[ECM_IP_ADDR_STR_BUFF_SIZE];
-	int tcp_from;
-	int tcp_to;
-	int udp_from;
-	int udp_to;
-	int from;
-	int to;
-	int tcp_nat_from;
-	int tcp_nat_to;
-	int udp_nat_from;
-	int udp_nat_to;
-	int nat_from;
-	int nat_to;
+	int tcp_count[ECM_DB_OBJ_DIR_MAX];
+	int udp_count[ECM_DB_OBJ_DIR_MAX];
+	int conn_count[ECM_DB_OBJ_DIR_MAX];
 	uint32_t time_added;
 	struct ecm_db_host_instance *hi;
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
@@ -197,6 +197,7 @@ int ecm_db_mapping_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_
 	uint64_t from_packet_total_dropped;
 	uint64_t to_packet_total_dropped;
 #endif
+	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
 
 	DEBUG_TRACE("Prep mapping msg for %p\n", mi);
 
@@ -204,8 +205,12 @@ int ecm_db_mapping_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_
 	 * Create a small xml stats element for our mapping.
 	 * Extract information from the mapping for inclusion into the message
 	 */
-	ecm_db_mapping_port_count_get(mi, &tcp_from, &tcp_to, &udp_from, &udp_to, &from, &to,
-			&tcp_nat_from, &tcp_nat_to, &udp_nat_from, &udp_nat_to, &nat_from, &nat_to);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(tcp_count, mi->tcp_count, sizeof(tcp_count));
+	memcpy(udp_count, mi->udp_count, sizeof(udp_count));
+	memcpy(conn_count, mi->conn_count, sizeof(conn_count));
+	spin_unlock_bh(&ecm_db_lock);
+
 	port = mi->port;
 	time_added = mi->time_added;
 	hi = mi->host;
@@ -226,51 +231,51 @@ int ecm_db_mapping_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "from", "%d", from))) {
+	if ((result = ecm_state_write(sfi, "from", "%d", conn_count[ECM_DB_OBJ_DIR_FROM]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "to", "%d", to))) {
+	if ((result = ecm_state_write(sfi, "to", "%d", conn_count[ECM_DB_OBJ_DIR_TO]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "tcp_from", "%d", tcp_from))) {
+	if ((result = ecm_state_write(sfi, "tcp_from", "%d", tcp_count[ECM_DB_OBJ_DIR_FROM]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "tcp_to", "%d", tcp_to))) {
+	if ((result = ecm_state_write(sfi, "tcp_to", "%d", tcp_count[ECM_DB_OBJ_DIR_TO]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "udp_from", "%d", udp_from))) {
+	if ((result = ecm_state_write(sfi, "udp_from", "%d", udp_count[ECM_DB_OBJ_DIR_FROM]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "udp_to", "%d", udp_to))) {
+	if ((result = ecm_state_write(sfi, "udp_to", "%d", udp_count[ECM_DB_OBJ_DIR_TO]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "nat_from", "%d", nat_from))) {
+	if ((result = ecm_state_write(sfi, "nat_from", "%d", conn_count[ECM_DB_OBJ_DIR_FROM_NAT]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "nat_to", "%d", nat_to))) {
+	if ((result = ecm_state_write(sfi, "nat_to", "%d", conn_count[ECM_DB_OBJ_DIR_TO_NAT]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "tcp_nat_from", "%d", tcp_nat_from))) {
+	if ((result = ecm_state_write(sfi, "tcp_nat_from", "%d", tcp_count[ECM_DB_OBJ_DIR_FROM_NAT]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "tcp_nat_to", "%d", tcp_nat_to))) {
+	if ((result = ecm_state_write(sfi, "tcp_nat_to", "%d", tcp_count[ECM_DB_OBJ_DIR_TO_NAT]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "udp_nat_from", "%d", udp_nat_from))) {
+	if ((result = ecm_state_write(sfi, "udp_nat_from", "%d", udp_count[ECM_DB_OBJ_DIR_FROM_NAT]))) {
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "udp_nat_to", "%d", udp_nat_to))) {
+	if ((result = ecm_state_write(sfi, "udp_nat_to", "%d", udp_count[ECM_DB_OBJ_DIR_TO_NAT]))) {
 		return result;
 	}
 
@@ -294,36 +299,6 @@ int ecm_db_mapping_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_
 	return ecm_state_prefix_remove(sfi);
 }
 EXPORT_SYMBOL(ecm_db_mapping_state_get);
-
-/*
- * ecm_db_mapping_port_count_get()
- *	Return port count stats for a mapping.
- */
-void ecm_db_mapping_port_count_get(struct ecm_db_mapping_instance *mi,
-						int *tcp_from, int *tcp_to, int *udp_from, int *udp_to, int *from, int *to,
-						int *tcp_nat_from, int *tcp_nat_to, int *udp_nat_from, int *udp_nat_to, int *nat_from, int *nat_to)
-{
-	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
-
-	spin_lock_bh(&ecm_db_lock);
-
-	*tcp_from = mi->tcp_from;
-	*tcp_to = mi->tcp_to;
-	*udp_from = mi->udp_from;
-	*udp_to = mi->udp_to;
-	*from = mi->from;
-	*to = mi->to;
-
-	*tcp_nat_from = mi->tcp_nat_from;
-	*tcp_nat_to = mi->tcp_nat_to;
-	*udp_nat_from = mi->udp_nat_from;
-	*udp_nat_to = mi->udp_nat_to;
-	*nat_from = mi->nat_from;
-	*nat_to = mi->nat_to;
-
-	spin_unlock_bh(&ecm_db_lock);
-}
-EXPORT_SYMBOL(ecm_db_mapping_port_count_get);
 
 /*
  * ecm_db_mapping_adress_get()
@@ -388,6 +363,9 @@ EXPORT_SYMBOL(ecm_db_mapping_get_and_ref_next);
  */
 int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 {
+#if (DEBUG_LEVEL >= 1)
+	int dir;
+#endif
 	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed\n", mi);
 
 	spin_lock_bh(&ecm_db_lock);
@@ -401,22 +379,15 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 		return refs;
 	}
 
-	DEBUG_ASSERT(!mi->tcp_from && !mi->udp_from && !mi->from, "%p: from not zero: %d, %d, %d\n",
-			mi, mi->tcp_from, mi->udp_from, mi->from);
-	DEBUG_ASSERT(!mi->tcp_to && !mi->udp_to && !mi->to, "%p: to not zero: %d, %d, %d\n",
-			mi, mi->tcp_to, mi->udp_to, mi->to);
-	DEBUG_ASSERT(!mi->tcp_nat_from && !mi->udp_nat_from && !mi->nat_from, "%p: nat_from not zero: %d, %d, %d\n",
-			mi, mi->tcp_nat_from, mi->udp_nat_from, mi->nat_from);
-	DEBUG_ASSERT(!mi->tcp_nat_to && !mi->udp_nat_to && !mi->nat_to, "%p: nat_to not zero: %d, %d, %d\n",
-			mi, mi->tcp_nat_to, mi->udp_nat_to, mi->nat_to);
-
+#if (DEBUG_LEVEL >= 1)
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		DEBUG_ASSERT(!mi->tcp_count[dir] && !mi->udp_count[dir] && !mi->conn_count[dir], "%p: %s not zero: %d, %d, %d\n",
+			     mi, ecm_db_obj_dir_strings[dir], mi->tcp_count[dir], mi->udp_count[dir], mi->conn_count[dir]);
 #ifdef ECM_DB_XREF_ENABLE
-	DEBUG_ASSERT(!mi->from_connections, "%p: from not null: %p\n", mi, mi->from_connections);
-	DEBUG_ASSERT(!mi->to_connections, "%p: to not null: %p\n", mi, mi->to_connections);
-	DEBUG_ASSERT(!mi->from_nat_connections, "%p: nat_from not null: %p\n", mi, mi->from_nat_connections);
-	DEBUG_ASSERT(!mi->to_nat_connections, "%p: nat_to not null: %p\n", mi, mi->to_nat_connections);
+		DEBUG_ASSERT(!mi->connections[dir], "%p: %s not null: %p\n", mi, ecm_db_obj_dir_strings[dir], mi->connections[dir]);
 #endif
-
+	}
+#endif
 	/*
 	 * Remove from database if inserted
 	 */
@@ -574,17 +545,17 @@ EXPORT_SYMBOL(ecm_db_mapping_find_and_ref);
 
 #ifdef ECM_DB_XREF_ENABLE
 /*
- * ecm_db_mapping_connections_from_get_and_ref_first()
- *	Return a reference to the first connection made from this mapping
+ * ecm_db_mapping_connections_get_and_ref_first()
+ *	Return a reference to the first connection made on this mapping in the specified direction.
  */
-struct ecm_db_connection_instance *ecm_db_mapping_connections_from_get_and_ref_first(struct ecm_db_mapping_instance *mi)
+struct ecm_db_connection_instance *ecm_db_mapping_connections_get_and_ref_first(struct ecm_db_mapping_instance *mi, ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *ci;
 
 	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
 
 	spin_lock_bh(&ecm_db_lock);
-	ci = mi->from_connections;
+	ci = mi->connections[dir];
 	if (ci) {
 		_ecm_db_connection_ref(ci);
 	}
@@ -592,70 +563,7 @@ struct ecm_db_connection_instance *ecm_db_mapping_connections_from_get_and_ref_f
 
 	return ci;
 }
-EXPORT_SYMBOL(ecm_db_mapping_connections_from_get_and_ref_first);
-
-/*
- * ecm_db_mapping_connections_to_get_and_ref_first()
- *	Return a reference to the first connection made to this mapping
- */
-struct ecm_db_connection_instance *ecm_db_mapping_connections_to_get_and_ref_first(struct ecm_db_mapping_instance *mi)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = mi->to_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_mapping_connections_to_get_and_ref_first);
-
-/*
- * ecm_db_mapping_connections_nat_from_get_and_ref_first()
- *	Return a reference to the first NAT connection made from this mapping
- */
-struct ecm_db_connection_instance *ecm_db_mapping_connections_nat_from_get_and_ref_first(struct ecm_db_mapping_instance *mi)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = mi->from_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_mapping_connections_nat_from_get_and_ref_first);
-
-/*
- * ecm_db_mapping_connections_nat_to_get_and_ref_first()
- *	Return a reference to the first NAT connection made to this mapping
- */
-struct ecm_db_connection_instance *ecm_db_mapping_connections_nat_to_get_and_ref_first(struct ecm_db_mapping_instance *mi)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = mi->to_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_mapping_connections_nat_to_get_and_ref_first);
+EXPORT_SYMBOL(ecm_db_mapping_connections_get_and_ref_first);
 #endif
 
 /*
@@ -683,8 +591,14 @@ int ecm_db_mapping_connections_total_count_get(struct ecm_db_mapping_instance *m
 	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed\n", mi);
 
 	spin_lock_bh(&ecm_db_lock);
-	count = mi->from + mi->to + mi->nat_from + mi->nat_to;
-	DEBUG_ASSERT(count >= 0, "%p: Count overflow from: %d, to: %d, nat_from: %d, nat_to: %d\n", mi, mi->from, mi->to, mi->nat_from, mi->nat_to);
+	count = mi->conn_count[ECM_DB_OBJ_DIR_FROM] +
+		mi->conn_count[ECM_DB_OBJ_DIR_TO] +
+		mi->conn_count[ECM_DB_OBJ_DIR_FROM_NAT] +
+		mi->conn_count[ECM_DB_OBJ_DIR_TO_NAT];
+
+	DEBUG_ASSERT(count >= 0, "%p: Count overflow from: %d, to: %d, nat_from: %d, nat_to: %d\n",
+		     mi, mi->conn_count[ECM_DB_OBJ_DIR_FROM], mi->conn_count[ECM_DB_OBJ_DIR_TO],
+		     mi->conn_count[ECM_DB_OBJ_DIR_FROM_NAT], mi->conn_count[ECM_DB_OBJ_DIR_TO_NAT]);
 	spin_unlock_bh(&ecm_db_lock);
 	return count;
 }
@@ -707,11 +621,15 @@ void ecm_db_mapping_add(struct ecm_db_mapping_instance *mi, struct ecm_db_host_i
 	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed\n", hi);
 	DEBUG_ASSERT(!(mi->flags & ECM_DB_MAPPING_FLAGS_INSERTED), "%p: inserted\n", mi);
 	DEBUG_ASSERT((hi->flags & ECM_DB_HOST_FLAGS_INSERTED), "%p: not inserted\n", hi);
-	DEBUG_ASSERT(!mi->tcp_from && !mi->tcp_to && !mi->udp_from && !mi->udp_to, "%p: protocol count errors\n", mi);
+	DEBUG_ASSERT(!mi->tcp_count[ECM_DB_OBJ_DIR_FROM] && !mi->tcp_count[ECM_DB_OBJ_DIR_TO] &&
+		     !mi->udp_count[ECM_DB_OBJ_DIR_FROM] && !mi->udp_count[ECM_DB_OBJ_DIR_TO],
+		     "%p: protocol count errors\n", mi);
 #ifdef ECM_DB_XREF_ENABLE
-	DEBUG_ASSERT(mi->from_connections == NULL, "%p: connections not null\n", mi);
-	DEBUG_ASSERT(mi->to_connections == NULL, "%p: connections not null\n", mi);
-	DEBUG_ASSERT(!mi->from && !mi->to && !mi->nat_from && !mi->nat_to, "%p: connection count errors\n", mi);
+	DEBUG_ASSERT(mi->connections[ECM_DB_OBJ_DIR_FROM] == NULL, "%p: connections not null\n", mi);
+	DEBUG_ASSERT(mi->connections[ECM_DB_OBJ_DIR_TO] == NULL, "%p: connections not null\n", mi);
+	DEBUG_ASSERT(!mi->conn_count[ECM_DB_OBJ_DIR_FROM] && !mi->conn_count[ECM_DB_OBJ_DIR_TO] &&
+		     !mi->conn_count[ECM_DB_OBJ_DIR_FROM_NAT] && !mi->conn_count[ECM_DB_OBJ_DIR_TO_NAT],
+		     "%p: connection count errors\n", mi);
 #endif
 	spin_unlock_bh(&ecm_db_lock);
 
@@ -907,15 +825,6 @@ bool ecm_db_mapping_init(struct dentry *dentry)
 	}
 
 	return true;
-}
-
-/*
- * _ecm_db_mapping_count_get()
- *	Return the mapping count (lockless).
- */
-int _ecm_db_mapping_count_get(void)
-{
-	return ecm_db_mapping_count;
 }
 
 /*

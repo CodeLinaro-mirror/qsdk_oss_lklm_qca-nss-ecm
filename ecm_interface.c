@@ -2840,8 +2840,8 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 			ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
 			for (i = current_interface_index; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 				DEBUG_TRACE("\tInterface @ %d: %p, type: %d, name: %s\n", \
-						i, to_list_single[i], ecm_db_connection_iface_type_get(to_list_single[i]), \
-						ecm_db_interface_type_to_string(ecm_db_connection_iface_type_get(to_list_single[i])));
+						i, to_list_single[i], ecm_db_iface_type_get(to_list_single[i]), \
+						ecm_db_interface_type_to_string(ecm_db_iface_type_get(to_list_single[i])));
 			}
 #endif
 			return current_interface_index;
@@ -4086,7 +4086,7 @@ lag_success:
 #if DEBUG_LEVEL > 1
 			for (i = current_interface_index; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 				DEBUG_TRACE("\tInterface @ %d: %p, type: %d, name: %s\n",
-						i, interfaces[i], ecm_db_connection_iface_type_get(interfaces[i]), ecm_db_interface_type_to_string(ecm_db_connection_iface_type_get(interfaces[i])));
+						i, interfaces[i], ecm_db_iface_type_get(interfaces[i]), ecm_db_interface_type_to_string(ecm_db_iface_type_get(interfaces[i])));
 
 			}
 #endif
@@ -4828,7 +4828,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 #if DEBUG_LEVEL > 1
 			for (i = current_interface_index; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 				DEBUG_TRACE("\tInterface @ %d: %p, type: %d, name: %s\n",
-						i, interfaces[i], ecm_db_connection_iface_type_get(interfaces[i]), ecm_db_interface_type_to_string(ecm_db_connection_iface_type_get(interfaces[i])));
+						i, interfaces[i], ecm_db_iface_type_get(interfaces[i]), ecm_db_interface_type_to_string(ecm_db_iface_type_get(interfaces[i])));
 
 			}
 #endif
@@ -4879,7 +4879,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 		struct net_device *dev;
 
 		ii = iface_list[list_index];
-		ii_type = ecm_db_connection_iface_type_get(ii);
+		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		DEBUG_TRACE("list_index: %d, ii: %p, type: %d (%s)\n", list_index, ii, ii_type, ii_name);
 
@@ -4976,8 +4976,8 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	 * from_rx_packets / bytes: the amount received by the 'from' interface
 	 */
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
-	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(ci, from_ifaces);
-	ecm_db_connection_from_node_address_get(ci, mac_addr);
+	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, mac_addr);
 	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
@@ -4987,8 +4987,8 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	 * to_rx_packets / bytes: the amount received by the 'to' interface
 	 */
 	DEBUG_INFO("%p: Update to interface stats\n", ci);
-	to_ifaces_first = ecm_db_connection_to_interfaces_get_and_ref(ci, to_ifaces);
-	ecm_db_connection_to_node_address_get(ci, mac_addr);
+	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, mac_addr);
 	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 }
@@ -5031,8 +5031,8 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 	 * from_rx_packets / bytes: the amount received by the 'from' interface
 	 */
 	DEBUG_INFO("%p: Update from interface stats\n", ci);
-	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(ci, from_ifaces);
-	ecm_db_connection_from_node_address_get(ci, mac_addr);
+	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, mac_addr);
 	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
@@ -5073,10 +5073,8 @@ EXPORT_SYMBOL(ecm_interface_multicast_stats_update);
 static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *ii)
 {
 #ifdef ECM_DB_XREF_ENABLE
-	struct ecm_db_connection_instance *ci_from;
-	struct ecm_db_connection_instance *ci_to;
-	struct ecm_db_connection_instance *ci_from_nat;
-	struct ecm_db_connection_instance *ci_to_nat;
+	int dir;
+	struct ecm_db_connection_instance *ci[ECM_DB_OBJ_DIR_MAX];
 	struct ecm_db_connection_instance *ci_mcast __attribute__ ((unused));
 #endif
 
@@ -5088,67 +5086,33 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
 	 */
 	ecm_db_regeneration_needed();
 #else
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		ci[dir] = ecm_db_iface_connections_get_and_ref_first(ii, dir);
+	}
+
 	/*
 	 * If the interface has NO connections then we re-generate all.
 	 */
-	ci_from = ecm_db_iface_connections_from_get_and_ref_first(ii);
-	ci_to = ecm_db_iface_connections_to_get_and_ref_first(ii);
-	ci_from_nat = ecm_db_iface_connections_nat_from_get_and_ref_first(ii);
-	ci_to_nat = ecm_db_iface_connections_nat_to_get_and_ref_first(ii);
-	if (!ci_from && !ci_to && !ci_from_nat && !ci_to_nat) {
+	if (!ci[ECM_DB_OBJ_DIR_FROM] && !ci[ECM_DB_OBJ_DIR_TO] && !ci[ECM_DB_OBJ_DIR_FROM_NAT] && !ci[ECM_DB_OBJ_DIR_TO_NAT]) {
 		ecm_db_regeneration_needed();
 		DEBUG_TRACE("%p: Regenerate (ALL) COMPLETE\n", ii);
 		return;
 	}
 
-	/*
-	 * Re-generate all connections associated with this interface
-	 */
-	DEBUG_TRACE("%p: Regenerate 'from' connections\n", ii);
-	while (ci_from) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_from);
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		/*
+		 * Re-generate all connections associated with this interface
+		 */
+		DEBUG_TRACE("%p: Regenerate %s direction connections\n", ii, ecm_db_obj_dir_strings[dir]);
+		while (ci[dir]) {
+			struct ecm_db_connection_instance *cin;
+			cin = ecm_db_connection_iface_get_and_ref_next(ci[dir], dir);
 
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_from);
-		ecm_db_connection_regenerate(ci_from);
-		ecm_db_connection_deref(ci_from);
-		ci_from = cin;
-	}
-
-	DEBUG_TRACE("%p: Regenerate 'to' connections\n", ii);
-	while (ci_to) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_to_get_and_ref_next(ci_to);
-
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_to);
-		ecm_db_connection_regenerate(ci_to);
-		ecm_db_connection_deref(ci_to);
-		ci_to = cin;
-	}
-
-	/*
-	 * GGG TODO These deprecated lists _nat_ lists will eventually be removed
-	 */
-	DEBUG_TRACE("%p: Regenerate 'from_nat' connections\n", ii);
-	while (ci_from_nat) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_nat_from_get_and_ref_next(ci_from_nat);
-
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_from_nat);
-		ecm_db_connection_regenerate(ci_from_nat);
-		ecm_db_connection_deref(ci_from_nat);
-		ci_from_nat = cin;
-	}
-
-	DEBUG_TRACE("%p: Regenerate 'to_nat' connections\n", ii);
-	while (ci_to_nat) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_nat_to_get_and_ref_next(ci_to_nat);
-
-		DEBUG_TRACE("%p: Regenerate: %p", ii, ci_to_nat);
-		ecm_db_connection_regenerate(ci_to_nat);
-		ecm_db_connection_deref(ci_to_nat);
-		ci_to_nat = cin;
+			DEBUG_TRACE("%p: Regenerate: %p", ii, ci[dir]);
+			ecm_db_connection_regenerate(ci[dir]);
+			ecm_db_connection_deref(ci[dir]);
+			ci[dir] = cin;
+		}
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
@@ -5212,73 +5176,39 @@ static void ecm_interface_defunct_connections(struct ecm_db_iface_instance *ii)
 #ifndef ECM_DB_XREF_ENABLE
 	ecm_db_connection_defunct_all();
 #else
-	struct ecm_db_connection_instance *ci_from;
-	struct ecm_db_connection_instance *ci_to;
-	struct ecm_db_connection_instance *ci_from_nat;
-	struct ecm_db_connection_instance *ci_to_nat;
+	int dir;
+	struct ecm_db_connection_instance *ci[ECM_DB_OBJ_DIR_MAX];
 	struct ecm_db_connection_instance *ci_mcast __attribute__ ((unused));
 
 	DEBUG_TRACE("defunct connections using interface: %p\n", ii);
 
-	ci_from = ecm_db_iface_connections_from_get_and_ref_first(ii);
-	ci_to = ecm_db_iface_connections_to_get_and_ref_first(ii);
-	ci_from_nat = ecm_db_iface_connections_nat_from_get_and_ref_first(ii);
-	ci_to_nat = ecm_db_iface_connections_nat_to_get_and_ref_first(ii);
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		ci[dir] = ecm_db_iface_connections_get_and_ref_first(ii, dir);
+	}
 
 	/*
 	 * Defunct ALL if all the four connection instances are NULL
 	 */
-	if (!ci_from && !ci_to && !ci_from_nat && !ci_to_nat) {
-		ecm_db_connection_defunct_all();
-		DEBUG_TRACE("%p: Defunct (ALL) COMPLETE\n", ii);
+	if (!ci[ECM_DB_OBJ_DIR_FROM] && !ci[ECM_DB_OBJ_DIR_TO] && !ci[ECM_DB_OBJ_DIR_FROM_NAT] && !ci[ECM_DB_OBJ_DIR_TO_NAT]) {
+		ecm_db_regeneration_needed();
+		DEBUG_TRACE("%p: Regenerate (ALL) COMPLETE\n", ii);
 		return;
 	}
 
 	/*
 	 * Defunct all connections associated with this interface
 	 */
-	DEBUG_TRACE("%p: Defunct 'from' connections\n", ii);
-	while (ci_from) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_from);
+	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+		DEBUG_TRACE("%p: Defunct %s direction connections\n", ii, ecm_db_obj_dir_strings[dir]);
+		while (ci[dir]) {
+			struct ecm_db_connection_instance *cin;
+			cin = ecm_db_connection_iface_get_and_ref_next(ci[dir], dir);
 
-		DEBUG_TRACE("%p: Defunct: %p", ii, ci_from);
-		ecm_db_connection_make_defunct(ci_from);
-		ecm_db_connection_deref(ci_from);
-		ci_from = cin;
-	}
-
-	DEBUG_TRACE("%p: Defunct 'to' connections\n", ii);
-	while (ci_to) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_to);
-
-		DEBUG_TRACE("%p: Defunct: %p", ii, ci_to);
-		ecm_db_connection_make_defunct(ci_to);
-		ecm_db_connection_deref(ci_to);
-		ci_to = cin;
-	}
-
-	DEBUG_TRACE("%p: Defunct 'from_nat' connections\n", ii);
-	while (ci_from_nat) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_from_nat);
-
-		DEBUG_TRACE("%p: Defunct: %p", ii, ci_from_nat);
-		ecm_db_connection_make_defunct(ci_from_nat);
-		ecm_db_connection_deref(ci_from_nat);
-		ci_from_nat = cin;
-	}
-
-	DEBUG_TRACE("%p: Defunct 'to_nat' connections\n", ii);
-	while (ci_to_nat) {
-		struct ecm_db_connection_instance *cin;
-		cin = ecm_db_connection_iface_from_get_and_ref_next(ci_to_nat);
-
-		DEBUG_TRACE("%p: Defunct: %p", ii, ci_to_nat);
-		ecm_db_connection_make_defunct(ci_to_nat);
-		ecm_db_connection_deref(ci_to_nat);
-		ci_to_nat = cin;
+			DEBUG_TRACE("%p: Defunct: %p", ii, ci[dir]);
+			ecm_db_connection_make_defunct(ci[dir]);
+			ecm_db_connection_deref(ci[dir]);
+			ci[dir] = cin;
+		}
 	}
 #endif
 	DEBUG_TRACE("%p: Defunct COMPLETE\n", ii);
@@ -5422,10 +5352,10 @@ void ecm_interface_node_connections_defunct(uint8_t *mac)
 		struct ecm_db_node_instance *nin;
 
 		if (ecm_db_node_is_mac_addr_equal(ni, mac)) {
-			ecm_db_traverse_node_from_connection_list_and_defunct(ni);
-			ecm_db_traverse_node_to_connection_list_and_defunct(ni);
-			ecm_db_traverse_node_from_nat_connection_list_and_defunct(ni);
-			ecm_db_traverse_node_to_nat_connection_list_and_defunct(ni);
+			int dir;
+			for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+				ecm_db_traverse_node_connection_list_and_defunct(ni, dir);
+			}
 		}
 
 		/*
@@ -5558,7 +5488,7 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
 		ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, ECM_DB_IFACE_HEIRARCHY_MAX - 1);
 		ifaces = (struct ecm_db_iface_instance **)ii_single;
 		to_iface = *ifaces;
-		ii_type = ecm_db_connection_iface_type_get(to_iface);
+		ii_type = ecm_db_iface_type_get(to_iface);
 
 		/*
 		 * If the update was received from bridge snooper, do not consider entries in the
@@ -5590,7 +5520,7 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
 			ifaces = (struct ecm_db_iface_instance **)ii_single;
 			to_iface = *ifaces;
 
-			ii_type = ecm_db_connection_iface_type_get(to_iface);
+			ii_type = ecm_db_iface_type_get(to_iface);
 			ifaces_identifier = ecm_db_iface_interface_identifier_get(to_iface);
 			for (if_index = 0; if_index < max_to_dev; if_index++) {
 				dst_if_index = ecm_db_multicast_if_num_get_at_index(mc_dst_if_index, if_index);

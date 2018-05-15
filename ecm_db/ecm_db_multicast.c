@@ -125,30 +125,30 @@ void ecm_db_multicast_connection_data_totals_update(struct ecm_db_connection_ins
 		ci->from_data_total += size;
 		ci->from_packet_total += packets;
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
-		ci->mapping_from->from_data_total += size;
-		ci->mapping_from->host->from_data_total += size;
-		ci->from_node->from_data_total += size;
-		ci->mapping_from->from_packet_total += packets;
-		ci->mapping_from->host->from_packet_total += packets;
-		ci->from_node->from_packet_total += packets;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->from_data_total += size;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->from_data_total += size;
+		ci->node[ECM_DB_OBJ_DIR_FROM]->from_data_total += size;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->from_packet_total += packets;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->from_packet_total += packets;
+		ci->node[ECM_DB_OBJ_DIR_FROM]->from_packet_total += packets;
 
 		/*
 		 * Data from the host is essentially TO the interface on which the host is reachable
 		 */
-		for (i = ci->from_interface_first; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
-			ci->from_interfaces[i]->to_data_total += size;
-			ci->from_interfaces[i]->to_packet_total += packets;
+		for (i = ci->interface_first[ECM_DB_OBJ_DIR_FROM]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
+			ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->to_data_total += size;
+			ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->to_packet_total += packets;
 		}
 
 		/*
 		 * Update totals sent TO the other side of the connection
 		 */
-		ci->mapping_to->to_data_total += size;
-		ci->mapping_to->host->to_data_total += size;
-		ci->to_node->to_data_total += size;
-		ci->mapping_to->to_packet_total += packets;
-		ci->mapping_to->host->to_packet_total += packets;
-		ci->to_node->to_packet_total += packets;
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->to_data_total += size;
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->host->to_data_total += size;
+		ci->node[ECM_DB_OBJ_DIR_TO]->to_data_total += size;
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->to_packet_total += packets;
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->host->to_packet_total += packets;
+		ci->node[ECM_DB_OBJ_DIR_TO]->to_packet_total += packets;
 #endif
 		spin_unlock_bh(&ecm_db_lock);
 		return;
@@ -160,29 +160,29 @@ void ecm_db_multicast_connection_data_totals_update(struct ecm_db_connection_ins
 	ci->to_data_total += size;
 	ci->to_packet_total += packets;
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
-	ci->mapping_to->from_data_total += size;
-	ci->mapping_to->host->from_data_total += size;
-	ci->to_node->from_data_total += size;
-	ci->mapping_to->from_packet_total += packets;
-	ci->mapping_to->host->from_packet_total += packets;
-	ci->to_node->from_packet_total += packets;
+	ci->mapping[ECM_DB_OBJ_DIR_TO]->from_data_total += size;
+	ci->mapping[ECM_DB_OBJ_DIR_TO]->host->from_data_total += size;
+	ci->node[ECM_DB_OBJ_DIR_TO]->from_data_total += size;
+	ci->mapping[ECM_DB_OBJ_DIR_TO]->from_packet_total += packets;
+	ci->mapping[ECM_DB_OBJ_DIR_TO]->host->from_packet_total += packets;
+	ci->node[ECM_DB_OBJ_DIR_TO]->from_packet_total += packets;
 
 	/*
 	 * Update totals sent TO the other side of the connection
 	 */
-	ci->mapping_from->to_data_total += size;
-	ci->mapping_from->host->to_data_total += size;
-	ci->from_node->to_data_total += size;
-	ci->mapping_from->to_packet_total += packets;
-	ci->mapping_from->host->to_packet_total += packets;
-	ci->from_node->to_packet_total += packets;
+	ci->mapping[ECM_DB_OBJ_DIR_FROM]->to_data_total += size;
+	ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->to_data_total += size;
+	ci->node[ECM_DB_OBJ_DIR_FROM]->to_data_total += size;
+	ci->mapping[ECM_DB_OBJ_DIR_FROM]->to_packet_total += packets;
+	ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->to_packet_total += packets;
+	ci->node[ECM_DB_OBJ_DIR_FROM]->to_packet_total += packets;
 
 	/*
 	 * Sending to the other side means FROM the interface we reach that host
 	 */
-	for (i = ci->from_interface_first; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
-		ci->from_interfaces[i]->from_data_total += size;
-		ci->from_interfaces[i]->from_packet_total += packets;
+	for (i = ci->interface_first[ECM_DB_OBJ_DIR_FROM]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
+		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_data_total += size;
+		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_packet_total += packets;
 	}
 #endif
 	spin_unlock_bh(&ecm_db_lock);

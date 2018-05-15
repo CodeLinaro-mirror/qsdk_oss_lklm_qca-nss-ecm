@@ -384,13 +384,13 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Get the interface lists of the connection, we must have at least one interface in the list to continue
 	 */
-	from_ifaces_first = ecm_db_connection_from_interfaces_get_and_ref(feci->ci, from_ifaces);
+	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in from_interfaces list!\n", nnpci);
 		goto non_ported_accel_bad_rule;
 	}
 
-	to_ifaces_first = ecm_db_connection_to_interfaces_get_and_ref(feci->ci, to_ifaces);
+	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Accel attempt failed - no interfaces in to_interfaces list!\n", nnpci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -450,7 +450,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		char *ii_name;
 
 		ii = from_ifaces[list_index];
-		ii_type = ecm_db_connection_iface_type_get(ii);
+		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		DEBUG_TRACE("%p: list_index: %d, ii: %p, type: %d (%s)\n", nnpci, list_index, ii, ii_type, ii_name);
 
@@ -618,7 +618,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		char *ii_name;
 
 		ii = to_ifaces[list_index];
-		ii_type = ecm_db_connection_iface_type_get(ii);
+		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		DEBUG_TRACE("%p: list_index: %d, ii: %p, type: %d (%s)\n", nnpci, list_index, ii, ii_type, ii_name);
 
@@ -818,38 +818,38 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * The flow_ip is where the connection established from
 	 */
-	ecm_db_connection_from_address_get(feci->ci, src_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->tuple.flow_ip, src_ip);
 
 	/*
 	 * The return_ip is where the connection is established to
 	 */
-	ecm_db_connection_to_address_get(feci->ci, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->tuple.return_ip, dest_ip);
 
 	/*
 	 * Same approach as above for port information
 	 */
-	nircm->tuple.flow_ident = htons(ecm_db_connection_from_port_get(feci->ci));
-	nircm->tuple.return_ident = htons(ecm_db_connection_to_port_nat_get(feci->ci));
+	nircm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nircm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
 
 	/*
 	 * Get mac addresses.
 	 * The src_mac is the mac address of the node that established the connection.
 	 * This will work whether the from_node is LAN (egress) or WAN (ingress).
 	 */
-	ecm_db_connection_from_node_address_get(feci->ci, (uint8_t *)nircm->conn_rule.flow_mac);
+	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)nircm->conn_rule.flow_mac);
 
 	/*
 	 * The dest_mac is the mac address of the node that the connection is esatblished to.
 	 */
-	ecm_db_connection_to_nat_node_address_get(feci->ci, (uint8_t *)nircm->conn_rule.return_mac);
+	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, (uint8_t *)nircm->conn_rule.return_mac);
 
 	/*
 	 * Get MTU information
 	 */
-	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_from_iface_mtu_get(feci->ci);
-	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_to_iface_mtu_get(feci->ci);
+	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 
 	/*
 	 * Sync our creation command from the assigned classifiers to get specific additional creation rules.
@@ -1197,12 +1197,12 @@ static void ecm_sfe_non_ported_ipv6_connection_decelerate(struct ecm_front_end_c
 	/*
 	 * Get addressing information
 	 */
-	ecm_db_connection_from_address_get(feci->ci, src_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.flow_ip, src_ip);
-	ecm_db_connection_to_address_nat_get(feci->ci, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.return_ip, dest_ip);
-	nirdm->tuple.flow_ident = htons(ecm_db_connection_from_port_get(feci->ci));
-	nirdm->tuple.return_ident = htons(ecm_db_connection_to_port_nat_get(feci->ci));
+	nirdm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nirdm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
 
 	DEBUG_INFO("%p: NON_PORTED Connection %p decelerate\n"
 			"src_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
@@ -1638,10 +1638,8 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 	 * If there is no existing connection then create a new one.
 	 */
 	if (unlikely(!ci)) {
-		struct ecm_db_mapping_instance *src_mi;
-		struct ecm_db_mapping_instance *dest_mi;
-		struct ecm_db_node_instance *src_ni;
-		struct ecm_db_node_instance *dest_ni;
+		struct ecm_db_mapping_instance *mi[ECM_DB_OBJ_DIR_MAX];
+		struct ecm_db_node_instance *ni[ECM_DB_OBJ_DIR_MAX];
 		struct ecm_classifier_default_instance *dci;
 		struct ecm_front_end_connection_instance *feci;
 		struct ecm_db_connection_instance *nci;
@@ -1722,79 +1720,83 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
 			return NF_ACCEPT;
 		}
-		ecm_db_connection_from_interfaces_reset(nci, from_list, from_list_first);
+		ecm_db_connection_interfaces_reset(nci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 
 		DEBUG_TRACE("%p: Create source node\n", nci);
-		src_ni = ecm_sfe_ipv6_node_establish_and_ref(feci, efeici.from_dev, efeici.from_mac_lookup_ip_addr, from_list, from_list_first, src_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_FROM] = ecm_sfe_ipv6_node_establish_and_ref(feci, efeici.from_dev, efeici.from_mac_lookup_ip_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
-		if (!src_ni) {
+		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to establish source node\n");
 			return NF_ACCEPT;
 		}
+		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ni[ECM_DB_OBJ_DIR_FROM];
 
 		DEBUG_TRACE("%p: Create source mapping\n", nci);
-		src_mi = ecm_sfe_ipv6_mapping_establish_and_ref(ip_src_addr, src_port);
-		if (!src_mi) {
-			ecm_db_node_deref(src_ni);
+		mi[ECM_DB_OBJ_DIR_FROM] = ecm_sfe_ipv6_mapping_establish_and_ref(ip_src_addr, src_port);
+		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to establish src mapping\n");
 			return NF_ACCEPT;
 		}
+		mi[ECM_DB_OBJ_DIR_FROM_NAT] = mi[ECM_DB_OBJ_DIR_FROM];
 
 		DEBUG_TRACE("%p: Create the 'to' interface heirarchy list\n", nci);
 		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL, skb);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			ecm_db_mapping_deref(src_mi);
-			ecm_db_node_deref(src_ni);
+			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
 			return NF_ACCEPT;
 		}
-		ecm_db_connection_to_interfaces_reset(nci, to_list, to_list_first);
+		ecm_db_connection_interfaces_reset(nci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 
 		DEBUG_TRACE("%p: Create dest node\n", nci);
-		dest_ni = ecm_sfe_ipv6_node_establish_and_ref(feci, efeici.to_dev, efeici.to_mac_lookup_ip_addr, to_list, to_list_first, dest_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_TO] = ecm_sfe_ipv6_node_establish_and_ref(feci, efeici.to_dev, efeici.to_mac_lookup_ip_addr, to_list, to_list_first, dest_node_addr, skb);
 		ecm_db_connection_interfaces_deref(to_list, to_list_first);
-		if (!dest_ni) {
-			ecm_db_mapping_deref(src_mi);
-			ecm_db_node_deref(src_ni);
+		if (!ni[ECM_DB_OBJ_DIR_TO]) {
+			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 			DEBUG_WARN("Failed to establish dest node\n");
 			return NF_ACCEPT;
 		}
+		ni[ECM_DB_OBJ_DIR_TO_NAT] = ni[ECM_DB_OBJ_DIR_TO];
 
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 
 		DEBUG_TRACE("%p: Create dest mapping\n", nci);
-		dest_mi = ecm_sfe_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
-		if (!dest_mi) {
-			ecm_db_node_deref(dest_ni);
-			ecm_db_mapping_deref(src_mi);
-			ecm_db_node_deref(src_ni);
+		mi[ECM_DB_OBJ_DIR_TO] = ecm_sfe_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
+		if (!mi[ECM_DB_OBJ_DIR_TO]) {
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
+			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to establish dest mapping\n");
 			return NF_ACCEPT;
 		}
+		mi[ECM_DB_OBJ_DIR_TO_NAT] = mi[ECM_DB_OBJ_DIR_TO];
 
 		/*
 		 * Every connection also needs a default classifier
 		 */
 		dci = ecm_classifier_default_instance_alloc(nci, protocol, ecm_dir, src_port, dest_port);
 		if (!dci) {
-			ecm_db_mapping_deref(dest_mi);
-			ecm_db_node_deref(dest_ni);
-			ecm_db_mapping_deref(src_mi);
-			ecm_db_node_deref(src_ni);
+			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO]);
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
+			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate default classifier\n");
@@ -1812,10 +1814,10 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 				aci->deref(aci);
 			} else {
 				dci->base.deref((struct ecm_classifier_instance *)dci);
-				ecm_db_mapping_deref(dest_mi);
-				ecm_db_node_deref(dest_ni);
-				ecm_db_mapping_deref(src_mi);
-				ecm_db_node_deref(src_ni);
+				ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO]);
+				ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
+				ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+				ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 				feci->deref(feci);
 				ecm_db_connection_deref(nci);
 				DEBUG_WARN("Failed to allocate classifiers assignments\n");
@@ -1858,8 +1860,7 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 			 * Add the new connection we created into the database
 			 * NOTE: assign to a short timer group for now - it is the assigned classifiers responsibility to do this
 			 */
-			ecm_db_connection_add(nci, src_mi, dest_mi, src_mi, dest_mi,
-					src_ni, dest_ni, src_ni, dest_ni,
+			ecm_db_connection_add(nci, mi, ni,
 					6, protocol, ecm_dir,
 					NULL /* final callback */,
 					ecm_sfe_non_ported_ipv6_connection_defunct_callback,
@@ -1875,10 +1876,10 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 		 * No longer need referenecs to the objects we created
 		 */
 		dci->base.deref((struct ecm_classifier_instance *)dci);
-		ecm_db_mapping_deref(dest_mi);
-		ecm_db_node_deref(dest_ni);
-		ecm_db_mapping_deref(src_mi);
-		ecm_db_node_deref(src_ni);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO]);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 		feci->deref(feci);
 	}
 
@@ -1895,7 +1896,7 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 	 * NOTE: This may be different than what sender is at the moment
 	 * given the connection we have located.
 	 */
-	ecm_db_connection_from_address_get(ci, match_addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
 	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {

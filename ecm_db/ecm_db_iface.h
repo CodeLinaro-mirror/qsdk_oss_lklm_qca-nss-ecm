@@ -69,11 +69,8 @@ struct ecm_db_iface_instance {
 	 * Interfaces keep this information for rapid iteration of connections e.g. when an interface 'goes down' we
 	 * can defunct all associated connections or destroy any accel engine rules.
 	 */
-	struct ecm_db_connection_instance *from_connections;		/* list of connections made from this interface */
-	struct ecm_db_connection_instance *to_connections;		/* list of connections made to this interface */
-
-	struct ecm_db_connection_instance *from_nat_connections;	/* list of NAT connections made from this interface */
-	struct ecm_db_connection_instance *to_nat_connections;		/* list of NAT connections made to this interface */
+	struct ecm_db_connection_instance *connections[ECM_DB_OBJ_DIR_MAX];
+							/* list of connections made on this interface */
 
 	/*
 	 * Normally only the node refers to the interfaces which it is reachable upon.
@@ -136,6 +133,8 @@ struct ecm_db_iface_instance {
 	uint16_t magic;
 #endif
 };
+
+int _ecm_db_iface_count_get(void);
 
 void _ecm_db_iface_ref(struct ecm_db_iface_instance *ii);
 void ecm_db_iface_ref(struct ecm_db_iface_instance *ii);
@@ -266,11 +265,9 @@ struct ecm_db_iface_instance *ecm_db_interface_get_and_ref_next(struct ecm_db_if
 #ifdef ECM_DB_XREF_ENABLE
 int ecm_db_iface_node_count_get(struct ecm_db_iface_instance *ii);
 struct ecm_db_node_instance *ecm_db_iface_nodes_get_and_ref_first(struct ecm_db_iface_instance *ii);
-
-struct ecm_db_connection_instance *ecm_db_iface_connections_from_get_and_ref_first(struct ecm_db_iface_instance *ii);
-struct ecm_db_connection_instance *ecm_db_iface_connections_to_get_and_ref_first(struct ecm_db_iface_instance *ii);
-struct ecm_db_connection_instance *ecm_db_iface_connections_nat_from_get_and_ref_first(struct ecm_db_iface_instance *ii);
-struct ecm_db_connection_instance *ecm_db_iface_connections_nat_to_get_and_ref_first(struct ecm_db_iface_instance *ii);
+struct ecm_db_connection_instance *
+ecm_db_iface_connections_get_and_ref_first(struct ecm_db_iface_instance *ii,
+					   ecm_db_obj_dir_t dir);
 #endif
 
 struct ecm_db_iface_instance *ecm_db_iface_alloc(void);
@@ -293,6 +290,8 @@ void ecm_db_iface_add_loopback(struct ecm_db_iface_instance *ii,
 
 char *ecm_db_interface_type_to_string(ecm_db_iface_type_t type);
 
+ecm_db_iface_type_t ecm_db_iface_type_get(struct ecm_db_iface_instance *ii);
+
 #ifdef ECM_STATE_OUTPUT_ENABLE
 int ecm_db_iface_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_iface_instance *ii);
 int ecm_db_iface_hash_table_lengths_get(int index);
@@ -300,5 +299,4 @@ int ecm_db_iface_hash_index_get_next(int index);
 int ecm_db_iface_hash_index_get_first(void);
 #endif
 
-int _ecm_db_iface_count_get(void);
 bool ecm_db_iface_init(struct dentry *dentry);

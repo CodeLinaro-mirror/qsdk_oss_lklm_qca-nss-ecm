@@ -108,6 +108,24 @@ typedef void (*ecm_db_iface_listener_removed_callback_t)(void *arg, struct ecm_d
 #define ECM_DB_CONNECTION_DEFUNCT_RETRY_TIMEOUT 5
 
 /*
+ * ECM database object direction.
+ */
+enum ecm_db_obj_dir {
+	ECM_DB_OBJ_DIR_FROM,
+	ECM_DB_OBJ_DIR_TO,
+	ECM_DB_OBJ_DIR_FROM_NAT,
+	ECM_DB_OBJ_DIR_TO_NAT,
+	ECM_DB_OBJ_DIR_MAX
+};
+typedef enum ecm_db_obj_dir ecm_db_obj_dir_t;
+
+/*
+ * Extern decleration of common array that maps
+ * the object direction to a string.
+ */
+extern char *ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_MAX];
+
+/*
  * Timer groups.
  * WARNING: Only connections may use a connection timer group as these are subject to reaping.
  */

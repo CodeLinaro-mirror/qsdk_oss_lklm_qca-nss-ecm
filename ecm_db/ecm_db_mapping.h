@@ -42,11 +42,7 @@ struct ecm_db_mapping_instance {
 	 * Mappings keep this information for rapid iteration of connections e.g. given a mapping we
 	 * can defunct all associated connections or destroy any accel engine rules.
 	 */
-	struct ecm_db_connection_instance *from_connections;		/* list of connections made from this host mapping */
-	struct ecm_db_connection_instance *to_connections;		/* list of connections made to this host mapping */
-
-	struct ecm_db_connection_instance *from_nat_connections;	/* list of NAT connections made from this host mapping */
-	struct ecm_db_connection_instance *to_nat_connections;		/* list of NAT connections made to this host mapping */
+	struct ecm_db_connection_instance *connections[ECM_DB_OBJ_DIR_MAX];	/* list of connections made on this host mapping in the specified direction*/
 
 	/*
 	 * While a mapping refers to the host it requires.
@@ -59,22 +55,9 @@ struct ecm_db_mapping_instance {
 	/*
 	 * Connection counts
 	 */
-	int tcp_from;
-	int tcp_to;
-	int udp_from;
-	int udp_to;
-	int tcp_nat_from;
-	int tcp_nat_to;
-	int udp_nat_from;
-	int udp_nat_to;
-
-	/*
-	 * Connection counts
-	 */
-	int from;							/* Number of connections made from */
-	int to;								/* Number of connections made to */
-	int nat_from;							/* Number of connections made from (nat) */
-	int nat_to;							/* Number of connections made to (nat) */
+	int tcp_count[ECM_DB_OBJ_DIR_MAX];	/* Number of TCP connections made in the specified direction */
+	int udp_count[ECM_DB_OBJ_DIR_MAX];	/* Number of UDP connections made in the specified direction */
+	int conn_count[ECM_DB_OBJ_DIR_MAX];	/* Number of connections made in the specified direction */
 
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
 	/*
@@ -100,6 +83,8 @@ struct ecm_db_mapping_instance {
 #endif
 };
 
+int _ecm_db_mapping_count_get(void);
+
 void _ecm_db_mapping_ref(struct ecm_db_mapping_instance *mi);
 void ecm_db_mapping_ref(struct ecm_db_mapping_instance *mi);
 int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi);
@@ -111,8 +96,6 @@ int ecm_db_mapping_hash_index_get_next(int index);
 int ecm_db_mapping_hash_index_get_first(void);
 #endif
 
-void ecm_db_mapping_port_count_get(struct ecm_db_mapping_instance *mi, int *tcp_from, int *tcp_to, int *udp_from, int *udp_to, int *from, int *to, int *tcp_nat_from, int *tcp_nat_to, int *udp_nat_from, int *udp_nat_to, int *nat_from, int *nat_to);
-
 void ecm_db_mapping_adress_get(struct ecm_db_mapping_instance *mi, ip_addr_t addr);
 int ecm_db_mapping_port_get(struct ecm_db_mapping_instance *mi);
 
@@ -122,15 +105,10 @@ struct ecm_db_mapping_instance *ecm_db_mapping_find_and_ref(ip_addr_t address, i
 struct ecm_db_mapping_instance *ecm_db_mappings_get_and_ref_first(void);
 struct ecm_db_mapping_instance *ecm_db_mapping_get_and_ref_next(struct ecm_db_mapping_instance *mi);
 
-struct ecm_db_connection_instance *ecm_db_mapping_connections_from_get_and_ref_first(struct ecm_db_mapping_instance *mi);
-struct ecm_db_connection_instance *ecm_db_mapping_connections_to_get_and_ref_first(struct ecm_db_mapping_instance *mi);
-struct ecm_db_connection_instance *ecm_db_mapping_connections_nat_from_get_and_ref_first(struct ecm_db_mapping_instance *mi);
-struct ecm_db_connection_instance *ecm_db_mapping_connections_nat_to_get_and_ref_first(struct ecm_db_mapping_instance *mi);
+struct ecm_db_connection_instance *ecm_db_mapping_connections_get_and_ref_first(struct ecm_db_mapping_instance *mi, ecm_db_obj_dir_t dir);
 
 struct ecm_db_mapping_instance *ecm_db_mapping_alloc(void);
 void ecm_db_mapping_add(struct ecm_db_mapping_instance *mi, struct ecm_db_host_instance *hi, int port, ecm_db_mapping_final_callback_t final, void *arg);
-
-int _ecm_db_mapping_count_get(void);
 
 bool ecm_db_mapping_init(struct dentry *dentry);
 void ecm_db_mapping_exit(void);

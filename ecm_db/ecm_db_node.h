@@ -38,15 +38,9 @@ struct ecm_db_node_instance {
 	 * Nodes keep this information for rapid iteration of connections e.g. when a node 'goes down' we
 	 * can defunct all associated connections or destroy any accel engine rules.
 	 */
-	struct ecm_db_connection_instance *from_connections;		/* list of connections made from this node */
-	struct ecm_db_connection_instance *to_connections;		/* list of connections made to this node */
-	int from_connections_count;					/* Number of connections in the from_connections list */
-	int to_connections_count;					/* Number of connections in the to_connections list */
-
-	struct ecm_db_connection_instance *from_nat_connections;	/* list of NAT connections made from this node */
-	struct ecm_db_connection_instance *to_nat_connections;		/* list of NAT connections made to this node */
-	int from_nat_connections_count;					/* Number of connections in the from_nat_connections list */
-	int to_nat_connections_count;					/* Number of connections in the to_nat_connections list */
+	struct ecm_db_connection_instance *connections[ECM_DB_OBJ_DIR_MAX];
+								/* list of connections made on this node */
+	int connections_count[ECM_DB_OBJ_DIR_MAX];		/* Number of connections on this node with the direction specified in the index*/
 
 	/*
 	 * Nodes reachable from an interface are stored in a linked list maintained by that interface.
@@ -80,15 +74,14 @@ struct ecm_db_node_instance {
 #endif
 };
 
+int _ecm_db_node_count_get(void);
+
 void _ecm_db_node_ref(struct ecm_db_node_instance *ni);
 void ecm_db_node_ref(struct ecm_db_node_instance *ni);
 int ecm_db_node_deref(struct ecm_db_node_instance *ni);
 
 #ifdef ECM_DB_XREF_ENABLE
-void ecm_db_traverse_node_from_connection_list_and_defunct(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_to_connection_list_and_defunct(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_from_nat_connection_list_and_defunct(struct ecm_db_node_instance *node);
-void ecm_db_traverse_node_to_nat_connection_list_and_defunct(struct ecm_db_node_instance *node);
+void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir);
 #endif
 
 void ecm_db_node_adress_get(struct ecm_db_node_instance *ni, uint8_t *address_buffer);
@@ -116,8 +109,6 @@ int ecm_db_node_hash_table_lengths_get(int index);
 int ecm_db_node_hash_index_get_next(int index);
 int ecm_db_node_hash_index_get_first(void);
 #endif
-
-int _ecm_db_node_count_get(void);
 
 bool ecm_db_node_init(struct dentry *dentry);
 void ecm_db_node_exit(void);

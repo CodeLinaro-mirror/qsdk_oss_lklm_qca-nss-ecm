@@ -68,6 +68,8 @@ struct ecm_db_host_instance {
 #endif
 };
 
+int _ecm_db_host_count_get(void);
+
 void _ecm_db_host_ref(struct ecm_db_host_instance *hi);
 void ecm_db_host_ref(struct ecm_db_host_instance *hi);
 int ecm_db_host_deref(struct ecm_db_host_instance *hi);
@@ -95,8 +97,6 @@ int ecm_db_host_hash_table_lengths_get(int index);
 int ecm_db_host_hash_index_get_next(int index);
 int ecm_db_host_hash_index_get_first(void);
 #endif
-
-int _ecm_db_host_count_get(void);
 
 bool ecm_db_host_init(struct dentry *dentry);
 void ecm_db_host_exit(void);

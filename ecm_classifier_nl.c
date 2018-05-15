@@ -340,10 +340,10 @@ static void ecm_classifier_nl_genl_msg_ACCEL_OK(struct ecm_classifier_nl_instanc
 	spin_unlock_bh(&ecm_classifier_nl_lock);
 
 	proto = ecm_db_connection_protocol_get(ci);
-	ecm_db_connection_from_address_get(ci, src_ip);
-	src_port = (uint16_t)ecm_db_connection_from_port_get(ci);
-	ecm_db_connection_to_address_get(ci, dst_ip);
-	dst_port = ecm_db_connection_to_port_get(ci);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	src_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	dst_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
 
 	ip_version = ecm_db_connection_ip_version_get(ci);
 	ecm_db_connection_deref(ci);
@@ -943,10 +943,10 @@ static struct nf_conn *ecm_classifier_nl_ct_get_and_ref(struct ecm_db_connection
 	DEBUG_ASSERT(ci != NULL, "ci was NULL for ct lookup");
 	ip_version = ecm_db_connection_ip_version_get(ci);
 	proto = ecm_db_connection_protocol_get(ci);
-	ecm_db_connection_from_address_get(ci, src_ip);
-	src_port = (uint16_t)ecm_db_connection_from_port_get(ci);
-	ecm_db_connection_to_address_nat_get(ci, dst_ip);
-	dst_port = (uint16_t)ecm_db_connection_to_port_nat_get(ci);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	src_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dst_ip);
+	dst_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT);
 
 	if (ip_version == 4) {
 		tuple.src.l3num = AF_INET;
@@ -1070,10 +1070,10 @@ static void ecm_classifier_nl_connection_removed(void *arg, struct ecm_db_connec
 	}
 
 	proto = ecm_db_connection_protocol_get(ci);
-	ecm_db_connection_from_address_get(ci, src_ip);
-	src_port = (uint16_t)ecm_db_connection_from_port_get(ci);
-	ecm_db_connection_to_address_get(ci, dst_ip);
-	dst_port = ecm_db_connection_to_port_get(ci);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	src_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	dst_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
 
 	DEBUG_INFO("%p: NL classifier: %p, issue Close\n", ci, cnli);
 	ecm_classifier_nl_genl_msg_closed(ci, cnli, proto, src_ip, dst_ip, src_port, dst_port);

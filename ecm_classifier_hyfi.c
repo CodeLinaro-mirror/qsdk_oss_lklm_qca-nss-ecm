@@ -340,7 +340,7 @@ hyfi_classifier_done:
  * and return -1.
  */
 static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance *ci,
-	bool direction_to)
+	ecm_db_obj_dir_t dir)
 {
 	int32_t intf_first;
 	int32_t system_index = -1;
@@ -348,13 +348,7 @@ static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance
 	int32_t i;
 	char name[IFNAMSIZ];
 
-	if (direction_to) {
-		intf_first = ecm_db_connection_to_interfaces_get_and_ref(
-			ci, interfaces);
-	} else {
-		intf_first = ecm_db_connection_from_interfaces_get_and_ref(
-			ci, interfaces);
-	}
+	intf_first = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, dir);
 
 	if (intf_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Error fetching interfaces\n", ci);
@@ -366,7 +360,7 @@ static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance
 	 */
 	for (i = ECM_DB_IFACE_HEIRARCHY_MAX - 1; i >= intf_first; i--) {
 		int32_t index;
-		if (ecm_db_connection_iface_type_get(interfaces[i]) == ECM_DB_IFACE_TYPE_BRIDGE) {
+		if (ecm_db_iface_type_get(interfaces[i]) == ECM_DB_IFACE_TYPE_BRIDGE) {
 			/*
 			 * Found the bridge - next interface should be the one we want
 			 */
@@ -386,7 +380,7 @@ static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance
 
 			ecm_db_iface_interface_name_get(interfaces[i-1], &name[0]);
 			DEBUG_TRACE("%p: Found bridge: '%s' interface is %d (%s)\n", ci,
-				direction_to ? "to" : "from", index, name);
+				ecm_db_obj_dir_strings[dir], index, name);
 			system_index = index;
 			break;
 		}
@@ -398,7 +392,7 @@ static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance
 		if (hyfi_ecm_is_port_on_hyfi_bridge(index)) {
 			ecm_db_iface_interface_name_get(interfaces[i], &name[0]);
 			DEBUG_TRACE("%p: Found bridge port: '%s' interface is %d (%s)\n", ci,
-				direction_to ? "to" : "from", index,
+				ecm_db_obj_dir_strings[dir], index,
 				name);
 			system_index = index;
 			break;
@@ -419,19 +413,13 @@ static int32_t ecm_classifier_hyfi_get_intf_id(struct ecm_db_connection_instance
  *	Get the bridge name from the connection hierarchy
  */
 static void ecm_classifier_hyfi_get_bridge_name(struct ecm_db_connection_instance *ci,
-		char *name_buffer, bool direction_to)
+		char *name_buffer, ecm_db_obj_dir_t dir)
 {
 	int32_t intf_first;
 	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	int32_t i;
 
-	if (direction_to) {
-		intf_first = ecm_db_connection_to_interfaces_get_and_ref(
-						ci, interfaces);
-	} else {
-		intf_first = ecm_db_connection_from_interfaces_get_and_ref(
-						ci, interfaces);
-	}
+	intf_first = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, dir);
 
 	if (intf_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_WARN("%p: Error fetching bridge name\n", ci);
@@ -509,10 +497,10 @@ static void ecm_classifier_hyfi_sync_to_v4(struct ecm_classifier_instance *aci, 
 	/*
 	 * Update the stats on Hy-Fi side
 	 */
-	to_system_index = ecm_classifier_hyfi_get_intf_id(ci, true);
-	from_system_index = ecm_classifier_hyfi_get_intf_id(ci, false);
+	to_system_index = ecm_classifier_hyfi_get_intf_id(ci, ECM_DB_OBJ_DIR_TO);
+	from_system_index = ecm_classifier_hyfi_get_intf_id(ci, ECM_DB_OBJ_DIR_FROM);
 
-	ecm_db_connection_to_node_address_get(ci, &flow_dest_addr[0]);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, &flow_dest_addr[0]);
 	ecm_db_connection_data_stats_get(ci, &from_bytes, &to_bytes,
 			&from_packets, &to_packets,
 			&from_bytes_dropped, &to_bytes_dropped,
@@ -836,8 +824,8 @@ struct ecm_classifier_hyfi_instance *ecm_classifier_hyfi_instance_alloc(struct e
 	 */
 	to_bridge[0] = 0;
 	from_bridge[0] = 0;
-	ecm_classifier_hyfi_get_bridge_name(ci, to_bridge, true);
-	ecm_classifier_hyfi_get_bridge_name(ci, from_bridge, false);
+	ecm_classifier_hyfi_get_bridge_name(ci, to_bridge, ECM_DB_OBJ_DIR_TO);
+	ecm_classifier_hyfi_get_bridge_name(ci, from_bridge, ECM_DB_OBJ_DIR_FROM);
 
 	if (!strlen(to_bridge) || !strlen(from_bridge)) {
 		/* one of the bridge name is null, typical

@@ -623,7 +623,7 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	/*
 	 * Early detection of DNS server port
 	 */
-	dst_port = ecm_db_connection_to_port_get(ci);
+	dst_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
 
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 
@@ -714,12 +714,12 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	 */
 	ip_version = ecm_db_connection_ip_version_get(ci);
 	protocol = ecm_db_connection_protocol_get(ci);
-	ecm_db_connection_from_address_get(ci, src_ip);
-	src_port = htons(ecm_db_connection_from_port_get(ci));
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
 	dst_port = htons(dst_port);
-	ecm_db_connection_to_address_get(ci, dst_ip);
-	ecm_db_connection_from_node_address_get(ci, src_mac);
-	ecm_db_connection_to_node_address_get(ci, dest_mac);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_mac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_mac);
 
 	/*
 	 * Default is permitted in case ip_version is unsupported here

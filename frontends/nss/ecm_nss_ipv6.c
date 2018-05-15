@@ -228,7 +228,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
 		struct ecm_db_interface_info_pppol2tpv2 pppol2tpv2_info;
 #endif
-		type = ecm_db_connection_iface_type_get(interface_list[i]);
+		type = ecm_db_iface_type_get(interface_list[i]);
 		DEBUG_INFO("Lookup node address, interface @ %d is type: %d\n", i, type);
 
 		switch (type) {
@@ -704,13 +704,13 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	is_routed = ecm_db_connection_is_routed_get(ci);
 	ecm_dir = ecm_db_connection_direction_get(ci);
 
-	ecm_db_connection_from_address_get(ci, ip_src_addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, ip_src_addr);
 
-	ecm_db_connection_to_address_get(ci, ip_dest_addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, ip_dest_addr);
 
-	ecm_db_connection_from_node_address_get(ci, src_node_addr);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_node_addr);
 
-	ecm_db_connection_to_node_address_get(ci, dest_node_addr);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_node_addr);
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
@@ -730,7 +730,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv6_retry_regen;
 	}
 
-	ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
+	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
@@ -743,7 +743,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 
 	feci->deref(feci);
-	ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
+	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
 	/*

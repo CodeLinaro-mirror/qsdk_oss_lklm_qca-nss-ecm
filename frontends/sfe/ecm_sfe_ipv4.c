@@ -190,7 +190,7 @@ struct ecm_db_node_instance *ecm_sfe_ipv4_node_establish_and_ref(struct ecm_fron
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe_info;
 #endif
-		type = ecm_db_connection_iface_type_get(interface_list[i]);
+		type = ecm_db_iface_type_get(interface_list[i]);
 		DEBUG_INFO("Lookup node address, interface @ %d is type: %d\n", i, type);
 
 		switch (type) {
@@ -572,17 +572,17 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	is_routed = ecm_db_connection_is_routed_get(ci);
 	ecm_dir = ecm_db_connection_direction_get(ci);
 
-	ecm_db_connection_from_address_get(ci, ip_src_addr);
-	ecm_db_connection_from_address_nat_get(ci, ip_src_addr_nat);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, ip_src_addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM_NAT, ip_src_addr_nat);
 
-	ecm_db_connection_to_address_get(ci, ip_dest_addr);
-	ecm_db_connection_to_address_nat_get(ci, ip_dest_addr_nat);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, ip_dest_addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, ip_dest_addr_nat);
 
-	ecm_db_connection_from_node_address_get(ci, src_node_addr);
-	ecm_db_connection_from_nat_node_address_get(ci, src_node_addr_nat);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_node_addr);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM_NAT, src_node_addr_nat);
 
-	ecm_db_connection_to_node_address_get(ci, dest_node_addr);
-	ecm_db_connection_to_nat_node_address_get(ci, dest_node_addr_nat);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_node_addr);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dest_node_addr_nat);
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
@@ -603,7 +603,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv4_retry_regen;
 	}
 
-	ecm_db_connection_from_interfaces_reset(ci, from_list, from_list_first);
+	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%p: Update the 'from NAT' interface heirarchy list\n", ci);
@@ -613,7 +613,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv4_retry_regen;
 	}
 
-	ecm_db_connection_from_nat_interfaces_reset(ci, from_nat_list, from_nat_list_first);
+	ecm_db_connection_interfaces_reset(ci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 	ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
@@ -623,7 +623,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv4_retry_regen;
 	}
 
-	ecm_db_connection_to_interfaces_reset(ci, to_list, to_list_first);
+	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
 	DEBUG_TRACE("%p: Update the 'to NAT' interface heirarchy list\n", ci);
@@ -636,7 +636,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 
 	feci->deref(feci);
-	ecm_db_connection_to_nat_interfaces_reset(ci, to_nat_list, to_nat_list_first);
+	ecm_db_connection_interfaces_reset(ci, to_nat_list, to_nat_list_first, ECM_DB_OBJ_DIR_TO_NAT);
 	ecm_db_connection_interfaces_deref(to_nat_list, to_nat_list_first);
 
 	/*

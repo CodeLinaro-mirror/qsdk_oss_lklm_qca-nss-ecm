@@ -112,6 +112,15 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 };
 
 /*
+ * _ecm_db_iface_count_get()
+ *	Return the iface count (lockless).
+ */
+int _ecm_db_iface_count_get(void)
+{
+	return ecm_db_iface_count;
+}
+
+/*
  * ecm_db_interface_type_to_string()
  *	Return a string buffer containing the type name of the interface
  */
@@ -121,6 +130,17 @@ char *ecm_db_interface_type_to_string(ecm_db_iface_type_t type)
 	return ecm_db_interface_type_names[(int)type];
 }
 EXPORT_SYMBOL(ecm_db_interface_type_to_string);
+
+/*
+ * ecm_db_iface_type_get()
+ *	Return type of interface
+ */
+ecm_db_iface_type_t ecm_db_iface_type_get(struct ecm_db_iface_instance *ii)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
+	return ii->type;
+}
+EXPORT_SYMBOL(ecm_db_iface_type_get);
 
 /*
  * ecm_db_iface_id_generate_hash_index()
@@ -1941,17 +1961,19 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_tunipip6);
 
 #ifdef ECM_DB_XREF_ENABLE
 /*
- * ecm_db_iface_connections_from_get_and_ref_first()
- *	Return a reference to the first connection made from this iface
+ * ecm_db_iface_connections_get_and_ref_first()
+ *	Return a reference to the first connection made for this iface on the specified direction.
  */
-struct ecm_db_connection_instance *ecm_db_iface_connections_from_get_and_ref_first(struct ecm_db_iface_instance *ii)
+struct ecm_db_connection_instance *
+ecm_db_iface_connections_get_and_ref_first(struct ecm_db_iface_instance *ii,
+					   ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *ci;
 
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
 
 	spin_lock_bh(&ecm_db_lock);
-	ci = ii->from_connections;
+	ci = ii->connections[dir];
 	if (ci) {
 		_ecm_db_connection_ref(ci);
 	}
@@ -1959,70 +1981,7 @@ struct ecm_db_connection_instance *ecm_db_iface_connections_from_get_and_ref_fir
 
 	return ci;
 }
-EXPORT_SYMBOL(ecm_db_iface_connections_from_get_and_ref_first);
-
-/*
- * ecm_db_iface_connections_to_get_and_ref_first()
- *	Return a reference to the first connection made to this iface
- */
-struct ecm_db_connection_instance *ecm_db_iface_connections_to_get_and_ref_first(struct ecm_db_iface_instance *ii)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = ii->to_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_iface_connections_to_get_and_ref_first);
-
-/*
- * ecm_db_iface_connections_nat_from_get_and_ref_first()
- *	Return a reference to the first NAT connection made from this iface
- */
-struct ecm_db_connection_instance *ecm_db_iface_connections_nat_from_get_and_ref_first(struct ecm_db_iface_instance *ii)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = ii->from_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_iface_connections_nat_from_get_and_ref_first);
-
-/*
- * ecm_db_iface_connections_nat_to_get_and_ref_first()
- *	Return a reference to the first NAT connection made to this iface
- */
-struct ecm_db_connection_instance *ecm_db_iface_connections_nat_to_get_and_ref_first(struct ecm_db_iface_instance *ii)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
-
-	spin_lock_bh(&ecm_db_lock);
-	ci = ii->to_nat_connections;
-	if (ci) {
-		_ecm_db_connection_ref(ci);
-	}
-	spin_unlock_bh(&ecm_db_lock);
-
-	return ci;
-}
-EXPORT_SYMBOL(ecm_db_iface_connections_nat_to_get_and_ref_first);
+EXPORT_SYMBOL(ecm_db_iface_connections_get_and_ref_first);
 
 /*
  * ecm_db_iface_nodes_get_and_ref_first()
@@ -3623,15 +3582,6 @@ struct ecm_db_iface_instance *ecm_db_iface_alloc(void)
 	return ii;
 }
 EXPORT_SYMBOL(ecm_db_iface_alloc);
-
-/*
- * _ecm_db_iface_count_get()
- *	Return the iface count (lockless).
- */
-int _ecm_db_iface_count_get(void)
-{
-	return ecm_db_iface_count;
-}
 
 /*
  * ecm_db_iface_init()

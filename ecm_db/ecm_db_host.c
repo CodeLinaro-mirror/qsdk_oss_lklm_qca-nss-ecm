@@ -96,6 +96,15 @@ static inline ecm_db_host_hash_t ecm_db_host_generate_hash_index(ip_addr_t addre
 }
 
 /*
+ * _ecm_db_host_count_get()
+ *	Return the host count (lockless).
+ */
+int _ecm_db_host_count_get(void)
+{
+	return ecm_db_host_count;
+}
+
+/*
  * _ecm_db_host_ref()
  */
 void _ecm_db_host_ref(struct ecm_db_host_instance *hi)
@@ -613,15 +622,6 @@ struct ecm_db_host_instance *ecm_db_host_alloc(void)
 	return hi;
 }
 EXPORT_SYMBOL(ecm_db_host_alloc);
-
-/*
- * _ecm_db_host_count_get()
- *	Return the host count (lockless).
- */
-int _ecm_db_host_count_get(void)
-{
-	return ecm_db_host_count;
-}
 
 /*
  * ecm_db_host_init()
