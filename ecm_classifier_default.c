@@ -298,6 +298,16 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 		}
 	} else {
 		/*
+		 * Unconfirmed connection may be dropped by Linux at the final step,
+		 * So we don't allow acceleration for the unconfirmed connections.
+		 */
+		if (!nf_ct_is_confirmed(ct)) {
+			DEBUG_TRACE("%p: Unconfirmed connection\n", ct);
+			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			goto return_response;
+		}
+
+		/*
 		 * Don't try to manage a non-established connection.
 		 */
 		if (!test_bit(IPS_ASSURED_BIT, &ct->status)) {
