@@ -2657,7 +2657,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			DEBUG_WARN("Failed to establish dest node\n");
 			goto done;
 		}
-		ni[ECM_DB_OBJ_DIR_TO] = ni[ECM_DB_OBJ_DIR_TO_NAT];
+		ni[ECM_DB_OBJ_DIR_TO_NAT] = ni[ECM_DB_OBJ_DIR_TO];
 
 		DEBUG_TRACE("%p: Create dest mapping\n", nci);
 		mi[ECM_DB_OBJ_DIR_TO] = ecm_nss_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
