@@ -900,15 +900,6 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		}
 
 		/*
-		 * Unconfirmed connection may be dropped by Linux at the final step,
-		 * So we don't process unconfirmed connections.
-		 */
-		if (!nf_ct_is_confirmed(ct)) {
-			DEBUG_TRACE("%p: Unconfirmed connection\n", ct);
-			return NF_ACCEPT;
-		}
-
-		/*
 		 * Extract conntrack connection information
 		 */
 		DEBUG_TRACE("%p: ct: %p, ctinfo: %x\n", skb, ct, ctinfo);
