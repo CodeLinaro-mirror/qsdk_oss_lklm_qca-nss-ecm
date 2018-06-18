@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -68,6 +68,10 @@
 #define DEBUG_LEVEL ECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL
 
 #include <nss_api_if.h>
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+#include "nss_ipsec_cmn.h"
+#endif
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -622,7 +626,9 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: IPSEC - additional unsupported\n", nnpci);
 				break;
 			}
-			nircm->conn_rule.flow_interface_num = ECM_INTERFACE_IPSEC_IF_NUM;
+
+			nircm->conn_rule.flow_interface_num = ecm_nss_common_ipsec_get_ifnum(from_nss_iface_id);
+			nircm->nexthop_rule.flow_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.flow_nexthop);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: IPSEC - unsupported\n", nnpci);
@@ -800,7 +806,9 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: IPSEC - additional unsupported\n", nnpci);
 				break;
 			}
-			nircm->conn_rule.return_interface_num = ECM_INTERFACE_IPSEC_IF_NUM;
+
+			nircm->conn_rule.return_interface_num = ecm_nss_common_ipsec_get_ifnum(to_nss_iface_id);
+			nircm->nexthop_rule.return_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.return_nexthop);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: IPSEC - unsupported\n", nnpci);

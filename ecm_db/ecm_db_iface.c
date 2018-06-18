@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1069,7 +1069,6 @@ struct ecm_db_iface_instance *ecm_db_interface_get_and_ref_next(struct ecm_db_if
 }
 EXPORT_SYMBOL(ecm_db_interface_get_and_ref_next);
 
-
 #ifdef ECM_INTERFACE_SIT_ENABLE
 /*
  * ecm_db_iface_generate_hash_index_sit()
@@ -1949,7 +1948,7 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_loopback);
  *	Lookup and return a iface reference if any.
  * GGG TODO Flesh this out using tunnel endpoint keys
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ipsec_tunnel(uint32_t os_specific_ident)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ipsec_tunnel(uint32_t os_specific_ident, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1967,7 +1966,9 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ipsec_tunnel(uint32_t os
 	spin_lock_bh(&ecm_db_lock);
 	ii = ecm_db_iface_table[hash_index];
 	while (ii) {
-		if ((ii->type != ECM_DB_IFACE_TYPE_IPSEC_TUNNEL) || (ii->type_info.ipsec_tunnel.os_specific_ident != os_specific_ident)) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_IPSEC_TUNNEL)
+				|| (ii->type_info.ipsec_tunnel.os_specific_ident != os_specific_ident)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}

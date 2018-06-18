@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, 2018, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018-2019, The Linux Foundation. All rights reserved.
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -173,6 +173,12 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 # Define ECM_INTERFACE_IPSEC_ENABLE=y in order to enable support for IPSEC
 # #############################################################################
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
+
+ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
+ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64))
+ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
+ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+endif
 
 # #############################################################################
 # Define ECM_IPV6_ENABLE=y in order to enable IPv6 support in the ECM.

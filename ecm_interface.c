@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -114,6 +114,7 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_interface.h"
+#include "exports/ecm_interface_ipsec.h"
 
 /*
  * Wifi event handler structure.
@@ -130,6 +131,13 @@ static struct ecm_interface_wifi_event __ewn;
  * TODO: Remove once the Linux image and headers get propogated.
  */
 struct net_device *ipv6_dev_find(struct net *net, struct in6_addr *addr, int strict);
+#endif
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+/*
+ * Get ipsecmgr tunnel netdevice method
+ */
+static struct ecm_interface_ipsec_callback ecm_interface_ipsec_cb;
 #endif
 
 /*
@@ -1836,7 +1844,7 @@ static struct ecm_db_iface_instance *ecm_interface_ipsec_tunnel_interface_establ
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_ipsec_tunnel(type_info->os_specific_ident);
+	ii = ecm_db_iface_find_and_ref_ipsec_tunnel(type_info->os_specific_ident, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		return ii;
@@ -1855,7 +1863,7 @@ static struct ecm_db_iface_instance *ecm_interface_ipsec_tunnel_interface_establ
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_ipsec_tunnel(type_info->os_specific_ident);
+	ii = ecm_db_iface_find_and_ref_ipsec_tunnel(type_info->os_specific_ident, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -2213,11 +2221,41 @@ identifier_update:
 	 * IPSEC?
 	 */
 	if (dev_type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
+
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+		struct net_device *ipsec_dev;
+
 		DEBUG_TRACE("Net device: %p is IPSec tunnel type: %d\n", dev, dev_type);
+
+		spin_lock_bh(&ecm_interface_lock);
+		if (!ecm_interface_ipsec_cb.tunnel_get_and_hold) {
+			spin_unlock_bh(&ecm_interface_lock);
+			DEBUG_WARN("IPSec glue module is not loaded yet for dev=%s\n", dev->name);
+			return NULL;
+		}
+
+		ipsec_dev = ecm_interface_ipsec_cb.tunnel_get_and_hold(dev, skb, &interface_type);
+		spin_unlock_bh(&ecm_interface_lock);
+
+		if (!ipsec_dev) {
+			DEBUG_WARN("Failed to find NSS IPSec dev for: %s and type: %d\n", dev->name, dev_type);
+			return NULL;
+		}
+
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(ipsec_dev, interface_type);
+		if (ae_interface_num < 0) {
+			DEBUG_TRACE("IPSec interface %s is not ready yet\n", ipsec_dev->name);
+			dev_put(ipsec_dev);
+			return NULL;
+		}
+		dev_put(ipsec_dev);
+#endif
 		type_info.ipsec_tunnel.os_specific_ident = dev_interface_num;
 
-		// GGG TODO Flesh this out with tunnel endpoint addressing detail
 		ii = ecm_interface_ipsec_tunnel_interface_establish(&type_info.ipsec_tunnel, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		if (ii) {
+			ecm_db_iface_identifier_hash_table_entry_check_and_update(ii, dev_interface_num);
+		}
 		return ii;
 	}
 #endif
@@ -6227,6 +6265,33 @@ static struct ctl_table ecm_interface_root[] = {
 	},
 	{ }
 };
+
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+/*
+ * ecm_interface_ipsec_register_callbacks()
+ *	Register callbacks
+ */
+void ecm_interface_ipsec_register_callbacks(struct ecm_interface_ipsec_callback *cb)
+{
+	spin_lock_bh(&ecm_interface_lock);
+	memcpy(&ecm_interface_ipsec_cb, cb, sizeof(struct ecm_interface_ipsec_callback));
+	spin_unlock_bh(&ecm_interface_lock);
+}
+EXPORT_SYMBOL(ecm_interface_ipsec_register_callbacks);
+
+/*
+ * ecm_interface_ipsec_unregister_callbacks
+ *	Unregister callbacks
+ */
+void ecm_interface_ipsec_unregister_callbacks(void)
+{
+	spin_lock_bh(&ecm_interface_lock);
+	memset(&ecm_interface_ipsec_cb, 0, sizeof(struct ecm_interface_ipsec_callback));
+	spin_unlock_bh(&ecm_interface_lock);
+}
+EXPORT_SYMBOL(ecm_interface_ipsec_unregister_callbacks);
+
+#endif
 
 /*
  * ecm_interface_init()

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -91,6 +91,7 @@ int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not
 #include "ecm_interface.h"
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_multicast_ipv4.h"
+
 #include "ecm_nss_common.h"
 
 /*

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2018, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018-2019, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -16,6 +16,14 @@
 
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 #include <nat46-core.h>
+#endif
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+#include "nss_ipsec_cmn.h"
+#else
+#include "nss_ipsec.h"
+#endif
 #endif
 
 /*
@@ -61,7 +69,7 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev(struct net_devi
 	 * nss_interface_num for all IPsec tunnels will always be the one specific to acceleration engine.
 	 */
 	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
-		return ECM_INTERFACE_IPSEC_IF_NUM;
+		return NSS_IPSEC_CMN_INTERFACE;
 	}
 
 	return nss_cmn_get_interface_number_by_dev(dev);
@@ -76,8 +84,8 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev_type(struct net
 	/*
 	 * nss_interface_num for all IPsec tunnels will always be the one specific to acceleration engine.
 	 */
-	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
-		return ECM_INTERFACE_IPSEC_IF_NUM;
+	if ((dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) && !type) {
+		return NSS_IPSEC_CMN_INTERFACE;
 	}
 
 	return nss_cmn_get_interface_number_by_dev_and_type(dev, type);
@@ -184,3 +192,18 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 	 */
 	return NSS_DYNAMIC_INTERFACE_TYPE_NONE;
 }
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+/*
+ * ecm_nss_common_ipsec_get_ifnum()
+ *     Get ipsec specific interface number appended with coreid
+ */
+static inline int32_t ecm_nss_common_ipsec_get_ifnum(int32_t ifnum)
+{
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+	return nss_ipsec_cmn_get_ifnum_with_coreid(ifnum);
+#else
+	return nss_ipsec_get_ifnum(ifnum);
+#endif
+}
+#endif
