@@ -896,6 +896,8 @@ int ecm_db_iface_deref(struct ecm_db_iface_instance *ii)
 		if (ii->next) {
 			ii->next->prev = ii->prev;
 		}
+		ii->prev = NULL;
+		ii->next = NULL;
 
 		/*
 		 * Link out of hash table

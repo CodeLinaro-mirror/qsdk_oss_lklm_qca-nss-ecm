@@ -269,6 +269,8 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		if (ni->next) {
 			ni->next->prev = ni->prev;
 		}
+		ni->prev = NULL;
+		ni->next = NULL;
 
 		/*
 		 * Link out of hash table

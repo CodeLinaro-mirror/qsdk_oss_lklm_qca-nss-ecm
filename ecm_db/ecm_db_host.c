@@ -267,6 +267,8 @@ int ecm_db_host_deref(struct ecm_db_host_instance *hi)
 		if (hi->next) {
 			hi->next->prev = hi->prev;
 		}
+		hi->prev = NULL;
+		hi->next = NULL;
 
 		/*
 		 * Unlink it from the host hash table

@@ -1053,6 +1053,8 @@ static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connecti
 	if (cci->ca_next) {
 		cci->ca_next->ca_prev = cci->ca_prev;
 	}
+	cci->ca_next = NULL;
+	cci->ca_prev = NULL;
 
 #ifdef ECM_DB_CTA_TRACK_ENABLE
 	/*
@@ -1135,6 +1137,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->hash_next) {
 			ci->hash_next->hash_prev = ci->hash_prev;
 		}
+		ci->hash_prev = NULL;
+		ci->hash_next = NULL;
 		ecm_db_connection_table_lengths[ci->hash_index]--;
 		DEBUG_ASSERT(ecm_db_connection_table_lengths[ci->hash_index] >= 0, "%p: invalid table len %d\n", ci, ecm_db_connection_table_lengths[ci->hash_index]);
 
@@ -1150,6 +1154,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->serial_hash_next) {
 			ci->serial_hash_next->serial_hash_prev = ci->serial_hash_prev;
 		}
+		ci->serial_hash_prev = NULL;
+		ci->serial_hash_next = NULL;
 		ecm_db_connection_serial_table_lengths[ci->serial_hash_index]--;
 		DEBUG_ASSERT(ecm_db_connection_serial_table_lengths[ci->serial_hash_index] >= 0, "%p: invalid table len %d\n", ci, ecm_db_connection_serial_table_lengths[ci->serial_hash_index]);
 
@@ -1165,6 +1171,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		if (ci->next) {
 			ci->next->prev = ci->prev;
 		}
+		ci->prev = NULL;
+		ci->next = NULL;
 
 #ifdef ECM_DB_XREF_ENABLE
 		/*
@@ -1180,6 +1188,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 			if (ci->mapping_next[dir]) {
 				ci->mapping_next[dir]->mapping_prev[dir] = ci->mapping_prev[dir];
 			}
+			ci->mapping_prev[dir] = NULL;
+			ci->mapping_next[dir] = NULL;
 		}
 
 		/*
@@ -1199,6 +1209,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 			if (ci->iface_next[dir]) {
 				ci->iface_next[dir]->iface_prev[dir] = ci->iface_prev[dir];
 			}
+			ci->iface_prev[dir] = NULL;
+			ci->iface_next[dir] = NULL;
 		}
 
 		/*
@@ -1216,6 +1228,8 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 			if (ci->node_next[dir]) {
 				ci->node_next[dir]->node_prev[dir] = ci->node_prev[dir];
 			}
+			ci->node_prev[dir] = NULL;
+			ci->node_next[dir] = NULL;
 			ci->node[dir]->connections_count[dir]--;
 			DEBUG_ASSERT(ci->node[dir]->connections_count[dir] >= 0, "%p: %s node bad count\n", ci, ecm_db_obj_dir_strings[dir]);
 		}

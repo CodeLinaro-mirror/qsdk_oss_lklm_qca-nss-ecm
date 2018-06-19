@@ -408,6 +408,8 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 		if (mi->next) {
 			mi->next->prev = mi->prev;
 		}
+		mi->prev = NULL;
+		mi->next = NULL;
 
 		/*
 		 * Unlink it from the mapping hash table
