@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -699,6 +699,9 @@ static bool ecm_tracker_ip_header_helper_ipv6_fragment(struct ecm_tracker_ip_pro
 	struct ipv6_gen_hdr {
 		uint8_t next_protocol;
 		uint8_t reserved;
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+		__be16 frag_off;
+#endif
 	} gen_header_buffer;
 	struct ipv6_gen_hdr *gen_header;
 
@@ -722,6 +725,21 @@ static bool ecm_tracker_ip_header_helper_ipv6_fragment(struct ecm_tracker_ip_pro
 	 * The very presence of a fragmemt header says it's fragmented
 	 */
 	ip_hdr->fragmented = true;
+
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+	/*
+	 * In general, any IPv6 packet with fragment header is a fragment
+	 * packet.
+	 * But, packet with dummy fragment header is an exception to this case
+	 * and represent a complete IPv6 packet.
+	 * So, below is a check to identify the presence of dummy fragment
+	 * header, and if present, unset the fragment flag.
+	 */
+	if ((gen_header->frag_off & htons(IP6_OFFSET | IP6_MF)) == 0) {
+		DEBUG_TRACE("Pkt has dummy header\n");
+		ip_hdr->fragmented = false;
+	}
+#endif
 
 	etiph->protocol_number = protocol;
 	etiph->header_size = 8;
