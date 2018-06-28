@@ -893,6 +893,14 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 
 	/*
+	 * Process only IPv6 packets
+	 */
+	if (ip_hdr.is_v4) {
+		DEBUG_TRACE("Not an IPv6 packet, skb %p\n", skb);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * If the DSCP value of the packet maps to the NOT accel action type,
 	 * do not accelerate the packet and let it go through the
 	 * slow path.
