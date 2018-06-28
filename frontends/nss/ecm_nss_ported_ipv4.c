@@ -479,9 +479,6 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
@@ -535,17 +532,21 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
-			 * Copy pppoe session info to the creation structure.
+			 * Set the PPPoE rule creation structure.
 			 */
-			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-
-			nircm->pppoe_rule.flow_pppoe_session_id = pppoe_info.pppoe_session_id;
-			memcpy(nircm->pppoe_rule.flow_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+			nircm->pppoe_rule.flow_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+			if (nircm->pppoe_rule.flow_if_num < 0) {
+				DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+						npci, nircm->pppoe_rule.flow_if_num);
+				rule_invalid = true;
+				break;
+			}
+			nircm->pppoe_rule.flow_if_exist = 1;
 			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_PPPOE_VALID;
 
-			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", npci,
-					nircm->pppoe_rule.flow_pppoe_session_id,
-					nircm->pppoe_rule.flow_pppoe_remote_mac);
+			DEBUG_TRACE("%p: PPPoE - exist: %d flow_if_num: %d\n", npci,
+					nircm->pppoe_rule.flow_if_exist,
+					nircm->pppoe_rule.flow_if_num);
 #else
 			rule_invalid = true;
 #endif
@@ -682,9 +683,6 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 			uint32_t vlan_value = 0;
@@ -738,16 +736,21 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
-			 * Copy pppoe session info to the creation structure.
+			 * Set the PPPoE rule creation structure.
 			 */
-			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-			nircm->pppoe_rule.return_pppoe_session_id = pppoe_info.pppoe_session_id;
-			memcpy(nircm->pppoe_rule.return_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+			nircm->pppoe_rule.return_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+			if (nircm->pppoe_rule.return_if_num < 0) {
+				DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+						npci, nircm->pppoe_rule.return_if_num);
+				rule_invalid = true;
+				break;
+			}
+			nircm->pppoe_rule.return_if_exist = 1;
 			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_PPPOE_VALID;
 
-			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", npci,
-				    nircm->pppoe_rule.return_pppoe_session_id,
-				    nircm->pppoe_rule.return_pppoe_remote_mac);
+			DEBUG_TRACE("%p: PPPoE - exist: %d return_if_num: %d\n", npci,
+					nircm->pppoe_rule.return_if_exist,
+					nircm->pppoe_rule.return_if_num);
 #else
 			rule_invalid = true;
 #endif
@@ -1099,10 +1102,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"egress_outer_vlan_tag: %x\n"
 			"rule_flags: %x\n"
 			"valid_flags: %x\n"
-			"return_pppoe_session_id: %u\n"
-			"return_pppoe_remote_mac: %pM\n"
-			"flow_pppoe_session_id: %u\n"
-			"flow_pppoe_remote_mac: %pM\n"
+			"pppoe_return_if_exist: %u\n"
+			"pppoe_return_if_num: %u\n"
+			"pppoe_flow_if_exist: %u\n"
+			"pppoe_flow_if_num: %u\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
 			"flow_window_scale: %u\n"
@@ -1136,10 +1139,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->vlan_secondary_rule.egress_vlan_tag,
 			nircm->rule_flags,
 			nircm->valid_flags,
-			nircm->pppoe_rule.return_pppoe_session_id,
-			nircm->pppoe_rule.return_pppoe_remote_mac,
-			nircm->pppoe_rule.flow_pppoe_session_id,
-			nircm->pppoe_rule.flow_pppoe_remote_mac,
+			nircm->pppoe_rule.return_if_exist,
+			nircm->pppoe_rule.return_if_num,
+			nircm->pppoe_rule.flow_if_exist,
+			nircm->pppoe_rule.flow_if_num,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
 			nircm->tcp_rule.flow_window_scale,

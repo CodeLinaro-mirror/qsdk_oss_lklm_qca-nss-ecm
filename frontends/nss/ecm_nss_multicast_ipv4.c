@@ -537,9 +537,6 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-				struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				struct ecm_db_interface_info_vlan vlan_info;
 #endif
@@ -597,14 +594,20 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 				}
 
 				/*
-				 * Copy pppoe session info to the creation structure.
+				 * Set the PPPoE rule creation structure.
 				 */
-				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
-				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-
-				DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", nmci, create->if_rule[valid_vif_idx].pppoe_session_id, create->if_rule[valid_vif_idx].pppoe_remote_mac);
+				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
+					DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+							nmci, create->if_rule[valid_vif_idx].pppoe_if_num);
+					rule_invalid = true;
+					break;
+				}
+				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV4_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
+				DEBUG_TRACE("%p: PPPoE - exist pppoe_if_num: %d\n", nmci,
+							create->if_rule[valid_vif_idx].pppoe_if_num);
 #else
+				DEBUG_TRACE("%p: PPPoE - unsupported\n", nmci);
 				rule_invalid = true;
 #endif
 				break;
@@ -946,9 +949,6 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			struct ecm_db_interface_info_vlan vlan_info;
 #endif
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", nmci);
 			from_iface_bridge_identifier = ecm_db_iface_interface_identifier_get(ii);
@@ -985,13 +985,10 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			}
 
 			/*
-			 * Copy pppoe session info to the creation structure.
+			 * Set the PPPoE rule creation structure.
 			 */
-			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-			create->ingress_pppoe_session_id = pppoe_info.pppoe_session_id;
-			memcpy(create->ingress_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
 			create->valid_flags |= NSS_IPV4_MC_RULE_CREATE_FLAG_INGRESS_PPPOE;
-			DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", nmci, create->ingress_pppoe_session_id, create->ingress_pppoe_remote_mac);
+			DEBUG_TRACE("%p: PPPoE - ingress interface is valid\n", nmci);
 #else
 			rule_invalid = true;
 #endif
@@ -1061,9 +1058,6 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-				struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				struct ecm_db_interface_info_vlan vlan_info;
 				struct net_device *vlan_out_dev = NULL;
@@ -1125,14 +1119,20 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				}
 
 				/*
-				 * Copy pppoe session info to the creation structure.
+				 * Set the PPPoE rule creation structure.
 				 */
-				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
-				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
-				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
+					DEBUG_TRACE("%p: PPPoE - acceleration engine interface (%d) is not valid\n",
+							nmci, create->if_rule[valid_vif_idx].pppoe_if_num);
+					rule_invalid = true;
+					break;
+				}
 				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV4_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
-				DEBUG_TRACE("%p: PPPoE - session: %x, mac: %pM\n", nmci, create->if_rule[valid_vif_idx].pppoe_session_id, create->if_rule[valid_vif_idx].pppoe_remote_mac);
+				DEBUG_TRACE("%p: PPPoE - exist if_num: %d\n", nmci,
+							create->if_rule[valid_vif_idx].pppoe_if_num);
 #else
+				DEBUG_TRACE("%p: PPPoE - unsupported\n", nmci);
 				rule_invalid = true;
 #endif
 				break;
@@ -1317,8 +1317,6 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			"xlate_ip: %pI4h:%d\n"
 			"to_mac: %pM\n"
 			"dest_iface_num: %u\n"
-			"ingress_pppoe_session_id: %u\n"
-			"ingress_pppoe_remote_mac: %pM\n"
 			"in_vlan[0] %x\n"
 			"in_vlan[1] %x\n"
 			"out_vlan[0] %x\n"
@@ -1333,8 +1331,6 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			&create->if_rule[vif].xlate_src_ip, create->if_rule[vif].xlate_src_ident,
 			create->if_rule[vif].if_mac,
 			create->if_rule[vif].if_num,
-			create->ingress_pppoe_session_id,
-			create->ingress_pppoe_remote_mac,
 			create->ingress_vlan_tag[0],
 			create->ingress_vlan_tag[1],
 			create->if_rule[vif].egress_vlan_tag[0],
