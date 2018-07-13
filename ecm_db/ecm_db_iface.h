@@ -222,7 +222,7 @@ void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii,
 #endif
 
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index, int32_t ae_interface_num);
 void ecm_db_iface_gre_tun_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_gre_tun *gre_tun_info);
 void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii,
 				struct ecm_db_interface_info_gre_tun *gre_tun_info, char *name,
