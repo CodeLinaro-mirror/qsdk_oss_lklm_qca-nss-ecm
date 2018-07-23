@@ -3321,8 +3321,9 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 	bool is_routed;
 	__be16 layer4hdr[2] = {0, 0};
 	__be16 port = 0;
+	int mc_to_interface_count = 0;
 
-	DEBUG_TRACE("ecm_br_multicast_event_callback 0x%x\n", group);
+	DEBUG_TRACE("ecm_br_multicast_update_event_callback 0x%x\n", group);
 
 	ECM_HIN4_ADDR_TO_IP_ADDR(dest_ip, htonl(group));
 
@@ -3331,7 +3332,7 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 	 */
 	tuple_instance = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
 	if (!tuple_instance) {
-		DEBUG_TRACE("ecm_br_multicast_event_callback: pf_info not found\n");
+		DEBUG_TRACE("ecm_br_multicast_update_event_callback: no multicast tuple entry found\n");
 		return;
 	}
 
@@ -3417,7 +3418,7 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 		}
 
 		/*
-		 * All bridge slaves has left the group. If flow is pure bridge, Deacel the connection and return.
+		 * All bridge slaves has left the group. If flow is pure bridge, Decel the connection and return.
 		 * If flow is routed, let MFC callback handle this.
 		 */
 		if (if_num == 0) {
@@ -3542,6 +3543,25 @@ static void ecm_br_multicast_update_event_callback(struct net_device *brdev, uin
 			}
 
 			kfree(to_list);
+		} else if (mc_update.if_leave_cnt > 0) {
+			/*
+			 * If these are the last interface set leaving the to interface
+			 * list of the connection, then decelerate the connection
+			 */
+			mc_to_interface_count = ecm_db_multicast_connection_to_interfaces_get_count(ci);
+			if (mc_update.if_leave_cnt == mc_to_interface_count) {
+				DEBUG_INFO("%p: Decelerating the flow as there are no to interfaces in the multicast group: 0x%x\n", feci, dest_ip[0]);
+				feci->decelerate(feci);
+				feci->deref(feci);
+
+				/*
+				 * Get next multicast connection instance
+				 */
+				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
+				ecm_db_multicast_connection_deref(tuple_instance);
+				tuple_instance = tuple_instance_next;
+				continue;
+			}
 		}
 
 		/*
