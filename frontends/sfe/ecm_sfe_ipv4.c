@@ -1397,6 +1397,18 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 		 * NOTE: We take no action here since that is performed by the destroy message ack.
 		 */
 		DEBUG_INFO("%p: ECM initiated final sync seen: %d\n", ci, sync->reason);
+
+		/*
+		 * If there is no tx/rx packets to update the other linux subsystems, we shouldn't continue
+		 * for the sync message which comes as a final sync for the ECM initiated destroy request.
+		 * Because this means the connection is not active for sometime and adding this delta time
+		 * to the conntrack timeout will update it eventhough there is no traffic for this connection.
+		 */
+		if (!sync->flow_tx_packet_count && !sync->return_tx_packet_count) {
+			feci->deref(feci);
+			ecm_db_connection_deref(ci);
+			return;
+		}
 		break;
 	case SFE_RULE_SYNC_REASON_FLUSH:
 	case SFE_RULE_SYNC_REASON_EVICT:
