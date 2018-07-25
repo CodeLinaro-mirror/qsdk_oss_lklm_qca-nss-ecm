@@ -765,7 +765,10 @@ bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if
 	for (i = 0; i < max_if; i++) {
 		br_dev = dev_get_by_index(&init_net, dest_if[i]);
 		if (!br_dev) {
-			DEBUG_ASSERT(NULL, "expected only valid netdev here\n");
+			/*
+			 * Interface got deleted; but is yet to be updated in MFC table
+			 */
+			DEBUG_WARN("Could not find a valid netdev here\n");
 			continue;
 		}
 
@@ -778,6 +781,39 @@ bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if
 	return false;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_check_for_br_dev);
+
+/*
+ * ecm_interface_multicast_is_iface_type()
+ *	Checks if interface of type exist in mc_if_index
+ */
+bool ecm_interface_multicast_is_iface_type(int32_t mc_if_index[], int32_t max_if_index, unsigned short type)
+{
+	int32_t i;
+	struct net_device *dev;
+
+	for (i = 0; i < max_if_index; i++) {
+
+		if (!mc_if_index[i]) {
+			break;
+		}
+
+		dev = dev_get_by_index(&init_net, mc_if_index[i]);
+		if (!dev) {
+			DEBUG_WARN("Could not find a valid interface with index = %d\n", mc_if_index[i]);
+			continue;
+		}
+
+		if (dev->type == type) {
+			DEBUG_TRACE("Interface dev = %s of type %u\n", dev->name,  type);
+			dev_put(dev);
+			return true;
+		}
+
+		dev_put(dev);
+	}
+
+	return false;
+}
 
 /*
  * ecm_interface_multicast_check_for_src_if_index()
