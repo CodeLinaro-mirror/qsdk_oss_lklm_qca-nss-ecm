@@ -264,7 +264,8 @@ void ecm_db_iface_add_sit(struct ecm_db_iface_instance *ii,
 #endif
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr,
-								 ip_addr_t daddr);
+								 ip_addr_t daddr,
+								 int32_t ae_interface_num);
 void ecm_db_iface_add_tunipip6(struct ecm_db_iface_instance *ii,
 				struct ecm_db_interface_info_tunipip6 *type_info, char *name,
 				int32_t mtu, int32_t interface_identifier,

@@ -2041,7 +2041,7 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_sit);
  * ecm_db_iface_find_and_ref_tunipip6()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr, ip_addr_t daddr)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr, ip_addr_t daddr, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -2061,8 +2061,9 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr
 	ii = ecm_db_iface_table[hash_index];
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_TUNIPIP6)
-				|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.saddr, saddr)
-				|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.daddr, daddr)) {
+			|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.saddr, saddr)
+			|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.daddr, daddr)
+			|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}

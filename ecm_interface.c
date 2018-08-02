@@ -1913,7 +1913,7 @@ static struct ecm_db_iface_instance *ecm_interface_tunipip6_interface_establish(
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		return ii;
@@ -1932,7 +1932,7 @@ static struct ecm_db_iface_instance *ecm_interface_tunipip6_interface_establish(
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -2250,6 +2250,7 @@ identifier_update:
 	if (dev_type == ARPHRD_TUNNEL6) {
 		struct ip6_tnl *tunnel;
 		struct flowi6 *fl6;
+		int interface_type;
 
 		DEBUG_TRACE("Net device: %p is TUNIPIP6 type: %d\n", dev, dev_type);
 
@@ -2265,7 +2266,16 @@ identifier_update:
 		type_info.tunipip6.flags = ntohl(tunnel->parms.flags);
 		type_info.tunipip6.flowlabel = fl6->flowlabel;  /* flow Label In kernel is stored in big endian format */
 
-		ii = ecm_interface_tunipip6_interface_establish(&type_info.tunipip6, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		interface_type = feci->ae_interface_type_get(feci, dev_type);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
+		if (ae_interface_num < 0) {
+			DEBUG_TRACE("TUNIPIP6 interface is not ready yet\n");
+			return NULL;
+		}
+
+		ii = ecm_interface_tunipip6_interface_establish(&type_info.tunipip6, dev_name,
+								dev_interface_num, ae_interface_num, dev_mtu);
 		return ii;
 	}
 #endif
