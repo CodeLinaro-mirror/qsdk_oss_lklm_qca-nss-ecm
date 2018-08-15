@@ -109,7 +109,7 @@ static inline void ecm_sfe_common_connection_regenerate(struct ecm_front_end_con
  * NOTE: There is no type for SFE now. This function is implemented just to
  * use it for the feci callback.
  */
-static inline int32_t ecm_sfe_common_get_interface_type(struct ecm_front_end_connection_instance *feci, int32_t dev_type)
+static inline int32_t ecm_sfe_common_get_interface_type(struct ecm_front_end_connection_instance *feci, struct net_device *dev)
 {
 	/*
 	 * By default return 0. SFE driver doesn't have any interface type.

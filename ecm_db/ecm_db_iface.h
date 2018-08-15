@@ -232,7 +232,8 @@ void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii,
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pptp(uint32_t pptp_src_call_id,
-							     uint32_t pptp_dst_call_id);
+							     uint32_t pptp_dst_call_id,
+							     int32_t ae_interface_num);
 void ecm_db_iface_pptp_session_info_get(struct ecm_db_iface_instance *ii,
 					struct ecm_db_interface_info_pptp *pptp_info);
 void ecm_db_iface_add_pptp(struct ecm_db_iface_instance *ii,

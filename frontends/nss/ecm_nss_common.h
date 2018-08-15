@@ -164,6 +164,17 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		}
 #endif
 		break;
+	case ARPHRD_PPP:
+#ifdef ECM_INTERFACE_PPTP_ENABLE
+		if (dev->priv_flags & IFF_PPP_PPTP) {
+			if (feci->protocol == IPPROTO_GRE) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_OUTER;
+			}
+
+			return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_INNER;
+		}
+#endif
+		break;
 	default:
 		break;
 	}

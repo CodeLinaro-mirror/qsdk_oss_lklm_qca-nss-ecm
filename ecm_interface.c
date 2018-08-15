@@ -1594,7 +1594,7 @@ static struct ecm_db_iface_instance *ecm_interface_pptp_interface_establish(stru
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id);
+	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
@@ -1614,7 +1614,7 @@ static struct ecm_db_iface_instance *ecm_interface_pptp_interface_establish(stru
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id);
+	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -2446,6 +2446,9 @@ identifier_update:
 
 			skb_push(skb, sizeof(struct iphdr));
 
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
 			/*
 			 * Establish this type of interface
 			 */
@@ -2577,6 +2580,7 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	if (channel_protocol == PX_PROTO_PPTP) {
+
 		pptp_channel_addressing_get(&opt, ppp_chan[0]);
 
 		/*
@@ -2589,6 +2593,9 @@ identifier_update:
 
 		DEBUG_TRACE("Net device: %p PPTP source call id: %d,n", dev, type_info.pptp.src_call_id);
 		ppp_release_channels(ppp_chan, 1);
+
+		interface_type = feci->ae_interface_type_get(feci, dev);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
 		/*
 		 * Establish this type of interface
