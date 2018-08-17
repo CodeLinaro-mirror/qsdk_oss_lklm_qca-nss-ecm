@@ -214,7 +214,7 @@ extern bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *
  * hardware support it, then SFE front end.
  *
  * We check device tree to see if NSS is supported by hardware.
- * Currenly all ipq8064, ipq8062 and ipq807x platforms support NSS.
+ * Currenly all ipq8064, ipq8062 and ipq807x  ipq60xx platforms support NSS.
  * Since SFE is a pure software acceleration engine, so all platforms
  * support it.
  */
@@ -223,7 +223,8 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 #ifdef CONFIG_OF
 	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
-				of_machine_is_compatible("qcom,ipq807x");
+				of_machine_is_compatible("qcom,ipq807x") ||
+				of_machine_is_compatible("qcom,ipq60xx");
 #else
 	bool nss_supported = true;
 #endif
