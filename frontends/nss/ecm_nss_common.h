@@ -14,6 +14,10 @@
  **************************************************************************
  */
 
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+#include <nat46-core.h>
+#endif
+
 /*
  * Some constants used with constructing NSS acceleration rules.
  * GGG TODO These should be provided by the NSS driver itself!
@@ -104,6 +108,7 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 {
 	switch (dev->type) {
 	case ARPHRD_SIT:
+#ifdef ECM_INTERFACE_SIT_ENABLE
 		if (feci->ip_version == 4) {
 			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_OUTER;
 		}
@@ -111,6 +116,7 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		if (feci->ip_version == 6) {
 			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_INNER;
 		}
+#endif
 		break;
 
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
@@ -145,6 +151,19 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 
 		return NSS_DYNAMIC_INTERFACE_TYPE_GRE_INNER;
 #endif
+	case ARPHRD_NONE:
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+		if (is_map_t_dev(dev)) {
+			if (feci->ip_version == 4) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_MAP_T_INNER;
+			}
+
+			if (feci->ip_version == 6) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_MAP_T_OUTER;
+			}
+		}
+#endif
+		break;
 	default:
 		break;
 	}
