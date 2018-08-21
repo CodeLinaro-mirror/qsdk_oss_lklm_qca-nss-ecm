@@ -3123,6 +3123,7 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 	int32_t if_num;
 	uint32_t mc_max_dst = ECM_DB_MULTICAST_IF_MAX;
 	uint32_t mc_dst_dev[ECM_DB_MULTICAST_IF_MAX];
+	int mc_to_interface_count = 0;
 
 	memcpy(&group6, group, sizeof(struct in6_addr));
 	ECM_NIN6_ADDR_TO_IP_ADDR(dest_ip, group6);
@@ -3134,7 +3135,7 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 	 */
 	tuple_instance = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
 	if (!tuple_instance) {
-		DEBUG_TRACE("tuple info not found\n");
+		DEBUG_TRACE("ecm_nss_multicast_ipv6_br_update_event_callback: no multicast tuple entry found\n");
 		return;
 	}
 
@@ -3220,7 +3221,7 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 		}
 
 		/*
-		 * All bridge slaves has left the group. If flow is pure bridge, Deacel the connection and return.
+		 * All bridge slaves has left the group. If flow is pure bridge, Deacel the connection and return
 		 * If flow is routed, let MFC callback handle this.
 		 */
 		if (if_num == 0) {
@@ -3342,6 +3343,25 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 				}
 			}
 			kfree(to_list);
+		} else if (mc_sync.if_leave_cnt > 0) {
+			/*
+			 * If these are the last interface set leaving the to interface
+			 * list of the connection, then decelerate the connection
+			 */
+			mc_to_interface_count = ecm_db_multicast_connection_to_interfaces_get_count(ci);
+			if (mc_sync.if_leave_cnt == mc_to_interface_count) {
+				feci->decelerate(feci);
+				feci->deref(feci);
+				DEBUG_INFO("%p: Decelerating the flow as there are no to interfaces in the multicast group: " ECM_IP_ADDR_OCTAL_FMT , feci, ECM_IP_ADDR_TO_OCTAL(dest_ip));
+
+				/*
+				 * Get next multicast connection instance
+				 */
+				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
+				ecm_db_multicast_connection_deref(tuple_instance);
+				tuple_instance = tuple_instance_next;
+				continue;
+			}
 		}
 
 		/*
