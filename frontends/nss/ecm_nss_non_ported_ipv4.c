@@ -718,6 +718,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
 			is_from_ii_type_pptp = true;
+			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: PPTP - unsupported\n", nnpci);
