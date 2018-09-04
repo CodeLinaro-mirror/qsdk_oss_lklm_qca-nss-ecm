@@ -910,23 +910,6 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_from_iface_mtu_get(feci->ci);
 	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_to_iface_mtu_get(feci->ci);
 
-#ifdef ECM_DB_PMTU_EVENT_ENABLE
-	/*
-	 * Check whether a valid ICMP PTB/PMTU message received for this destination
-	 */
-	if (ecm_db_connection_check_valid_pmtu(feci->ci)) {
-		struct in6_addr daddr_v6;
-		struct dst_entry *dst;
-		ECM_IP_ADDR_TO_NIN6_ADDR(daddr_v6, dest_ip);
-
-		dst = (struct dst_entry *)rt6_lookup(&init_net, &daddr_v6, NULL, 0, 0);
-		if (dst) {
-			nircm->conn_rule.return_mtu = dst_mtu(dst);
-			dst_release(dst);
-		}
-	}
-#endif
-
 	if (protocol == IPPROTO_TCP) {
 		/*
 		 * Need window scaling information from conntrack if available
@@ -2183,13 +2166,6 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 	} else {
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
-
-#ifdef ECM_DB_PMTU_EVENT_ENABLE
-	/*
-	 * set expiry for this connection based on PMTU expiry time
-	 */
-	ecm_db_connection_set_pmtu_expiry(ci, skb);
-#endif
 
 	/*
 	 * Do we need to action generation change?

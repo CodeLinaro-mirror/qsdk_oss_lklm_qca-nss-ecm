@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -869,25 +869,6 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 */
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_from_iface_mtu_get(feci->ci);
 	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_to_iface_mtu_get(feci->ci);
-
-#ifdef ECM_DB_PMTU_EVENT_ENABLE
-	/*
-	 * Check whether a valid ICMP PTB/PMTU message received for this destination
-	 */
-	if (ecm_db_connection_check_valid_pmtu(feci->ci)) {
-		struct in6_addr daddr_v6;
-		struct dst_entry *dst;
-		ECM_IP_ADDR_TO_NIN6_ADDR(daddr_v6, dest_ip);
-
-		dst = (struct dst_entry *)rt6_lookup(&init_net, &daddr_v6, NULL, 0, 0);
-		if (dst) {
-			DEBUG_TRACE("%p: Valid Dst present with MTU :%d, replacing :%d\n",
-					nnpci, dst_mtu(dst), nircm->conn_rule.return_mtu);
-			nircm->conn_rule.return_mtu = dst_mtu(dst);
-			dst_release(dst);
-		}
-	}
-#endif
 
 	/*
 	 * Sync our creation command from the assigned classifiers to get specific additional creation rules.
@@ -1931,13 +1912,6 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 		ecm_db_connection_deref(ci);
 		return NF_ACCEPT;
 	}
-
-#ifdef ECM_DB_PMTU_EVENT_ENABLE
-	/*
-	 * Set expiry time based on PMTU for this destiantion
-	 */
-	ecm_db_connection_set_pmtu_expiry(ci, skb);
-#endif
 
 	/*
 	 * Identify which side of the connection is sending
