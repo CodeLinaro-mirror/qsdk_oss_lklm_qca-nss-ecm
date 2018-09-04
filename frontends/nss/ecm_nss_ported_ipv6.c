@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1826,7 +1826,6 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 
 		layer4hdr = (__be16*)udp_hdr;
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
 		/*
 		 * Deny acceleration for L2TP-over-UDP tunnel
 		 */
@@ -1834,7 +1833,6 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 			DEBUG_TRACE("Skip packets for L2TP tunnel in skb %p\n", skb);
 			can_accel = false;
 		}
-#endif
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)

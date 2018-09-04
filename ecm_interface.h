@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -35,6 +35,7 @@ struct ecm_interface_route {
 /*
  * IPSec Core and Interface Definition
  */
+#define ECM_INTERFACE_IPSEC_DEFAULT_CORE 0x2
 #define ECM_INTERFACE_IPSEC_CORE_OFFSET 24
 #define ECM_INTERFACE_IPSEC_IF_NUM ((ECM_INTERFACE_IPSEC_DEFAULT_CORE << ECM_INTERFACE_IPSEC_CORE_OFFSET) | NSS_IPSEC_RULE_INTERFACE)
 

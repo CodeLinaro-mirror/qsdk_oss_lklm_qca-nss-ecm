@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -115,7 +115,6 @@
 #include "ecm_db.h"
 #include "ecm_interface.h"
 
-#ifdef ECM_DB_XREF_ENABLE
 /*
  * Wifi event handler structure.
  */
@@ -125,7 +124,6 @@ struct ecm_interface_wifi_event {
 };
 
 static struct ecm_interface_wifi_event __ewn;
-#endif
 
 #ifdef ECM_IPV6_ENABLE
 /*
@@ -177,7 +175,7 @@ EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
  */
 static inline struct net_device *ecm_interface_vlan_real_dev(struct net_device *vlan_dev)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 6, 0))
 	return vlan_dev_next_dev(vlan_dev);
 #else
 	return vlan_dev_real_dev(vlan_dev);
@@ -1051,7 +1049,6 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
  */
 bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 {
-#ifdef ECM_INTERFACE_PPTP_ENABLE
 	struct net_device *in;
 
 	/*
@@ -1076,7 +1073,6 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 	}
 
 	dev_put(in);
-#endif
 	return false;
 }
 
@@ -3382,8 +3378,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (dest_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
-				(protocol == IPPROTO_ESP)) {
+				((ip_version == 6) && (protocol == IPPROTO_IPIP))) {
 			dev_put(dest_dev);
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
@@ -3463,8 +3458,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 */
 	if (src_dev && from_local_addr) {
 		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-				((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
-				(protocol == IPPROTO_ESP)) {
+				((ip_version == 6) && (protocol == IPPROTO_IPIP))) {
 			dev_put(src_dev);
 			src_dev = given_src_dev;
 			if (src_dev) {
@@ -3675,6 +3669,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 							return ECM_DB_IFACE_HEIRARCHY_MAX;
 						}
 					}
+
 					next_dev = br_port_dev_get(dest_dev,
 						mac_addr, skb, serial);
 
@@ -5248,7 +5243,7 @@ static void ecm_interface_mtu_change(struct net_device *dev)
  */
 static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, unsigned long event, void *ptr)
 {
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 10, 0))
 	struct net_device *dev __attribute__ ((unused)) = (struct net_device *)ptr;
 #else
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
@@ -5707,6 +5702,7 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 static struct notifier_block ecm_interface_neigh_mac_update_nb = {
 	.notifier_call = ecm_interface_neigh_mac_update_notify_event,
 };
+#endif
 
 /*
  * ecm_interface_wifi_event_iwevent
@@ -5942,7 +5938,6 @@ int ecm_interface_wifi_event_stop(void)
 
 	return err;
 }
-#endif
 
 /*
  * ecm_interface_init()
@@ -5966,8 +5961,8 @@ int ecm_interface_init(void)
 #endif
 #ifdef ECM_DB_XREF_ENABLE
 	neigh_mac_update_register_notify(&ecm_interface_neigh_mac_update_nb);
-	ecm_interface_wifi_event_start();
 #endif
+	ecm_interface_wifi_event_start();
 
 	return 0;
 }

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1097,9 +1097,7 @@ EXPORT_SYMBOL(ecm_db_connection_make_defunct);
  */
 void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets)
 {
-#ifdef ECM_DB_ADVANCED_STATS_ENABLE
 	int32_t i;
-#endif
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed\n", ci);
 
@@ -1323,9 +1321,7 @@ EXPORT_SYMBOL(ecm_db_multicast_connection_interface_heirarchy_stats_update);
  */
 void ecm_db_connection_data_totals_update_dropped(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets)
 {
-#ifdef ECM_DB_ADVANCED_STATS_ENABLE
 	int32_t i;
-#endif
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed\n", ci);
 

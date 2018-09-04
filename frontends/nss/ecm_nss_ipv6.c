@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1048,7 +1048,7 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(void *priv,
 				const struct nf_hook_state *nhs)
 {
 	struct net_device *out = nhs->out;
-#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 12, 0))
+#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 static unsigned int ecm_nss_ipv6_post_routing_hook(unsigned int hooknum,
 				struct sk_buff *skb,
 				const struct net_device *in_unused,
@@ -1191,7 +1191,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 					const struct nf_hook_state *nhs)
 {
 	struct net_device *out = nhs->out;
-#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 12, 0))
+#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
 static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(unsigned int hooknum,
 					struct sk_buff *skb,
 					const struct net_device *in_unused,
@@ -1333,7 +1333,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 		 * TODO: For the kernel versions later than 3.6.x, the API needs vlan id.
 		 * 	 For now, we are passing 0, but this needs to be handled later.
 		 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest)) {
 #else
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
@@ -1667,7 +1667,7 @@ sync_conntrack:
 		ct->timeout.expires += delta_jiffies;
 		spin_unlock_bh(&ct->lock);
 	}
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 12, 0))
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
 	acct = nf_conn_acct_find(ct);
 #else
 	acct = nf_conn_acct_find(ct)->counter;
