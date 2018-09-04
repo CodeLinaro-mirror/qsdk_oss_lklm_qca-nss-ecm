@@ -2043,6 +2043,14 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	if (dev_type == ARPHRD_ETHER) {
 
 		/*
+		 * If MAC address is zeros, do nothing.
+		 */
+		if (is_zero_ether_addr(dev->dev_addr)) {
+			DEBUG_WARN("Net device %p MAC address is all zeros\n", dev);
+			return NULL;
+		}
+
+		/*
 		 * Ethernet - but what sub type?
 		 */
 
