@@ -158,6 +158,7 @@ struct ecm_front_end_connection_instance {
 	 * Common control items to all front end instances
 	 */
 	int ip_version;						/* RO: The version of IP protocol this instance was established for */
+	int protocol;						/* RO: The protocol this instance was established for */
 	struct ecm_db_connection_instance *ci;			/* RO: The connection instance relating to this instance. */
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
