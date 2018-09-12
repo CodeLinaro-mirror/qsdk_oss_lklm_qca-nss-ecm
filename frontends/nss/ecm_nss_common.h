@@ -111,6 +111,18 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		if (feci->ip_version == 6) {
 			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_INNER;
 		}
+
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+	case ARPHRD_TUNNEL6:
+		if (feci->ip_version == 4) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUNIPIP6_INNER;
+		}
+
+		if (feci->ip_version == 6) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUNIPIP6_OUTER;
+		}
+#endif
+
 	default:
 		break;
 	}
