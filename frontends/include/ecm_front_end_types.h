@@ -224,7 +224,7 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
 				of_machine_is_compatible("qcom,ipq807x") ||
-				of_machine_is_compatible("qcom,ipq60xx");
+				of_machine_is_compatible("qcom,ipq6018");
 #else
 	bool nss_supported = true;
 #endif
