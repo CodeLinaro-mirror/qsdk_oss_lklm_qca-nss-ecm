@@ -1489,10 +1489,9 @@ static struct ecm_db_iface_instance *ecm_interface_map_t_interface_establish(str
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -1509,11 +1508,10 @@ static struct ecm_db_iface_instance *ecm_interface_map_t_interface_establish(str
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 	ecm_db_iface_add_map_t(nii, type_info, dev_name,
@@ -2194,6 +2192,14 @@ identifier_update:
 	if (dev_type == ARPHRD_NONE) {
 		if (is_map_t_dev(dev)) {
 			type_info.map_t.if_index = dev_interface_num;
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
+			if (ae_interface_num < 0) {
+				DEBUG_TRACE("MAP-T interface is not ready yet\n");
+				return NULL;
+			}
+
 			ii = ecm_interface_map_t_interface_establish(&type_info.map_t, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			return ii;
 		}

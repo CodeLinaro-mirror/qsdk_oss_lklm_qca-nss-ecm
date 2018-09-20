@@ -1777,7 +1777,7 @@ EXPORT_SYMBOL(ecm_db_iface_map_t_info_get);
  * ecm_db_iface_find_and_ref_map_t()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1797,7 +1797,8 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index)
 
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_MAP_T)
-				|| (ii->type_info.map_t.if_index != if_index)) {
+				|| (ii->type_info.map_t.if_index != if_index)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}

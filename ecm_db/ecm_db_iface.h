@@ -214,7 +214,7 @@ void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii,
 #endif
 
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index, int32_t ae_interface_num);
 void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii,
 			    struct ecm_db_interface_info_map_t *map_t_info, char *name,
 			    int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,
