@@ -384,5 +384,6 @@ void ecm_db_multicast_connection_to_interfaces_clear_at_index(struct ecm_db_conn
 void ecm_db_multicast_connection_data_totals_update(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets);
 void ecm_db_multicast_connection_interface_heirarchy_stats_update(struct ecm_db_connection_instance *ci, uint64_t size, uint64_t packets);
 bool ecm_db_multicast_connection_to_interfaces_set_check(struct ecm_db_connection_instance *ci);
+int ecm_db_multicast_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci);
 #endif
 #endif

@@ -11728,6 +11728,28 @@ void ecm_db_multicast_connection_to_interfaces_clear_at_index(struct ecm_db_conn
 EXPORT_SYMBOL(ecm_db_multicast_connection_to_interfaces_clear_at_index);
 
 /*
+ * ecm_db_multicast_connection_to_interfaces_get_count()
+ * 	Get the number of to interfaces for a connection.
+ */
+int ecm_db_multicast_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci)
+{
+	int heirarchy_index, count = 0;
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed\n", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	for (heirarchy_index = 0; heirarchy_index < ECM_DB_MULTICAST_IF_MAX; heirarchy_index++) {
+		if (ci->to_mcast_interface_first[heirarchy_index] < ECM_DB_IFACE_HEIRARCHY_MAX) {
+			count++;
+		}
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	return count;
+}
+EXPORT_SYMBOL(ecm_db_multicast_connection_to_interfaces_get_count);
+
+/*
  * ecm_db_multicast_connection_to_interfaces_clear()
  * 	Deref and clear all destination multicast interface heirarchies
  */
