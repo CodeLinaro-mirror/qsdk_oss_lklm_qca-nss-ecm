@@ -65,11 +65,10 @@
 #include "ecm_front_end_types.h"
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
-
-/*
- * Max work count for IPv6 route change event handler.
- */
-#define ECM_DB_IP6ROUTE_MAX_WORK_COUNT	16
+#include "ecm_front_end_ipv4.h"
+#ifdef ECM_IPV6_ENABLE
+#include "ecm_front_end_ipv6.h"
+#endif
 
 /*
  * Locking of the database - concurrency control
@@ -90,11 +89,6 @@ bool ecm_db_terminate_pending = false;			/* When true the user has requested ter
  * Random seed used during hash calculations
  */
 uint32_t ecm_db_jhash_rnd __read_mostly;
-
-/*
- * IPv6 rount change event work counter.
- */
-static atomic_t ecm_db_ip6route_work_count;
 
 /*
  * ecm_db_obj_dir_strings[]
@@ -205,135 +199,40 @@ static struct file_operations ecm_db_defunct_all_fops = {
 };
 
 /*
- * ecm_db_iproute_connection_cmp_and_kill()
- *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
- *     function.
+ * ecm_db_route_table_update_event()
+ *	This is a call back for "routing table update event for IPv4 and IPv6".
  */
-static int ecm_db_iproute_connection_cmp_and_kill(struct nf_conn *i, void *data)
-{
-	struct ecm_db_connection_instance *ci;
-
-	if (nf_ct_l3num(i) != AF_INET) {
-		return 0;
-	}
-
-	/*
-	 * Go through the conntarck entries and if they are found in ECM db,
-	 * let the netfilter conntrack kill it..
-	 */
-	ci = ecm_db_connection_ipv4_from_ct_get_and_ref(i);
-	if (ci) {
-		ecm_db_connection_deref(ci);
-		return 1;
-	}
-
-	return 0;
-}
-
-/*
- * ecm_db_iproute_table_update_event()
- *	This is a call back for "routing table update event for IPv4"
- */
-static int ecm_db_iproute_table_update_event(struct notifier_block *nb,
+static int ecm_db_route_table_update_event(struct notifier_block *nb,
 					       unsigned long event,
 					       void *ptr)
 {
-	DEBUG_TRACE("iproute table update event\n");
+	DEBUG_TRACE("route table update event\n");
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
-	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp_and_kill, 0);
-#else
-	nf_ct_iterate_cleanup(&init_net, ecm_db_iproute_connection_cmp_and_kill, 0, 0, 0);
+	/*
+	 * Disable frontend processing until defunct function call is completed.
+	 */
+	ecm_front_end_ipv4_stop(1);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(1);
+#endif
+	ecm_db_connection_defunct_all();
+
+	/*
+	 * Re-enable frontend processing.
+	 */
+	ecm_front_end_ipv4_stop(0);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(0);
 #endif
 	return NOTIFY_DONE;
 }
 
 static struct notifier_block ecm_db_iproute_table_update_nb = {
-	.notifier_call = ecm_db_iproute_table_update_event,
+	.notifier_call = ecm_db_route_table_update_event,
 };
 
-/*
- * ecm_db_ip6route_connection_cmp_and_kill()
- *     This is the "iterate" function passed to the nf_ct_iterate_cleanup()
- *     function.
- */
-static int ecm_db_ip6route_connection_cmp_and_kill(struct nf_conn *i, void *data)
-{
-	struct ecm_db_connection_instance *ci;
-
-	if (nf_ct_l3num(i) != AF_INET6) {
-		return 0;
-	}
-
-	/*
-	 * Go through the conntarck entries and if they are found in ECM db,
-	 * let the netfilter conntrack kill it..
-	 */
-	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(i);
-	if (ci) {
-		ecm_db_connection_deref(ci);
-		return 1;
-	}
-
-	return 0;
-}
-
-/*
- * ecm_db_ip6route_table_iterate_cleanup_work()
- *	Clean up work function for IPv6 route change event.
- */
-static void ecm_db_ip6route_table_iterate_cleanup_work(struct work_struct *work)
-{
-	DEBUG_TRACE("ip6route table iterate cleanup work\n");
-
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 11, 0))
-	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0);
-#else
-	nf_ct_iterate_cleanup(&init_net, ecm_db_ip6route_connection_cmp_and_kill, 0, 0, 0);
-#endif
-	kfree(work);
-	atomic_dec(&ecm_db_ip6route_work_count);
-}
-
-/*
- * ecm_db_ip6route_table_update_event()
- *	This is a callback for "routing table update event for IPv6"
- *
- * ipv6 route change notifier is an atomic notifier, i.e. we cannot
- * schedule.
- *
- * Unfortunately, nf_ct_iterate_cleanup can run for a long
- * time if there are lots of conntracks and the system
- * handles high softirq load, so it frequently calls cond_resched
- * while iterating the conntrack table.
- *
- * So we defer nf_ct_iterate_cleanup walk to the system workqueue.
- */
-static int ecm_db_ip6route_table_update_event(struct notifier_block *nb,
-					       unsigned long event,
-					       void *ptr)
-{
-	struct work_struct *work;
-
-	DEBUG_TRACE("ip6route table update event\n");
-
-	if (atomic_read(&ecm_db_ip6route_work_count) >= ECM_DB_IP6ROUTE_MAX_WORK_COUNT)
-		return NOTIFY_DONE;
-
-
-	work = kmalloc(sizeof(*work), GFP_ATOMIC);
-	if (work) {
-		atomic_inc(&ecm_db_ip6route_work_count);
-
-		INIT_WORK(work, ecm_db_ip6route_table_iterate_cleanup_work);
-		schedule_work(work);
-	}
-
-	return NOTIFY_DONE;
-}
-
 static struct notifier_block ecm_db_ip6route_table_update_nb = {
-	.notifier_call = ecm_db_ip6route_table_update_event,
+	.notifier_call = ecm_db_route_table_update_event,
 };
 
 /*

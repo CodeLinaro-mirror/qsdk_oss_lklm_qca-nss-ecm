@@ -1489,10 +1489,9 @@ static struct ecm_db_iface_instance *ecm_interface_map_t_interface_establish(str
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -1509,11 +1508,10 @@ static struct ecm_db_iface_instance *ecm_interface_map_t_interface_establish(str
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_map_t(type_info->if_index, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 	ecm_db_iface_add_map_t(nii, type_info, dev_name,
@@ -1596,7 +1594,7 @@ static struct ecm_db_iface_instance *ecm_interface_pptp_interface_establish(stru
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id);
+	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
@@ -1616,7 +1614,7 @@ static struct ecm_db_iface_instance *ecm_interface_pptp_interface_establish(stru
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id);
+	ii = ecm_db_iface_find_and_ref_pptp(type_info->src_call_id, type_info->dst_call_id, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -1650,10 +1648,9 @@ static struct ecm_db_iface_instance *ecm_interface_gre_tun_interface_establish(s
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -1670,11 +1667,10 @@ static struct ecm_db_iface_instance *ecm_interface_gre_tun_interface_establish(s
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index);
+	ii = ecm_db_iface_find_and_ref_gre_tun(type_info->if_index, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
-		ecm_db_iface_update_ae_interface_identifier(ii, ae_interface_num);
 		return ii;
 	}
 	ecm_db_iface_add_gre_tun(nii, type_info, dev_name,
@@ -1913,7 +1909,7 @@ static struct ecm_db_iface_instance *ecm_interface_tunipip6_interface_establish(
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%p: iface established\n", ii);
 		return ii;
@@ -1932,7 +1928,7 @@ static struct ecm_db_iface_instance *ecm_interface_tunipip6_interface_establish(
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr);
+	ii = ecm_db_iface_find_and_ref_tunipip6(type_info->saddr, type_info->daddr, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -1961,6 +1957,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	int32_t dev_mtu;
 	int32_t ae_interface_num;
 	struct ecm_db_iface_instance *ii;
+	int32_t interface_type;
 	union {
 		struct ecm_db_interface_info_ethernet ethernet;		/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -2043,6 +2040,14 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	if (dev_type == ARPHRD_ETHER) {
 
 		/*
+		 * If MAC address is zeros, do nothing.
+		 */
+		if (is_zero_ether_addr(dev->dev_addr)) {
+			DEBUG_WARN("Net device %p MAC address is all zeros\n", dev);
+			return NULL;
+		}
+
+		/*
 		 * Ethernet - but what sub type?
 		 */
 
@@ -2114,11 +2119,13 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #endif
 
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
-
 		/*
 		 * GRE TAP?
 		 */
 		if (dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)) {
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
 			/*
 			 * GRE TAP interface is handled as ethernet interface, however it is possible
 			 * that the acceleration engine may not be ready yet to handle the connection.
@@ -2126,7 +2133,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * we should wait until it is ready.
 			 */
 			if (ae_interface_num < 0) {
-				DEBUG_TRACE("GRE TAP interface is not ready yet\n");
+				DEBUG_TRACE("GRE TAP interface is not ready yet. Interface type: %d\n", interface_type);
 				return NULL;
 			}
 		}
@@ -2185,6 +2192,14 @@ identifier_update:
 	if (dev_type == ARPHRD_NONE) {
 		if (is_map_t_dev(dev)) {
 			type_info.map_t.if_index = dev_interface_num;
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
+			if (ae_interface_num < 0) {
+				DEBUG_TRACE("MAP-T interface is not ready yet\n");
+				return NULL;
+			}
+
 			ii = ecm_interface_map_t_interface_establish(&type_info.map_t, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			return ii;
 		}
@@ -2201,7 +2216,6 @@ identifier_update:
 		struct ip_tunnel *tunnel;
 		struct ip_tunnel_6rd_parm *ip6rd;
 		const struct iphdr  *tiph;
-		int interface_type;
 
 		DEBUG_TRACE("Net device: %p is SIT (6-in-4) type: %d\n", dev, dev_type);
 
@@ -2225,7 +2239,7 @@ identifier_update:
 		type_info.sit.ttl = tiph->ttl;
 		type_info.sit.tos = tiph->tos;
 
-		interface_type = feci->ae_interface_type_get(feci, dev_type);
+		interface_type = feci->ae_interface_type_get(feci, dev);
 		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
 		ii = ecm_interface_sit_interface_establish(&type_info.sit, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
@@ -2257,7 +2271,16 @@ identifier_update:
 		type_info.tunipip6.flags = ntohl(tunnel->parms.flags);
 		type_info.tunipip6.flowlabel = fl6->flowlabel;  /* flow Label In kernel is stored in big endian format */
 
-		ii = ecm_interface_tunipip6_interface_establish(&type_info.tunipip6, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		interface_type = feci->ae_interface_type_get(feci, dev);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
+		if (ae_interface_num < 0) {
+			DEBUG_TRACE("TUNIPIP6 interface is not ready yet\n");
+			return NULL;
+		}
+
+		ii = ecm_interface_tunipip6_interface_establish(&type_info.tunipip6, dev_name,
+								dev_interface_num, ae_interface_num, dev_mtu);
 		return ii;
 	}
 #endif
@@ -2265,11 +2288,6 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	if ((dev_type == ARPHRD_IPGRE) || (dev_type == ARPHRD_IP6GRE)) {
-		if (ae_interface_num < 0) {
-			DEBUG_TRACE("GRE TUN interface is not ready yet\n");
-			return NULL;
-		}
-
 		type_info.gre_tun.if_index = dev_interface_num;
 		if (dev_type == ARPHRD_IPGRE) {
 			gre4_tunnel = netdev_priv(dev);
@@ -2287,6 +2305,13 @@ identifier_update:
 			}
 			ECM_NIN6_ADDR_TO_IP_ADDR(type_info.gre_tun.local_ip, gre6_tunnel->parms.laddr);
 			ECM_NIN6_ADDR_TO_IP_ADDR(type_info.gre_tun.remote_ip, gre6_tunnel->parms.raddr);
+		}
+
+		interface_type = feci->ae_interface_type_get(feci, dev);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+		if (ae_interface_num < 0) {
+			DEBUG_TRACE("GRE TUN interface is not ready yet. Interface type: %d\n", interface_type);
+			return NULL;
 		}
 
 		ii = ecm_interface_gre_tun_interface_establish(&type_info.gre_tun, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
@@ -2421,6 +2446,9 @@ identifier_update:
 
 			skb_push(skb, sizeof(struct iphdr));
 
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
 			/*
 			 * Establish this type of interface
 			 */
@@ -2552,6 +2580,7 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	if (channel_protocol == PX_PROTO_PPTP) {
+
 		pptp_channel_addressing_get(&opt, ppp_chan[0]);
 
 		/*
@@ -2564,6 +2593,9 @@ identifier_update:
 
 		DEBUG_TRACE("Net device: %p PPTP source call id: %d,n", dev, type_info.pptp.src_call_id);
 		ppp_release_channels(ppp_chan, 1);
+
+		interface_type = feci->ae_interface_type_get(feci, dev);
+		ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
 		/*
 		 * Establish this type of interface

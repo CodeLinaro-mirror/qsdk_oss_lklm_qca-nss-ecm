@@ -1709,6 +1709,8 @@ static struct ecm_nss_ported_ipv6_connection_instance *ecm_nss_ported_ipv6_conne
 
 	feci->ip_version = 6;
 
+	feci->protocol = protocol;
+
 	/*
 	 * Populate the methods and callbacks
 	 */

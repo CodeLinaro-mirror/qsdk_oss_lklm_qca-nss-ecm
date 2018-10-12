@@ -14,6 +14,10 @@
  **************************************************************************
  */
 
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+#include <nat46-core.h>
+#endif
+
 /*
  * Some constants used with constructing NSS acceleration rules.
  * GGG TODO These should be provided by the NSS driver itself!
@@ -100,10 +104,11 @@ static inline void ecm_nss_common_connection_regenerate(struct ecm_front_end_con
  * TODO: For now the feature is the IP version and the net device type. It can be changed
  * in the future for other needs.
  */
-static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_connection_instance *feci, int32_t dev_type)
+static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_connection_instance *feci, struct net_device *dev)
 {
-	switch (dev_type) {
+	switch (dev->type) {
 	case ARPHRD_SIT:
+#ifdef ECM_INTERFACE_SIT_ENABLE
 		if (feci->ip_version == 4) {
 			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_OUTER;
 		}
@@ -111,6 +116,65 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		if (feci->ip_version == 6) {
 			return NSS_DYNAMIC_INTERFACE_TYPE_TUN6RD_INNER;
 		}
+#endif
+		break;
+
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+	case ARPHRD_TUNNEL6:
+		if (feci->ip_version == 4) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUNIPIP6_INNER;
+		}
+
+		if (feci->ip_version == 6) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_TUNIPIP6_OUTER;
+		}
+#endif
+		break;
+
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+	case ARPHRD_ETHER:
+		/*
+		 * If device is not GRETAP then return NONE.
+		 */
+		if (!(dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP))) {
+			break;
+		}
+#endif
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+	case ARPHRD_IPGRE:
+	case ARPHRD_IP6GRE:
+#endif
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
+		if (feci->protocol == IPPROTO_GRE) {
+			return NSS_DYNAMIC_INTERFACE_TYPE_GRE_OUTER;
+		}
+
+		return NSS_DYNAMIC_INTERFACE_TYPE_GRE_INNER;
+#endif
+	case ARPHRD_NONE:
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+		if (is_map_t_dev(dev)) {
+			if (feci->ip_version == 4) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_MAP_T_INNER;
+			}
+
+			if (feci->ip_version == 6) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_MAP_T_OUTER;
+			}
+		}
+#endif
+		break;
+	case ARPHRD_PPP:
+#ifdef ECM_INTERFACE_PPTP_ENABLE
+		if (dev->priv_flags & IFF_PPP_PPTP) {
+			if (feci->protocol == IPPROTO_GRE) {
+				return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_OUTER;
+			}
+
+			return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_INNER;
+		}
+#endif
+		break;
 	default:
 		break;
 	}

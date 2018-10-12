@@ -57,4 +57,5 @@ void ecm_db_multicast_connection_interface_heirarchy_stats_update(struct ecm_db_
 bool ecm_db_multicast_connection_to_interfaces_set_check(struct ecm_db_connection_instance *ci);
 int _ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance *ti);
 int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instance *ci, struct ecm_state_file_instance *sfi);
+int ecm_db_multicast_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci);
 #endif

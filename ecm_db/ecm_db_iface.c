@@ -1718,7 +1718,7 @@ EXPORT_SYMBOL(ecm_db_iface_pptp_session_info_get);
  * ecm_db_iface_find_and_ref_pptp()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pptp(uint32_t pptp_src_call_id, uint32_t pptp_dst_call_id)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pptp(uint32_t pptp_src_call_id, uint32_t pptp_dst_call_id, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1740,7 +1740,8 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pptp(uint32_t pptp_src_c
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_PPTP)
 				|| (ii->type_info.pptp.src_call_id != pptp_src_call_id)
-				|| (ii->type_info.pptp.dst_call_id != pptp_dst_call_id)) {
+				|| (ii->type_info.pptp.dst_call_id != pptp_dst_call_id)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}
@@ -1777,7 +1778,7 @@ EXPORT_SYMBOL(ecm_db_iface_map_t_info_get);
  * ecm_db_iface_find_and_ref_map_t()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1797,7 +1798,8 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index)
 
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_MAP_T)
-				|| (ii->type_info.map_t.if_index != if_index)) {
+				|| (ii->type_info.map_t.if_index != if_index)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}
@@ -1836,7 +1838,7 @@ EXPORT_SYMBOL(ecm_db_iface_gre_tun_info_get);
  * ecm_db_iface_find_and_ref_gre()
  * 	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1856,7 +1858,8 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index)
 
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_GRE_TUN)
-				|| (ii->type_info.gre_tun.if_index != if_index)) {
+				|| (ii->type_info.gre_tun.if_index != if_index)
+				|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}
@@ -2041,7 +2044,7 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_sit);
  * ecm_db_iface_find_and_ref_tunipip6()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr, ip_addr_t daddr)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr, ip_addr_t daddr, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -2061,8 +2064,9 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr
 	ii = ecm_db_iface_table[hash_index];
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_TUNIPIP6)
-				|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.saddr, saddr)
-				|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.daddr, daddr)) {
+			|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.saddr, saddr)
+			|| !ECM_IP_ADDR_MATCH(ii->type_info.tunipip6.daddr, daddr)
+			|| (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}

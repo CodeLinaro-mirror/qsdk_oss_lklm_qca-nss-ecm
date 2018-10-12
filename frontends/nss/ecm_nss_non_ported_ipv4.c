@@ -718,6 +718,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
 			is_from_ii_type_pptp = true;
+			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: PPTP - unsupported\n", nnpci);
@@ -1807,7 +1808,7 @@ static int ecm_nss_non_ported_ipv4_connection_state_get(struct ecm_front_end_con
  */
 static struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ipv4_connection_instance_alloc(
 								struct ecm_db_connection_instance *ci,
-								bool can_accel)
+								int protocol, bool can_accel)
 {
 	struct ecm_nss_non_ported_ipv4_connection_instance *nnpci;
 	struct ecm_front_end_connection_instance *feci;
@@ -1840,6 +1841,8 @@ static struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ip
 	feci->ci = ci;
 
 	feci->ip_version = 4;
+
+	feci->protocol = protocol;
 
 	/*
 	 * Populate the methods and callbacks
@@ -1962,7 +1965,7 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 		/*
 		 * Connection must have a front end instance associated with it
 		 */
-		feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, can_accel);
+		feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
 			goto fail_1;

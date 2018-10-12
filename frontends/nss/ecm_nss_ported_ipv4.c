@@ -1818,6 +1818,8 @@ static struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_conne
 
 	feci->ip_version = 4;
 
+	feci->protocol = protocol;
+
 	/*
 	 * Populate the methods and callbacks
 	 */

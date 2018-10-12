@@ -214,7 +214,7 @@ void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii,
 #endif
 
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_map_t(int if_index, int32_t ae_interface_num);
 void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii,
 			    struct ecm_db_interface_info_map_t *map_t_info, char *name,
 			    int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,
@@ -222,7 +222,7 @@ void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii,
 #endif
 
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_gre_tun(int if_index, int32_t ae_interface_num);
 void ecm_db_iface_gre_tun_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_gre_tun *gre_tun_info);
 void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii,
 				struct ecm_db_interface_info_gre_tun *gre_tun_info, char *name,
@@ -232,7 +232,8 @@ void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii,
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pptp(uint32_t pptp_src_call_id,
-							     uint32_t pptp_dst_call_id);
+							     uint32_t pptp_dst_call_id,
+							     int32_t ae_interface_num);
 void ecm_db_iface_pptp_session_info_get(struct ecm_db_iface_instance *ii,
 					struct ecm_db_interface_info_pptp *pptp_info);
 void ecm_db_iface_add_pptp(struct ecm_db_iface_instance *ii,
@@ -264,7 +265,8 @@ void ecm_db_iface_add_sit(struct ecm_db_iface_instance *ii,
 #endif
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr,
-								 ip_addr_t daddr);
+								 ip_addr_t daddr,
+								 int32_t ae_interface_num);
 void ecm_db_iface_add_tunipip6(struct ecm_db_iface_instance *ii,
 				struct ecm_db_interface_info_tunipip6 *type_info, char *name,
 				int32_t mtu, int32_t interface_identifier,

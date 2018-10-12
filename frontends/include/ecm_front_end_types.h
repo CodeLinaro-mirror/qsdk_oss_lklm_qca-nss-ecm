@@ -96,7 +96,7 @@ typedef int (*ecm_front_end_connection_state_get_callback_t)(struct ecm_front_en
 #endif
 typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_get_method_t)(struct net_device *dev);
 typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_type_get_method_t)(struct net_device *dev, uint32_t type);
-typedef int32_t (*ecm_front_end_connection_ae_interface_type_get_method_t)(struct ecm_front_end_connection_instance *feci, int32_t dev_type);
+typedef int32_t (*ecm_front_end_connection_ae_interface_type_get_method_t)(struct ecm_front_end_connection_instance *feci, struct net_device *dev);
 typedef void (*ecm_front_end_connection_regenerate_method_t)(struct ecm_front_end_connection_instance *feci, struct ecm_db_connection_instance *ci);
 
 /*
@@ -158,6 +158,7 @@ struct ecm_front_end_connection_instance {
 	 * Common control items to all front end instances
 	 */
 	int ip_version;						/* RO: The version of IP protocol this instance was established for */
+	int protocol;						/* RO: The protocol this instance was established for */
 	struct ecm_db_connection_instance *ci;			/* RO: The connection instance relating to this instance. */
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
@@ -213,7 +214,7 @@ extern bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *
  * hardware support it, then SFE front end.
  *
  * We check device tree to see if NSS is supported by hardware.
- * Currenly all ipq8064, ipq8062 and ipq807x platforms support NSS.
+ * Currenly all ipq8064, ipq8062 and ipq807x  ipq60xx platforms support NSS.
  * Since SFE is a pure software acceleration engine, so all platforms
  * support it.
  */
@@ -222,7 +223,8 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 #ifdef CONFIG_OF
 	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
-				of_machine_is_compatible("qcom,ipq807x");
+				of_machine_is_compatible("qcom,ipq807x") ||
+				of_machine_is_compatible("qcom,ipq6018");
 #else
 	bool nss_supported = true;
 #endif
