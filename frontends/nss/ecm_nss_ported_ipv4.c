@@ -1859,7 +1859,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 							struct nf_conn *ct, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir,
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
 							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr,
-							ip_addr_t ip_src_addr_nat, ip_addr_t ip_dest_addr_nat)
+							ip_addr_t ip_src_addr_nat, ip_addr_t ip_dest_addr_nat, uint16_t l2_encap_proto)
 {
 	struct tcphdr *tcp_hdr;
 	struct tcphdr tcp_hdr_buff;
@@ -2351,6 +2351,8 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		ecm_db_front_end_instance_ref_and_set(nci, feci);
+
+		ecm_db_connection_l2_encap_proto_set(nci, l2_encap_proto);
 
 		/*
 		 * Now add the connection into the database.

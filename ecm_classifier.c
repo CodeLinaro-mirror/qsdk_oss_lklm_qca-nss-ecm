@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2016, 2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -49,6 +49,9 @@
 #endif
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
 #include "ecm_classifier_pcc.h"
+#endif
+#ifdef ECM_CLASSIFIER_MARK_ENABLE
+#include "ecm_classifier_mark.h"
 #endif
 
 /*
@@ -113,6 +116,19 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		DEBUG_TRACE("%p: Created HyFi classifier: %p\n", ci, chfi);
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)chfi);
 		return (struct ecm_classifier_instance *)chfi;
+	}
+#endif
+#ifdef ECM_CLASSIFIER_MARK_ENABLE
+	if (type == ECM_CLASSIFIER_TYPE_MARK) {
+		struct ecm_classifier_mark_instance *ecmi;
+		ecmi = ecm_classifier_mark_instance_alloc(ci);
+		if (!ecmi) {
+			DEBUG_TRACE("%p: Failed to create mark classifier\n", ci);
+			return NULL;
+		}
+		DEBUG_TRACE("%p: Created mark classifier: %p\n", ci, ecmi);
+		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)ecmi);
+		return (struct ecm_classifier_instance *)ecmi;
 	}
 #endif
 

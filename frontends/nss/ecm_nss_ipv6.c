@@ -813,7 +813,7 @@ ecm_ipv6_retry_regen:
 static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct net_device *in_dev,
 							uint8_t *src_node_addr, uint8_t *dest_node_addr,
 							bool can_accel, bool is_routed, bool is_l2_encap,
-							struct sk_buff *skb)
+							struct sk_buff *skb, uint16_t l2_encap_proto)
 {
 	struct ecm_tracker_ip_header ip_hdr;
 	struct nf_conn *ct;
@@ -1024,17 +1024,17 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 				&ip_hdr,
 				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
-				ip_src_addr, ip_dest_addr);
+				ip_src_addr, ip_dest_addr, l2_encap_proto);
 	}
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 	return ecm_nss_non_ported_ipv6_process(out_dev, in_dev,
-				src_node_addr,
-				dest_node_addr,
-				can_accel, is_routed, is_l2_encap, skb,
-				&ip_hdr,
-				ct, sender, ecm_dir,
-				&orig_tuple, &reply_tuple,
-				ip_src_addr, ip_dest_addr);
+			src_node_addr,
+			dest_node_addr,
+			can_accel, is_routed, is_l2_encap, skb,
+			&ip_hdr,
+			ct, sender, ecm_dir,
+			&orig_tuple, &reply_tuple,
+			ip_src_addr, ip_dest_addr, l2_encap_proto);
 #else
 	return NF_ACCEPT;
 #endif
@@ -1128,7 +1128,7 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 	}
 
 	DEBUG_TRACE("Post routing process skb %p, out: %p, in: %p\n", skb, out, in);
-	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, skb);
+	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, skb, 0);
 	dev_put(in);
 	return result;
 }
@@ -1154,13 +1154,13 @@ static unsigned int ecm_nss_ipv6_pppoe_bridge_process(struct net_device *out,
 		return NF_ACCEPT;
 	}
 
-	encap_header_len = ecm_front_end_l2_encap_header_len(skb);
+	encap_header_len = ecm_front_end_l2_encap_header_len(ntohs(skb->protocol));
 	ecm_front_end_pull_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_IPV6);
 
 	result = ecm_nss_ipv6_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
-					 false, true, skb);
+					 false, true, skb, ETH_P_PPP_SES);
 
 	 ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_PPP_SES);
@@ -1335,7 +1335,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 	}
 
 	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in,
-							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb);
+							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 
 	dev_put(in);
 	dev_put(bridge);

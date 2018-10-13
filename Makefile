@@ -181,6 +181,13 @@ endif
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
+# #############################################################################
+ECM_CLASSIFIER_MARK_ENABLE=y
+ecm-$(ECM_CLASSIFIER_MARK_ENABLE) += ecm_classifier_mark.o
+ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
+
+# #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
 # #############################################################################
 ifeq ($(findstring 4.4., $(KERNELVERSION)),)
@@ -284,6 +291,7 @@ ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
 ccflags-y += -DECM_CLASSIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_MARK_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1

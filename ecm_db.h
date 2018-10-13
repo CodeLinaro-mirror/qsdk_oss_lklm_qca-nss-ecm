@@ -22,6 +22,11 @@
 
 #include <net/netfilter/nf_conntrack.h>
 
+void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
+uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
+uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
+
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci, struct ecm_front_end_connection_instance *feci);
 struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(struct nf_conn *ct);
 struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(struct nf_conn *ct);

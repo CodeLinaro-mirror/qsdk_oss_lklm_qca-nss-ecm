@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -22,6 +22,9 @@ struct ecm_classifier_instance;
  */
 enum ecm_classifier_types {
 	ECM_CLASSIFIER_TYPE_DEFAULT = 0,	/* MUST BE FIRST, Default classifier */
+#ifdef ECM_CLASSIFIER_MARK_ENABLE
+	ECM_CLASSIFIER_TYPE_MARK,		/* Mark classifier */
+#endif
 #ifdef ECM_CLASSIFIER_HYFI_ENABLE
 	ECM_CLASSIFIER_TYPE_HYFI,		/* HyFi classifier */
 #endif
