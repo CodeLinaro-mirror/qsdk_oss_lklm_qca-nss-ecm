@@ -180,6 +180,65 @@ int ecm_db_connection_count_by_protocol_get(int protocol)
 EXPORT_SYMBOL(ecm_db_connection_count_by_protocol_get);
 
 /*
+ * ecm_db_connection_l2_encap_proto_set()
+ *	Sets the L2 encap protocol.
+ */
+void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->l2_encap_proto = l2_encap_proto;
+	spin_unlock_bh(&ecm_db_lock);
+}
+
+/*
+ * ecm_db_connection_l2_encap_proto_get()
+ *	Gets the L2 encap protocol.
+ */
+uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci)
+{
+	uint16_t proto;
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	proto = ci->l2_encap_proto;
+	spin_unlock_bh(&ecm_db_lock);
+
+	return proto;
+}
+
+/*
+ * ecm_db_connection_mark_set()
+ *	Sets the mark value of the connection.
+ */
+void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->mark = mark;
+	spin_unlock_bh(&ecm_db_lock);
+
+}
+
+/*
+ * ecm_db_connection_mark_get()
+ *	Gets the mark value of the connection.
+ */
+uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci)
+{
+	uint16_t mark;
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	mark = ci->mark;
+	spin_unlock_bh(&ecm_db_lock);
+
+	return mark;
+}
+
+/*
  * ecm_db_connection_front_end_get_and_ref()
  *	Return ref to the front end instance of the connection
  */

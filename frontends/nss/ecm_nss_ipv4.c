@@ -941,7 +941,7 @@ ecm_ipv4_retry_regen:
  */
 static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct net_device *in_dev,
 							uint8_t *src_node_addr, uint8_t *dest_node_addr,
-							bool can_accel, bool is_routed, bool is_l2_encap, struct sk_buff *skb)
+							bool can_accel, bool is_routed, bool is_l2_encap, struct sk_buff *skb, uint16_t l2_encap_proto)
 {
 	struct ecm_tracker_ip_header ip_hdr;
         struct nf_conn *ct;
@@ -1428,7 +1428,7 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 				&ip_hdr,
 				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
-				ip_src_addr, ip_dest_addr, ip_src_addr_nat, ip_dest_addr_nat);
+				ip_src_addr, ip_dest_addr, ip_src_addr_nat, ip_dest_addr_nat, l2_encap_proto);
 	}
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 	return ecm_nss_non_ported_ipv4_process(out_dev, out_dev_nat,
@@ -1439,7 +1439,7 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 				&ip_hdr,
 				ct, sender, ecm_dir,
 				&orig_tuple, &reply_tuple,
-				ip_src_addr, ip_dest_addr, ip_src_addr_nat, ip_dest_addr_nat);
+				ip_src_addr, ip_dest_addr, ip_src_addr_nat, ip_dest_addr_nat, l2_encap_proto);
 #else
 	return NF_ACCEPT;
 #endif
@@ -1535,7 +1535,7 @@ static unsigned int ecm_nss_ipv4_post_routing_hook(const struct nf_hook_ops *ops
 
 	DEBUG_TRACE("Post routing process skb %p, out: %p (%s), in: %p (%s)\n", skb, out, out->name, in, in->name);
 	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
-							can_accel, true, false, skb);
+							can_accel, true, false, skb, 0);
 	dev_put(in);
 	return result;
 }
@@ -1561,13 +1561,13 @@ static unsigned int ecm_front_end_ipv4_pppoe_bridge_process(struct net_device *o
 		return NF_ACCEPT;
 	}
 
-	encap_header_len = ecm_front_end_l2_encap_header_len(skb);
+	encap_header_len = ecm_front_end_l2_encap_header_len(ntohs(skb->protocol));
 	ecm_front_end_pull_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_IP);
 
 	result = ecm_nss_ipv4_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
-					 false, true, skb);
+					 false, true, skb, ETH_P_PPP_SES);
 
 	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_PPP_SES);
@@ -1741,7 +1741,7 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(const struct nf_hook_o
 	}
 
 	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in,
-				skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb);
+				skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 
 	dev_put(in);
 	dev_put(bridge);

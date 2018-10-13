@@ -61,6 +61,8 @@ struct ecm_db_connection_instance {
 	int protocol;						/* RO: Protocol of the connection */
 	ecm_db_direction_t direction;				/* RO: 'Direction' of connection establishment. */
 	bool is_routed;						/* RO: True when connection is routed, false when not */
+	uint16_t l2_encap_proto;				/* L2 encap protocol of the flow of this connection */
+	uint32_t mark;						/* The result value of mark classifier on this connection */
 
 	/*
 	 * Connection endpoint mapping
@@ -355,6 +357,11 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci,
 					   struct ecm_front_end_connection_instance *feci);
+
+void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
+uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
+uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);

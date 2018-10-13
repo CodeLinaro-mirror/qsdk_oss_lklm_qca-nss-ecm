@@ -50,10 +50,10 @@ static inline void ecm_nss_bond_notifier_exit(void)
  * ecm_front_end_l2_encap_header_len()
  *      Return length of encapsulating L2 header
  */
-static inline uint32_t ecm_front_end_l2_encap_header_len(struct sk_buff *skb)
+static inline uint32_t ecm_front_end_l2_encap_header_len(uint16_t protocol)
 {
-	switch (skb->protocol) {
-	case ntohs(ETH_P_PPP_SES):
+	switch (protocol) {
+	case ETH_P_PPP_SES:
 		return PPPOE_SES_HLEN;
 	default:
 		return 0;
