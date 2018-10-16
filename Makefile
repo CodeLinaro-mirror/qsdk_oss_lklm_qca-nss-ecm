@@ -25,6 +25,9 @@ obj-m += ecm.o
 ifeq ($(EXAMPLES_BUILD_PCC),y)
 obj-m += examples/ecm_pcc_test.o
 endif
+ifeq ($(EXAMPLES_BUILD_MARK),y)
+obj-m += examples/ecm_mark_test.o
+endif
 
 ecm-y := \
 	 ecm_tracker_udp.o \
