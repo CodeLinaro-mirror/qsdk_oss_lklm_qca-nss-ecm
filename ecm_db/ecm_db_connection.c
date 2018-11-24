@@ -274,11 +274,15 @@ static void ecm_db_connection_defunct_callback(void *arg)
 	/*
 	 * It is possible that the defunct process fails and re-try is in progress.
 	 * In that case we set the accel mode of the connection to
-	 * ECM_FRONT_END_ACCELERATION_MODE_ACCEL so that in the next destroy try the connection
+	 * ECM_FRONT_END_ACCELERATION_MODE_ACCEL, so that in the next destroy try, the connection
 	 * status would be correct. So, if the accel_mode is ECM_FRONT_END_ACCELERATION_MODE_ACCEL,
 	 * we shouldn't release the last reference count.
+	 * Another case is that the defunct can happen while waiting an acceleration response
+	 * from acceleration engine in which the state is set to ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING.
+	 * So, the last reference of the connection shouldn't be released in this state as well.
 	 */
-	if (accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+	if ((accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) &&
+		(accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING)) {
 		ecm_db_connection_deref(ci);
 	}
 }
