@@ -12655,6 +12655,12 @@ void ecm_db_exit(void)
 	ecm_db_terminate_pending = true;
 	spin_unlock_bh(&ecm_db_lock);
 
+	/*
+	 * unregister for route table update events
+	 */
+	ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
+	rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
+
 	ecm_db_connection_defunct_all();
 
 	/*
@@ -12685,11 +12691,5 @@ void ecm_db_exit(void)
 	if (ecm_db_dentry) {
 		debugfs_remove_recursive(ecm_db_dentry);
 	}
-
-	/*
-	 * unregister for route table update events
-	 */
-	ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
-	rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
 }
 EXPORT_SYMBOL(ecm_db_exit);
