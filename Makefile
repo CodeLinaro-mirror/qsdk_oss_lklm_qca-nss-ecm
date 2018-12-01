@@ -144,6 +144,12 @@ ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_RAWIP_ENABLE=y in order
+# to enable support for RAWIP interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
+
+# #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
 # #############################################################################
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
