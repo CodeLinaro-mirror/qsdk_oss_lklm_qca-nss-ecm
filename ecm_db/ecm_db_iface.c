@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -110,7 +110,8 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"PPPoL2TPV2",
 	"PPTP",
 	"MAP_T",
-	"GRE_TUN"
+	"GRE_TUN",
+	"RAWIP"
 };
 
 /*
@@ -755,6 +756,37 @@ static int ecm_db_iface_sit_state_get(struct ecm_db_iface_instance *ii, struct e
 	}
 
 	if ((result = ecm_state_write(sfi, "os_specific_ident", "%u", os_specific_ident))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
+
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+/*
+ * ecm_db_iface_rawip_state_get()
+ * 	Return interface type specific state
+ */
+static int ecm_db_iface_rawip_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	uint8_t address[ETH_ALEN];
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(address, ii->type_info.rawip.address, ETH_ALEN);
+	spin_unlock_bh(&ecm_db_lock);
+
+	if ((result = ecm_state_prefix_add(sfi, "rawip"))) {
+		return result;
+	}
+
+	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "address", "%pM", address))) {
 		return result;
 	}
 
@@ -2082,6 +2114,48 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_tunipip6(ip_addr_t saddr
 }
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_tunipip6);
 #endif
+#endif
+
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+/*
+ * ecm_db_iface_find_and_ref_rawip()
+ *	Lookup and return a iface reference if any
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_rawip(uint8_t *address)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Lookup RAWIP iface with addr %pM\n", address);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 * We can use the same hash function of ethernet interface.
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+
+	/*
+	 * Iterate the chain looking for an iface with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_RAWIP)
+		    || memcmp(ii->type_info.rawip.address, address, ETH_ALEN)) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("%p: RAWIP iface found\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("RAWIP iface not found\n");
+	return NULL;
+}
+EXPORT_SYMBOL(ecm_db_iface_find_and_ref_rawip);
 #endif
 
 #ifdef ECM_DB_XREF_ENABLE
@@ -3783,6 +3857,123 @@ void ecm_db_iface_add_ipsec_tunnel(struct ecm_db_iface_instance *ii, uint32_t os
 	}
 }
 EXPORT_SYMBOL(ecm_db_iface_add_ipsec_tunnel);
+#endif
+
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+/*
+ * ecm_db_iface_add_rawip()
+ *	Add a iface instance into the database
+ */
+void ecm_db_iface_add_rawip(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
+					int32_t interface_identifier, int32_t ae_interface_identifier,
+					ecm_db_iface_final_callback_t final, void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	ecm_db_iface_id_hash_t iface_id_hash_index;
+	struct ecm_db_listener_instance *li;
+	struct ecm_db_interface_info_rawip *type_info;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	DEBUG_ASSERT(address, "%p: address null\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%p: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%p: inserted\n", ii);
+	DEBUG_ASSERT(name, "%p: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_RAWIP;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_rawip_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strlcpy(ii->name, name, IFNAMSIZ);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = ae_interface_identifier;
+
+	/*
+	 * Type specific info
+	 */
+	type_info = &ii->type_info.rawip;
+	memcpy(type_info->address, address, ETH_ALEN);
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+	ii->hash_index = hash_index;
+
+	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
+	ii->iface_id_hash_index = iface_id_hash_index;
+
+	/*
+	 * Add into the global list
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
+	ii->prev = NULL;
+	ii->next = ecm_db_interfaces;
+	if (ecm_db_interfaces) {
+		ecm_db_interfaces->prev = ii;
+	}
+	ecm_db_interfaces = ii;
+
+	/*
+	 * Insert into chain
+	 */
+	ii->hash_next = ecm_db_iface_table[hash_index];
+	if (ecm_db_iface_table[hash_index]) {
+		ecm_db_iface_table[hash_index]->hash_prev = ii;
+	}
+	ecm_db_iface_table[hash_index] = ii;
+	ecm_db_iface_table_lengths[hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
+
+	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
+
+	/*
+	 * Insert into interface identifier chain
+	 */
+	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
+	if (ecm_db_iface_id_table[iface_id_hash_index]) {
+		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
+	}
+	ecm_db_iface_id_table[iface_id_hash_index] = ii;
+	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
+
+	/*
+	 * Set time of addition
+	 */
+	ii->time_added = ecm_db_time;
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Throw add event to the listeners
+	 */
+	DEBUG_TRACE("%p: Throw iface added event\n", ii);
+	li = ecm_db_listeners_get_and_ref_first();
+	while (li) {
+		struct ecm_db_listener_instance *lin;
+		if (li->iface_added) {
+			li->iface_added(li->arg, ii);
+		}
+
+		/*
+		 * Get next listener
+		 */
+		lin = ecm_db_listener_get_and_ref_next(li);
+		ecm_db_listener_deref(li);
+		li = lin;
+	}
+}
+EXPORT_SYMBOL(ecm_db_iface_add_rawip);
 #endif
 
 /*

@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, 2018, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018-2019, The Linux Foundation. All rights reserved.
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -151,6 +151,13 @@ ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 # #############################################################################
 ECM_INTERFACE_TUNIPIP6_ENABLE=y
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
+
+# #############################################################################
+# Define ECM_INTERFACE_RAWIP_ENABLE=y in order
+# to enable support for RAWIP interface.
+# #############################################################################
+ECM_INTERFACE_RAWIP_ENABLE=y
+ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
 
 # #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
