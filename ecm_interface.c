@@ -752,6 +752,40 @@ bool ecm_interface_mac_addr_get_no_route(struct net_device *dev, ip_addr_t addr,
 EXPORT_SYMBOL(ecm_interface_mac_addr_get_no_route);
 
 #ifdef ECM_MULTICAST_ENABLE
+
+/*
+ * ecm_interface_multicast_dest_list_find_if()
+ * 	Searches for a given device in a list of interface indices
+ *
+ * 	dev		Pointer to the net device to search for
+ * 	max_if		Number of valid interfaces in the destination interface list
+ * 	dest_if_list	The destination interface list
+ */
+static bool ecm_interface_multicast_dest_list_find_if(struct net_device *dev, uint8_t max_if, uint32_t *dest_if_list)
+{
+	struct net_device *dest_dev = NULL;
+	uint32_t *dst_if_index;
+	int index;
+
+	for (index = 0; index < max_if; index++) {
+		dst_if_index = ecm_db_multicast_if_first_get_at_index(dest_if_list, index);
+		dest_dev = dev_get_by_index(&init_net, *dst_if_index);
+		if (!dest_dev) {
+			DEBUG_WARN("Found invalid if_index %d at index %d\n", *dst_if_index, index);
+			continue;
+		}
+
+		if (dest_dev == dev) {
+			dev_put(dest_dev);
+			return true;
+		}
+
+		dev_put(dest_dev);
+	}
+
+	return false;
+}
+
 /*
  * ecm_interface_multicast_check_for_br_dev()
  * 	Find a bridge dev is present or not in an
@@ -3035,18 +3069,26 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 	 */
 	if (in_dev && !mfc_update) {
 		if (ecm_front_end_is_bridge_port(in_dev)) {
-			src_dev_is_bridge = true;
 			br_dev_src = ecm_interface_get_and_hold_dev_master(in_dev);
 			DEBUG_ASSERT(br_dev_src, "Expected a master\n");
 
 			/*
-	 		 * The source net_dev found as bridge slave. In case of routed interface
-			 * heirarchy MFC is not aware of any other bridge slave has joined the same
-			 * multicast group as a destination interface. Therfore we assume there
-			 * are bridge slaves present in multicast destination interface list
-			 * and increase the max_if by one.
+			 * Source netdev is part of a bridge. First make sure that this bridge
+			 * is not already part of the dest_if list given by MFC. If not, we
+			 * include the bridge in the dest if list to check for any bridge
+			 * slaves interested in the group.
 			 */
-			max_if++;
+			if (!ecm_interface_multicast_dest_list_find_if(br_dev_src, max_if, dst_if_index_base)) {
+
+				src_dev_is_bridge = true;
+
+				/*
+				 * Increase the max_if by one. This will enable us to query MCS
+				 * for any bridge slaves that may be interested in the group.
+				 */
+				max_if++;
+			}
+
 		}
 	}
 
