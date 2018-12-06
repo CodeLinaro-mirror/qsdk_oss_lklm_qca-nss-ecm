@@ -5370,9 +5370,10 @@ static void ecm_interface_defunct_connections(struct ecm_db_iface_instance *ii)
 	/*
 	 * Defunct ALL if all the four connection instances are NULL
 	 */
-	if (!ci[ECM_DB_OBJ_DIR_FROM] && !ci[ECM_DB_OBJ_DIR_TO] && !ci[ECM_DB_OBJ_DIR_FROM_NAT] && !ci[ECM_DB_OBJ_DIR_TO_NAT]) {
-		ecm_db_regeneration_needed();
-		DEBUG_TRACE("%p: Regenerate (ALL) COMPLETE\n", ii);
+	if (!ci[ECM_DB_OBJ_DIR_FROM] && !ci[ECM_DB_OBJ_DIR_TO] &&
+			!ci[ECM_DB_OBJ_DIR_FROM_NAT] && !ci[ECM_DB_OBJ_DIR_TO_NAT]) {
+		ecm_db_connection_defunct_all();
+		DEBUG_TRACE("%p: Defunct (ALL) COMPLETE\n", ii);
 		return;
 	}
 
