@@ -709,21 +709,16 @@ static int ecm_db_iface_ipsec_tunnel_state_get(struct ecm_db_iface_instance *ii,
 static int ecm_db_iface_tunipip6_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
 {
 	int result;
-	uint32_t os_specific_ident;
 
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
-	spin_lock_bh(&ecm_db_lock);
-	os_specific_ident = ii->type_info.ipsec_tunnel.os_specific_ident;
-	spin_unlock_bh(&ecm_db_lock);
 
+	/*
+	 * TODO: tunipip6 specific information needs to be added.
+	 */
 	if ((result = ecm_state_prefix_add(sfi, "tunipip6"))) {
 		return result;
 	}
 	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
-		return result;
-	}
-
-	if ((result = ecm_state_write(sfi, "os_specific_ident", "%u", os_specific_ident))) {
 		return result;
 	}
 
@@ -740,21 +735,16 @@ static int ecm_db_iface_tunipip6_state_get(struct ecm_db_iface_instance *ii, str
 static int ecm_db_iface_sit_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
 {
 	int result;
-	uint32_t os_specific_ident;
 
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
-	spin_lock_bh(&ecm_db_lock);
-	os_specific_ident = ii->type_info.ipsec_tunnel.os_specific_ident;
-	spin_unlock_bh(&ecm_db_lock);
 
+	/*
+	 * TODO: SIT (6rd) specific information needs to be added.
+	 */
 	if ((result = ecm_state_prefix_add(sfi, "sit"))) {
 		return result;
 	}
 	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
-		return result;
-	}
-
-	if ((result = ecm_state_write(sfi, "os_specific_ident", "%u", os_specific_ident))) {
 		return result;
 	}
 
