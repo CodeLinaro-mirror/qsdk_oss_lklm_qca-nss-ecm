@@ -77,9 +77,6 @@ endif
 # Define ECM_INTERFACE_BOND_ENABLE=y in order to enable
 # Bonding / Link Aggregation support.
 # #############################################################################
-ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
-ECM_INTERFACE_BOND_ENABLE=y
-endif
 ecm-$(ECM_INTERFACE_BOND_ENABLE) += frontends/nss/ecm_nss_bond_notifier.o
 ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
 
@@ -94,14 +91,12 @@ ccflags-$(ECM_INTERFACE_PPPOE_ENABLE) += -DECM_INTERFACE_PPPOE_ENABLE
 # Define ECM_INTERFACE_L2TPV2_ENABLE=y in order
 # to enable support for l2tpv2 acceleration.
 # #############################################################################
-ECM_INTERFACE_L2TPV2_ENABLE=y
 ccflags-$(ECM_INTERFACE_L2TPV2_ENABLE) += -DECM_INTERFACE_L2TPV2_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_PPTP_ENABLE=y in order
 # to enable support for pptp acceleration.
 # #############################################################################
-ECM_INTERFACE_PPTP_ENABLE=y
 ccflags-$(ECM_INTERFACE_PPTP_ENABLE) += -DECM_INTERFACE_PPTP_ENABLE
 
 # #############################################################################
@@ -128,28 +123,24 @@ ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 # Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
 # to enable support for GRE TAP interface.
 # #############################################################################
-ECM_INTERFACE_GRE_TAP_ENABLE=y
 ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_GRE_TUN_ENABLE=y in order
 # to enable support for GRE TUN interface.
 # #############################################################################
-ECM_INTERFACE_GRE_TUN_ENABLE=y
 ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
 # to enable support for SIT interface.
 # #############################################################################
-ECM_INTERFACE_SIT_ENABLE=y
 ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_TUNIPIP6_ENABLE=y in order
 # to enable support for TUNIPIP6 interface.
 # #############################################################################
-ECM_INTERFACE_TUNIPIP6_ENABLE=y
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
@@ -181,7 +172,6 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 # #############################################################################
 # Define ECM_INTERFACE_IPSEC_ENABLE=y in order to enable support for IPSEC
 # #############################################################################
-ECM_INTERFACE_IPSEC_ENABLE=y
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
 # #############################################################################
