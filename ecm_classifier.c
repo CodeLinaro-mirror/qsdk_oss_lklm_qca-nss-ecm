@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016, 2018, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2016, 2018-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -63,8 +63,9 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 	DEBUG_TRACE("%p: Assign classifier of type: %d\n", ci, type);
 	DEBUG_ASSERT(type != ECM_CLASSIFIER_TYPE_DEFAULT, "Must never need to instantiate default type in this way");
 
+	switch (type) {
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_PCC) {
+	case ECM_CLASSIFIER_TYPE_PCC: {
 		struct ecm_classifier_pcc_instance *pcci;
 		pcci = ecm_classifier_pcc_instance_alloc(ci);
 		if (!pcci) {
@@ -76,9 +77,8 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		return (struct ecm_classifier_instance *)pcci;
 	}
 #endif
-
 #ifdef ECM_CLASSIFIER_NL_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_NL) {
+	case ECM_CLASSIFIER_TYPE_NL: {
 		struct ecm_classifier_nl_instance *cnli;
 		cnli = ecm_classifier_nl_instance_alloc(ci);
 		if (!cnli) {
@@ -90,9 +90,8 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		return (struct ecm_classifier_instance *)cnli;
 	}
 #endif
-
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_DSCP) {
+	case ECM_CLASSIFIER_TYPE_DSCP: {
 		struct ecm_classifier_dscp_instance *cdscpi;
 		cdscpi = ecm_classifier_dscp_instance_alloc(ci);
 		if (!cdscpi) {
@@ -104,9 +103,8 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		return (struct ecm_classifier_instance *)cdscpi;
 	}
 #endif
-
 #ifdef ECM_CLASSIFIER_HYFI_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_HYFI) {
+	case ECM_CLASSIFIER_TYPE_HYFI: {
 		struct ecm_classifier_hyfi_instance *chfi;
 		chfi = ecm_classifier_hyfi_instance_alloc(ci);
 		if (!chfi) {
@@ -119,7 +117,7 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 	}
 #endif
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
-	if (type == ECM_CLASSIFIER_TYPE_MARK) {
+	case ECM_CLASSIFIER_TYPE_MARK: {
 		struct ecm_classifier_mark_instance *ecmi;
 		ecmi = ecm_classifier_mark_instance_alloc(ci);
 		if (!ecmi) {
@@ -131,9 +129,10 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		return (struct ecm_classifier_instance *)ecmi;
 	}
 #endif
-
-	DEBUG_ASSERT(NULL, "%p: Unsupported type: %d\n", ci, type);
-	return NULL;
+	default:
+		DEBUG_ASSERT(NULL, "%p: Unsupported type: %d\n", ci, type);
+		return NULL;
+	}
 }
 
 /*
