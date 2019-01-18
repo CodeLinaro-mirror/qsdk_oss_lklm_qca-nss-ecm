@@ -185,10 +185,12 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	int i;
 	bool done;
 	uint8_t node_addr[ETH_ALEN];
-#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+
+#if defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
 	ip_addr_t remote_ip, local_ip;
 	struct net_device *local_dev;
 #endif
+
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 	struct inet6_dev *ip6_inetdev;
 #endif
@@ -238,6 +240,9 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #endif
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
 		struct ecm_db_interface_info_pppol2tpv2 pppol2tpv2_info;
+#endif
+#ifdef ECM_INTERFACE_PPTP_ENABLE
+		struct ecm_db_interface_info_pptp pptp_info;
 #endif
 		type = ecm_db_iface_type_get(interface_list[i]);
 		DEBUG_INFO("Lookup node address, interface @ %d is type: %d\n", i, type);
@@ -323,6 +328,60 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			break;
 #else
 			DEBUG_TRACE("PPPoL2TPV2 interface unsupported\n");
+			return NULL;
+#endif
+		case ECM_DB_IFACE_TYPE_PPTP:
+#ifdef ECM_INTERFACE_PPTP_ENABLE
+			ecm_db_iface_pptp_session_info_get(interface_list[i], &pptp_info);
+			ECM_HIN4_ADDR_TO_IP_ADDR(local_ip, pptp_info.src_ip);
+			ECM_HIN4_ADDR_TO_IP_ADDR(remote_ip, pptp_info.dst_ip);
+			DEBUG_TRACE("local=" ECM_IP_ADDR_DOT_FMT " remote=" ECM_IP_ADDR_DOT_FMT " addr=" ECM_IP_ADDR_DOT_FMT "\n",
+			       ECM_IP_ADDR_TO_DOT(local_ip), ECM_IP_ADDR_TO_DOT(remote_ip), ECM_IP_ADDR_TO_DOT(addr));
+
+			local_dev = ecm_interface_dev_find_by_local_addr(local_ip);
+
+			if (!local_dev) {
+				DEBUG_WARN("Failed to find local netdevice of pptp tunnel for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
+				return NULL;
+			}
+
+			DEBUG_TRACE("local_dev found is %s\n", local_dev->name);
+
+			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
+				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
+					DEBUG_TRACE("failed to obtain node address for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
+					dev_put(local_dev);
+					return NULL;
+				}
+
+			} else {
+				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, remote_ip, node_addr))) {
+					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
+
+					if (!ecm_interface_find_gateway(remote_ip, gw_addr)) {
+						DEBUG_TRACE("failed to obtain Gateway address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(remote_ip));
+						dev_put(local_dev);
+						return NULL;
+					}
+
+					if (ECM_IP_ADDR_MATCH(gw_addr, remote_ip)) {
+						DEBUG_TRACE("host ip address match with gw address " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(remote_ip));
+						dev_put(local_dev);
+						return NULL;
+					}
+
+					if (!ecm_interface_mac_addr_get_no_route(local_dev, gw_addr, node_addr)) {
+						DEBUG_TRACE("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(gw_addr));
+						dev_put(local_dev);
+						return NULL;
+					}
+				}
+			}
+
+			dev_put(local_dev);
+			done = true;
+#else
+			DEBUG_TRACE("PPTP interface unsupported\n");
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_MAP_T:
@@ -1203,26 +1262,27 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 	}
 
 #ifdef ECM_INTERFACE_PPP_ENABLE
-#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+#ifndef ECM_INTERFACE_PPTP_ENABLE
 	/*
-	 * skip l2tpv3 because we don't accelerate them
-	 */
-	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
-		return NF_ACCEPT;
-	}
-
-	/*
-	 * Skip PPTP beacuse we don't support acceleration for
-	 * IPv6 inner header over PPTP
+	 * skip pptp because we don't accelerate them
 	 */
 	if (ecm_interface_is_pptp(skb, out)) {
 		return NF_ACCEPT;
 	}
+#endif
+#ifndef ECM_INTERFACE_L2TPV2_ENABLE
+	/*
+	 * skip l2tp v2 and v3, because we don't accelerate them
+	 */
+	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 2) ||
+		ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
+		return NF_ACCEPT;
+	}
 #else
 	/*
-	 * skip l2tp/pptp because we don't accelerate them
+	 * skip l2tpv3 because we don't accelerate them
 	 */
-	if (ecm_interface_is_l2tp_pptp(skb, out)) {
+	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
 		return NF_ACCEPT;
 	}
 #endif
