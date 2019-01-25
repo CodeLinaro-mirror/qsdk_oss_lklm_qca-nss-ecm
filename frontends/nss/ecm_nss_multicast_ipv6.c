@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -3490,7 +3490,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
-			if (!ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip)) {
+			if (!(ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip))) {
 				DEBUG_TRACE("%p: Multicast tuple not matched, try next multicast tuple %d\n", tuple_instance, op);
 				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
 				ecm_db_multicast_connection_deref(tuple_instance);
@@ -3672,7 +3672,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
-			if (!ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip)) {
+			if (!(ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip))) {
 				DEBUG_TRACE("%p:Multicast tuple not matched, try next tuple %d\n", tuple_instance, op);
 				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
 				ecm_db_multicast_connection_deref(tuple_instance);
