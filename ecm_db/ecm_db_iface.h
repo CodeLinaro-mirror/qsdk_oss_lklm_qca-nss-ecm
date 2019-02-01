@@ -121,6 +121,12 @@ struct ecm_db_iface_instance {
 		struct ecm_db_interface_info_tunipip6 tunipip6;		/* type == ECM_DB_IFACE_TYPE_TUNIPIP6 (IPIP v6 Tunnel i.e. TUNNEL6) */
 #endif
 #endif
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+		struct ecm_db_interface_info_rawip rawip;		/* type ECM_DB_IFACE_TYPE_RAWIP */
+#endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+		struct ecm_db_interface_info_ovpn ovpn;			/* type == ECM_DB_IFACE_TYPE_OVPN (OpenVPN tunnel - data channel offload interface) */
+#endif
 	} type_info;
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
@@ -169,6 +175,10 @@ void ecm_db_iface_vlan_info_get(struct ecm_db_iface_instance *ii,
 
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_by_interface_identifier(int32_t interface_id);
 struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t idx);
+
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_rawip(uint8_t *address);
+#endif
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_lag(uint8_t *address);
@@ -272,6 +282,13 @@ void ecm_db_iface_add_tunipip6(struct ecm_db_iface_instance *ii,
 				int32_t mtu, int32_t interface_identifier,
 				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 #endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovpn(int32_t tun_ifnum);
+void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
+				struct ecm_db_interface_info_ovpn *type_info, char *name,
+				int32_t mtu, int32_t interface_identifier,
+				ecm_db_iface_final_callback_t final, void *arg);
+#endif
 
 struct ecm_db_iface_instance *ecm_db_interfaces_get_and_ref_first(void);
 struct ecm_db_iface_instance *ecm_db_interface_get_and_ref_next(struct ecm_db_iface_instance *ii);
@@ -301,6 +318,12 @@ void ecm_db_iface_add_unknown(struct ecm_db_iface_instance *ii,
 void ecm_db_iface_add_loopback(struct ecm_db_iface_instance *ii,
 				uint32_t os_specific_ident, char *name, int32_t mtu, int32_t interface_identifier,
 				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
+
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+void ecm_db_iface_add_rawip(struct ecm_db_iface_instance *ii,
+				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
+				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
+#endif
 
 char *ecm_db_interface_type_to_string(ecm_db_iface_type_t type);
 

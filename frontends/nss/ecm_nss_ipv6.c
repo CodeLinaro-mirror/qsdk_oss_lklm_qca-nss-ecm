@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -193,6 +193,10 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	struct inet6_dev *ip6_inetdev;
 #endif
 
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+	struct net_device *out_dev;
+#endif
+
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	struct net_device *in;
 	struct ip_tunnel *gre4_tunnel;
@@ -322,7 +326,6 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_MAP_T:
-
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 			ip6_inetdev = ip6_dst_idev(skb_dst(skb));
 			if (!ip6_inetdev) {
@@ -366,6 +369,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			DEBUG_TRACE("MAP-T interface unsupported\n");
 			return NULL;
 #endif
+
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 			in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -418,6 +422,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			DEBUG_TRACE("GRE interface unsupported\n");
 			return NULL;
 #endif
+
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			/*
@@ -427,6 +432,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			DEBUG_TRACE("VLAN interface unsupported\n");
 			return NULL;
 #endif
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
@@ -470,6 +476,37 @@ done:
 
 			done = true;
 			break;
+		case ECM_DB_IFACE_TYPE_RAWIP:
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+			done = true;
+			break;
+#else
+			DEBUG_TRACE("%p: RAWIP interface unsupported\n", feci);
+			return NULL;
+#endif
+		case ECM_DB_IFACE_TYPE_OVPN:
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+			out_dev = skb_dst(skb)->dev;
+
+			/*
+			 * There is no MAC address for TUN/TAP device.
+			 * Return if skb->dst is TUN/TAP device.
+			 */
+			if (!out_dev || out_dev->priv_flags & IFF_TUN_TAP) {
+				DEBUG_WARN("failed to update node_addr dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT "\n",
+						dev->name, out_dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
+				return NULL;
+			}
+			memcpy(node_addr, out_dev->dev_addr, ETH_ALEN);
+
+			DEBUG_TRACE("dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT ", node_addr: %pM\n",
+				dev->name, out_dev->name, ECM_IP_ADDR_TO_OCTAL(addr), node_addr);
+			done = true;
+			break;
+#else
+			DEBUG_TRACE("OVPN interface unsupported\n");
+			return NULL;
+#endif
 		default:
 			/*
 			 * Don't know how to handle these.
@@ -915,16 +952,6 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %p is fragmented\n", skb);
-		return NF_ACCEPT;
-	}
-
-	/*
-	 * Do not accelerate flows to/from any virtual tunnel or tap devices.
-	 */
-	if ((in_dev->priv_flags & IFF_TUN_TAP) ||
-			(out_dev->priv_flags & IFF_TUN_TAP)) {
-
-		DEBUG_TRACE("virtual tunnels are not accelerated by ECM\n");
 		return NF_ACCEPT;
 	}
 

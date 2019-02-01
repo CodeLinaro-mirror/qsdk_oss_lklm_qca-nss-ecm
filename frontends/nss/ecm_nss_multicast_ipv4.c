@@ -3694,7 +3694,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
-			if (!ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip)) {
+			if (!(ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip))) {
 				DEBUG_TRACE("%p: Multicast tuple not matched, try next multicast tuple %d\n", tuple_instance, op);
 				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
 				ecm_db_multicast_connection_deref(tuple_instance);
@@ -3877,7 +3877,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
-			if (!ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip)) {
+			if (!(ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip))) {
 				DEBUG_TRACE("%p: Multicast tuple not matched, try next tuple %d\n", tuple_instance, op);
 				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
 				ecm_db_multicast_connection_deref(tuple_instance);

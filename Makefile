@@ -144,6 +144,12 @@ ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_RAWIP_ENABLE=y in order
+# to enable support for RAWIP interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
+
+# #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
 # #############################################################################
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
@@ -300,6 +306,12 @@ ECM_BAND_STEERING_ENABLE=y
 ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_OVPN_ENABLE=y in order
+# to enable support for OVPN acceleration.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.
@@ -340,6 +352,6 @@ ccflags-y += -DECM_INTERFACE_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATE_DEBUG_LEVEL=1
 ccflags-y += -DECM_OPENWRT_SUPPORT=1
 
-ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe
+ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/exports
 
 obj ?= .
