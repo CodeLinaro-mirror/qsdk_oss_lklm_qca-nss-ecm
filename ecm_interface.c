@@ -136,7 +136,7 @@ static struct ecm_interface_wifi_event __ewn;
 struct net_device *ipv6_dev_find(struct net *net, struct in6_addr *addr, int strict);
 #endif
 
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 /*
  * Get ipsecmgr tunnel netdevice method
  */
