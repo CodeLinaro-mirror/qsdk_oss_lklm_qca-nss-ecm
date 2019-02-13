@@ -4088,7 +4088,7 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 #endif
 	ii->arg = arg;
 	ii->final = final;
-	strcpy(ii->name, name);
+	strlcpy(ii->name, name, IFNAMSIZ);
 	ii->mtu = mtu;
 	ii->interface_identifier = interface_identifier;
 	ii->ae_interface_identifier = type_info->tun_ifnum;

@@ -5714,17 +5714,27 @@ void ecm_interface_dev_defunct_connections(struct net_device *dev)
 	DEBUG_INFO("defunct connections for: %p (%s)\n", dev, dev->name);
 
 	/*
-	 * If the interface is known to us then we will get it returned by this
-	 * function and process it accordingly.
+	 * Filter interface instances matching dev and defunct connections
 	 */
-	ii = ecm_db_iface_find_and_ref_by_interface_identifier(dev->ifindex);
-	if (!ii) {
-		DEBUG_WARN("%p: No interface instance could be established for this dev\n", dev);
-		return;
+	ii = ecm_db_interfaces_get_and_ref_first();
+	while (ii) {
+		struct ecm_db_iface_instance *iin;
+
+		/*
+		 * Defunct connections if ii is representing dev.
+		 */
+		if (dev->ifindex == ecm_db_iface_interface_identifier_get(ii)) {
+			ecm_interface_defunct_connections(ii);
+			DEBUG_TRACE("%p: defunct for %p: COMPLETE\n", dev, ii);
+		}
+
+		/*
+		 * Find next interface in the list
+		 */
+		iin = ecm_db_interface_get_and_ref_next(ii);
+		ecm_db_iface_deref(ii);
+		ii = iin;
 	}
-	ecm_interface_defunct_connections(ii);
-	DEBUG_TRACE("%p: defunct for %p: COMPLETE\n", dev, ii);
-	ecm_db_iface_deref(ii);
 }
 
 /*
