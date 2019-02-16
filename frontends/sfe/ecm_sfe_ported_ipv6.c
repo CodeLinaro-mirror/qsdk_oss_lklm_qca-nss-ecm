@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -462,6 +462,14 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		struct ecm_db_iface_instance *ii;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		struct ecm_db_interface_info_vlan vlan_info;
+		uint32_t vlan_value = 0;
+		struct net_device *vlan_in_dev = NULL;
+#endif
 
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
@@ -473,14 +481,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			struct ecm_db_interface_info_vlan vlan_info;
-			uint32_t vlan_value = 0;
-			struct net_device *vlan_in_dev = NULL;
-#endif
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", npci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -629,6 +629,14 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		struct ecm_db_iface_instance *ii;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		struct ecm_db_interface_info_vlan vlan_info;
+		uint32_t vlan_value = 0;
+		struct net_device *vlan_out_dev = NULL;
+#endif
 
 		ii = to_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
@@ -640,14 +648,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			struct ecm_db_interface_info_pppoe pppoe_info;
-#endif
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			struct ecm_db_interface_info_vlan vlan_info;
-			uint32_t vlan_value = 0;
-			struct net_device *vlan_out_dev = NULL;
-#endif
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", npci);
 			if (interface_type_counts[ii_type] != 0) {
