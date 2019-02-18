@@ -2177,7 +2177,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	int32_t dev_mtu;
 	int32_t ae_interface_num;
 	struct ecm_db_iface_instance *ii;
-	int32_t interface_type;
+	int32_t interface_type __attribute__((unused));
 	union {
 		struct ecm_db_interface_info_ethernet ethernet;		/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 #ifdef ECM_INTERFACE_VLAN_ENABLE
