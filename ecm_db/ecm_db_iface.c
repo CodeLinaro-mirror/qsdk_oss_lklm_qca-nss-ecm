@@ -2301,6 +2301,82 @@ EXPORT_SYMBOL(ecm_db_iface_node_count_get);
 #endif
 
 /*
+ * ecm_db_iface_add_to_db()
+ *	Adds the created iface to the database lists.
+ */
+static inline void ecm_db_iface_add_to_db(struct ecm_db_iface_instance *ii,  ecm_db_iface_hash_t hash_index)
+{
+	ecm_db_iface_id_hash_t iface_id_hash_index;
+	struct ecm_db_listener_instance *li;
+
+	ii->hash_index = hash_index;
+
+	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(ii->interface_identifier);
+	ii->iface_id_hash_index = iface_id_hash_index;
+
+	/*
+	 * Add into the global list
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
+	ii->prev = NULL;
+	ii->next = ecm_db_interfaces;
+	if (ecm_db_interfaces) {
+		ecm_db_interfaces->prev = ii;
+	}
+	ecm_db_interfaces = ii;
+
+	/*
+	 * Insert into chain
+	 */
+	ii->hash_next = ecm_db_iface_table[hash_index];
+	if (ecm_db_iface_table[hash_index]) {
+		ecm_db_iface_table[hash_index]->hash_prev = ii;
+	}
+	ecm_db_iface_table[hash_index] = ii;
+	ecm_db_iface_table_lengths[hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
+
+	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
+
+	/*
+	 * Insert into interface identifier chain
+	 */
+	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
+	if (ecm_db_iface_id_table[iface_id_hash_index]) {
+		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
+	}
+	ecm_db_iface_id_table[iface_id_hash_index] = ii;
+	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
+	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
+
+	/*
+	 * Set time of addition
+	 */
+	ii->time_added = ecm_db_time;
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Throw add event to the listeners
+	 */
+	DEBUG_TRACE("%p: Throw iface added event\n", ii);
+	li = ecm_db_listeners_get_and_ref_first();
+	while (li) {
+		struct ecm_db_listener_instance *lin;
+		if (li->iface_added) {
+			li->iface_added(li->arg, ii);
+		}
+
+		/*
+		 * Get next listener
+		 */
+		lin = ecm_db_listener_get_and_ref_next(li);
+		ecm_db_listener_deref(li);
+		li = lin;
+	}
+}
+
+/*
  * ecm_db_iface_add_ethernet()
  *	Add a iface instance into the database
  */
@@ -2309,8 +2385,6 @@ void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *addres
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_ethernet *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2347,71 +2421,9 @@ void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *addres
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
+	ecm_db_iface_add_to_db(ii, hash_index);
 
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
 }
 EXPORT_SYMBOL(ecm_db_iface_add_ethernet);
 
@@ -2425,8 +2437,6 @@ void ecm_db_iface_add_lag(struct ecm_db_iface_instance *ii, uint8_t *address, ch
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_lag *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2463,72 +2473,8 @@ void ecm_db_iface_add_lag(struct ecm_db_iface_instance *ii, uint8_t *address, ch
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_lag);
 #endif
@@ -2542,8 +2488,6 @@ void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii, uint8_t *address,
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_bridge *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2580,71 +2524,8 @@ void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii, uint8_t *address,
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_bridge);
 
@@ -2658,8 +2539,6 @@ void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii, uint8_t *address, u
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_vlan *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2698,71 +2577,8 @@ void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii, uint8_t *address, u
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_vlan);
 #endif
@@ -2778,8 +2594,6 @@ void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii, struct ecm_db_inte
 					void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_map_t *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2815,70 +2629,8 @@ void ecm_db_iface_add_map_t(struct ecm_db_iface_instance *ii, struct ecm_db_inte
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_map_t(type_info->if_index);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_map_t);
 #endif
@@ -2894,8 +2646,6 @@ void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii, struct ecm_db_in
 				void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_gre_tun *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -2931,71 +2681,8 @@ void ecm_db_iface_add_gre_tun(struct ecm_db_iface_instance *ii, struct ecm_db_in
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_gre_tun(type_info->if_index);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_gre_tun);
 #endif
@@ -3011,8 +2698,6 @@ void ecm_db_iface_add_pppoe(struct ecm_db_iface_instance *ii, uint16_t pppoe_ses
 					void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_pppoe *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3049,71 +2734,8 @@ void ecm_db_iface_add_pppoe(struct ecm_db_iface_instance *ii, uint16_t pppoe_ses
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_pppoe(pppoe_session_id);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_pppoe);
 #endif
@@ -3129,8 +2751,6 @@ void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii, struct ecm_db
 					void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_pppol2tpv2 *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3167,70 +2787,7 @@ void ecm_db_iface_add_pppol2tpv2(struct ecm_db_iface_instance *ii, struct ecm_db
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_pppol2tpv2(type_info->l2tp.tunnel.tunnel_id,
 							  type_info->l2tp.session.session_id);
-	ii->hash_index = hash_index;
-
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_pppol2tpv2);
 
@@ -3247,8 +2804,6 @@ void ecm_db_iface_add_pptp(struct ecm_db_iface_instance *ii, struct ecm_db_inter
 					void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_pptp *type_info;
 
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
@@ -3285,70 +2840,7 @@ void ecm_db_iface_add_pptp(struct ecm_db_iface_instance *ii, struct ecm_db_inter
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_pptp(type_info->src_call_id,
 							  type_info->dst_call_id);
-	ii->hash_index = hash_index;
-
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_pptp);
 #endif
@@ -3362,8 +2854,6 @@ void ecm_db_iface_add_unknown(struct ecm_db_iface_instance *ii, uint32_t os_spec
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_unknown *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3399,71 +2889,8 @@ void ecm_db_iface_add_unknown(struct ecm_db_iface_instance *ii, uint32_t os_spec
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_unknown(os_specific_ident);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_unknown);
 
@@ -3476,8 +2903,6 @@ void ecm_db_iface_add_loopback(struct ecm_db_iface_instance *ii, uint32_t os_spe
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_loopback *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3513,71 +2938,8 @@ void ecm_db_iface_add_loopback(struct ecm_db_iface_instance *ii, uint32_t os_spe
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_loopback(os_specific_ident);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_loopback);
 
@@ -3601,8 +2963,6 @@ void ecm_db_iface_add_sit(struct ecm_db_iface_instance *ii, struct ecm_db_interf
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 
 	spin_lock_bh(&ecm_db_lock);
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
@@ -3636,71 +2996,8 @@ void ecm_db_iface_add_sit(struct ecm_db_iface_instance *ii, struct ecm_db_interf
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_sit(type_info->saddr, type_info->daddr);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_sit);
 #endif
@@ -3716,8 +3013,6 @@ void ecm_db_iface_add_tunipip6(struct ecm_db_iface_instance *ii, struct ecm_db_i
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 
 	spin_lock_bh(&ecm_db_lock);
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
@@ -3751,71 +3046,8 @@ void ecm_db_iface_add_tunipip6(struct ecm_db_iface_instance *ii, struct ecm_db_i
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_tunipip6(type_info->saddr, type_info->daddr);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_tunipip6);
 #endif
@@ -3833,8 +3065,6 @@ void ecm_db_iface_add_ipsec_tunnel(struct ecm_db_iface_instance *ii, uint32_t os
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_ipsec_tunnel *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3870,71 +3100,8 @@ void ecm_db_iface_add_ipsec_tunnel(struct ecm_db_iface_instance *ii, uint32_t os
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ipsec_tunnel(os_specific_ident);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_ipsec_tunnel);
 #endif
@@ -3949,8 +3116,6 @@ void ecm_db_iface_add_rawip(struct ecm_db_iface_instance *ii, uint8_t *address, 
 					ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 	struct ecm_db_interface_info_rawip *type_info;
 
 	spin_lock_bh(&ecm_db_lock);
@@ -3987,71 +3152,8 @@ void ecm_db_iface_add_rawip(struct ecm_db_iface_instance *ii, uint8_t *address, 
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_rawip);
 #endif
@@ -4067,8 +3169,6 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 				ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
-	ecm_db_iface_id_hash_t iface_id_hash_index;
-	struct ecm_db_listener_instance *li;
 
 	spin_lock_bh(&ecm_db_lock);
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
@@ -4102,72 +3202,8 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 	 * Compute hash chain for insertion
 	 */
 	hash_index = ecm_db_iface_generate_hash_index_ovpn(type_info->tun_ifnum);
-	ii->hash_index = hash_index;
 
-	iface_id_hash_index = ecm_db_iface_id_generate_hash_index(interface_identifier);
-	ii->iface_id_hash_index = iface_id_hash_index;
-
-	/*
-	 * Add into the global list
-	 */
-	spin_lock_bh(&ecm_db_lock);
-	ii->flags |= ECM_DB_IFACE_FLAGS_INSERTED;
-	ii->prev = NULL;
-	ii->next = ecm_db_interfaces;
-	if (ecm_db_interfaces) {
-		ecm_db_interfaces->prev = ii;
-	}
-	ecm_db_interfaces = ii;
-
-	/*
-	 * Insert into chain
-	 */
-	ii->hash_next = ecm_db_iface_table[hash_index];
-	if (ecm_db_iface_table[hash_index]) {
-		ecm_db_iface_table[hash_index]->hash_prev = ii;
-	}
-	ecm_db_iface_table[hash_index] = ii;
-	ecm_db_iface_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ii, ecm_db_iface_table_lengths[hash_index]);
-
-	DEBUG_INFO("%p: interface inserted at hash index %u, hash prev is %p, type: %d\n", ii, ii->hash_index, ii->hash_prev, ii->type);
-
-	/*
-	 * Insert into interface identifier chain
-	 */
-	ii->iface_id_hash_next = ecm_db_iface_id_table[iface_id_hash_index];
-	if (ecm_db_iface_id_table[iface_id_hash_index]) {
-		ecm_db_iface_id_table[iface_id_hash_index]->iface_id_hash_prev = ii;
-	}
-	ecm_db_iface_id_table[iface_id_hash_index] = ii;
-	ecm_db_iface_id_table_lengths[iface_id_hash_index]++;
-	DEBUG_ASSERT(ecm_db_iface_id_table_lengths[iface_id_hash_index] > 0, "%p: invalid iface id table len %d\n", ii, ecm_db_iface_id_table_lengths[iface_id_hash_index]);
-
-	/*
-	 * Set time of addition
-	 */
-	ii->time_added = ecm_db_time;
-	spin_unlock_bh(&ecm_db_lock);
-
-	/*
-	 * Throw add event to the listeners
-	 */
-	DEBUG_TRACE("%p: Throw iface added event\n", ii);
-	li = ecm_db_listeners_get_and_ref_first();
-	while (li) {
-		struct ecm_db_listener_instance *lin;
-
-		if (li->iface_added) {
-			li->iface_added(li->arg, ii);
-		}
-
-		/*
-		 * Get next listener
-		 */
-		lin = ecm_db_listener_get_and_ref_next(li);
-		ecm_db_listener_deref(li);
-		li = lin;
-	}
+	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_ovpn);
 #endif

@@ -2165,6 +2165,46 @@ static struct ecm_db_iface_instance *ecm_interface_ovpn_interface_establish(stru
 #endif
 
 /*
+ * ecm_interface_tunnel_mtu_update()
+ *	Update mtu if skb is a tunneled packet.
+ */
+static __maybe_unused void ecm_interface_tunnel_mtu_update(struct sk_buff *skb, int32_t *mtu)
+{
+	struct net_device *dev;
+	ip_addr_t saddr, daddr;
+
+	/*
+	 * Copy IP addresses from skb
+	 */
+	if (ip_hdr(skb)->version == IPVERSION) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
+		ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
+	} else {
+		ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
+		ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
+	}
+
+	/*
+	 * Check if source IP is local address
+	 */
+	dev = ecm_interface_dev_find_by_local_addr(saddr);
+	if (dev) {
+		*mtu = dev->mtu;
+		dev_put(dev);
+		return;
+	}
+
+	/*
+	 * Check if destination IP is local address
+	 */
+	dev = ecm_interface_dev_find_by_local_addr(daddr);
+	if (dev) {
+		*mtu = dev->mtu;
+		dev_put(dev);
+	}
+}
+
+/*
  * ecm_interface_establish_and_ref()
  *	Establish an interface instance for the given interface detail.
  */
@@ -2617,6 +2657,7 @@ identifier_update:
 		}
 
 		type_info.ovpn.tun_ifnum = ae_interface_num;
+		ecm_interface_tunnel_mtu_update(skb, &dev_mtu);
 		ii = ecm_interface_ovpn_interface_establish(&type_info.ovpn, tun_dev->name, tun_dev->ifindex, dev_mtu);
 		return ii;
 	}

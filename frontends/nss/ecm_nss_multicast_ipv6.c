@@ -1022,6 +1022,11 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			struct ecm_db_iface_instance *ii;
 			ecm_db_iface_type_t ii_type;
 			char *ii_name;
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			struct ecm_db_interface_info_vlan vlan_info;
+			struct net_device *vlan_out_dev = NULL;
+			uint32_t vlan_prio = 0;
+#endif
 
 			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, list_index);
 			ifaces = (struct ecm_db_iface_instance **)ii_single;
@@ -1036,11 +1041,6 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-				struct ecm_db_interface_info_vlan vlan_info;
-				struct net_device *vlan_out_dev = NULL;
-				uint32_t vlan_prio = 0;
-#endif
 			case ECM_DB_IFACE_TYPE_BRIDGE:
 
 				/*
