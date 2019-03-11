@@ -1379,6 +1379,21 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 #endif
 
 /*
+ * ecm_interface_is_ovs()
+ *	Returns true if dev is OpenVswitch (OVS) interface.
+ */
+bool ecm_interface_is_ovs(const struct net_device *dev)
+{
+	/*
+	 * Check if dev is OVS master or an OVS datapath port.
+	 */
+	if (dev->priv_flags & (IFF_OVS_DATAPATH | IFF_OPENVSWITCH))
+		return true;
+
+	return false;
+}
+
+/*
  * ecm_interface_bridge_interface_establish()
  *	Returns a reference to a iface of the BRIDGE type, possibly creating one if necessary.
  * Returns NULL on failure or a reference to interface.

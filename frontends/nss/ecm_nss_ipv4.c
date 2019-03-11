@@ -1579,6 +1579,14 @@ static unsigned int ecm_nss_ipv4_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 
+	/*
+	 * skip OpenVSwitch flows.
+	 */
+	if (ecm_interface_is_ovs(out) || ecm_interface_is_ovs(in)) {
+		dev_put(in);
+		return NF_ACCEPT;
+	}
+
 	DEBUG_TRACE("Post routing process skb %p, out: %p (%s), in: %p (%s)\n", skb, out, out->name, in, in->name);
 	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
 							can_accel, true, false, skb, 0);
