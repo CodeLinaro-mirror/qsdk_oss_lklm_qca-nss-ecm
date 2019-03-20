@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -955,8 +955,10 @@ void ecm_db_multicast_connection_to_interfaces_clear(struct ecm_db_connection_in
 		ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, heirarchy_index);
 	}
 
+	spin_lock_bh(&ecm_db_lock);
 	kfree(ci->to_mcast_interfaces);
 	ci->to_mcast_interfaces = NULL;
+	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_multicast_connection_to_interfaces_clear);
 
