@@ -366,10 +366,6 @@ struct ecm_db_interface_info_ipsec_tunnel {		/* type == ECM_DB_IFACE_TYPE_IPSEC_
 
 #ifdef ECM_INTERFACE_SIT_ENABLE
 struct ecm_db_interface_info_sit {			/* type == ECM_DB_IFACE_TYPE_SIT */
-	uint32_t prefix[4];				/* 6rd prefix */
-	uint32_t relay_prefix;				/* Relay prefix */
-	uint16_t prefixlen;				/* 6rd prefix len */
-	uint16_t relay_prefixlen;			/* Relay prefix length*/
 	ip_addr_t saddr;				/* Tunnel source address */
 	ip_addr_t daddr;				/* Tunnel destination addresss */
 	uint8_t  tos;					/* Tunnel tos field */
