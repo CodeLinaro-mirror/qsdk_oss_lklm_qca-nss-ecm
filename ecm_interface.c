@@ -5407,11 +5407,13 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 
 		if (likely(!is_mcast_flow)) {
 			/*
-			 * Refresh the bridge forward table entry if the port is a bridge port
+			 * Refresh the bridge forward table entry if the port is a bridge port.
+			 * Refresh if the ci is a 3-tuple PPPoE bridge flow.
 			 * Note: A bridge port can be of different interface type, e.g VLAN, ethernet.
 			 * This check, therefore, should be performed for all interface types.
 			 */
-			if (is_ported && is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+			if ((is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) &&
+				is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
 				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
 				br_refresh_fdb_entry(dev, mac_addr);
 			}
@@ -5486,7 +5488,7 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	uint8_t protocol = ecm_db_connection_protocol_get(ci);
 
 	/*
-	 * Set is_ported flag based on protocol
+	 * Set is_ported flag based on protocol.
 	 */
 	if ((protocol == IPPROTO_UDP) || (protocol == IPPROTO_TCP)) {
 		is_ported = true;

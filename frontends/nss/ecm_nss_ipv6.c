@@ -979,6 +979,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	ecm_db_direction_t ecm_dir = ECM_DB_DIRECTION_EGRESS_NAT;
 	ip_addr_t ip_src_addr;
 	ip_addr_t ip_dest_addr;
+	uint8_t protonum;
 
 	/*
 	 * Obtain the IP header from the skb
@@ -1166,10 +1167,24 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		}
 	}
 
+	/*
+	 * If PPPoE bridged flows are to be handled with 3-tuple rule, set protocol to IPPROTO_RAW.
+	 */
+	protonum = orig_tuple.dst.protonum;
+	if (unlikely(!is_routed && (l2_encap_proto == ETH_P_PPP_SES))) {
+		/*
+		 * Check if PPPoE bridge acceleration is 3-tuple based.
+		 */
+		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T) {
+			DEBUG_TRACE("3-tuple acceleration is enabled for PPPoE bridged flows\n");
+			protonum = IPPROTO_RAW;
+		}
+	}
+
 	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
 			ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
-			orig_tuple.dst.protonum, sender, ecm_dir);
+			protonum, sender, ecm_dir);
 	/*
 	 * Non-unicast source or destination packets are ignored
 	 * NOTE: Only need to check the non-nat src/dest addresses here.
@@ -1187,7 +1202,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * Process IP specific protocol
 	 * TCP and UDP are the most likliest protocols.
 	 */
-	if (likely(orig_tuple.dst.protonum == IPPROTO_TCP) || likely(orig_tuple.dst.protonum == IPPROTO_UDP)) {
+	if (likely(protonum == IPPROTO_TCP) || likely(protonum == IPPROTO_UDP)) {
 		return ecm_nss_ported_ipv6_process(out_dev, in_dev,
 				src_node_addr,
 				dest_node_addr,
@@ -1316,6 +1331,7 @@ static unsigned int ecm_nss_ipv6_pppoe_bridge_process(struct net_device *out,
 						     bool can_accel,
 						     struct sk_buff *skb)
 {
+	struct ecm_tracker_ip_header ip_hdr;
 	unsigned int result = NF_ACCEPT;
 	struct pppoe_hdr *ph = pppoe_hdr(skb);
 	uint16_t ppp_proto = *(uint16_t *)ph->tag;
@@ -1330,11 +1346,24 @@ static unsigned int ecm_nss_ipv6_pppoe_bridge_process(struct net_device *out,
 	ecm_front_end_pull_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_IPV6);
 
+	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
+		DEBUG_WARN("Invalid ip header in skb %p\n", skb);
+		goto skip_ipv6_process;
+	}
+
+	/*
+	 * Return if destination IP address is multicast address.
+	 */
+	if (ecm_ip_addr_is_multicast(ip_hdr.dest_addr)) {
+		DEBUG_WARN("Multicast acceleration is not support in PPPoE bridge %p\n", skb);
+		goto skip_ipv6_process;
+	}
+
 	result = ecm_nss_ipv6_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
 					 false, true, skb, ETH_P_PPP_SES);
-
-	 ecm_front_end_push_l2_encap_header(skb, encap_header_len);
+skip_ipv6_process:
+	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_PPP_SES);
 
 	return result;
@@ -1373,7 +1402,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 	struct net_device *bridge;
 	struct net_device *in;
 	bool can_accel = true;
-	unsigned int result;
+	unsigned int result = NF_ACCEPT;
 
 	DEBUG_TRACE("%p: Bridge: %s\n", out, out->name);
 
@@ -1463,18 +1492,14 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 	}
 	if (in == out) {
 		DEBUG_TRACE("skb: %p, bridge: %p (%s), port bounce on %p (%s)\n", skb, bridge, bridge->name, out, out->name);
-		dev_put(in);
-		dev_put(bridge);
-		return NF_ACCEPT;
+		goto skip_ipv6_bridge_flow;
 	}
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
 		/*
 		 * Case 2: Routed trafffic would be handled by the INET post routing.
 		 */
 		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
-		dev_put(in);
-		dev_put(bridge);
-		return NF_ACCEPT;
+		goto skip_ipv6_bridge_flow;
 	}
 
 	if (!is_multicast_ether_addr(skb_eth_hdr->h_dest)) {
@@ -1490,9 +1515,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 #endif
 			DEBUG_WARN("skb: %p, No fdb entry for this mac address %pM in the bridge: %p (%s)\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name);
-			dev_put(in);
-			dev_put(bridge);
-			return NF_ACCEPT;
+			goto skip_ipv6_bridge_flow;
 		}
 	}
 
@@ -1500,14 +1523,21 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
 	if (unlikely(eth_type != 0x86DD)) {
+		/*
+		 * Check if PPPoE bridge acceleration is disabled.
+		 */
+		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_DIS) {
+			DEBUG_TRACE("skb: %p, PPPoE bridge flow acceleration is disabled\n", skb);
+			goto skip_ipv6_bridge_flow;
+		}
+
 		result = ecm_nss_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
-		dev_put(in);
-		dev_put(bridge);
-		return result;
+		goto skip_ipv6_bridge_flow;
 	}
 
 	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in,
 							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
+skip_ipv6_bridge_flow:
 
 	dev_put(in);
 	dev_put(bridge);

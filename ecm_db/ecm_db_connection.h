@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -214,7 +214,8 @@ struct ecm_db_connection_instance {
 /*
  * Connection flags
  */
-#define ECM_DB_CONNECTION_FLAGS_INSERTED 1			/* Connection is inserted into connection database tables */
+#define ECM_DB_CONNECTION_FLAGS_INSERTED 0x1			/* Connection is inserted into connection database tables */
+#define ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE 0x2		/* Connection is PPPoE bridge entry */
 
 int _ecm_db_connection_count_get(void);
 
@@ -266,6 +267,7 @@ ecm_db_direction_t ecm_db_connection_direction_get(struct ecm_db_connection_inst
 int ecm_db_connection_protocol_get(struct ecm_db_connection_instance *ci);
 int ecm_db_connection_ip_version_get(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_is_routed_get(struct ecm_db_connection_instance *ci);
+bool ecm_db_connection_is_pppoe_bridged_get(struct ecm_db_connection_instance *ci);
 
 void _ecm_db_connection_ref(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_ref(struct ecm_db_connection_instance *ci);
@@ -357,6 +359,8 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci,
 					   struct ecm_front_end_connection_instance *feci);
+
+void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t flag);
 
 void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
 uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);

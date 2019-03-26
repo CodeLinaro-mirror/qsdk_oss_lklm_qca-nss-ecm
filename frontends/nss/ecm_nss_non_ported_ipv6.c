@@ -860,7 +860,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		}
 	}
 
-	if (ecm_interface_src_check) {
+	if (ecm_interface_src_check || ecm_db_connection_is_pppoe_bridged_get(feci->ci)) {
 		DEBUG_INFO("%p: Source interface check flag is enabled\n", nnpci);
 		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
 	}
@@ -1689,6 +1689,24 @@ static struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ip
 }
 
 /*
+ * ecm_nss_non_ported_ipv6_is_protocol_supported()
+ *	Return true if IPv6 protocol is supported in non-ported acceleration.
+ */
+static inline bool ecm_nss_non_ported_ipv6_is_protocol_supported(int protocol)
+{
+	switch (protocol) {
+	case IPPROTO_IPIP:
+	case IPPROTO_ESP:
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
+	case IPPROTO_GRE:
+#endif
+	case IPPROTO_RAW:
+		return true;
+	}
+	return false;
+}
+
+/*
  * ecm_nss_non_ported_ipv6_process()
  *	Process a protocol that does not have port based identifiers
  */
@@ -1712,30 +1730,38 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 	int assignment_count;
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
+	bool pppoe_bridged = false;
 
 	/*
 	 * Look up a connection.
 	 */
 	protocol = (int)orig_tuple->dst.protonum;
-	if ((protocol != IPPROTO_IPIP && protocol != IPPROTO_ESP)) {
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
-		/*
-		 * If protocol is GRE, continue to accelerate the connection. ECM supports this configuration.
-		 */
-		if (protocol != IPPROTO_GRE) {
-			DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
-			return NF_ACCEPT;
-		}
-
-		DEBUG_TRACE("GRE TAP/TUN flow\n");
-#else
-		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
-		return NF_ACCEPT;
-#endif
-	}
-
 	src_port = 0;
 	dest_port = 0;
+
+	if (unlikely(!is_routed &&
+			(l2_encap_proto == ETH_P_PPP_SES) &&
+			(nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T))) {
+		struct pppoe_hdr *ph;
+		uint32_t l2_encap_len = ecm_front_end_l2_encap_header_len(l2_encap_proto);
+
+		/*
+		 * Get PPPoE session id from skb.
+		 */
+		ecm_front_end_push_l2_encap_header(skb, l2_encap_len);
+		ph = pppoe_hdr(skb);
+		DEBUG_TRACE("PPPoE session ID: %x\n", ntohs(ph->sid));
+		src_port = ntohs(ph->sid);
+		protocol = IPPROTO_RAW;
+		dest_port = src_port;
+		ecm_front_end_pull_l2_encap_header(skb, l2_encap_len);
+		pppoe_bridged = true;
+	}
+
+	if(!ecm_nss_non_ported_ipv6_is_protocol_supported(protocol)) {
+		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
+		return NF_ACCEPT;
+	}
 
 	DEBUG_TRACE("Non-ported protocol src: " ECM_IP_ADDR_OCTAL_FMT ", dest: " ECM_IP_ADDR_OCTAL_FMT "\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
@@ -1929,6 +1955,10 @@ unsigned int ecm_nss_non_ported_ipv6_process(struct net_device *out_dev,
 
 			ci = nci;
 			DEBUG_INFO("%p: New Non-ported protocol %d connection created\n", ci, protocol);
+		}
+
+		if (pppoe_bridged) {
+			ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE);
 		}
 
 		/*
