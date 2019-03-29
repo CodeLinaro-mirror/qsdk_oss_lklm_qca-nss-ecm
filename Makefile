@@ -49,7 +49,8 @@ ecm-y := \
 	 ecm_classifier_default.o \
 	 ecm_interface.o \
 	 ecm_conntrack_notifier.o \
-	 ecm_init.o
+	 ecm_init.o \
+	 ecm_notifier.o
 
 # #############################################################################
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
@@ -351,6 +352,7 @@ ccflags-y += -DECM_BOND_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_INTERFACE_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATE_DEBUG_LEVEL=1
 ccflags-y += -DECM_OPENWRT_SUPPORT=1
+ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/exports
 ccflags-y += -Werror

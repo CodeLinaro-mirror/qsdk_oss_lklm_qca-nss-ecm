@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -69,6 +69,7 @@
 #ifdef ECM_IPV6_ENABLE
 #include "ecm_front_end_ipv6.h"
 #endif
+#include "ecm_notifier_pvt.h"
 
 /*
  * Locking of the database - concurrency control
@@ -100,6 +101,11 @@ char *ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_MAX] = {
         "FROM_NAT",
         "TO_NAT"
 };
+
+/*
+ * Global listener instance for DB events.
+ */
+static struct ecm_db_listener_instance *ecm_db_li;
 
 /*
  * ecm_db_adv_stats_state_write()
@@ -280,6 +286,25 @@ int ecm_db_init(struct dentry *dentry)
 		goto init_cleanup_4;
 	}
 
+	ecm_db_li = ecm_db_listener_alloc();
+	if (!ecm_db_li) {
+		DEBUG_ERROR("%p: Failed to allocate a listener instance\n", dentry);
+		goto init_cleanup_4;
+	}
+	ecm_db_listener_add(ecm_db_li,
+			NULL, /* ecm_notifier_iface_added */
+			NULL, /* ecm_notifier_iface_removed */
+			NULL, /* ecm_notifier_node_added */
+			NULL, /* ecm_notifier_node_removed */
+			NULL, /* ecm_notifier_host_added */
+			NULL, /* ecm_notifier_host_removed */
+			NULL, /* ecm_notifier_mapping_added */
+			NULL, /* ecm_notifier_mapping_removed */
+			ecm_notifier_connection_added,
+			ecm_notifier_connection_removed,
+			NULL, /* ecm_notifier_connection_final */
+			NULL);
+
 	/*
 	 * Initialize the timer resources.
 	 */
@@ -330,6 +355,11 @@ void ecm_db_exit(void)
 	 * Clean-up the timer resources.
 	 */
 	ecm_db_timer_exit();
+
+	if (ecm_db_li) {
+		ecm_db_listener_deref(ecm_db_li);
+		ecm_db_li = NULL;
+	}
 
 	/*
 	 * Free the database.
