@@ -116,7 +116,6 @@ int ecm_nss_ipv6_accelerated_count = 0;			/* Total offloads */
 int ecm_nss_ipv6_pending_accel_count = 0;			/* Total pending offloads issued to the NSS / awaiting completion */
 int ecm_nss_ipv6_pending_decel_count = 0;			/* Total pending deceleration requests issued to the NSS / awaiting completion */
 int ecm_nss_ipv6_vlan_passthrough_enable = 0;		/* VLAN passthrough feature enable or disable flag */
-int ecm_nss_ipv6_pppoe_bridge_accel_enable = 1;		/* PPPoE bridge acceleration enable or disable flag */
 
 /*
  * Limiting the acceleration of connections.
@@ -1501,10 +1500,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
 	if (unlikely(eth_type != 0x86DD)) {
-		result = NF_ACCEPT;
-		if (ecm_nss_ipv6_pppoe_bridge_accel_enable) {
-			result = ecm_nss_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
-		}
+		result = ecm_nss_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		dev_put(in);
 		dev_put(bridge);
 		return result;
@@ -2379,12 +2375,6 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	if (!debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_nss_ipv6_dentry,
 					(u32 *)&ecm_nss_ipv6_vlan_passthrough_enable)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv6 vlan passthrough file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("pppoe_bridge_accel_enable", S_IRUGO | S_IWUSR, ecm_nss_ipv6_dentry,
-					(u32 *)&ecm_nss_ipv6_pppoe_bridge_accel_enable)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv6 pppoe bridge accel file in debugfs\n");
 		goto task_cleanup;
 	}
 
