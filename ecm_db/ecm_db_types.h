@@ -264,7 +264,8 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_PPPOL2TPV2,			/* Interface is a PPPoL2TPV2 interface (a specific form of PPP that we recognise in the ECM) */
 	ECM_DB_IFACE_TYPE_PPTP,				/* Interface is a PPTP interface */
 	ECM_DB_IFACE_TYPE_MAP_T,			/* Interface is a MAP-T interface */
-	ECM_DB_IFACE_TYPE_GRE_TUN,			/* Interface is a GRE tunnel interface */
+	ECM_DB_IFACE_TYPE_GRE_TUN,			/* Interface is a GRE TUN tunnel interface */
+	ECM_DB_IFACE_TYPE_GRE_TAP,			/* Interface is a GRE TAP tunnel interface */
 	ECM_DB_IFACE_TYPE_RAWIP,			/* Interface is a RAWIP interface */
 	ECM_DB_IFACE_TYPE_OVPN,				/* Interface is a OVPN interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */

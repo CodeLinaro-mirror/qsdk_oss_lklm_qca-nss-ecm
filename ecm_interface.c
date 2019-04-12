@@ -2127,7 +2127,6 @@ static struct ecm_db_iface_instance *ecm_interface_rawip_interface_establish(str
 }
 #endif
 
-
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 /*
  * ecm_interface_ovpn_interface_establish()
@@ -2181,42 +2180,67 @@ static struct ecm_db_iface_instance *ecm_interface_ovpn_interface_establish(stru
 
 /*
  * ecm_interface_tunnel_mtu_update()
- *	Update mtu if skb is a tunneled packet.
+ *	Update mtu if the flow is a tunneled packet.
  */
-static __maybe_unused void ecm_interface_tunnel_mtu_update(struct sk_buff *skb, int32_t *mtu)
+bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_iface_type_t type, int32_t *mtu)
 {
-	struct net_device *dev;
-	ip_addr_t saddr, daddr;
-
-	/*
-	 * Copy IP addresses from skb
-	 */
-	if (ip_hdr(skb)->version == IPVERSION) {
-		ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
-		ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
-	} else {
-		ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
-		ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
-	}
+	struct net_device *src_dev;
+	struct net_device *dest_dev;
+	bool ret = true;
 
 	/*
 	 * Check if source IP is local address
 	 */
-	dev = ecm_interface_dev_find_by_local_addr(saddr);
-	if (dev) {
-		*mtu = dev->mtu;
-		dev_put(dev);
-		return;
+	src_dev = ecm_interface_dev_find_by_local_addr(saddr);
+	dest_dev = ecm_interface_dev_find_by_local_addr(daddr);
+
+	switch (type) {
+	case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
+		if (!src_dev && !dest_dev) {
+			return false;
+		}
+
+		*mtu = ECM_DB_IFACE_MTU_MAX;
+		break;
+
+	case ECM_DB_IFACE_TYPE_OVPN:
+		if (src_dev) {
+			*mtu = src_dev->mtu;
+		} else if (dest_dev) {
+			*mtu = dest_dev->mtu;
+		} else {
+			return false;
+		}
+		break;
+
+	case ECM_DB_IFACE_TYPE_PPTP:
+	case ECM_DB_IFACE_TYPE_PPPOL2TPV2:
+	case ECM_DB_IFACE_TYPE_GRE_TUN:
+	case ECM_DB_IFACE_TYPE_GRE_TAP:
+		if (src_dev) {
+			*mtu = src_dev->mtu;
+		} else {
+			ret = false;
+			goto done;
+		}
+		break;
+
+	default:
+		ret = false;
+		DEBUG_WARN("Tunnel type doesn't need to update MTU value\n");
+		break;
 	}
 
-	/*
-	 * Check if destination IP is local address
-	 */
-	dev = ecm_interface_dev_find_by_local_addr(daddr);
-	if (dev) {
-		*mtu = dev->mtu;
-		dev_put(dev);
+done:
+	if (src_dev) {
+		dev_put(src_dev);
 	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+
+	return ret;
 }
 
 /*
@@ -2463,6 +2487,7 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 		struct net_device *ipsec_dev;
+		ip_addr_t saddr, daddr;
 
 		DEBUG_TRACE("Net device: %p is IPSec tunnel type: %d\n", dev, dev_type);
 
@@ -2488,6 +2513,19 @@ identifier_update:
 			return NULL;
 		}
 		dev_put(ipsec_dev);
+
+		/*
+		 * Copy IP addresses from skb
+		 */
+		if (ip_hdr(skb)->version == IPVERSION) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
+			ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
+			ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
+		}
+
+		ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_IPSEC_TUNNEL, &dev_mtu);
 #endif
 		type_info.ipsec_tunnel.os_specific_ident = dev_interface_num;
 
@@ -2655,6 +2693,7 @@ identifier_update:
 	 */
 	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags & IFF_TUN_TAP)) {
 		struct net_device *tun_dev = NULL;
+		ip_addr_t saddr, daddr;
 
 		DEBUG_TRACE("Net device: %p is OVPN type: %d\n", dev, dev_type);
 
@@ -2665,7 +2704,19 @@ identifier_update:
 		}
 
 		type_info.ovpn.tun_ifnum = ae_interface_num;
-		ecm_interface_tunnel_mtu_update(skb, &dev_mtu);
+
+		/*
+		 * Copy IP addresses from skb
+		 */
+		if (ip_hdr(skb)->version == IPVERSION) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
+			ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
+			ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
+		}
+
+		ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_OVPN, &dev_mtu);
 		ii = ecm_interface_ovpn_interface_establish(&type_info.ovpn, tun_dev->name, tun_dev->ifindex, dev_mtu);
 		return ii;
 	}

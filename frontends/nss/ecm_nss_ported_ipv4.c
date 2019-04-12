@@ -355,9 +355,6 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	uint8_t from_nss_iface_address[ETH_ALEN];
 	uint8_t to_nss_iface_address[ETH_ALEN];
 	ip_addr_t addr;
-#if defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
-	struct net_device *dev;
-#endif
 	struct nss_ipv4_msg *nim;
 	struct nss_ipv4_rule_create_msg *nircm;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
@@ -475,6 +472,13 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	nircm->conn_rule.return_interface_num = to_nss_iface_id;
 
 	/*
+	 * Set the mtu values. These values will be overwritten if the flow is
+	 * a specific tunnel type.
+	 */
+	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
 	 * We know that each outward facing interface is known to the NSS and so this connection could be accelerated.
 	 * However the lists may also specify other interesting details that must be included in the creation command,
 	 * for example, ethernet MAC, VLAN tagging or PPPoE session information.
@@ -496,7 +500,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_in_dev = NULL;
 #endif
-
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+		ip_addr_t saddr;
+		ip_addr_t daddr;
+#endif
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
@@ -658,12 +665,11 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * packets from wan side. So l2tp--->eth0 rule to be
 			 * pushed with this static interface.
 			 */
-			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-			dev = ecm_interface_dev_find_by_local_addr(addr);
-			if (likely(dev)) {
-				dev_put(dev);
-				from_nss_iface_id = NSS_L2TPV2_INTERFACE;
-				nircm->conn_rule.flow_interface_num = from_nss_iface_id;
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+			if (ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_PPPOL2TPV2, &(nircm->conn_rule.flow_mtu))) {
+				nircm->conn_rule.return_mtu = nircm->conn_rule.flow_mtu;
+				nircm->conn_rule.flow_interface_num = NSS_L2TPV2_INTERFACE;
 			}
 #else
 			rule_invalid = true;
@@ -954,19 +960,6 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
 
-	/*
-	 * Get MTU information
-	 */
-	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-#ifdef ECM_INTERFACE_L2TPV2_ENABLE
-	if (unlikely(from_nss_iface_id == NSS_L2TPV2_INTERFACE)) {
-		dev = ecm_interface_dev_find_by_local_addr(addr);
-		if (likely(dev)) {
-			nircm->conn_rule.flow_mtu = dev->mtu;
-			dev_put(dev);
-		}
-	}
-#endif
 	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.flow_ip, addr);
 
 	/*
@@ -976,21 +969,6 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * the NAT'ed version would be the same as the normal address
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
-
-	/*
-	 * Get MTU information
-	 */
-	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-#ifdef ECM_INTERFACE_L2TPV2_ENABLE
-	/*
-	 * Since a single L2TPv2 tunnel can carry multiple sessions which
-	 * may have different MTUs, we set the flow/return MTU of the outer
-	 * rule equal to that of the WAN interface so that it may service
-	 * flows for all sessions over this tunnel.
-	 */
-	if (unlikely(from_nss_iface_id == NSS_L2TPV2_INTERFACE))
-		nircm->conn_rule.return_mtu = nircm->conn_rule.flow_mtu;
-#endif
 
 	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.return_ip, addr);
 
