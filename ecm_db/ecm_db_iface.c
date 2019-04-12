@@ -111,7 +111,9 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"PPTP",
 	"MAP_T",
 	"GRE_TUN",
-	"RAWIP"
+	"GRE_TAP",
+	"RAWIP",
+	"OVPN"
 };
 
 /*

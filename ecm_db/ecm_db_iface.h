@@ -15,6 +15,11 @@
  */
 
 /*
+ * Maximum MTU value which can be set in ECM's connection rules.
+ */
+#define ECM_DB_IFACE_MTU_MAX 65535
+
+/*
  * Magic number
  */
 #define ECM_DB_IFACE_INSTANCE_MAGIC 0xAEF1

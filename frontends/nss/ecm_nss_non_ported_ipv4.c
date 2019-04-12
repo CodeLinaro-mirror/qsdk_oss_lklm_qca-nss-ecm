@@ -443,12 +443,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	ecm_front_end_acceleration_mode_t result_mode;
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	struct ecm_db_interface_info_pptp pptp_info;
-	bool is_from_ii_type_pptp = false;
 #endif
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) ||  defined(ECM_INTERFACE_GRE_TUN_ENABLE)
-	bool is_from_ii_type_gre = false;
-#endif
-
 	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nnpci);
 
 	/*
@@ -560,6 +555,22 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	nircm->valid_flags |= NSS_IPV4_RULE_CREATE_QOS_VALID;
 
 	/*
+	 * Set the mtu values. These values will be overwritten if the flow is
+	 * a specific tunnel type.
+	 */
+	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
+	 * Set the port information. These ports can be overwritten by the PPTP protocol values,
+	 * if the flow belongs to a PPTP tunnel.
+	 */
+	nircm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	nircm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
+	nircm->conn_rule.flow_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT);
+	nircm->conn_rule.return_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
 	 * We know that each outward facing interface is known to the NSS and so this connection could be accelerated.
 	 * However the lists may also specify other interesting details that must be included in the creation command,
 	 * for example, ethernet MAC, VLAN tagging or PPPoE session information.
@@ -581,7 +592,10 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_in_dev = NULL;
 #endif
-
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) ||  defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
+		ip_addr_t saddr;
+		ip_addr_t daddr;
+#endif
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
@@ -634,7 +648,14 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 					if (ecm_nss_common_get_interface_type(feci, dev) == NSS_DYNAMIC_INTERFACE_TYPE_GRE_OUTER) {
 						nircm->valid_flags &= ~NSS_IPV4_RULE_CREATE_QOS_VALID;
 					}
-					is_from_ii_type_gre = true;
+
+					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TAP, &(nircm->conn_rule.flow_mtu))) {
+						rule_invalid = true;
+						DEBUG_WARN("%p: Unable to get mtu value for the GRE TAP interface\n", nnpci);
+					}
+
 				}
 				dev_put(dev);
 			}
@@ -659,7 +680,13 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				}
 				dev_put(dev);
 			}
-			is_from_ii_type_gre = true;
+
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, &(nircm->conn_rule.flow_mtu))) {
+				rule_invalid = true;
+				DEBUG_WARN("%p: Unable to get mtu value for the GRE TUN interface\n", nnpci);
+			}
 			break;
 #endif
 
@@ -766,8 +793,21 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_PPTP:
 #ifdef ECM_INTERFACE_PPTP_ENABLE
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_PPTP, &(nircm->conn_rule.flow_mtu))) {
+				rule_invalid = true;
+				DEBUG_WARN("%p: Unable to get mtu value for the PPTP interface\n", nnpci);
+				break;
+			}
+
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
-			is_from_ii_type_pptp = true;
+
+			nircm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
+			nircm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
+			nircm->conn_rule.flow_ident_xlate = ntohs(pptp_info.src_call_id);
+			nircm->conn_rule.return_ident_xlate = ntohs(pptp_info.dst_call_id);
+
 			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
 			rule_invalid = true;
@@ -1008,35 +1048,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 * The flow_ip is where the connection established from
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-
-	/*
-	 * Get MTU information
-	 */
-	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-#ifdef ECM_INTERFACE_PPTP_ENABLE
-	if (unlikely(is_from_ii_type_pptp)) {
-		dev = ecm_interface_dev_find_by_local_addr(addr);
-		if (unlikely(!dev)) {
-			DEBUG_TRACE("%p: Unable to find PPTP tunnel's link interface for ip address " ECM_IP_ADDR_DOT_FMT "\n",
-				    nnpci, ECM_IP_ADDR_TO_DOT(addr));
-			goto non_ported_accel_bad_rule;
-		}
-		nircm->conn_rule.flow_mtu = dev->mtu;
-		dev_put(dev);
-	}
-#endif
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
-	if (unlikely(is_from_ii_type_gre)) {
-		dev = ecm_interface_dev_find_by_local_addr(addr);
-		if (unlikely(!dev)) {
-			DEBUG_TRACE("%p: Unable to find GRE tunnel's link interface for ip address " ECM_IP_ADDR_DOT_FMT "\n",
-				    nnpci, ECM_IP_ADDR_TO_DOT(addr));
-			goto non_ported_accel_bad_rule;
-		}
-		nircm->conn_rule.flow_mtu = dev->mtu;
-		dev_put(dev);
-	}
-#endif
 	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.flow_ip, addr);
 
 	/*
@@ -1062,27 +1073,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, addr);
 	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->conn_rule.return_ip_xlate, addr);
-
-	/*
-	 * Same approach as above for port information
-	 */
-	nircm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	nircm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
-	nircm->conn_rule.flow_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT);
-	nircm->conn_rule.return_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-
-#ifdef ECM_INTERFACE_PPTP_ENABLE
-	/*
-	 * If flow is going through a PPTP session, then
-	 * use PPTP local/peer call-id in place of L4 port
-	 */
-	if (unlikely(is_from_ii_type_pptp)) {
-		nircm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-		nircm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
-		nircm->conn_rule.flow_ident_xlate = ntohs(pptp_info.src_call_id);
-		nircm->conn_rule.return_ident_xlate = ntohs(pptp_info.dst_call_id);
-	}
-#endif
 
 	/*
 	 * Get mac addresses.
@@ -1122,11 +1112,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT)) {
 		memcpy(nircm->conn_rule.return_mac, dest_mac_xlate, ETH_ALEN);
 	}
-
-	/*
-	 * Get MTU information
-	 */
-	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 
 	/*
 	 * Sync our creation command from the assigned classifiers to get specific additional creation rules.
