@@ -2523,15 +2523,8 @@ identifier_update:
 		 */
 		tiph = &tunnel->parms.iph ;
 
-		type_info.sit.prefixlen = ip6rd->prefixlen;
-		type_info.sit.relay_prefix = ip6rd->relay_prefix;
-		type_info.sit.relay_prefixlen = ip6rd->relay_prefixlen;
 		ECM_NIN4_ADDR_TO_IP_ADDR(type_info.sit.saddr, tiph->saddr);
 		ECM_NIN4_ADDR_TO_IP_ADDR(type_info.sit.daddr, tiph->daddr);
-		type_info.sit.prefix[0] = ntohl(ip6rd->prefix.s6_addr32[0]);
-		type_info.sit.prefix[1] = ntohl(ip6rd->prefix.s6_addr32[1]);
-		type_info.sit.prefix[2] = ntohl(ip6rd->prefix.s6_addr32[2]);
-		type_info.sit.prefix[3] = ntohl(ip6rd->prefix.s6_addr32[3]);
 		type_info.sit.ttl = tiph->ttl;
 		type_info.sit.tos = tiph->tos;
 
