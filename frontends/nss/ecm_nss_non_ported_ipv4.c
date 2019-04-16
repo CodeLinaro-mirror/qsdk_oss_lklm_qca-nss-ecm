@@ -210,6 +210,7 @@ static void ecm_nss_non_ported_ipv4_connection_callback(void *app_data, struct n
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_non_ported_ipv4_connection_instance *nnpci;
 	ecm_front_end_acceleration_mode_t result_mode;
+	bool is_defunct = false;
 
 	/*
 	 * Is this a response to a create message?
@@ -372,10 +373,28 @@ static void ecm_nss_non_ported_ipv4_connection_callback(void *app_data, struct n
 
 	DEBUG_INFO("%p: Decelerate was pending\n", ci);
 
+	/*
+	 * Check if the pending decelerate was done with the defunct process.
+	 * If it was, set the is_defunct flag of the feci to false for re-try.
+	 */
+	if (feci->is_defunct) {
+		is_defunct = feci->is_defunct;
+		feci->is_defunct = false;
+	}
+
 	spin_unlock_bh(&ecm_nss_ipv4_lock);
 	spin_unlock_bh(&feci->lock);
 
-	feci->decelerate(feci);
+	/*
+	 * If the pending decelerate was done through defunct process, we should
+	 * re-try it here with the same defunct function, because the purpose of that
+	 * process is to remove the connection from the database as well after decelerating it.
+	 */
+	if (is_defunct) {
+		ecm_db_connection_make_defunct(ci);
+	} else {
+		feci->decelerate(feci);
+	}
 
 	/*
 	 * Release the connection.
