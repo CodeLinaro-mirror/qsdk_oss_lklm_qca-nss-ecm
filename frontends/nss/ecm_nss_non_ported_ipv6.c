@@ -448,6 +448,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	nircm->conn_rule.return_interface_num = to_nss_iface_id;
 
 	/*
+	 * Set up the flow and return qos tags
+	 */
+	nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
+
+	/*
 	 * We know that each outward facing interface is known to the NSS and so this connection could be accelerated.
 	 * However the lists may also specify other interesting details that must be included in the creation command,
 	 * for example, ethernet MAC, VLAN tagging or PPPoE session information.
@@ -514,6 +521,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
 				if (dev->priv_flags & IFF_GRE_V6_TAP) {
+					/*
+					 * Clear QOS_VALID to prevent outer rule from overwriting
+					 * inner flow's QoS classification.
+					 */
+					if (ecm_nss_common_get_interface_type(feci, dev) == NSS_DYNAMIC_INTERFACE_TYPE_GRE_OUTER) {
+						nircm->valid_flags &= ~NSS_IPV6_RULE_CREATE_QOS_VALID;
+					}
 					is_from_ii_type_gre = true;
 				}
 				dev_put(dev);
@@ -528,6 +542,17 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+			/*
+			 * Clear QOS_VALID to prevent outer rule from overwriting
+			 * inner flow's QoS classification.
+			 */
+			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+			if (dev) {
+				if (ecm_nss_common_get_interface_type(feci, dev) == NSS_DYNAMIC_INTERFACE_TYPE_GRE_OUTER) {
+					nircm->valid_flags &= ~NSS_IPV6_RULE_CREATE_QOS_VALID;
+				}
+				dev_put(dev);
+			}
 			is_from_ii_type_gre = true;
 #endif
 			break;
@@ -845,13 +870,6 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		DEBUG_INFO("%p: Source interface check flag is enabled\n", nnpci);
 		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
 	}
-
-	/*
-	 * Set up the flow and return qos tags
-	 */
-	nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
-	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
-	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*
