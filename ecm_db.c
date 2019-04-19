@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -785,11 +785,6 @@ struct ecm_db_connection_instance {
 };
 
 /*
- * Connection flags
- */
-#define ECM_DB_CONNECTION_FLAGS_INSERTED 1			/* Connection is inserted into connection database tables */
-
-/*
  * struct ecm_db_listener_instance
  *	listener instances
  */
@@ -1000,6 +995,19 @@ void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t 
 	ci->mark = mark;
 	spin_unlock_bh(&ecm_db_lock);
 
+}
+
+/*
+ * ecm_db_connection_flag_set()
+ *	Sets the flag in connection instance.
+ */
+void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t flag)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->flags |= flag;
+	spin_unlock_bh(&ecm_db_lock);
 }
 
 /*
@@ -2264,6 +2272,17 @@ int ecm_db_connection_ip_version_get(struct ecm_db_connection_instance *ci)
 	return ci->ip_version;
 }
 EXPORT_SYMBOL(ecm_db_connection_ip_version_get);
+
+/*
+ * ecm_db_connection_is_pppoe_bridged_get()
+ *	Return whether connection is pppoe bridged or not
+ */
+bool ecm_db_connection_is_pppoe_bridged_get(struct ecm_db_connection_instance *ci)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	return ci->flags & ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE;
+}
+EXPORT_SYMBOL(ecm_db_connection_is_pppoe_bridged_get);
 
 /*
  * ecm_db_host_address_get()
@@ -8755,6 +8774,15 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 
 	if ((result = ecm_state_write(sfi, "protocol", "%d", protocol))) {
 		return result;
+	}
+
+	if (ci->flags & ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE) {
+		/*
+		 * PPPoE session ID is set in sport and dport.
+		 */
+		if ((result = ecm_state_write(sfi, "pppoe_session_id", "%u", sport))) {
+			return result;
+		}
 	}
 
 	if ((result = ecm_state_write(sfi, "is_routed", "%d", is_routed))) {

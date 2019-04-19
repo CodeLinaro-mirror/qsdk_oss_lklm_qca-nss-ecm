@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017, 2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -901,6 +901,7 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	struct net_device *in_dev_nat;
 	uint8_t *src_node_addr_nat;
 	uint8_t *dest_node_addr_nat;
+	uint8_t protonum;
 
 	/*
 	 * Obtain the IP header from the skb
@@ -1094,7 +1095,23 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 		return NF_ACCEPT;
 	}
 
-	DEBUG_TRACE("IP Packet ORIGINAL src: %pI4 ORIGINAL dst: %pI4 protocol: %u, sender: %d ecm_dir: %d\n", &orig_tuple.src.u3.ip, &orig_tuple.dst.u3.ip, orig_tuple.dst.protonum, sender, ecm_dir);
+	/*
+	 * If PPPoE bridged flows are to be handled with 3-tuple rule, set protocol to IPPROTO_RAW.
+	 */
+	protonum = orig_tuple.dst.protonum;
+
+	if (unlikely(!is_routed && (l2_encap_proto == ETH_P_PPP_SES))) {
+		/*
+		 * Check if PPPoE bridge acceleration is 3-tuple based.
+		 */
+		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T) {
+			DEBUG_TRACE("3-tuple acceleration is enabled for PPPoE Bridged flows\n");
+			protonum = IPPROTO_RAW;
+		}
+	}
+
+	DEBUG_TRACE("IP Packet ORIGINAL src: %pI4 ORIGINAL dst: %pI4 protocol: %u, sender: %d ecm_dir: %d\n",
+			&orig_tuple.src.u3.ip, &orig_tuple.dst.u3.ip, protonum, sender, ecm_dir);
 
 	/*
 	 * Get IP addressing information.  This same logic is applied when extracting port information too.
@@ -1359,7 +1376,7 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * Process IP specific protocol
 	 * TCP and UDP are the most likliest protocols.
 	 */
-	if (likely(orig_tuple.dst.protonum == IPPROTO_TCP) || likely(orig_tuple.dst.protonum == IPPROTO_UDP)) {
+	if (likely(protonum == IPPROTO_TCP) || likely(protonum == IPPROTO_UDP)) {
 		return ecm_nss_ported_ipv4_process(out_dev, out_dev_nat,
 				in_dev, in_dev_nat,
 				src_node_addr, src_node_addr_nat,
@@ -1491,6 +1508,7 @@ static unsigned int ecm_front_end_ipv4_pppoe_bridge_process(struct net_device *o
 						     bool can_accel,
 						     struct sk_buff *skb)
 {
+	struct ecm_tracker_ip_header ip_hdr;
 	unsigned int result = NF_ACCEPT;
 	struct pppoe_hdr *ph = pppoe_hdr(skb);
 	uint16_t ppp_proto = *(uint16_t *)ph->tag;
@@ -1505,10 +1523,23 @@ static unsigned int ecm_front_end_ipv4_pppoe_bridge_process(struct net_device *o
 	ecm_front_end_pull_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_IP);
 
+	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
+		DEBUG_WARN("Invalid ip header in skb %p\n", skb);
+		goto skip_ipv4_process;
+	}
+
+	/*
+	 * Return if destination IP address is multicast address.
+	 */
+	if (ecm_ip_addr_is_multicast(ip_hdr.dest_addr)) {
+		DEBUG_WARN("Multicast acceleration is not support in PPPoE bridge %p\n", skb);
+		goto skip_ipv4_process;
+	}
+
 	result = ecm_nss_ipv4_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
 					 false, true, skb, ETH_P_PPP_SES);
-
+skip_ipv4_process:
 	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_PPP_SES);
 
@@ -1548,7 +1579,7 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(const struct nf_hook_o
 	struct net_device *bridge;
 	struct net_device *in;
 	bool can_accel = true;
-	unsigned int result;
+	unsigned int result = NF_ACCEPT;
 
 	DEBUG_TRACE("%p: Bridge: %s\n", out, out->name);
 
@@ -1638,18 +1669,14 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(const struct nf_hook_o
 	}
 	if (in == out) {
 		DEBUG_TRACE("skb: %p, bridge: %p (%s), port bounce on %p (%s)\n", skb, bridge, bridge->name, out, out->name);
-		dev_put(in);
-		dev_put(bridge);
-		return NF_ACCEPT;
+		goto skip_ipv4_bridge_flow;
 	}
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
 		/*
 		 * Case 2: Routed trafffic would be handled by the INET post routing.
 		 */
 		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
-		dev_put(in);
-		dev_put(bridge);
-		return NF_ACCEPT;
+		goto skip_ipv4_bridge_flow;
 	}
 
 	if (!is_multicast_ether_addr(skb_eth_hdr->h_dest)) {
@@ -1665,24 +1692,28 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(const struct nf_hook_o
 #endif
 			DEBUG_WARN("skb: %p, No fdb entry for this mac address %pM in the bridge: %p (%s)\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name);
-			dev_put(in);
-			dev_put(bridge);
-			return NF_ACCEPT;
+			goto skip_ipv4_bridge_flow;
 		}
 	}
 	DEBUG_TRACE("Bridge process skb: %p, bridge: %p (%s), In: %p (%s), Out: %p (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
 	if (unlikely(eth_type != 0x0800)) {
+		/*
+		 * Check if PPPoE bridge acceleration is disabled.
+		 */
+		if (unlikely(nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_DIS)) {
+			DEBUG_TRACE("skb: %p, PPPoE bridge flow acceleration is disabled\n", skb);
+			goto skip_ipv4_bridge_flow;
+		}
+
 		result = ecm_front_end_ipv4_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
-		dev_put(in);
-		dev_put(bridge);
-		return result;
+		goto skip_ipv4_bridge_flow;
 	}
 
 	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in,
 				skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
-
+skip_ipv4_bridge_flow:
 	dev_put(in);
 	dev_put(bridge);
 	return result;

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -22,12 +22,19 @@
 
 #include <net/netfilter/nf_conntrack.h>
 
+/*
+ * Connection flags
+ */
+#define ECM_DB_CONNECTION_FLAGS_INSERTED 0x1			/* Connection is inserted into connection database tables */
+#define ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE 0x2		/* Connection is PPPoE bridge entry */
+
 void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
 uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
 uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci, struct ecm_front_end_connection_instance *feci);
+void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t flag);
 struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(struct nf_conn *ct);
 struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(struct nf_conn *ct);
 uint32_t ecm_db_time_get(void);
@@ -111,6 +118,7 @@ int ecm_db_mapping_port_get(struct ecm_db_mapping_instance *mi);
 int ecm_db_connection_protocol_get(struct ecm_db_connection_instance *ci);
 int ecm_db_connection_ip_version_get(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_is_routed_get(struct ecm_db_connection_instance *ci);
+bool ecm_db_connection_is_pppoe_bridged_get(struct ecm_db_connection_instance *ci);
 
 void ecm_db_connection_data_totals_update_tracked(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets);
 void ecm_db_connection_data_totals_update_dropped(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets);
