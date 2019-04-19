@@ -214,6 +214,8 @@ static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, st
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci;
+	ecm_front_end_acceleration_mode_t result_mode;
+	bool is_defunct = false;
 
 	/*
 	 * Is this a response to a create message?
@@ -272,25 +274,25 @@ static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, st
 			/*
 			 * Too many NSS rejections
 			 */
-			feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_ACCEL_ENGINE;
+			result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_ACCEL_ENGINE;
 		} else {
 			/*
 			 * Revert to decelerated
 			 */
-			feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+			result_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
 		}
-
-		/*
-		 * Clear any decelerate pending flag since we aren't accelerated anyway we can just clear this whether it is set or not
-		 */
-		nmci->base.stats.decelerate_pending = false;
 
 		/*
 		 * If connection is now defunct then set mode to ensure no further accel attempts occur
 		 */
 		if (feci->is_defunct) {
-			feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
+			result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
 		}
+
+		spin_lock_bh(&ecm_nss_ipv4_lock);
+		_ecm_nss_ipv4_accel_pending_clear(feci, result_mode);
+		spin_unlock_bh(&ecm_nss_ipv4_lock);
+
 		spin_unlock_bh(&feci->lock);
 
 		/*
@@ -332,17 +334,8 @@ static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, st
 	}
 
 	/*
-	 * We got an ACK - we are accelerated.
+	 * Create succeeded
 	 */
-	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
-
-	/*
-	 * Create succeeded, declare that we are accelerated.
-	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
-	ecm_nss_multicast_ipv4_accelerated_count++;	/* Protocol specific counter */
-	ecm_nss_ipv4_accelerated_count++;		/* General running counter */
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
 
 	/*
 	 * Clear any nack count
@@ -350,15 +343,24 @@ static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, st
 	nmci->base.stats.ae_nack = 0;
 
 	/*
+	 * Clear the "accelerate pending" state and move to "accelerated" state bumping
+	 * the accelerated counters to match our new state.
+	 *
 	 * Decelerate may have been attempted while we were accel pending.
 	 * If decelerate is pending then we need to begin deceleration :-(
 	 */
-	if (!nmci->base.stats.decelerate_pending) {
+	spin_lock_bh(&ecm_nss_ipv4_lock);
+
+	ecm_nss_multicast_ipv4_accelerated_count++;	/* Protocol specific counter */
+	ecm_nss_ipv4_accelerated_count++;		/* General running counter */
+
+	if (!_ecm_nss_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_ACCEL)) {
 		/*
 		 * Increement the no-action counter, this is reset if offload action is seen
 		 */
 		nmci->base.stats.no_action_seen++;
 
+		spin_unlock_bh(&ecm_nss_ipv4_lock);
 		spin_unlock_bh(&feci->lock);
 
 		/*
@@ -370,10 +372,29 @@ static void ecm_nss_multicast_ipv4_connection_create_callback(void *app_data, st
 	}
 
 	DEBUG_INFO("%p: Decelerate was pending\n", ci);
-	nmci->base.stats.decelerate_pending = false;
+
+	/*
+	 * Check if the pending decelerate was done with the defunct process.
+	 * If it was, set the is_defunct flag of the feci to false for re-try.
+	 */
+	if (feci->is_defunct) {
+		is_defunct = feci->is_defunct;
+		feci->is_defunct = false;
+	}
+
+	spin_unlock_bh(&ecm_nss_ipv4_lock);
 	spin_unlock_bh(&feci->lock);
 
-	feci->decelerate(feci);
+	/*
+	 * If the pending decelerate was done through defunct process, we should
+	 * re-try it here with the same defunct function, because the purpose of that
+	 * process is to remove the connection from the database as well after decelerating it.
+	 */
+	if (is_defunct) {
+		ecm_db_connection_make_defunct(ci);
+	} else {
+		feci->decelerate(feci);
+	}
 
 	/*
 	 * Release the connection.
