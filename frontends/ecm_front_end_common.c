@@ -80,38 +80,3 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
-/*
- * ecm_front_end_destroy_failure_handle()
- *	Destroy request failure handler.
- */
-void ecm_front_end_destroy_failure_handle(struct ecm_front_end_connection_instance *feci)
-{
-	spin_lock_bh(&feci->lock);
-	feci->stats.driver_fail_total++;
-	feci->stats.driver_fail++;
-	if (feci->stats.driver_fail >= feci->stats.driver_fail_limit) {
-		/*
-		 * Reached to the driver failure limit. ECM no longer allows
-		 * re-trying deceleration.
-		 */
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
-		spin_unlock_bh(&feci->lock);
-		DEBUG_WARN("%p: Decel failed - driver fail limit\n", feci);
-		return;
-	}
-
-	/*
-	 * Destroy request failed. The accelerated connection couldn't be destroyed
-	 * in the acceleration engine. Revert back the accel_mode, unset the is_defunct
-	 * flag just in case this request has come through the defunct process.
-	 */
-	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
-	feci->is_defunct = false;
-	spin_unlock_bh(&feci->lock);
-
-	/*
-	 * Set the defunct timer to a smaller timeout value so that the connection will be
-	 * tried to be defuncted again, when the timeout expires (its value is 5 seconds).
-	 */
-	ecm_db_connection_defunct_timer_remove_and_set(feci->ci, ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT);
-}

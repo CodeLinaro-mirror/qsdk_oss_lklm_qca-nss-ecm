@@ -648,7 +648,13 @@ int ecm_db_node_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_nod
 	}
 #ifdef ECM_DB_XREF_ENABLE
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
-		if ((result = ecm_state_write(sfi, "%s_connections_count", "%d", ecm_db_obj_dir_strings[dir], connections_count[dir]))) {
+		/*
+		 * ECM_DB_NODE_CONN_COUNT_STR_SIZE is the size of "FROM_NAT_connections_count"
+		 * string which can be the max length of these strings
+		 */
+		char name[ECM_DB_NODE_CONN_COUNT_STR_SIZE];
+		snprintf(name, ECM_DB_NODE_CONN_COUNT_STR_SIZE, "%s_connections_count", ecm_db_obj_dir_strings[dir]);
+		if ((result = ecm_state_write(sfi, name, "%d", connections_count[dir]))) {
 			return result;
 		}
 	}

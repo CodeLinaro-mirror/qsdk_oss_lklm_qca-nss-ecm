@@ -91,8 +91,8 @@ int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not
 #include "ecm_interface.h"
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_multicast_ipv4.h"
-
 #include "ecm_nss_common.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic numbers
@@ -1530,10 +1530,10 @@ static void ecm_nss_multicast_ipv4_connection_destroy_callback(void *app_data, s
 }
 
 /*
- * ecm_nss_multicast_ipv4_connection_decelerate()
- *	Decelerate a connection
+ * ecm_nss_multicast_ipv4_connection_decelerate_msg_send()
+ *	Prepares and sends a decelerate message to acceleration engine.
  */
-static void ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_connection_instance *feci)
+static bool ecm_nss_multicast_ipv4_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci = (struct ecm_nss_multicast_ipv4_connection_instance *)feci;
 	struct nss_ipv4_msg nim;
@@ -1541,42 +1541,9 @@ static void ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_co
 	ip_addr_t src_addr;
 	ip_addr_t group_addr;
 	nss_tx_status_t nss_tx_status;
+	bool ret;
 
 	DEBUG_CHECK_MAGIC(nmci, ECM_NSS_MULTICAST_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nmci);
-
-	/*
-	 * If decelerate is in error or already pending then ignore
-	 */
-	spin_lock_bh(&feci->lock);
-	if (feci->stats.decelerate_pending) {
-		spin_unlock_bh(&feci->lock);
-		return;
-	}
-
-	/*
-	 * If acceleration is pending then we cannot decelerate right now or we will race with it
-	 * Set a decelerate pending flag that will be actioned when the acceleration command is complete.
-	 */
-	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
-		feci->stats.decelerate_pending = true;
-		spin_unlock_bh(&feci->lock);
-		return;
-	}
-
-	/*
-	 * Can only decelerate if accelerated
-	 * NOTE: This will also deny accel when the connection is in fail condition too.
-	 */
-	if (feci->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
-		spin_unlock_bh(&feci->lock);
-		return;
-	}
-
-	/*
-	 * Initiate deceleration
-	 */
-	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
-	spin_unlock_bh(&feci->lock);
 
 	/*
 	 * Increment the decel pending counter
@@ -1626,33 +1593,32 @@ static void ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_co
 	ecm_db_connection_ref(feci->ci);
 
 	/*
+	 * We are about to issue the command, record the time of transmission
+	 */
+	spin_lock_bh(&feci->lock);
+	feci->stats.cmd_time_begun = jiffies;
+	spin_unlock_bh(&feci->lock);
+
+	/*
 	 * Destroy the NSS connection cache entry.
 	 */
 	nss_tx_status = nss_ipv4_tx(ecm_nss_ipv4_nss_ipv4_mgr, &nim);
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;			/* Reset */
-		feci->stats.cmd_time_begun = jiffies;		/* Capture time we issued the command */
 		spin_unlock_bh(&feci->lock);
-		return;
+		return true;
 	}
+
+	/*
+	 * TX failed
+	 */
+	ret = ecm_front_end_destroy_failure_handle(feci);
 
 	/*
 	 * Release the ref take, NSS driver did not accept our command.
 	 */
 	ecm_db_connection_deref(feci->ci);
-
-	/*
-	 * TX failed
-	 */
-	spin_lock_bh(&feci->lock);
-	feci->stats.driver_fail_total++;
-	feci->stats.driver_fail++;
-	if (feci->stats.driver_fail >= feci->stats.driver_fail_limit) {
-		DEBUG_WARN("%p: Decel failed - driver fail limit\n", nmci);
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
-	}
-	spin_unlock_bh(&feci->lock);
 
 	/*
 	 * Could not send the request, decrement the decel pending counter
@@ -1661,62 +1627,85 @@ static void ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_co
 	ecm_nss_ipv4_pending_decel_count--;
 	DEBUG_ASSERT(ecm_nss_ipv4_pending_decel_count >= 0, "Bad decel pending counter\n");
 	spin_unlock_bh(&ecm_nss_ipv4_lock);
+
+	return ret;
+}
+
+/*
+ * ecm_nss_multicast_ipv4_connection_decelerate()
+ *     Decelerate a connection
+ */
+static bool ecm_nss_multicast_ipv4_connection_decelerate(struct ecm_front_end_connection_instance *feci)
+{
+	/*
+	 * Check if accel mode is OK for the deceleration.
+	 */
+	spin_lock_bh(&feci->lock);
+	if (!ecm_front_end_common_connection_decelerate_accel_mode_check(feci)) {
+		spin_unlock_bh(&feci->lock);
+		return false;
+	}
+	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
+	spin_unlock_bh(&feci->lock);
+
+	return ecm_nss_multicast_ipv4_connection_decelerate_msg_send(feci);
 }
 
 /*
  * ecm_nss_multicast_ipv4_connection_defunct_callback()
  *	Callback to be called when a Mcast connection has become defunct.
  */
-static void ecm_nss_multicast_ipv4_connection_defunct_callback(void *arg)
+static bool ecm_nss_multicast_ipv4_connection_defunct_callback(void *arg, int *accel_mode)
 {
+	bool ret;
 	struct ecm_front_end_connection_instance *feci = (struct ecm_front_end_connection_instance *)arg;
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci = (struct ecm_nss_multicast_ipv4_connection_instance *)feci;
 
 	DEBUG_CHECK_MAGIC(nmci, ECM_NSS_MULTICAST_IPV4_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", nmci);
 
 	spin_lock_bh(&feci->lock);
-
 	/*
-	 * If connection has already become defunct, do nothing.
+	 * Check if the connection can be defuncted.
 	 */
-	if (feci->is_defunct) {
+	if (!ecm_front_end_common_connection_defunct_check(feci)) {
+		*accel_mode = feci->accel_mode;
 		spin_unlock_bh(&feci->lock);
-		return;
-	}
-	feci->is_defunct = true;
-
-	/*
-	 * If the connection is already in one of the fail modes, do nothing, keep the current accel_mode.
-	 */
-	if (ECM_FRONT_END_ACCELERATION_FAILED(feci->accel_mode)) {
-		spin_unlock_bh(&feci->lock);
-		return;
+		return false;
 	}
 
 	/*
-	 * If the connection is decel then ensure it will not attempt accel while defunct.
-	 */
-	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_DECEL) {
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
-		spin_unlock_bh(&feci->lock);
-		return;
-	}
-
-	/*
-	 * If the connection is decel pending then decel operation is in progress anyway.
-	 */
-	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING) {
-		spin_unlock_bh(&feci->lock);
-		return;
-	}
-
-	/*
-	 * If none of the cases matched above, this means the connection is in one of the
-	 * accel modes (accel or accel_pending) so we force a deceleration.
+	 * If none of the cases matched above, this means the connection is in the
+	 * accel mode, so we force a deceleration.
 	 * NOTE: If the mode is accel pending then the decel will be actioned when that is completed.
 	 */
+	if (!ecm_front_end_common_connection_decelerate_accel_mode_check(feci)) {
+		*accel_mode = feci->accel_mode;
+		spin_unlock_bh(&feci->lock);
+		return false;
+	}
+	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
 	spin_unlock_bh(&feci->lock);
-	ecm_nss_multicast_ipv4_connection_decelerate(feci);
+
+	/*
+	 * If none of the cases matched above, this means the connection is in the
+	 * accel mode, so we force a deceleration.
+	 * NOTE: If the mode is accel pending then the decel will be actioned when that is completed.
+	 */
+	ret = ecm_nss_multicast_ipv4_connection_decelerate_msg_send(feci);
+
+	/*
+	 * Copy the accel_mode which is returned from the decelerate message function. This value
+	 * will be used in the caller to decide releasing the final reference of the connection.
+	 * But if this function reaches to here, the caller care about the ret. If ret is true,
+	 * the reference will be released regardless of the accel_mode. If ret is false, accel_mode
+	 * will be in the ACCEL state (for destroy re-try) and this state will not be used in the
+	 * caller's decision. It looks for ACCEL_FAIL states.
+	 */
+	spin_lock_bh(&feci->lock);
+	*accel_mode = feci->accel_mode;
+	spin_unlock_bh(&feci->lock);
+
+	return ret;
 }
 
 /*

@@ -256,33 +256,28 @@ EXPORT_SYMBOL(ecm_db_connection_front_end_get_and_ref);
  */
 static void ecm_db_connection_defunct_callback(void *arg)
 {
-	struct ecm_front_end_connection_instance *feci;
-	ecm_front_end_acceleration_mode_t accel_mode;
+	int accel_mode;
+	bool ret;
+
 	struct ecm_db_connection_instance *ci = (struct ecm_db_connection_instance *)arg;
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
 
 	DEBUG_INFO("%p: defunct timer expired\n", ci);
 
-	if (ci->defunct) {
-		ci->defunct(ci->feci);
-	}
-
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	accel_mode = feci->accel_state_get(feci);
-	feci->deref(feci);
+	/*
+	 * If defunct fails, return. Do not remove the last ref count. This failure means
+	 * it will be re-tried later with the ecm_db_connection_make_defunct function
+	 * until the total failure count reaches to the max limit which is 250.
+	 * When the limit is reached, defunct process will return true and let
+	 * the connection goes off.
+	 */
+	ret = ci->defunct(ci->feci, &accel_mode);
 
 	/*
-	 * It is possible that the defunct process fails and re-try is in progress.
-	 * In that case we set the accel mode of the connection to
-	 * ECM_FRONT_END_ACCELERATION_MODE_ACCEL, so that in the next destroy try, the connection
-	 * status would be correct. So, if the accel_mode is ECM_FRONT_END_ACCELERATION_MODE_ACCEL,
-	 * we shouldn't release the last reference count.
-	 * Another case is that the defunct can happen while waiting an acceleration response
-	 * from acceleration engine in which the state is set to ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING.
-	 * So, the last reference of the connection shouldn't be released in this state as well.
+	 * Release the last reference of this connection. This reference is the one
+	 * which was held when the connection was allocated.
 	 */
-	if ((accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) &&
-		(accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING)) {
+	if (ret || ECM_FRONT_END_ACCELERATION_FAILED(accel_mode)) {
 		ecm_db_connection_deref(ci);
 	}
 }
@@ -371,28 +366,25 @@ EXPORT_SYMBOL(ecm_db_connection_timer_group_get);
  */
 void ecm_db_connection_make_defunct(struct ecm_db_connection_instance *ci)
 {
-	struct ecm_front_end_connection_instance *feci;
-	ecm_front_end_acceleration_mode_t accel_mode;
+	int accel_mode;
+	bool ret;
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
 
-	if (ci->defunct) {
-		ci->defunct(ci->feci);
-	}
-
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	accel_mode = feci->accel_state_get(feci);
-	feci->deref(feci);
+	/*
+	 * If defunct fails, return. Do not remove the timer. This failure means
+	 * it will be re-tried later until the total failure count reaches to the
+	 * max limit which is 250. When the limit is reached, defunct process will return
+	 * true and let the connection goes off.
+	 */
+	ret = ci->defunct(ci->feci, &accel_mode);
 
 	/*
-	 * It is possible that the defunct process fails and re-try is in progress.
-	 * In that case, the connection's defunct timer is reset to defunct re-try
-	 * timeout value and the connection waits for the next defunct call. So, we
-	 * should remove the timer from the timer group, if the re-acceleration for this
-	 * connection is not possible which means "decel pending" or one of the
-	 * "accel fail" modes. Otherwise, the timer will be removed and re-try will not happen.
+	 * Remove the connection from the timer group and release the last reference
+	 * of this connection. This reference is the one which was held when the
+	 * connection was allocated.
 	 */
-	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
+	if (ret || ECM_FRONT_END_ACCELERATION_FAILED(accel_mode)) {
 		if (ecm_db_timer_group_entry_remove(&ci->defunct_timer)) {
 			ecm_db_connection_deref(ci);
 		}
@@ -1143,6 +1135,7 @@ static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connecti
 #endif
 	cci->deref(cci);
 }
+
 /*
  * ecm_db_connection_deref()
  *	Release reference to connection.  Connection is removed from database on final deref and destroyed.

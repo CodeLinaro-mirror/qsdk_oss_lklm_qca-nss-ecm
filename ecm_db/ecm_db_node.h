@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -18,6 +18,12 @@
  * Magic number
  */
 #define ECM_DB_NODE_INSTANCE_MAGIC 0x3312
+
+/*
+ * Max size of directional connection count string printed
+ * on the dump output.
+ */
+#define ECM_DB_NODE_CONN_COUNT_STR_SIZE 27
 
 typedef uint32_t ecm_db_node_hash_t;
 
