@@ -240,7 +240,7 @@ typedef void (*ecm_db_connection_final_callback_t)(void *arg);		/* Finaliser cal
 /*
  * Connection defunct event
  */
-typedef void (*ecm_db_connection_defunct_callback_t)(void *arg);	/* Defunct callback */
+typedef bool (*ecm_db_connection_defunct_callback_t)(void *arg, int *accel_mode);	/* Defunct callback */
 
 /*
  * Device Type for IPSec Tunnel devices

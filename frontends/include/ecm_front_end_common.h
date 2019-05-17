@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -168,7 +168,123 @@ static inline void ecm_front_end_flow_and_return_directions_get(struct nf_conn *
 	DEBUG_TRACE("flow_dir: %d return_dir: %d\n", *flow_dir, *return_dir);
 }
 
+/*
+ * ecm_front_end_common_connection_defunct_check()
+ *	Checks if the connection can be defuncted.
+ * The return value indicates that the caller is allowed to send a defunct message.
+ */
+static inline bool ecm_front_end_common_connection_defunct_check(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%p: feci lock is not held\n", feci);
+
+	/*
+	 * If connection has already become defunct, do nothing.
+	 */
+	if (feci->is_defunct) {
+		return false;
+	}
+	feci->is_defunct = true;
+
+	/*
+	 * If the connection is already in one of the fail modes, do nothing, keep the current accel_mode.
+	 */
+	if (ECM_FRONT_END_ACCELERATION_FAILED(feci->accel_mode)) {
+		return false;
+	}
+
+	/*
+	 * If the connection is decel then ensure it will not attempt accel while defunct.
+	 */
+	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_DECEL) {
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
+		return false;
+	 }
+
+	/*
+	 * If the connection is decel pending then decel operation is in progress anyway.
+	 */
+	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ecm_front_end_common_connection_decelerate_accel_mode_check()
+ *	Checks the accel mode of the connection to see it is ok for deceleration.
+ * The return value indicates that the caller is allowed to send a decelerate message.
+ */
+static inline bool ecm_front_end_common_connection_decelerate_accel_mode_check(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%p: feci lock is not held\n", feci);
+
+	/*
+	 * If decelerate is in error or already pending then ignore
+	 */
+	if (feci->stats.decelerate_pending) {
+		return false;
+	}
+
+	/*
+	 * If acceleration is pending then we cannot decelerate right now or we will race with it
+	 * Set a decelerate pending flag that will be actioned when the acceleration command is complete.
+	 */
+	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
+		feci->stats.decelerate_pending = true;
+		return false;
+	}
+
+	/*
+	 * Can only decelerate if accelerated
+	 * NOTE: This will also deny accel when the connection is in fail condition too.
+	 */
+	if (feci->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ecm_front_end_destroy_failure_handle()
+ *	Destroy request failure handler.
+ */
+static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_connection_instance *feci)
+{
+
+	spin_lock_bh(&feci->lock);
+	feci->stats.driver_fail_total++;
+	feci->stats.driver_fail++;
+	if (feci->stats.driver_fail >= feci->stats.driver_fail_limit) {
+		/*
+		 * Reached to the driver failure limit. ECM no longer allows
+		 * re-trying deceleration.
+		 */
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
+		spin_unlock_bh(&feci->lock);
+		DEBUG_WARN("%p: Decel failed - driver fail limit\n", feci);
+		return true;
+	}
+
+	/*
+	 * Destroy request failed. The accelerated connection couldn't be destroyed
+	 * in the acceleration engine. Revert back the accel_mode, unset the is_defunct
+	 * flag just in case this request has come through the defunct process.
+	 */
+	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
+	feci->is_defunct = false;
+	spin_unlock_bh(&feci->lock);
+
+	/*
+	 * Set the defunct timer to a smaller timeout value so that the connection will be
+	 * tried to be defuncted again, when the timeout expires (its value is 5 seconds).
+	 */
+	ecm_db_connection_defunct_timer_remove_and_set(feci->ci, ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT);
+
+	return false;
+}
+
 extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
-extern void ecm_front_end_destroy_failure_handle(struct ecm_front_end_connection_instance *feci);

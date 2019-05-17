@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -82,7 +82,7 @@ typedef enum ecm_front_end_acceleration_modes ecm_front_end_acceleration_mode_t;
  * Front end methods
  */
 struct ecm_front_end_connection_instance;
-typedef void (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
+typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef ecm_front_end_acceleration_mode_t (*ecm_front_end_connection_accel_state_get_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_ref_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef int (*ecm_front_end_connection_deref_callback_t)(struct ecm_front_end_connection_instance *feci);
