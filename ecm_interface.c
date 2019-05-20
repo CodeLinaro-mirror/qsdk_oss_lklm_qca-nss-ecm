@@ -113,6 +113,10 @@
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
+#include "ecm_front_end_ipv4.h"
+#ifdef ECM_IPV6_ENABLE
+#include "ecm_front_end_ipv6.h"
+#endif
 #include "ecm_interface.h"
 #include "exports/ecm_interface_ipsec.h"
 #ifdef ECM_INTERFACE_OVPN_ENABLE
@@ -5897,6 +5901,13 @@ void ecm_interface_node_connections_defunct(uint8_t *mac)
 		return;
 	}
 
+	/*
+	 * Disable frontend processing until defunct function call is completed.
+	 */
+	ecm_front_end_ipv4_stop(1);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(1);
+#endif
 	ni = ecm_db_node_chain_get_and_ref_first(mac);
 	while (ni) {
 		struct ecm_db_node_instance *nin;
@@ -5915,6 +5926,14 @@ void ecm_interface_node_connections_defunct(uint8_t *mac)
 		ecm_db_node_deref(ni);
 		ni = nin;
 	}
+
+	/*
+	 * Re-enable frontend processing.
+	 */
+	ecm_front_end_ipv4_stop(0);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(0);
+#endif
 }
 EXPORT_SYMBOL(ecm_interface_node_connections_defunct);
 
