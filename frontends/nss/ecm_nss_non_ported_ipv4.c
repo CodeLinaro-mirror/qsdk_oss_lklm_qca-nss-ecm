@@ -547,12 +547,23 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	nircm->conn_rule.flow_interface_num = from_nss_iface_id;
 	nircm->conn_rule.return_interface_num = to_nss_iface_id;
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*
 	 * Set up the flow and return qos tags
 	 */
 	nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
 	nircm->valid_flags |= NSS_IPV4_RULE_CREATE_QOS_VALID;
+
+	/*
+	 * Set up ingress shaper qostag values.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
+		nircm->igs_rule.igs_flow_qos_tag = (uint16_t)pr->igs_flow_qos_tag;
+		nircm->igs_rule.igs_return_qos_tag = (uint16_t)pr->igs_return_qos_tag;
+		nircm->valid_flags |= NSS_IPV4_RULE_CREATE_IGS_VALID;
+	}
+#endif
 
 	/*
 	 * Set the mtu values. These values will be overwritten if the flow is
@@ -1166,6 +1177,8 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			"pppoe_flow_if_num: %u\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"igs_flow_qos_tag: %x (%u)\n"
+			"igs_return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n",
 			nnpci,
@@ -1195,6 +1208,8 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			nircm->pppoe_rule.flow_if_num,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
+			nircm->igs_rule.igs_flow_qos_tag, nircm->igs_rule.igs_flow_qos_tag,
+			nircm->igs_rule.igs_return_qos_tag, nircm->igs_rule.igs_return_qos_tag,
 			nircm->dscp_rule.flow_dscp,
 			nircm->dscp_rule.return_dscp);
 
@@ -2380,6 +2395,7 @@ done:
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
@@ -2390,7 +2406,17 @@ done:
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
 		}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+		/*
+		 * Ingress QoS tag
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress flow qos tag: %u, ingress return qos tag: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.igs_flow_qos_tag, aci_pr.igs_return_qos_tag);
+			prevalent_pr.igs_flow_qos_tag = aci_pr.igs_flow_qos_tag;
+			prevalent_pr.igs_return_qos_tag = aci_pr.igs_return_qos_tag;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
+		}
+
 		/*
 		 * If any classifier denied DSCP remarking then that overrides every classifier
 		 */
