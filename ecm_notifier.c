@@ -36,6 +36,7 @@
 #include "ecm_tracker.h"
 #include "ecm_classifier.h"
 #include "ecm_db.h"
+#include "ecm_front_end_types.h"
 
 #include "ecm_notifier_pvt.h"
 #include "exports/ecm_notifier.h"
@@ -195,3 +196,92 @@ int ecm_notifier_unregister_connection_notify(struct notifier_block *nb)
 	return atomic_notifier_chain_unregister(&ecm_notifier_connection, nb);
 }
 EXPORT_SYMBOL(ecm_notifier_unregister_connection_notify);
+
+/*
+ * ecm_notifier_connection_state_fetch()
+ * 	Returns the current state for given connection tuple.
+ */
+enum ecm_notifier_connection_state ecm_notifier_connection_state_get(struct ecm_notifier_connection_tuple *conn)
+{
+	struct ecm_front_end_connection_instance *feci;
+	ecm_front_end_acceleration_mode_t accel_state;
+	struct ecm_db_connection_instance *ci;
+	int host1_port = conn->src_port;
+	int host2_port = conn->dst_port;
+	int protocol = conn->protocol;
+	ip_addr_t host1_addr;
+	ip_addr_t host2_addr;
+
+	DEBUG_ASSERT(conn, "Connection tuple is NULL\n");
+
+        switch (conn->ip_ver) {
+        case 4:
+                ECM_HIN4_ADDR_TO_IP_ADDR(host1_addr, conn->src.in.s_addr);
+                ECM_HIN4_ADDR_TO_IP_ADDR(host2_addr, conn->dest.in.s_addr);
+		DEBUG_TRACE("%p: lookup src: " ECM_IP_ADDR_DOT_FMT ":%d, "
+				"dest: " ECM_IP_ADDR_DOT_FMT ":%d, "
+				"protocol %d\n",
+				conn,
+				ECM_IP_ADDR_TO_DOT(host1_addr),
+				host1_port,
+				ECM_IP_ADDR_TO_DOT(host2_addr),
+				host2_port,
+				protocol);
+                break;
+
+        case 6:
+                ECM_HIN6_ADDR_TO_IP_ADDR(host1_addr, conn->src.in6);
+                ECM_HIN6_ADDR_TO_IP_ADDR(host2_addr, conn->dest.in6);
+		DEBUG_TRACE("%p: lookup src: " ECM_IP_ADDR_OCTAL_FMT ":%d, "
+				"dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, "
+				"protocol %d\n",
+				conn,
+				ECM_IP_ADDR_TO_OCTAL(host1_addr),
+				host1_port,
+				ECM_IP_ADDR_TO_OCTAL(host2_addr),
+				host2_port,
+				protocol);
+                break;
+
+        default:
+                return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
+        }
+
+	ci = ecm_db_connection_find_and_ref(host1_addr, host2_addr, protocol, host1_port, host2_port);
+	if (!ci) {
+		DEBUG_TRACE("%p: database connection not found\n", conn);
+		return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
+	}
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	if (!feci) {
+		DEBUG_TRACE("%p: failed to find front end connection instance\n", ci);
+		ecm_db_connection_deref(ci);
+		return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
+	}
+
+	accel_state = feci->accel_state_get(feci);
+	feci->deref(feci);
+	ecm_db_connection_deref(ci);
+
+	switch (accel_state) {
+	case ECM_FRONT_END_ACCELERATION_MODE_ACCEL:
+		return ECM_NOTIFIER_CONNECTION_STATE_ACCEL;
+
+	case ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING:
+		return ECM_NOTIFIER_CONNECTION_STATE_ACCEL_PENDING;
+
+	case ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING:
+		return ECM_NOTIFIER_CONNECTION_STATE_DECEL_PENDING;
+
+	case ECM_FRONT_END_ACCELERATION_MODE_DECEL:
+		return ECM_NOTIFIER_CONNECTION_STATE_DECEL;
+
+	default:
+		DEBUG_TRACE("%p: Marking other state as failed\n", conn);
+		break;
+	}
+
+	return ECM_NOTIFIER_CONNECTION_STATE_FAILED;
+}
+EXPORT_SYMBOL(ecm_notifier_connection_state_get);
