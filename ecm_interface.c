@@ -5948,7 +5948,11 @@ void ecm_interface_node_connections_defunct(uint8_t *mac)
 
 		if (ecm_db_node_is_mac_addr_equal(ni, mac)) {
 			int dir;
-			for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
+			/*
+			 * FROM and TO directions are enough to destroy all the connections.
+			 * FROM_NAT and TO_NAT have the same list of connections.
+			 */
+			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
 				ecm_db_traverse_node_connection_list_and_defunct(ni, dir);
 			}
 		}
@@ -5982,19 +5986,36 @@ static struct notifier_block ecm_interface_netdev_notifier __read_mostly = {
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 /*
  * ecm_interfae_node_br_fdb_notify_event()
- *	This is a call back for "bridge fdb update event/ageing timer expire
- *	event".
+ *	This is a callback for "bridge fdb update event. It is called
+ *	When a MAC address is moved to another interface.
+ *
  */
 static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
-					       unsigned long val,
+					       unsigned long event,
 					       void *data)
 {
-	uint8_t *mac =  (uint8_t *)data;
+	struct br_fdb_event *fe = (struct br_fdb_event *)data;
 
-	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
-		DEBUG_INFO("FDB updated for node %pM\n", mac);
-		ecm_interface_node_connections_defunct(mac);
+	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+		return NOTIFY_DONE;
 	}
+
+	/*
+	 * Check if original and current devs are not NULL.
+	 */
+	if (!fe->orig_dev || !fe->dev) {
+		return NOTIFY_DONE;
+	}
+
+	/*
+	 * If the old and new devs are the same, we don't need to handle this event.
+	 */
+	if (fe->orig_dev == fe->dev) {
+		return NOTIFY_DONE;
+	}
+
+	DEBUG_TRACE("%p: FDB notify event for moved MAC addr: %pM\n", fe, fe->addr);
+	ecm_interface_node_connections_defunct(fe->addr);
 
 	return NOTIFY_DONE;
 }
@@ -6003,18 +6024,29 @@ static struct notifier_block ecm_interface_node_br_fdb_update_nb = {
 	.notifier_call = ecm_interface_node_br_fdb_notify_event,
 };
 
+/*
+ * ecm_interface_node_br_fdb_delete_event()
+ *	Callback for FDB delete/ageing timeout events.
+ */
 static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
 					       unsigned long event,
-					       void *ctx)
+					       void *data)
 {
-	struct br_fdb_event *fe = (struct br_fdb_event *)ctx;
+	struct br_fdb_event *fe = (struct br_fdb_event *)data;
 
-	if ((event != BR_FDB_EVENT_DEL) || fe->is_local) {
-		DEBUG_WARN("local fdb or not deleting event, ignore\n");
+	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
 		return NOTIFY_DONE;
 	}
 
-	return ecm_interface_node_br_fdb_notify_event(nb, event, fe->addr);
+	if ((event != BR_FDB_EVENT_DEL) || fe->is_local) {
+		DEBUG_WARN("%p: local fdb or not deleting event, ignore\n", fe);
+		return NOTIFY_DONE;
+	}
+
+	DEBUG_TRACE("%p: FDB delete event for MAC addr: %pM\n", fe, fe->addr);
+	ecm_interface_node_connections_defunct(fe->addr);
+
+	return NOTIFY_DONE;
 }
 
 static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
