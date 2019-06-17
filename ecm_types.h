@@ -192,10 +192,10 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 	{ \
 		ecm_type_check_ecm_ip_addr(ipaddrt); \
 		ecm_type_check_linux_ipv6(hin6); \
-		ipaddrt[0] = in6.in6_u.u6_addr32[0]; \
-		ipaddrt[1] = in6.in6_u.u6_addr32[1]; \
-		ipaddrt[2] = in6.in6_u.u6_addr32[2]; \
-		ipaddrt[3] = in6.in6_u.u6_addr32[3]; \
+		ipaddrt[0] = hin6.in6_u.u6_addr32[3]; \
+		ipaddrt[1] = hin6.in6_u.u6_addr32[2]; \
+		ipaddrt[2] = hin6.in6_u.u6_addr32[1]; \
+		ipaddrt[3] = hin6.in6_u.u6_addr32[0]; \
 	}
 
 /*
@@ -205,10 +205,10 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 	{ \
 		ecm_type_check_linux_ipv6(hin6); \
 		ecm_type_check_ecm_ip_addr(ipaddrt); \
-		hin6.in6_u.u6_addr32[3] = ipaddrt[3]; \
-		hin6.in6_u.u6_addr32[2] = ipaddrt[2]; \
-		hin6.in6_u.u6_addr32[1] = ipaddrt[1]; \
-		hin6.in6_u.u6_addr32[0] = ipaddrt[0]; \
+		hin6.in6_u.u6_addr32[0] = ipaddrt[3]; \
+		hin6.in6_u.u6_addr32[1] = ipaddrt[2]; \
+		hin6.in6_u.u6_addr32[2] = ipaddrt[1]; \
+		hin6.in6_u.u6_addr32[3] = ipaddrt[0]; \
 	}
 #endif
 
