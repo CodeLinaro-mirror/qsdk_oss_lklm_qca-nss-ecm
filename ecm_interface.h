@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -67,8 +67,9 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out);
 bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver);
 bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out);
 struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_end_connection_instance *feci, struct net_device *dev, struct sk_buff *skb);
-bool ecm_interface_is_ovs(const struct net_device *dev);
-
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+bool ecm_interface_is_ovs_bridge_port(const struct net_device *dev);
+#endif
 #ifdef ECM_MULTICAST_ENABLE
 int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *interfaces, struct net_device *in_dev, ip_addr_t packet_src_addr, ip_addr_t packet_dest_addr, uint8_t maxvif, uint32_t *dst_dev, uint32_t *to_interface_first, bool mfc_update, __be16 *layer4hdr, struct sk_buff *skb);
 

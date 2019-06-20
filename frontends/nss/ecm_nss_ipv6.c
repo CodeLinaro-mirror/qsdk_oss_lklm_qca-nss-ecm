@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -498,6 +498,9 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#endif
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
@@ -1366,13 +1369,15 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 
+#ifndef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	/*
-	 * skip OpenVSwitch flows.
+	 * skip OpenVSwitch flows because we don't accelerate them
 	 */
-	if (ecm_interface_is_ovs(out) || ecm_interface_is_ovs(in)) {
+	if (netif_is_ovs_master(out) || netif_is_ovs_master(in)) {
 		dev_put(in);
 		return NF_ACCEPT;
 	}
+#endif
 
 	DEBUG_TRACE("Post routing process skb %p, out: %p, in: %p\n", skb, out, in);
 	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, skb, 0);

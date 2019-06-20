@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -90,6 +90,9 @@
 #endif
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 #include <net/vxlan.h>
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#include <ovsmgr.h>
 #endif
 
 /*
@@ -471,9 +474,9 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 	if (neigh->dev->flags & IFF_LOOPBACK) {
 		// GGG TODO Create an equivalent logic to that for ipv4, maybe need to create an ip6_dev_find()?
 		DEBUG_TRACE("local address " ECM_IP_ADDR_OCTAL_FMT " (found loopback)\n", ECM_IP_ADDR_TO_OCTAL(addr));
-		memset(mac_addr, 0, 6);
+		eth_zero_addr(mac_addr);
 	} else {
-		memcpy(mac_addr, neigh->ha, 6);
+		ether_addr_copy(mac_addr, neigh->ha);
 	}
 	rcu_read_unlock();
 	neigh_release(neigh);
@@ -678,10 +681,10 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	}
 
 	if (!(neigh->dev->flags & IFF_NOARP)) {
-		memcpy(mac_addr, neigh->ha, (size_t)neigh->dev->addr_len);
+		ether_addr_copy(mac_addr, neigh->ha);
 	} else {
 		DEBUG_TRACE("non-arp device: %p (%s, type: %d) to reach %pI4\n", neigh->dev, neigh->dev->name, neigh->dev->type, &ipv4_addr);
-		memset(mac_addr, 0, 6);
+		eth_zero_addr(mac_addr);
 	}
 	DEBUG_TRACE("addr: %pI4, mac: %pM, iif: %d, neigh dev ifindex: %d, dev: %p (%s), dev_type: %d\n",
 			&ipv4_addr, mac_addr, rt->rt_iif, neigh->dev->ifindex, neigh->dev, neigh->dev->name, neigh->dev->type);
@@ -1422,20 +1425,19 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 }
 #endif
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
- * ecm_interface_is_ovs()
- *	Returns true if dev is OpenVswitch (OVS) interface.
+ * ecm_interface_is_ovs_bridge_port()
+ *	Returns true if dev is OpenVswitch (OVS) bridge port.
  */
-bool ecm_interface_is_ovs(const struct net_device *dev)
+bool ecm_interface_is_ovs_bridge_port(const struct net_device *dev)
 {
 	/*
-	 * Check if dev is OVS master or an OVS datapath port.
+	 * Check if dev is OVS bridge port.
 	 */
-	if (dev->priv_flags & (IFF_OVS_DATAPATH | IFF_OPENVSWITCH))
-		return true;
-
-	return false;
+	return !!(dev->priv_flags & IFF_OVS_DATAPATH);
 }
+#endif
 
 /*
  * ecm_interface_bridge_interface_establish()
@@ -1486,6 +1488,58 @@ static struct ecm_db_iface_instance *ecm_interface_bridge_interface_establish(st
 	DEBUG_TRACE("%p: bridge iface established\n", nii);
 	return nii;
 }
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_interface_ovs_bridge_interface_establish()
+ *	Returns a reference to a iface of the OVS BRIDGE type, possibly creating one if necessary.
+ * Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_ovs_bridge_interface_establish(struct ecm_db_interface_info_ovs_bridge *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish OVS BRIDGE iface: %s with address: %pM, MTU: %d, if num: %d, accel engine if id: %d\n",
+			dev_name, type_info->address, mtu, dev_interface_num, ae_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_ovs_bridge(type_info->address);
+	if (ii) {
+		DEBUG_TRACE("%p: iface established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_ovs_bridge(type_info->address);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+	ecm_db_iface_add_ovs_bridge(nii, type_info->address, dev_name,
+			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%p: OVS bridge iface established\n", nii);
+	return nii;
+}
+#endif
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
@@ -2346,6 +2400,58 @@ done:
 	return ret;
 }
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_interface_ovs_bridge_port_dev_get()
+ * 	Looks up the slave port in the bridge devices port list.
+ */
+static struct net_device *ecm_interface_ovs_bridge_port_dev_get(struct sk_buff *skb, struct net_device *br_dev,
+								ip_addr_t src_ip, ip_addr_t dst_ip, int ip_version,
+								int protocol, bool is_routed, uint8_t *smac,
+								uint8_t *dmac, __be16 *layer4hdr)
+{
+	struct ovsmgr_dp_flow flow;
+
+	DEBUG_TRACE("%p: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip), ip_version, protocol, smac, dmac);
+
+	flow.indev = br_dev;
+	flow.outdev = NULL;
+
+	flow.tuple.ip_version = ip_version;
+	flow.tuple.protocol = protocol;
+
+	if (protocol == IPPROTO_TCP) {
+		struct tcphdr *tcp_hdr = (struct tcphdr *)layer4hdr;
+
+		flow.tuple.src_port = tcp_hdr->source;
+		flow.tuple.dst_port = tcp_hdr->dest;
+	} else if (protocol == IPPROTO_UDP) {
+		struct udphdr *udp_hdr = (struct udphdr *)layer4hdr;
+
+		flow.tuple.src_port = udp_hdr->source;
+		flow.tuple.dst_port = udp_hdr->dest;
+	} else {
+		DEBUG_WARN("%p: Protocol is not udp/tcp\n", skb);
+		return NULL;
+	}
+
+	flow.is_routed = is_routed;
+
+	ether_addr_copy(flow.dmac, dmac);
+
+	if (ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+	} else {
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+	}
+
+	return ovsmgr_port_find(skb, br_dev, &flow);
+}
+#endif
+
 /*
  * ecm_interface_establish_and_ref()
  *	Establish an interface instance for the given interface detail.
@@ -2405,6 +2511,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #endif
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 		struct ecm_db_interface_info_vxlan vxlan;		/* type == ECM_DB_IFACE_TYPE_VXLAN */
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		struct ecm_db_interface_info_ovs_bridge ovsb;		/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
 #endif
 	} type_info;
 
@@ -2471,7 +2580,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * VLAN master
 			 * GGG No locking needed here, ASSUMPTION is that real_dev is held for as long as we have dev.
 			 */
-			memcpy(type_info.vlan.address, dev->dev_addr, 6);
+			ether_addr_copy(type_info.vlan.address, dev->dev_addr);
 			type_info.vlan.vlan_tag = vlan_dev_vlan_id(dev);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0))
 			type_info.vlan.vlan_tpid = ETH_P_8021Q;
@@ -2544,7 +2653,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			/*
 			 * Bridge
 			 */
-			memcpy(type_info.bridge.address, dev->dev_addr, 6);
+			ether_addr_copy(type_info.bridge.address, dev->dev_addr);
 
 			DEBUG_TRACE("%p: Net device: %p is BRIDGE, mac: %pM\n",
 					feci, dev, type_info.bridge.address);
@@ -2556,6 +2665,27 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			goto identifier_update;
 		}
 
+		/*
+		 * OVS BRIDGE?
+		 */
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		if (ovsmgr_is_ovs_master(dev)) {
+			/*
+			 * OVS Bridge
+			 */
+			ether_addr_copy(type_info.ovsb.address, dev->dev_addr);
+
+			DEBUG_TRACE("%p: Net device: %p is OVS BRIDGE, mac: %pM\n",
+					feci, dev, type_info.ovsb.address);
+
+			/*
+			 * Establish this type of interface
+			 */
+			ii = ecm_interface_ovs_bridge_interface_establish(&type_info.ovsb, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+			goto identifier_update;
+		}
+#endif
+
 #ifdef ECM_INTERFACE_BOND_ENABLE
 		/*
 		 * LAG?
@@ -2564,7 +2694,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			/*
 			 * Link aggregation
 			 */
-			memcpy(type_info.lag.address, dev->dev_addr, 6);
+			ether_addr_copy(type_info.lag.address, dev->dev_addr);
 
 			DEBUG_TRACE("%p: Net device: %p is LAG, mac: %pM\n",
 					feci, dev, type_info.lag.address);
@@ -2601,7 +2731,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		 * ETHERNET!
 		 * Just plain ethernet it seems
 		 */
-		memcpy(type_info.ethernet.address, dev->dev_addr, 6);
+		ether_addr_copy(type_info.ethernet.address, dev->dev_addr);
 		DEBUG_TRACE("%p: Net device: %p is ETHERNET, mac: %pM\n",
 				feci, dev, type_info.ethernet.address);
 
@@ -2830,7 +2960,7 @@ identifier_update:
 		/*
 		 * Copy netdev address to the type info.
 		 */
-		memcpy(type_info.rawip.address, dev->dev_addr, 6);
+		ether_addr_copy(type_info.rawip.address, dev->dev_addr);
                 DEBUG_TRACE("%p: Net device: %p is RAWIP, MAC addr: %pM\n",
                                feci, dev, type_info.rawip.address);
 
@@ -4436,15 +4566,28 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					} else {
-						if (!ecm_interface_get_next_node_mac_address(dest_addr, dest_dev, ip_version, mac_addr)) {
-							dev_put(src_dev);
-							dev_put(dest_dev);
+						ip_addr_t look_up_addr;
+						struct net_device *tmp_dev;
+						ECM_IP_ADDR_COPY(look_up_addr, dest_addr);
+						/*
+						 * If this is a local IP address, this means the interface hierarchy is being created for
+						 * TO_NAT or FROM_NAT direction. In these cases, since the IP address is a local IP address,
+						 * MAC lookup will find the local interface's MAC address which cannot be used for the slave port
+						 * look up in the forwarding database. So, we use the src_ip address for MAC look up.
+						 * For TO_NAT direction, src_ip address is the sender host's IP address. For FROM_NAT direction
+						 * src_ip address is the destination host's IP address.
+						 * FROM_NAT ---- > HOST (src_ip)
+						 * TO_NAT <----- HOST (src_ip)
+						 */
+						tmp_dev = ecm_interface_dev_find_by_local_addr(dest_addr);
+						if (tmp_dev) {
+							ECM_IP_ADDR_COPY(look_up_addr, src_addr);
+							dev_put(tmp_dev);
+						}
 
-							/*
-							 * Release the interfaces heirarchy we constructed to this point.
-							 */
-							ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
-							return ECM_DB_IFACE_HEIRARCHY_MAX;
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr)) {
+							DEBUG_WARN("%p: Unable to find the host MAC address connected to the Linux bridge\n", feci);
+							goto done;
 						}
 					}
 
@@ -4453,21 +4596,60 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 					if (!next_dev) {
 						DEBUG_WARN("%p: Unable to obtain output port for: %pM\n", feci, mac_addr);
-						dev_put(src_dev);
-						dev_put(dest_dev);
-
-						/*
-						 * Release the interfaces heirarchy we constructed to this point.
-						 */
-						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
-						return ECM_DB_IFACE_HEIRARCHY_MAX;
+						goto done;
 					}
+
 					DEBUG_TRACE("%p: Net device: %p is BRIDGE, next_dev: %p (%s)\n", feci, dest_dev, next_dev, next_dev->name);
+
 					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
 						top_dev = dest_dev;
 					}
 					break;
 				}
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				if (ovsmgr_is_ovs_master(dest_dev)) {
+					ip_addr_t look_up_addr;
+					uint8_t mac_addr[ETH_ALEN];
+					struct net_device *tmp_dev;
+					ECM_IP_ADDR_COPY(look_up_addr, dest_addr);
+
+					/*
+					 * If this is a local IP address, this means the interface hierarchy is being created for
+					 * TO_NAT or FROM_NAT direction. In these cases, since the IP address is a local IP address,
+					 * MAC lookup will find the local interface's MAC address which cannot be used for the slave port
+					 * look up in the forwarding database. So, we use the src_ip address for MAC look up.
+					 * For TO_NAT direction, src_ip address is the sender host's IP address. For FROM_NAT direction
+					 * src_ip address is the destination host's IP address.
+					 * FROM_NAT ---- > HOST (src_ip)
+					 * TO_NAT <----- HOST (src_ip)
+					 */
+					tmp_dev = ecm_interface_dev_find_by_local_addr(dest_addr);
+					if (tmp_dev) {
+						ECM_IP_ADDR_COPY(look_up_addr, src_addr);
+						dev_put(tmp_dev);
+					}
+
+					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr)) {
+						DEBUG_WARN("%p: Unable to find the host MAC address connected to the OVS bridge\n", feci);
+						goto done;
+					}
+
+					next_dev = ecm_interface_ovs_bridge_port_dev_get(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
+											 is_routed, src_node_addr, mac_addr, layer4hdr);
+					if (!next_dev) {
+						DEBUG_WARN("%p: Unable to obtain OVS output port for: %pM\n", feci, mac_addr);
+						goto done;
+					}
+
+					DEBUG_TRACE("%p: Net device: %p is OVS BRIDGE, next_dev: %p (%s)\n", feci, dest_dev, next_dev, next_dev->name);
+
+					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
+						top_dev = dest_dev;
+					}
+					break;
+				}
+#endif
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 				/*
@@ -4835,6 +5017,8 @@ lag_success:
 
 	DEBUG_WARN("%p: Too many interfaces: %d\n", feci, current_interface_index);
 	DEBUG_ASSERT(current_interface_index == 0, "%p: Bad logic handling current_interface_index: %d\n", feci, current_interface_index);
+
+done:
 	dev_put(src_dev);
 	dev_put(dest_dev);
 
@@ -5658,7 +5842,6 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 
 		switch (ii_type) {
 			struct rtnl_link_stats64 stats;
-
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			case ECM_DB_IFACE_TYPE_VLAN:
 				DEBUG_INFO("VLAN\n");
@@ -5667,6 +5850,14 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				stats.tx_packets = tx_packets;
 				stats.tx_bytes = tx_bytes;
 				__vlan_dev_update_accel_stats(dev, &stats);
+				break;
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+				DEBUG_INFO("OVS BRIDGE\n");
+				ovsmgr_bridge_interface_stats_update(dev,
+								     rx_packets, rx_bytes,
+								     tx_packets, tx_bytes);
 				break;
 #endif
 			case ECM_DB_IFACE_TYPE_BRIDGE:

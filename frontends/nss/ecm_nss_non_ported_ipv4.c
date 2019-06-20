@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -617,7 +617,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%p: Bridge\n", nnpci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -628,15 +627,42 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: Bridge - ignore additional\n", nnpci);
 				break;
 			}
+
 			ecm_db_iface_bridge_address_get(ii, from_nss_iface_address);
 			if (is_valid_ether_addr(from_nss_iface_address)) {
-				memcpy(nircm->src_mac_rule.flow_src_mac, from_nss_iface_address, ETH_ALEN);
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_FLOW_VALID;
 				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
 			}
 
 			DEBUG_TRACE("%p: Bridge - mac: %pM\n", nnpci, from_nss_iface_address);
 			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%p: OVS Bridge\n", nnpci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%p: OVS Bridge - ignore additional\n", nnpci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, from_nss_iface_address);
+			if (is_valid_ether_addr(from_nss_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
+			}
+
+			DEBUG_TRACE("%p: OVS Bridge - mac: %pM\n", nnpci, from_nss_iface_address);
+#else
+			rule_invalid = true;
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%p: Ethernet\n", nnpci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -834,6 +860,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		 */
 		interface_type_counts[ii_type]++;
 	}
+
 	if (rule_invalid) {
 		DEBUG_WARN("%p: from/src Rule invalid\n", nnpci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -877,15 +904,42 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				DEBUG_TRACE("%p: Bridge - ignore additional\n", nnpci);
 				break;
 			}
+
 			ecm_db_iface_bridge_address_get(ii, to_nss_iface_address);
 			if (is_valid_ether_addr(to_nss_iface_address)) {
-				memcpy(nircm->src_mac_rule.return_src_mac, to_nss_iface_address, ETH_ALEN);
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_RETURN_VALID;
 				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
 			}
 
 			DEBUG_TRACE("%p: Bridge - mac: %pM\n", nnpci, to_nss_iface_address);
 			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%p: OVS Bridge\n", nnpci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%p: OVS Bridge - ignore additional\n", nnpci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, to_nss_iface_address);
+			if (is_valid_ether_addr(to_nss_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
+			}
+
+			DEBUG_TRACE("%p: OVS Bridge - mac: %pM\n", nnpci, to_nss_iface_address);
+#else
+			rule_invalid = true;
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%p: Ethernet\n", nnpci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -1015,6 +1069,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		 */
 		interface_type_counts[ii_type]++;
 	}
+
 	if (rule_invalid) {
 		DEBUG_WARN("%p: to/dest Rule invalid\n", nnpci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
