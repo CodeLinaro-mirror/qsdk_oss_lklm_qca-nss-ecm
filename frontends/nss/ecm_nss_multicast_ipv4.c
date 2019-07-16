@@ -54,6 +54,7 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
+#include <net/vxlan.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
@@ -2449,11 +2450,16 @@ unsigned int ecm_nss_multicast_ipv4_connection_process(struct net_device *out_de
 	/*
 	 * Return if source dev is any tunnel type
 	 * TODO: Add support for multicast over tunnels
+	 *
+	 * Acceleration for multicast packet which is sent to
+	 * or received from VxLAN tunnel net device should be skipped.
 	 */
 	if ((in_dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) ||
 	    (in_dev->type == ARPHRD_SIT) || (in_dev->type == ARPHRD_PPP) ||
-	    (in_dev->type == ARPHRD_TUNNEL6)) {
-		DEBUG_TRACE("Net device: %p is TUNNEL type: %d\n", in_dev, in_dev->type);
+	    (in_dev->type == ARPHRD_TUNNEL6) ||
+	    (is_vxlan_dev(in_dev)) || (is_vxlan_dev(out_dev))) {
+		DEBUG_TRACE("in_dev: %p, in_type: %d, out_dev: %p, out_type: %d",
+				in_dev, in_dev->type, out_dev, out_dev->type);
 		return NF_ACCEPT;
 	}
 
