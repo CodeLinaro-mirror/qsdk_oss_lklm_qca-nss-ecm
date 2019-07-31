@@ -1241,7 +1241,6 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 	return false;
 }
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
 /*
  * ecm_interface_is_l2tp_packet_by_version()
  *	Check version of l2tp tunnel encapsulated traffic
@@ -1268,10 +1267,8 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->type == ARPHRD_PPP) {
-		if (out->priv_flags & flag) {
-			return true;
-		}
+	if (out->priv_flags & flag) {
+		return true;
 	}
 
 	in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -1279,11 +1276,9 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 		return true;
 	}
 
-	if (in->type == ARPHRD_PPP) {
-		if (in->priv_flags & flag) {
-			dev_put(in);
-			return true;
-		}
+	if (in->priv_flags & flag) {
+		dev_put(in);
+		return true;
 	}
 
 	dev_put(in);
@@ -1304,11 +1299,9 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->type == ARPHRD_PPP) {
-		if (out->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-				      IFF_PPP_PPTP)) {
-			return true;
-		}
+	if (out->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
+			       IFF_PPP_PPTP)) {
+		return true;
 	}
 
 	in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -1316,19 +1309,16 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 		return true;
 	}
 
-	if (in->type == ARPHRD_PPP) {
-		if (in->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-				      IFF_PPP_PPTP)) {
-			dev_put(in);
-			return true;
-		}
+	if (in->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
+			      IFF_PPP_PPTP)) {
+		dev_put(in);
+		return true;
 	}
 
 	dev_put(in);
 	return false;
 
 }
-#endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 /*

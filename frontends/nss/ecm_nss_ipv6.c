@@ -1276,7 +1276,6 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
 #ifndef ECM_INTERFACE_PPTP_ENABLE
 	/*
 	 * skip pptp because we don't accelerate them
@@ -1285,23 +1284,22 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 #endif
+
 #ifndef ECM_INTERFACE_L2TPV2_ENABLE
 	/*
-	 * skip l2tp v2 and v3, because we don't accelerate them
+	 * skip l2tpv2 because we don't accelerate them
 	 */
-	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 2) ||
-		ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
+	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 2)) {
 		return NF_ACCEPT;
 	}
-#else
+#endif
+
 	/*
 	 * skip l2tpv3 because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
 		return NF_ACCEPT;
 	}
-#endif
-#endif
 
 	/*
 	 * Identify interface from where this packet came
@@ -1433,14 +1431,12 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(const struct nf_hook_o
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_INTERFACE_PPP_ENABLE
 	/*
 	 * skip l2tp/pptp because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_pptp(skb, out)) {
 		return NF_ACCEPT;
 	}
-#endif
 
 	/*
 	 * Check packet is an IP Ethernet packet
