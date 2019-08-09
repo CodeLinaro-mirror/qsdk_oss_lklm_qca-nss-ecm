@@ -151,6 +151,12 @@ ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_VXLAN_ENABLE=y in order
+# to enable support for VxLAN interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
+
+# #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
 # #############################################################################
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)

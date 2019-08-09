@@ -52,6 +52,9 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <net/vxlan.h>
+#endif
 #include <linux/netfilter/nf_conntrack_tftp.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
@@ -654,6 +657,30 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%p: OVPN - unsupported\n", npci);
+#endif
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			DEBUG_TRACE("%p: From VXLAN interface\n", npci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Can support only one VxLAN interface.
+				 */
+				DEBUG_WARN("%p: VxLAN - ignore additional\n", npci);
+				rule_invalid = true;
+				break;
+			}
+
+			/*
+			 * For VxLAN device, a 5-tuple connection rule is added with
+			 * the same src and dest ports in both the directions.
+			 */
+			if (ecm_db_connection_is_routed_get(feci->ci)) {
+				nircm->conn_rule.return_mtu = nircm->conn_rule.flow_mtu;
+				nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_NO_SRC_IDENT;
+			}
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%p: VXLAN - unsupported\n", npci);
 #endif
 			break;
 		default:
@@ -1921,6 +1948,12 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 			}
 		}
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		if ((is_vxlan_dev(in_dev) || is_vxlan_dev(out_dev)) && is_routed) {
+			DEBUG_TRACE("VxLAN outer connection, make src and dest idents same.\n");
+			src_port = dest_port;
+		}
+#endif
 		if (ct && nfct_help(ct) && (dest_port == TFTP_PORT)) {
 			DEBUG_TRACE("%p: Connection has helper but protocol is TFTP, it can be accelerated\n", ct);
 			can_accel = true;

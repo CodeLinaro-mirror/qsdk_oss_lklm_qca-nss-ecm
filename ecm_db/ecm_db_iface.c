@@ -113,7 +113,8 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"GRE_TUN",
 	"GRE_TAP",
 	"RAWIP",
-	"OVPN"
+	"OVPN",
+	"VxLAN"
 };
 
 /*
@@ -819,6 +820,37 @@ static int ecm_db_iface_ovpn_state_get(struct ecm_db_iface_instance *ii, struct 
 }
 #endif
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_db_iface_vxlan_state_get()
+ *	Return interface type specific state
+ */
+static int ecm_db_iface_vxlan_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	uint32_t vni;
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	vni = ii->type_info.vxlan.vni;
+	spin_unlock_bh(&ecm_db_lock);
+
+	if ((result = ecm_state_prefix_add(sfi, "vxlan"))) {
+		return result;
+	}
+
+	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "vni", "%d", vni))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
+
 /*
  * ecm_db_iface_state_get()
  *	Obtain state for the interface.
@@ -1301,6 +1333,19 @@ static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_ipsec_tunnel(
 }
 #endif
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_db_iface_generate_hash_index_vxlan()
+ *	Calculate the hash index based on VxLAN network identifier and interface type.
+ */
+static inline ecm_db_iface_hash_t ecm_db_iface_generate_hash_index_vxlan(uint32_t vni, uint32_t if_type)
+{
+	uint32_t hash_val;
+	hash_val = (uint32_t)jhash_2words(vni, if_type, ecm_db_jhash_rnd);
+	return (ecm_db_iface_hash_t)(hash_val & (ECM_DB_IFACE_HASH_SLOTS - 1));
+}
+#endif
+
 /*
  * ecm_db_iface_ethernet_address_get()
  *	Obtain the ethernet address for an ethernet interface
@@ -1553,6 +1598,47 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vlan(uint8_t *address, u
 	return NULL;
 }
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_vlan);
+#endif
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_db_iface_find_and_ref_vxlan()
+ *	Lookup and return a iface reference if any
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vxlan(uint32_t vni, uint32_t type)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Lookup vxlan iface with vxlan id: %d & if_type: %d\n", vni, type);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_vxlan(vni, type);
+
+	/*
+	 * Iterate the chain looking for a host with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_VXLAN)
+			|| (ii->type_info.vxlan.vni != vni)
+			|| (ii->type_info.vxlan.if_type != type)) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("iface found %p\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Iface not found\n");
+	return NULL;
+}
 #endif
 
 /*
@@ -3208,6 +3294,58 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_ovpn);
+#endif
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_db_iface_add_vxlan()
+ *	Add a iface instance into the database
+ */
+void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii, uint32_t vni, uint32_t if_type,
+					char *name, int32_t mtu, int32_t interface_identifier,
+					int32_t ae_interface_identifier,
+					ecm_db_iface_final_callback_t final, void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_interface_info_vxlan *type_info;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%p: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%p: inserted\n", ii);
+	DEBUG_ASSERT(name, "%p: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_VXLAN;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_vxlan_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strlcpy(ii->name, name, IFNAMSIZ);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = ae_interface_identifier;
+
+	/*
+	 * Type specific info
+	 */
+	type_info = &ii->type_info.vxlan;
+	type_info->vni = vni;
+	type_info->if_type = if_type;
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_vxlan(vni, if_type);
+
+	ecm_db_iface_add_to_db(ii, hash_index);
+}
 #endif
 
 /*

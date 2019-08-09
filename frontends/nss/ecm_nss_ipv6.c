@@ -47,6 +47,9 @@
 #include <linux/netfilter_bridge.h>
 #include <linux/if_bridge.h>
 #include <net/arp.h>
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <net/vxlan.h>
+#endif
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
@@ -566,6 +569,28 @@ done:
 			DEBUG_TRACE("OVPN interface unsupported\n");
 			return NULL;
 #endif
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			local_dev = ecm_interface_dev_find_by_local_addr(addr);
+			if (!local_dev) {
+				DEBUG_WARN("%p: Failed to find local netdevice of VxLAN tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n",
+						feci, ECM_IP_ADDR_TO_OCTAL(addr));
+				return NULL;
+			}
+
+			if (!ecm_interface_mac_addr_get_no_route(local_dev, addr, node_addr)) {
+				DEBUG_WARN("%p: Couldn't find mac address for local dev\n", feci);
+				dev_put(local_dev);
+				return NULL;
+			}
+			DEBUG_TRACE("%p: Found the mac address for local dev\n", feci);
+			dev_put(local_dev);
+			done = true;
+			break;
+#else
+			DEBUG_TRACE("VXLAN interface unsupported\n");
+			return NULL;
+#endif
 		default:
 			/*
 			 * Don't know how to handle these.
@@ -1066,6 +1091,31 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		if (unlikely(ct == nf_ct_untracked_get())) {
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			/*
+			 * If the conntrack connection is set as untracked,
+			 * ECM will accept and process only VxLAN outer flows,
+			 * otherwise such flows will not be processed by ECM.
+			 *
+			 * E.g. In the following network arramgement,
+			 * Eth1 ---> Bridge ---> VxLAN0(Bridge Port) ---> Eth0(WAN)
+			 * The packets from VxLAN0 to Eth0 will be routed.
+			 *
+			 * is_vxlan_dev API is used to identify the VxLAN device &
+			 * is_routed flag is used to identify the outer flow.
+			 */
+			if (is_routed && is_vxlan_dev(in_dev)) {
+				DEBUG_TRACE("%p: Untracked CT for VxLAN\n", skb);
+				ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.src.u3.in6, ip_hdr.src_addr);
+				ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.dst.u3.in6, ip_hdr.dest_addr);
+				orig_tuple.dst.protonum = ip_hdr.protocol;
+				ECM_IP_ADDR_TO_NIN6_ADDR(reply_tuple.src.u3.in6, ip_hdr.dest_addr);
+				ECM_IP_ADDR_TO_NIN6_ADDR(reply_tuple.dst.u3.in6, ip_hdr.src_addr);
+				sender = ECM_TRACKER_SENDER_TYPE_SRC;
+				ct = NULL;
+				goto vxlan_done;
+			}
+#endif
 			DEBUG_TRACE("%p: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}
@@ -1103,6 +1153,10 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 			orig_tuple.dst.protonum = ip_hdr.protocol;
 			DEBUG_TRACE("%p: related ct, actual protocol: %u\n", skb, orig_tuple.dst.protonum);
 		}
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+vxlan_done:
+		;
+#endif
 	}
 
 	/*

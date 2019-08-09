@@ -26,6 +26,10 @@
 #endif
 #endif
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <net/vxlan.h>
+#endif
+
 /*
  * Some constants used with constructing NSS acceleration rules.
  * GGG TODO These should be provided by the NSS driver itself!
@@ -87,6 +91,18 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev_type(struct net
 	if ((dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) && !type) {
 		return NSS_IPSEC_CMN_INTERFACE;
 	}
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	/*
+	 * Find VxLAN dev type based on type, 0 for outer & 1 for inner.
+	 */
+	if (is_vxlan_dev(dev)) {
+		if (!type) {
+			return NSS_VXLAN_INTERFACE;
+		}
+		type = NSS_DYNAMIC_INTERFACE_TYPE_VXLAN_INNER;
+	}
+#endif
 
 	return nss_cmn_get_interface_number_by_dev_and_type(dev, type);
 }

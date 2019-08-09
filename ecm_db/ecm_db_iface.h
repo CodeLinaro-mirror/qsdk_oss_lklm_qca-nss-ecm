@@ -132,6 +132,9 @@ struct ecm_db_iface_instance {
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 		struct ecm_db_interface_info_ovpn ovpn;			/* type == ECM_DB_IFACE_TYPE_OVPN (OpenVPN tunnel - data channel offload interface) */
 #endif
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		struct ecm_db_interface_info_vxlan vxlan;			/* type == ECM_DB_IFACE_TYPE_VXLAN */
+#endif
 	} type_info;
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
@@ -293,6 +296,15 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 				struct ecm_db_interface_info_ovpn *type_info, char *name,
 				int32_t mtu, int32_t interface_identifier,
 				ecm_db_iface_final_callback_t final, void *arg);
+#endif
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vxlan(uint32_t vni, uint32_t if_type);
+void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii,
+			   uint32_t vni, uint32_t if_type, char *name,
+			   int32_t mtu, int32_t interface_identifier,
+			   int32_t ae_interface_identifier,
+			   ecm_db_iface_final_callback_t final, void *arg);
 #endif
 
 struct ecm_db_iface_instance *ecm_db_interfaces_get_and_ref_first(void);

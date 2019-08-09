@@ -268,6 +268,7 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_GRE_TAP,			/* Interface is a GRE TAP tunnel interface */
 	ECM_DB_IFACE_TYPE_RAWIP,			/* Interface is a RAWIP interface */
 	ECM_DB_IFACE_TYPE_OVPN,				/* Interface is a OVPN interface */
+	ECM_DB_IFACE_TYPE_VXLAN,			/* Interface is a VxLAN interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -278,6 +279,13 @@ typedef enum ecm_db_iface_types ecm_db_iface_type_t;
 struct ecm_db_interface_info_ethernet {			/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 };
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+struct ecm_db_interface_info_vxlan {			/* type == ECM_DB_IFACE_TYPE_VXLAN */
+	uint32_t vni;					/* VxLAN network identifier */
+	uint32_t if_type;				/* VxLAN interface type */
+};
+#endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 struct ecm_db_interface_info_vlan {			/* type == ECM_DB_IFACE_TYPE_VLAN */
