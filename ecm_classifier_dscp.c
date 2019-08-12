@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2019, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -401,6 +401,9 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	cdscpi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	cdscpi->process_response.flow_qos_tag = flow_qos_tag;
 	cdscpi->process_response.return_qos_tag = return_qos_tag;
+	cdscpi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
+	cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_flow_qos_tag;
+	cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_reply_qos_tag;
 
 	/*
 	 * Check if we need to set DSCP

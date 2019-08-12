@@ -1221,12 +1221,20 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	create->if_count = valid_vif_idx;
 	create->src_interface_num = from_nss_iface_id;
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*
 	 * Set up the flow qos tags
 	 */
 	create->qos_tag = (uint32_t)pr->flow_qos_tag;
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+	/*
+	 * Set up ingress shaper flow qos tags.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
+		create->igs_qos_tag = (uint16_t)pr->igs_flow_qos_tag;
+		create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_IGS_VALID;
+	}
+
 	/*
 	 * DSCP information?
 	 */
@@ -2989,6 +2997,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
@@ -2999,7 +3008,17 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
 		}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+		/*
+		 * Ingress QoS tag
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress flow qos tag: %u, ingress return qos tag: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.igs_flow_qos_tag, aci_pr.igs_return_qos_tag);
+			prevalent_pr.igs_flow_qos_tag = aci_pr.igs_flow_qos_tag;
+			prevalent_pr.igs_return_qos_tag = aci_pr.igs_return_qos_tag;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
+		}
+
 		/*
 		 * If any classifier denied DSCP remarking then that overrides every classifier
 		 */

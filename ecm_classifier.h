@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2018, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018-2019, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -79,6 +79,8 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #define ECM_CLASSIFIER_PROCESS_ACTION_DSCP 0x00000010		/* Contains DSCP marking information */
 #define ECM_CLASSIFIER_PROCESS_ACTION_DSCP_DENY 0x00000020	/* Denies any DSCP changes */
+
+#define ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG 0x00000040	/* Contains flow & return ingress qos tags */
 #endif
 
 /*
@@ -97,6 +99,8 @@ struct ecm_classifier_process_response {
 	bool drop;					/* Drop packet at hand */
 	uint32_t flow_qos_tag;				/* QoS tag to use for the packet */
 	uint32_t return_qos_tag;			/* QoS tag to use for the packet */
+	uint16_t igs_flow_qos_tag;			/* Ingress QoS tag to use for the packet */
+	uint16_t igs_return_qos_tag;			/* Ingress QoS tag to use for the return packet */
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	uint8_t flow_dscp;				/* DSCP mark for flow */
 	uint8_t return_dscp;				/* DSCP mark for return */
@@ -248,6 +252,7 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 		}
 	}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		if ((result = ecm_state_write(sfi, "flow_qos_tag", "%u", pr->flow_qos_tag))) {
 			return result;
@@ -256,7 +261,16 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			return result;
 		}
 	}
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
+		if ((result = ecm_state_write(sfi, "igs_flow_qos_tag", "%u", pr->igs_flow_qos_tag))) {
+			return result;
+		}
+		if ((result = ecm_state_write(sfi, "igs_return_qos_tag", "%u", pr->igs_return_qos_tag))) {
+			return result;
+		}
+	}
+
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
 		if ((result = ecm_state_write(sfi, "flow_dscp", "%u", pr->flow_dscp))) {
 			return result;
