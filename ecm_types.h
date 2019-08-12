@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2019-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2019-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -101,10 +101,8 @@ typedef uint32_t ecm_ptr_t;
 static inline void ecm_type_check_ecm_ip_addr(ip_addr_t ipaddr){}
 static inline void ecm_type_check_linux_ipv4(__be32 ipaddr){}
 static inline void ecm_type_check_ae_ipv4(uint32_t addr){}
-#ifdef ECM_IPV6_ENABLE
 static inline void ecm_type_check_linux_ipv6(struct in6_addr in6){}
 static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
-#endif
 
 /*
  * This macro copies ip_addr_t's
@@ -180,7 +178,6 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 		hin4 = ipaddrt[0]; \
 	}
 
-#ifdef ECM_IPV6_ENABLE
 #define ECM_LINUX6_TO_IP_ADDR(d,s) \
 	{ \
 		ecm_type_check_ecm_ip_addr(d); \
@@ -246,7 +243,6 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 		hin6.in6_u.u6_addr32[2] = ipaddrt[1]; \
 		hin6.in6_u.u6_addr32[3] = ipaddrt[0]; \
 	}
-#endif
 
 /*
  * ecm_mac_addr_equal()

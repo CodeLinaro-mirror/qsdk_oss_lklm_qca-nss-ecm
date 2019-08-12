@@ -38,7 +38,6 @@ ecm-y := \
 	 ecm_tracker_datagram.o \
 	 ecm_tracker.o \
 	 frontends/ecm_front_end_ipv4.o \
-	 frontends/ecm_front_end_ipv6.o \
 	 frontends/ecm_front_end_common.o \
 	 ecm_db/ecm_db.o \
 	 ecm_db/ecm_db_connection.o \
@@ -54,6 +53,8 @@ ecm-y := \
 	 ecm_conntrack_notifier.o \
 	 ecm_init.o \
 	 ecm_notifier.o
+
+ecm-$(ECM_IPV6_ENABLE) += frontends/ecm_front_end_ipv6.o
 
 # #############################################################################
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
@@ -112,12 +113,6 @@ endif
 ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 
 # #############################################################################
-# Define ECM_INTERFACE_MAP_T_ENABLE=y in order
-# to enable support for MAP-T interface.
-# #############################################################################
-ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
-
-# #############################################################################
 # Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
 # to enable support for GRE TAP interface.
 # #############################################################################
@@ -129,6 +124,7 @@ ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
 # #############################################################################
 ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 
+ifeq ($(ECM_IPV6_ENABLE), y)
 # #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
 # to enable support for SIT interface.
@@ -142,6 +138,13 @@ ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_MAP_T_ENABLE=y in order
+# to enable support for MAP-T interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
+endif
+
+# #############################################################################
 # Define ECM_INTERFACE_RAWIP_ENABLE=y in order
 # to enable support for RAWIP interface.
 # #############################################################################
@@ -152,6 +155,11 @@ ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
 # to enable support for VxLAN interface.
 # #############################################################################
 ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
+
+# #############################################################################
+# Define ECM_IPV6_ENABLE=y in order to enable IPv6 support in the ECM.
+# #############################################################################
+ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
@@ -167,7 +175,9 @@ MCS_ENABLED:=CONFIG_PACKAGE_kmod-qca-mcs=y
 ifeq ($(MCS_CONFIG),$(MCS_ENABLED))
 ECM_MULTICAST_ENABLE=y
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
+endif
 ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
 ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
 endif
@@ -205,10 +215,6 @@ ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
 ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
 
-# #############################################################################
-# Define ECM_IPV6_ENABLE=y in order to enable IPv6 support in the ECM.
-# #############################################################################
-ECM_IPV6_ENABLE=y
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ported_ipv6.o
@@ -217,7 +223,6 @@ ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv6.o
 endif
-ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
@@ -290,11 +295,15 @@ ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
 ECM_NON_PORTED_SUPPORT_ENABLE=y
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv6.o
+endif
 endif
 ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv6.o
+endif
 endif
 ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
 

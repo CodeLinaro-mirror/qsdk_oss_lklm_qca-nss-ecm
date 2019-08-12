@@ -4219,11 +4219,16 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
 				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
 			} else {
+#ifdef ECM_IPV6_ENABLE
 				struct in6_addr origin6;
 				struct in6_addr group6;
 				ECM_IP_ADDR_TO_NIN6_ADDR(origin6, packet_src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
 				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst, mc_dst_if_index);
+#else
+				DEBUG_WARN("IPv6 support not enabled\n");
+				if_num = -1;
+#endif
 			}
 
 			if ((if_num < 0) || (if_num > ECM_DB_MULTICAST_IF_MAX)) {

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2016, 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -189,6 +189,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 	} else {
+#ifdef ECM_IPV6_ENABLE
 		dev = ipv6_dev_find(&init_net, &(tuple->src.u3.in6), 1);
 		if (dev) {
 			/*
@@ -208,6 +209,10 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			DEBUG_TRACE("%px: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
 			return false;
 		}
+#else
+			DEBUG_TRACE("%px: IPv6 support not enabled\n", skb);
+			return false;
+#endif
 	}
 
 	/*

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016-2017, 2019-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017, 2019-2021 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -97,6 +97,7 @@ static struct dentry *ecm_conntrack_notifier_dentry;
  */
 static int ecm_conntrack_notifier_stopped = 0;	/* When non-zero further traffic will not be processed */
 
+#ifdef ECM_IPV6_ENABLE
 /*
  * ecm_conntrack_ipv6_event_destroy()
  *	Handles conntrack destroy events
@@ -203,6 +204,7 @@ int ecm_conntrack_ipv6_event(unsigned long events, struct nf_conn *ct)
 	return NOTIFY_DONE;
 }
 EXPORT_SYMBOL(ecm_conntrack_ipv6_event);
+#endif
 
 /*
  * ecm_conntrack_ipv4_event_destroy()
