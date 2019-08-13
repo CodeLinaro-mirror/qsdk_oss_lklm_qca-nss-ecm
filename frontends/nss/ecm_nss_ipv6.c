@@ -1998,10 +1998,13 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 	int retry = 3;
 	unsigned long int current_jiffies;
 
+	spin_lock_bh(&ecm_nss_ipv6_lock);
 	if (ecm_nss_ipv6_accelerated_count == 0) {
+		spin_unlock_bh(&ecm_nss_ipv6_lock);
 		DEBUG_TRACE("There is no accelerated IPv6 connection\n");
 		goto reschedule;
 	}
+	spin_unlock_bh(&ecm_nss_ipv6_lock);
 
 	usleep_range(ECM_NSS_IPV6_STATS_SYNC_UDELAY - 100, ECM_NSS_IPV6_STATS_SYNC_UDELAY);
 
