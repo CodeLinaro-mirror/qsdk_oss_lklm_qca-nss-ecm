@@ -207,3 +207,79 @@ static inline int32_t ecm_nss_common_ipsec_get_ifnum(int32_t ifnum)
 #endif
 }
 #endif
+
+#ifdef CONFIG_NET_CLS_ACT
+/*
+ * ecm_nss_common_igs_acceleration_is_allowed()
+ *	Return true, if flow acceleration is allowed for an IGS interface.
+ */
+static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_end_connection_instance *feci,
+		struct sk_buff *skb)
+{
+	struct net_device *to_dev;
+	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	enum ip_conntrack_info ctinfo;
+	int to_ifaces_first;
+	uint32_t list_index;
+	bool do_accel = true;
+
+	/*
+	 * Get the interface lists of the connection and check if any interface in the list
+	 * has ingress qdisc attached to it.
+	 */
+	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
+	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		DEBUG_WARN("%p: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
+		return false;
+	}
+
+	/*
+	 * Reject the flow acceleration if the egress device has ingress qdisc
+	 * attached to it. At these interfaces, the acceleration is only allowed
+	 * when any packet is recieved over them (so that we can able to get the
+	 * correct ingress qostag values from it and fill them in the acceleration rules).
+	 */
+	for (list_index = to_ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+		struct ecm_db_iface_instance *ii;
+
+		ii = to_ifaces[list_index];
+		to_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+		if (unlikely(!to_dev)) {
+			DEBUG_TRACE("%p: No valid device found for %d index.\n",
+					feci, ecm_db_iface_interface_identifier_get(ii));
+			continue;
+		}
+
+		/*
+		 * Check whether ingress qdisc is attached to the egress device or not.
+		 */
+		if (likely(!(to_dev->ingress_cl_list))) {
+			dev_put(to_dev);
+			continue;
+		}
+
+		/*
+		 * Reject the connection if both side packets are not yet seen.
+		 */
+		nf_ct_get(skb, &ctinfo);
+		if ((ctinfo != IP_CT_ESTABLISHED) &&
+				(ctinfo != IP_CT_ESTABLISHED_REPLY)) {
+			DEBUG_INFO("%p: New flow at ingress device, "
+					"rejecting the acceleration.\n", feci);
+
+			/*
+			 * Deny the acceleration as both side packets are not yet seen.
+			 */
+			do_accel = false;
+		}
+		dev_put(to_dev);
+		break;
+	}
+
+	/*
+	 * Release the resources.
+	 */
+	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+	return do_accel;
+}
+#endif

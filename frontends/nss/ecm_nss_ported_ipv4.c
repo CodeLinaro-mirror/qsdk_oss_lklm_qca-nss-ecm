@@ -2359,6 +2359,23 @@ done:
 		;
 	}
 
+#ifdef CONFIG_NET_CLS_ACT
+	/*
+	 * Check if IGS feature is enabled or not.
+	 */
+	if (unlikely(ecm_interface_igs_enabled)) {
+		struct ecm_front_end_connection_instance *feci = ecm_db_connection_front_end_get_and_ref(ci);
+		bool ret = ecm_nss_common_igs_acceleration_is_allowed(feci, skb);
+
+		feci->deref(feci);
+		if (!ret) {
+			DEBUG_WARN("%p: Acceleration denied.\n", ci);
+			ecm_db_connection_deref(ci);
+			return NF_ACCEPT;
+		}
+	}
+#endif
+
 	/*
 	 * Identify which side of the connection is sending.
 	 * NOTE: This may be different than what sender is at the moment

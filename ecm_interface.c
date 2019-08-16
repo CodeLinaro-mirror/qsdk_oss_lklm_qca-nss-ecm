@@ -164,6 +164,15 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
  */
 int ecm_interface_src_check;
 
+#ifdef CONFIG_NET_CLS_ACT
+/*
+ * IGS enabled flag.
+ *	If it is enabled, the acceleration engine will deny the acceleration for the new
+ *	connnection, if the egress interface has ingress qdisc enabled over it.
+ */
+int ecm_interface_igs_enabled;
+#endif
+
 static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table header */
 
 #ifdef ECM_INTERFACE_OVPN_ENABLE
@@ -6623,6 +6632,44 @@ int ecm_interface_wifi_event_stop(void)
 	return err;
 }
 
+#ifdef CONFIG_NET_CLS_ACT
+/*
+ * ecm_interface_igs_enabled_handler()
+ * 	IGS enabled check sysctl node handler.
+ */
+static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, void __user *buffer,
+		 size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ecm_interface_igs_enabled;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+		DEBUG_WARN("IGS enabled check is for NSS only.\n");
+		return -EINVAL;
+	}
+
+	if ((ecm_interface_igs_enabled != 1) && (ecm_interface_igs_enabled != 0)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_interface_igs_enabled = current_value;
+		return -EINVAL;
+	}
+	return 0;
+}
+#endif
+
 /*
  * ecm_interface_src_check_handler()
  *	Source interface check sysctl node handler.
@@ -6667,6 +6714,15 @@ static struct ctl_table ecm_interface_table[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_src_check_handler,
 	},
+#ifdef CONFIG_NET_CLS_ACT
+	{
+		.procname		= "igs_enabled",
+		.data			= &ecm_interface_igs_enabled,
+		.maxlen			= sizeof(int),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_igs_enabled_handler,
+	},
+#endif
 	{ }
 };
 

@@ -15,6 +15,9 @@
  */
 
 extern int ecm_interface_src_check;	/* Source interface check flag */
+#ifdef CONFIG_NET_CLS_ACT
+extern int ecm_interface_igs_enabled;	/* IGS enabled check flag */
+#endif
 
 /*
  * struct ecm_interface_route
