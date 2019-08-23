@@ -1267,6 +1267,7 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 * Set up the flow qos tags
 	 */
 	create->qos_tag = (uint32_t)pr->flow_qos_tag;
+	create->valid_flags |= NSS_IPV4_MC_RULE_CREATE_FLAG_QOS_VALID;
 
 	/*
 	 * Set up ingress shaper flow qos tags.
