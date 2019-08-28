@@ -720,7 +720,7 @@ static unsigned int ecm_sfe_ipv6_ip_process(struct net_device *out_dev, struct n
 		ECM_IP_ADDR_TO_NIN6_ADDR(reply_tuple.dst.u3.in6, ip_hdr.src_addr);
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
-		if (unlikely(ct == &nf_conntrack_untracked)) {
+		if (unlikely(ct == nf_ct_untracked_get())) {
 			DEBUG_TRACE("%p: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}

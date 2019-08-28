@@ -762,7 +762,7 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 		reply_tuple.dst.u3.ip = orig_tuple.src.u3.ip;
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
-		if (unlikely(ct == &nf_conntrack_untracked)) {
+		if (unlikely(ct == nf_ct_untracked_get())) {
 			DEBUG_TRACE("%p: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}
