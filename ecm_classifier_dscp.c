@@ -401,9 +401,26 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	cdscpi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	cdscpi->process_response.flow_qos_tag = flow_qos_tag;
 	cdscpi->process_response.return_qos_tag = return_qos_tag;
+
+	/*
+	 * IGS qostag values in conntrack are stored as per the direction of the flow.
+	 * But ECM always create an acceleration connection rule treating packet's source
+	 * address as the source of the connection irrespective of the CT's direction.
+	 * So, the IGS qostag values should be appropriately filled in ECM acceleration
+	 * connection rule.
+	 * Scenario's example: For WAN to LAN traffic for tunnel, the CT will be created from
+	 * WAN to LAN but the CI will not be created as ECM will not get the packet in this
+	 * direction. CI will be created for packet from LAN to WAN.
+	 */
 	cdscpi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
-	cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_flow_qos_tag;
-	cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_reply_qos_tag;
+	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
+		((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
+		cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_flow_qos_tag;
+		cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_reply_qos_tag;
+	} else {
+		cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_flow_qos_tag;
+		cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_reply_qos_tag;
+	}
 
 	/*
 	 * Check if we need to set DSCP
