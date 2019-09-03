@@ -1490,6 +1490,37 @@ void ecm_db_connection_defunct_all(void)
 EXPORT_SYMBOL(ecm_db_connection_defunct_all);
 
 /*
+ * ecm_db_connection_defunct_ip_version()
+ *	Make defunct based on the IP version (IPv4 or IPv6).
+ */
+void ecm_db_connection_defunct_ip_version(int ip_version)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_ASSERT(ip_version == 4 || ip_version == 6, "Wrong ip_version: %d\n", ip_version);
+
+	DEBUG_INFO("Defuncting IPv%d connections\n", ip_version);
+
+	/*
+	 * Iterate all connections
+	 */
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+
+		if (ci->ip_version == ip_version) {
+			DEBUG_TRACE("%p: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+		}
+
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+	DEBUG_INFO("Defuncting complete for IPv%d connections\n", ip_version);
+}
+
+/*
  * ecm_db_connection_generate_hash_index()
  * 	Calculate the hash index.
  *

@@ -205,41 +205,63 @@ static struct file_operations ecm_db_defunct_all_fops = {
 };
 
 /*
- * ecm_db_route_table_update_event()
- *	This is a call back for "routing table update event for IPv4 and IPv6".
+ * ecm_db_ipv4_route_table_update_event()
+ *	This is a call back for "routing table update event for IPv4".
  */
-static int ecm_db_route_table_update_event(struct notifier_block *nb,
+static int ecm_db_ipv4_route_table_update_event(struct notifier_block *nb,
 					       unsigned long event,
 					       void *ptr)
 {
-	DEBUG_TRACE("route table update event\n");
+	DEBUG_TRACE("route table update event v4\n");
 
 	/*
-	 * Disable frontend processing until defunct function call is completed.
+	 * Disable IPv4 frontend processing until defunct function call is completed.
 	 */
 	ecm_front_end_ipv4_stop(1);
-#ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(1);
-#endif
-	ecm_db_connection_defunct_all();
+
+	ecm_db_connection_defunct_ip_version(4);
 
 	/*
-	 * Re-enable frontend processing.
+	 * Re-enable IPv4 frontend processing.
 	 */
 	ecm_front_end_ipv4_stop(0);
-#ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(0);
-#endif
+
 	return NOTIFY_DONE;
 }
 
 static struct notifier_block ecm_db_iproute_table_update_nb = {
-	.notifier_call = ecm_db_route_table_update_event,
+	.notifier_call = ecm_db_ipv4_route_table_update_event,
 };
 
+#ifdef ECM_IPV6_ENABLE
+/*
+ * ecm_db_ipv6_route_table_update_event()
+ *	This is a call back for "routing table update event for IPv6".
+ */
+static int ecm_db_ipv6_route_table_update_event(struct notifier_block *nb,
+					       unsigned long event,
+					       void *ptr)
+{
+	DEBUG_TRACE("route table update event v6\n");
+
+	/*
+	 * Disable IPv6 frontend processing until defunct function call is completed.
+	 */
+	ecm_front_end_ipv6_stop(1);
+
+	ecm_db_connection_defunct_ip_version(6);
+
+	/*
+	 * Re-enable IPv6 frontend processing.
+	 */
+	ecm_front_end_ipv6_stop(0);
+	return NOTIFY_DONE;
+}
+
 static struct notifier_block ecm_db_ip6route_table_update_nb = {
-	.notifier_call = ecm_db_route_table_update_event,
+	.notifier_call = ecm_db_ipv6_route_table_update_event,
 };
+#endif
 
 /*
  * ecm_db_init()
@@ -314,8 +336,9 @@ int ecm_db_init(struct dentry *dentry)
 	 * register for route table modification events
 	 */
 	ip_rt_register_notifier(&ecm_db_iproute_table_update_nb);
+#ifdef ECM_IPV6_ENABLE
 	rt6_register_notifier(&ecm_db_ip6route_table_update_nb);
-
+#endif
 	return 0;
 
 init_cleanup_4:
@@ -347,8 +370,9 @@ void ecm_db_exit(void)
 	 * unregister for route table update events
 	 */
 	ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
+#ifdef ECM_IPV6_ENABLE
 	rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
-
+#endif
 	ecm_db_connection_defunct_all();
 
 	/*
