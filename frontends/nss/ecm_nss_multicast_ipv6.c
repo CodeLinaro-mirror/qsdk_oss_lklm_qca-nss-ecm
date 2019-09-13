@@ -2616,6 +2616,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
 			ecm_db_connection_deref(nci);
+			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
 			kfree(to_list_first);
 			goto done;
