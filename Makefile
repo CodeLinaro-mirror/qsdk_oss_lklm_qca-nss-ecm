@@ -213,6 +213,12 @@ endif
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
+ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
+
+# #############################################################################
 # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
 # #############################################################################
 ECM_CLASSIFIER_MARK_ENABLE=y
@@ -329,6 +335,7 @@ ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
 ccflags-y += -DECM_CLASSIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_OVS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_MARK_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1

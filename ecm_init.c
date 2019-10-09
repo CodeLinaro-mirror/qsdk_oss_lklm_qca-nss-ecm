@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, 2018, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2018, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -58,6 +58,11 @@ extern void ecm_db_exit(void);
 
 extern int ecm_classifier_default_init(struct dentry *dentry);
 extern void ecm_classifier_default_exit(void);
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+extern int ecm_classifier_ovs_init(struct dentry *dentry);
+extern void ecm_classifier_ovs_exit(void);
+#endif
 
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
 extern int ecm_classifier_mark_init(struct dentry *dentry);
@@ -151,6 +156,13 @@ static int __init ecm_init(void)
 	}
 #endif
 
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	ret = ecm_classifier_ovs_init(ecm_dentry);
+	if (0 != ret) {
+		goto err_cls_ovs;
+	}
+#endif
+
 	ret = ecm_interface_init();
 	if (0 != ret) {
 		goto err_iface;
@@ -207,6 +219,10 @@ err_bond:
 #endif
 	ecm_interface_exit();
 err_iface:
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	ecm_classifier_ovs_exit();
+err_cls_ovs:
+#endif
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
 	ecm_classifier_mark_exit();
 err_cls_mark:
@@ -299,6 +315,10 @@ static void __exit ecm_exit(void)
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
 	DEBUG_INFO("exit mark classifier\n");
 	ecm_classifier_mark_exit();
+#endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	DEBUG_INFO("exit ovs classifier\n");
+	ecm_classifier_ovs_exit();
 #endif
 	DEBUG_INFO("exit default classifier\n");
 	ecm_classifier_default_exit();

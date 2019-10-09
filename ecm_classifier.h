@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2018-2019, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -33,6 +33,9 @@ enum ecm_classifier_types {
 #endif
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 	ECM_CLASSIFIER_TYPE_NL,			/* Provides netlink interface */
+#endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	ECM_CLASSIFIER_TYPE_OVS,		/* OVS classifier */
 #endif
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
 	ECM_CLASSIFIER_TYPE_PCC,		/* Parental control subsystem support classifier */
@@ -115,8 +118,17 @@ struct ecm_classifier_process_response {
  * in this data structure to update the classifiers.
  */
 struct ecm_classifier_rule_sync {
+	/*
+	 * TODO: Use directional arrays for flow/return.
+	 */
 	uint32_t flow_tx_packet_count;
+	uint32_t flow_tx_byte_count;
+	uint32_t flow_rx_packet_count;
+	uint32_t flow_rx_byte_count;
 	uint32_t return_tx_packet_count;
+	uint32_t return_tx_byte_count;
+	uint32_t return_rx_packet_count;
+	uint32_t return_rx_byte_count;
 	uint32_t reason;
 };
 
