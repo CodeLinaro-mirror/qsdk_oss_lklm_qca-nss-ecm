@@ -108,6 +108,9 @@
 #endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#include <ovsmgr.h>
+#endif
 
 #define ECM_NSS_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_NSS_IPV6_STATS_SYNC_UDELAY 4000	/* Delay for 4ms */
@@ -1607,6 +1610,74 @@ skip_ipv6_bridge_flow:
 	return result;
 }
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_nss_ipv6_ovs_dp_process()
+ *      Process OVS IPv6 bridged packets.
+ */
+unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device *out)
+{
+        struct ethhdr *skb_eth_hdr;
+        bool can_accel = true;
+        struct net_device *in;
+
+	/*
+	 * Don't process broadcast.
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		return 1;
+	}
+
+	if (skb->protocol != ntohs(ETH_P_IPV6)) {
+		DEBUG_WARN("%p: Wrong skb protocol: %d", skb, skb->protocol);
+		return 1;
+	}
+
+        skb_eth_hdr = eth_hdr(skb);
+        if (!skb_eth_hdr) {
+                DEBUG_WARN("%p: Not Eth\n", skb);
+                return 1;
+        }
+
+        in = dev_get_by_index(&init_net, skb->skb_iif);
+        if (!in) {
+                DEBUG_WARN("%p: No in device\n", skb);
+                return 1;
+        }
+
+        DEBUG_TRACE("%p: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
+
+	if (netif_is_ovs_master(in)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_dest, in->dev_addr)) {
+			DEBUG_TRACE("%p: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	if (netif_is_ovs_master(out)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, out->dev_addr)) {
+			DEBUG_TRACE("%p: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+        ecm_nss_ipv6_ip_process((struct net_device *)out, in,
+                                skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IPV6);
+        dev_put(in);
+
+        return 0;
+}
+
+static struct ovsmgr_dp_hook_ops ecm_nss_ipv6_dp_hooks = {
+	.protocol = 6,
+	.hook_num = OVSMGR_DP_HOOK_POST_FLOW_PROC,
+	.hook = ecm_nss_ipv6_ovs_dp_process,
+};
+#endif
+
 /*
  * ecm_nss_ipv6_process_one_conn_sync_msg()
  *	Process one connection sync message.
@@ -2527,6 +2598,9 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_dp_hook_register(&ecm_nss_ipv6_dp_hooks);
+#endif
 	return 0;
 
 task_cleanup:
@@ -2572,5 +2646,9 @@ void ecm_nss_ipv6_exit(void)
 	 * Clean up the stats sync queue/work
 	 */
 	ecm_nss_ipv6_sync_queue_exit();
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_dp_hook_unregister(&ecm_nss_ipv6_dp_hooks);
+#endif
 }
 EXPORT_SYMBOL(ecm_nss_ipv6_exit);
