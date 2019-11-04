@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -15,6 +15,9 @@
  */
 
 #include <net/netfilter/nf_conntrack.h>
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#include <ovsmgr.h>
+#endif
 
 /*
  * Magic number
@@ -357,6 +360,9 @@ int ecm_db_protocol_get_first(void);
 
 struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(struct nf_conn *ct);
 struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(struct nf_conn *ct);
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(struct ovsmgr_dp_flow *flow);
+#endif
 
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci,
 					   struct ecm_front_end_connection_instance *feci);

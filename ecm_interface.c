@@ -6301,7 +6301,7 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
  * ecm_interface_node_connections_defunct()
  *	Defunct the connections on this node.
  */
-void ecm_interface_node_connections_defunct(uint8_t *mac)
+void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 {
 	struct ecm_db_node_instance *ni = NULL;
 
@@ -6328,7 +6328,7 @@ void ecm_interface_node_connections_defunct(uint8_t *mac)
 			 * FROM_NAT and TO_NAT have the same list of connections.
 			 */
 			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
-				ecm_db_traverse_node_connection_list_and_defunct(ni, dir);
+				ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version);
 			}
 		}
 
@@ -6390,7 +6390,7 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 	}
 
 	DEBUG_TRACE("%p: FDB notify event for moved MAC addr: %pM\n", fe, fe->addr);
-	ecm_interface_node_connections_defunct(fe->addr);
+	ecm_interface_node_connections_defunct(fe->addr, ECM_DB_IP_VERSION_IGNORE);
 
 	return NOTIFY_DONE;
 }
@@ -6419,7 +6419,7 @@ static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
 	}
 
 	DEBUG_TRACE("%p: FDB delete event for MAC addr: %pM\n", fe, fe->addr);
-	ecm_interface_node_connections_defunct(fe->addr);
+	ecm_interface_node_connections_defunct(fe->addr, ECM_DB_IP_VERSION_IGNORE);
 
 	return NOTIFY_DONE;
 }
@@ -6742,7 +6742,7 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 	DEBUG_TRACE("old mac: %pM new mac: %pM\n", nmu->old_mac, nmu->update_mac);
 
 	DEBUG_INFO("neigh mac update notify for node %pM\n", nmu->old_mac);
-	ecm_interface_node_connections_defunct((uint8_t *)nmu->old_mac);
+	ecm_interface_node_connections_defunct((uint8_t *)nmu->old_mac, ECM_DB_IP_VERSION_IGNORE);
 
 	return NOTIFY_DONE;
 }
@@ -6795,7 +6795,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
 		} else if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data);
+			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);
 		} else {
 			DEBUG_INFO("iwe->cmd is %d for STA %pM\n", iwe->cmd, (unsigned char *) iwe->u.addr.sa_data);
 		}
@@ -7130,6 +7130,223 @@ EXPORT_SYMBOL(ecm_interface_ipsec_unregister_callbacks);
 
 #endif
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_interface_ovs_node_defunct_connections()
+ *	Defunct the connections using mac addresses and IP version.
+ */
+static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *flow)
+{
+	struct ecm_db_node_instance *ni;
+
+	/*
+	 * check if smac/dmac is local mac
+	 *
+	 * if smac is local, direction is from ovs_br -> eth2 (ovs bridge port)
+	 * if dmac is local, direction is from eth2 (ovs bridge port)-> ovs_br
+	 *
+	 * Routing:
+	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
+	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
+	 *
+	 * In ovs_br, there are two flow rules:
+	 * 	a. rule (IPv4)from PC1_MAC to ovs_br_MAC
+	 * 	b. rule (IPv4)from ovs_br_MAC to PC1_MAC
+	 * 	c. rule (IPv6)from PC1_MAC to ovs_br_MAC
+	 * 	d. rule (IPv6)from ovs_br_MAC to PC1_MAC
+	 *
+	 * Bridging:
+	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC2] <--- IPv4/IPv6
+	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC3] <--- IPv4/IPv6
+	 *
+	 * In ovs_br, there are two flow rules:
+	 * 	a. rule (IPv4)from PC1_MAC to PC2_MAC
+	 * 	b. rule (IPv4)from PC2_MAC to PC1_MAC
+	 * 	c. rule (IPv6)from PC1_MAC to PC2_MAC
+	 * 	d. rule (IPv6)from PC2_MAC to PC1_MAC
+	 *
+	 * 1. CI from node is PC1 <--- IPv4/IPv6
+	 * 	i.  a/c is deleted - smac is PC1_MAC, dmac is ovs_br_MAC
+	 * 		- CI is deleted
+	 * 	ii. b/d is deleted - smac is ovs_br_MAC, dmac is PC1_MAC
+	 * 		- CI is not deleted
+	 * 2. CI to node is PC1 <--- IPv4/IPv6
+	 * 	i.  a/c is deleted - smac is PC1_MAC, dmac is ovs_br_MAC
+	 * 		- CI is not deleted
+	 * 	ii. b/d is deleted - smac is ovs_br_MAC, dmac is PC1_MAC
+	 * 		- CI is deleted
+	 */
+
+	/*
+	 * Check if OVS bridge interface mac is smac.
+	 */
+	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
+		/*
+		 * smac is address of OVS bridge interface.
+		 * Delete the connections matching dmac.
+		 */
+		ecm_interface_node_connections_defunct(flow->dmac, flow->tuple.ip_version);
+		return;
+	}
+
+	/*
+	 * Check if dmac is local dev.
+	 */
+	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
+		/*
+		 * dmac is address of OVS bridge interface.
+		 * Delete the connections matching smac.
+		 */
+		ecm_interface_node_connections_defunct(flow->smac, flow->tuple.ip_version);
+		return;
+	}
+
+	/*
+	 * Delete OVS bridge flows.
+	 */
+
+	/*
+	 * Disable frontend processing until defunct function call is completed.
+	 */
+	ecm_front_end_ipv4_stop(1);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(1);
+#endif
+	ni = ecm_db_node_chain_get_and_ref_first(flow->smac);
+	while (ni) {
+		struct ecm_db_node_instance *nin;
+
+		if (ecm_db_node_is_mac_addr_equal(ni, flow->smac)) {
+			int dir;
+			/*
+			 * FROM and TO directions are enough to destroy all the connections.
+			 * FROM_NAT and TO_NAT are not required for bridge flows.
+			 */
+			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
+				ecm_db_traverse_snode_dnode_connection_list_and_defunct(ni, flow->dmac,
+											flow->tuple.ip_version, dir);
+			}
+		}
+
+		/*
+		 * Get next node in the chain
+		 */
+		nin = ecm_db_node_chain_get_and_ref_next(ni);
+		ecm_db_node_deref(ni);
+		ni = nin;
+	}
+
+	/*
+	 * Re-enable frontend processing.
+	 */
+	ecm_front_end_ipv4_stop(0);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop(0);
+#endif
+}
+
+/*
+ * ecm_interface_ovs_flow_defunct_connections()
+ *	Defunct the connections based on the OVS flow information.
+ */
+static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *flow)
+{
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+
+	/*
+	 * Delete by flow rule.
+	 */
+
+	if (flow->tuple.ip_version == 4) {
+		DEBUG_TRACE("IPv4: Src: %pI4:%d protocol: %d Dst: %pI4:%d\n",
+			   &flow->tuple.ipv4.src, flow->tuple.src_port,
+			   flow->tuple.protocol,
+			   &flow->tuple.ipv4.dst, flow->tuple.dst_port);
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv4.src);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, flow->tuple.ipv4.dst);
+	} else if (flow->tuple.ip_version == 6) {
+		DEBUG_TRACE("IPv6: Src: %pI6:%d protocol: %d Dst: %pI6:%d\n",
+			   &flow->tuple.ipv6.src, flow->tuple.src_port,
+			   flow->tuple.protocol,
+			   &flow->tuple.ipv6.dst, flow->tuple.dst_port);
+		ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv6.src);
+		ECM_NIN6_ADDR_TO_IP_ADDR(dest_ip, flow->tuple.ipv6.dst);
+	} else {
+		DEBUG_WARN("%p: Unsupported IP version: %d\n", flow, flow->tuple.ip_version);
+		return;
+	}
+
+	/*
+	 * If 5-tuple is not valid, then delete the flows by
+	 * {smac/dmac and indev/outdev}
+	 */
+	if ((flow->tuple.protocol == IPPROTO_TCP || flow->tuple.protocol == IPPROTO_UDP) &&
+			!flow->tuple.src_port && !flow->tuple.dst_port &&
+			!ECM_IP_ADDR_IS_NULL(src_ip) && !ECM_IP_ADDR_IS_NULL(dest_ip)) {
+		struct ecm_db_connection_instance *ci;
+
+		/*
+		 * Delete the flows by using 5-tuple parameters.
+		 */
+		ci = ecm_db_connection_from_ovs_flow_get_and_ref(flow);
+		if (!ci) {
+			DEBUG_WARN("%p: OVS flow not found in ECM database\n", flow);
+			return;
+		}
+		DEBUG_INFO("%p: Connection defunct %p\n", flow, ci);
+
+		/*
+		 * Force destruction of the connection by making it defunct
+		 */
+		ecm_db_connection_make_defunct(ci);
+		ecm_db_connection_deref(ci);
+	} else {
+		DEBUG_TRACE("%p: Delete flow by: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
+			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
+		/*
+		 * Delete the flows by using {smac, dmac}
+		 */
+		ecm_interface_ovs_node_defunct_connections(flow);
+	}
+}
+
+/*
+ * ecm_interface_ovs_notifier_callback()
+ * 	Netdevice notifier callback to inform us of change of state of a netdevice
+ */
+static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsigned long event, void *data)
+{
+	struct ovsmgr_notifiers_info *ovs_info = (struct ovsmgr_notifiers_info *)data;
+	struct ovsmgr_dp_port_info *port;
+
+	DEBUG_INFO("OVS notifier event: %lu\n", event);
+
+	switch(event) {
+	case OVSMGR_DP_PORT_DEL:
+		port = ovs_info->port;
+		ecm_interface_dev_defunct_connections(port->dev);
+		break;
+	case OVSMGR_DP_FLOW_DEL:
+		ecm_interface_ovs_flow_defunct_connections(ovs_info->flow);
+		break;
+	case OVSMGR_DP_FLOW_TBL_FLUSH:
+		ecm_db_connection_make_defunct_by_assignment_type(ECM_CLASSIFIER_TYPE_OVS);
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
+
+/*
+ * struct notifier_block ecm_interface_ovs_notifier
+ *	Registration for OVS events
+ */
+static struct notifier_block ecm_interface_ovs_notifier __read_mostly = {
+	.notifier_call = ecm_interface_ovs_notifier_callback,
+};
+#endif
+
 /*
  * ecm_interface_init()
  */
@@ -7158,6 +7375,9 @@ int ecm_interface_init(void)
 #endif
 #ifdef ECM_DB_XREF_ENABLE
 	neigh_mac_update_register_notify(&ecm_interface_neigh_mac_update_nb);
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_notifier_register(&ecm_interface_ovs_notifier);
 #endif
 	ecm_interface_wifi_event_start();
 
@@ -7190,6 +7410,9 @@ void ecm_interface_exit(void)
 #endif
 	ecm_interface_wifi_event_stop();
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_notifier_unregister(&ecm_interface_ovs_notifier);
+#endif
 	/*
 	 * Unregister sysctl table.
 	 */

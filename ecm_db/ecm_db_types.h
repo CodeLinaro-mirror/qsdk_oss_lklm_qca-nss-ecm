@@ -160,6 +160,11 @@ enum ecm_db_timer_groups {
 typedef enum ecm_db_timer_groups ecm_db_timer_group_t;
 typedef void (*ecm_db_timer_group_entry_callback_t)(void *arg);	/* Timer entry has expired */
 
+/*
+ * Ignore IP version check in connection instance
+ */
+#define ECM_DB_IP_VERSION_IGNORE 0
+
 #ifdef ECM_MULTICAST_ENABLE
 
 struct ecm_db_multicast_tuple_instance;
