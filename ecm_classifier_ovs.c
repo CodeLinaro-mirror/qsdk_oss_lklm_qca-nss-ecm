@@ -244,6 +244,244 @@ static inline struct net_device *ecm_classifier_ovs_interface_get_and_ref(struct
 	return NULL;
 }
 
+#ifdef ECM_MULTICAST_ENABLE
+/*
+ * ecm_classifier_ovs_process_multicast()
+ * 	Process multicast packet
+ */
+static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instance *ci, struct sk_buff *skb,
+							struct ecm_classifier_ovs_instance *ecvi,
+							struct ecm_classifier_process_response *process_response)
+{
+	struct ecm_classifier_ovs_process_response resp;
+	ecm_classifier_ovs_process_callback_t cb;
+	struct ecm_db_iface_instance *to_mc_ifaces;
+	struct net_device *from_dev = NULL, *indev_master = NULL;
+	struct net_device *to_dev[ECM_DB_MULTICAST_IF_MAX] = {NULL};
+	struct ovsmgr_dp_flow flow;
+	ip_addr_t src_ip;
+	ip_addr_t dst_ip;
+	int32_t *to_mc_ifaces_first;
+	int if_cnt, i;
+	bool valid_ovs_ports = false, drop = false, deny_accel = false;
+
+	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
+	if_cnt = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(ci, &to_mc_ifaces, &to_mc_ifaces_first);
+	if (!if_cnt) {
+		DEBUG_WARN("%p: No multicast 'to' interface found\n", ci);
+		drop = true;
+		goto done1;
+	}
+
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+		int32_t *to_iface_first;
+		int j;
+
+		/*
+		 * Get to interface list, skip if the list is invalid.
+		 */
+		to_iface_first = ecm_db_multicast_if_first_get_at_index(to_mc_ifaces_first, i);
+		if (*to_iface_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+			continue;
+		}
+
+		for (j = to_mc_ifaces_first[i]; j < ECM_DB_IFACE_HEIRARCHY_MAX; j++) {
+			struct ecm_db_iface_instance **ifaces;
+			struct ecm_db_iface_instance *to_iface;
+			struct ecm_db_iface_instance *ii_temp, *ii_single;
+			struct net_device *to_dev_temp;
+
+			ii_temp = ecm_db_multicast_if_heirarchy_get(to_mc_ifaces, i);
+			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, j);
+			ifaces = (struct ecm_db_iface_instance **)ii_single;
+			to_iface = *ifaces;
+
+			to_dev_temp = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(to_iface));
+			if (unlikely(!to_dev_temp)) {
+				continue;
+			}
+
+			/*
+			 * Get the physical OVS port.
+			 */
+			if (!ecm_interface_is_ovs_bridge_port(to_dev_temp)) {
+				dev_put(to_dev_temp);
+				continue;
+			}
+
+			to_dev[i] = to_dev_temp;
+			valid_ovs_ports = true;
+		}
+	}
+	ecm_db_multicast_connection_to_interfaces_deref_all(to_mc_ifaces, to_mc_ifaces_first);
+
+	if (!from_dev && !valid_ovs_ports) {
+		DEBUG_WARN("%p: None of the from/to interfaces are OVS bridge port\n", ci);
+		goto done2;
+	}
+
+	/*
+	 * Is there an external callback to get the ovs value from the packet?
+	 */
+	spin_lock_bh(&ecm_classifier_ovs_lock);
+	cb = ovs.ovs_process;
+	if (!cb) {
+		/*
+		 * Allow acceleration.
+		 * Keep the classifier relevant to connection for stats update..
+		 */
+		spin_unlock_bh(&ecm_classifier_ovs_lock);
+		DEBUG_WARN("%p: No external process callback set\n", ci);
+		goto done1;
+	}
+	spin_unlock_bh(&ecm_classifier_ovs_lock);
+
+	memset(&flow, 0, sizeof(struct ovsmgr_dp_flow));
+
+	/*
+	 * If the flow is a routed flow, set the is_routed flag of the flow.
+	 */
+	if (ecm_db_connection_is_routed_get(ci)) {
+		flow.is_routed = true;
+	}
+
+	if (from_dev) {
+		flow.indev = from_dev;
+		indev_master = ovsmgr_dev_get_master(flow.indev);
+		DEBUG_ASSERT(indev_master, "Expected a master\n");
+	}
+
+	flow.tuple.ip_version = ecm_db_connection_ip_version_get(ci);
+	flow.tuple.protocol = ecm_db_connection_protocol_get(ci);
+	flow.tuple.src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+	flow.tuple.dst_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
+
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, flow.smac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, flow.dmac);
+
+	if (flow.tuple.ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+	} else if (flow.tuple.ip_version == 6) {
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+	} else {
+		DEBUG_ASSERT(NULL, "%p: unexpected ip_version: %d", ci, flow.tuple.ip_version );
+	}
+
+	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
+
+	/*
+	 * Call the external callback and get the result.
+	 */
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+		ecm_classifier_ovs_result_t result = 0;
+
+		if (!to_dev[i]) {
+			continue;
+		}
+
+		flow.outdev = to_dev[i];
+
+		/*
+		 * For routed flows, indev should be the OVS bridge of the
+		 * corresponding port.
+		 */
+		if (flow.is_routed) {
+			struct net_device *outdev_master;
+
+			/*
+			 * During bridge+route scenario, the indev can be
+			 * an ovs bridge port or and ovs bridge. if master device
+			 * for indev and outdev are same then it a bridged traffic.
+			 * Otherwise, set the indev to master of the egress port.
+			 */
+			outdev_master = ovsmgr_dev_get_master(flow.outdev);
+			DEBUG_ASSERT(outdev_master, "Expected a master\n");
+			if (indev_master && (indev_master->ifindex == outdev_master->ifindex)) {
+				flow.indev = from_dev;
+				ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, flow.smac);
+			} else {
+				flow.indev = outdev_master;
+				ether_addr_copy(flow.smac, flow.indev->dev_addr);
+			}
+		}
+
+		DEBUG_TRACE("src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+				flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
+				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
+
+		result = cb(&flow, skb, &resp);
+		switch(result) {
+		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL_EGRESS:
+			DEBUG_TRACE("%p: %s is not a valid OVS port\n", ci, to_dev[i]->name);
+			ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
+			break;
+		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL:
+			/*
+			 * If we receive "ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL"
+			 * for any of the OVS port, then the connection should be
+			 * deleted.
+			 */
+			DEBUG_TRACE("%p: flow does not exist for the OVS port: %s\n", ci, to_dev[i]->name);
+			deny_accel = true;
+			goto done1;
+		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
+			DEBUG_TRACE("%p: Acceleration allowed for multicast OVS port: %s\n", ci, to_dev[i]->name);
+			break;
+		default:
+			DEBUG_TRACE("%p: Invalid response: %d\n", ci, result);
+		}
+
+		if (deny_accel) {
+			goto done1;
+		}
+	}
+
+	/*
+	 * It is possible that after verifying each egress port with ovs manager,
+	 * no egress ovs ports are not allowed for acceleration.
+	 *
+	 * Deny the multicast connection as there are no active 'to' interface.
+	 */
+	if (!ecm_db_multicast_connection_to_interfaces_get_count(ci)) {
+		DEBUG_TRACE("%p: No valid multicast 'to' interfaces found\n", ci);
+		deny_accel = true;
+	}
+
+done1:
+	if (from_dev)
+		dev_put(from_dev);
+
+	if (valid_ovs_ports) {
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+			if (to_dev[i]) {
+				dev_put(to_dev[i]);
+			}
+		}
+	}
+
+done2:
+	spin_lock_bh(&ecm_classifier_ovs_lock);
+	if (drop) {
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DROP;
+		ecvi->process_response.drop = true;
+	} else if (deny_accel) {
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL;
+		ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+	} else {
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+		ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+	}
+	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
+	*process_response = ecvi->process_response;
+	spin_unlock_bh(&ecm_classifier_ovs_lock);
+	return;
+}
+#endif
+
 /*
  * ecm_classifier_ovs_process_route_flow()
  *	Process routed flows.
@@ -564,6 +802,14 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		DEBUG_WARN("%p: connection instance gone while processing classifier\n", aci);
 		goto not_relevant;
 	}
+
+#ifdef ECM_MULTICAST_ENABLE
+	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
+		ecm_classifier_ovs_process_multicast(ci, skb, ecvi, process_response);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+#endif
 
 	/*
 	 * Get the possible OVS bridge ports. If both are NULL, the classifier is not
@@ -961,6 +1207,207 @@ static inline void ecm_classifier_ovs_stats_sync(struct ovsmgr_dp_flow *flow,
 	ovsmgr_flow_stats_update(flow, &stats);
 }
 
+#ifdef ECM_MULTICAST_ENABLE
+/*
+ * ecm_classifier_ovs_multicast_sync_to_stats()
+ *	Common multicast sync_to function for IPv4 and IPv6.
+ */
+static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs_instance *ecvi,
+					struct ecm_db_connection_instance *ci, struct ecm_classifier_rule_sync *sync)
+{
+	struct net_device *from_dev;
+	struct net_device *to_ovs_port[ECM_DB_MULTICAST_IF_MAX];
+	struct net_device *to_ovs_brdev[ECM_DB_MULTICAST_IF_MAX];
+	struct net_device *br_dev;
+	ip_addr_t src_ip;
+	ip_addr_t dst_ip;
+	uint8_t smac[ETH_ALEN];
+	uint8_t dmac[ETH_ALEN];
+	uint16_t sport;
+	uint16_t dport;
+	struct ovsmgr_dp_flow flow;
+	int if_cnt, i, valid_ifcnt = 0, ifindex;
+	uint16_t tpid = 0, tci = 0;
+
+	/*
+	 * Get the possible OVS bridge ports.
+	 */
+	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
+	if_cnt = ecm_interface_multicast_ovs_to_interface_get_and_ref(ci, to_ovs_port, to_ovs_brdev);
+	if (!from_dev && !if_cnt) {
+		DEBUG_WARN("%p: None of the from/to interfaces is OVS bridge port\n", ci);
+		return;
+	}
+
+	memset(&flow, 0, sizeof(flow));
+
+	/*
+	 * IP version and protocol are common for routed and bridge flows.
+	 */
+	flow.tuple.ip_version = ecm_db_connection_ip_version_get(ci);
+	flow.tuple.protocol = ecm_db_connection_protocol_get(ci);
+	if (ecvi->process_response.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+		tci = ecvi->process_response.ingress_vlan_tag[0] & 0xffff;
+		tpid = (ecvi->process_response.ingress_vlan_tag[0] >> 16) & 0xffff;
+		DEBUG_TRACE("Ingress VLAN : %x:%x\n", tci, tpid);
+	}
+
+	flow.is_routed = ecm_db_connection_is_routed_get(ci);
+	if (!flow.is_routed) {
+		/* For multicast bridge flows, ovs creates a single rule with multiple
+		 * egress interfaces. We need only one egress interface to sync the flow statistics.
+		 *
+		 * Sync the flow direction.
+		 * eth1 to eth2
+		 */
+		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+
+		ecm_classifier_ovs_stats_sync(&flow,
+				sync->return_tx_packet_count, sync->return_tx_byte_count,
+				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				from_dev, to_ovs_port[0],
+				smac, dmac,
+				src_ip, dst_ip,
+				sport, dport, tci, tpid);
+
+		goto done;
+	}
+
+	/*
+	 * The 'to' interfaces ports can be part of different OVS bridges.
+	 * ovs-br1-(eth0, eth1, eth2)
+	 * ovs-br2-(eth3)
+	 * ovs-br3 (eth4, eth5)
+	 *
+	 * Find unique ovs port and ovs bridge combination, as for statistics
+	 * update we need only one port from each OVS bridge.
+	 *
+	 * The logic will derive the below output for the
+	 * above mentioned ovs 'to' interface list.
+	 * to_ovs_port: eth0, eth3, eth4
+	 * to_ovs_brdev: ovs-br1, ovs-br2, ovs-br3
+	 *
+	 */
+	if (if_cnt) {
+		ifindex = to_ovs_brdev[0]->ifindex;
+		for (i = 1, valid_ifcnt = 1; i < if_cnt; i++) {
+			if (ifindex == to_ovs_brdev[i]->ifindex) {
+				dev_put(to_ovs_port[i]);
+				continue;
+			}
+
+			to_ovs_port[valid_ifcnt] = to_ovs_port[i];
+			to_ovs_brdev[valid_ifcnt] = to_ovs_brdev[i];
+			valid_ifcnt++;
+		}
+	}
+
+	/*
+	 * For routed flows below configurations are possible.
+	 *
+	 * 1. From interface is OVS bridge port, to interface is
+	 * another OVS bridge port
+	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2----->PC2
+	 *
+	 * 2. From interface is OVS bridge port, multiple to
+	 * OVS bridge port (OVS master is same).
+	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2,eth3----->PC2
+	 *
+	 * 3. From interface is OVS bridge port, multiple to
+	 * OVS bridge port (OVS masters are different).
+	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2/ovs-br3-eth3----->PC2
+	 */
+	if (from_dev) {
+		/*
+		 * from_dev = eth1
+		 * br_dev = ovs-br1
+		 */
+		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
+		if (!br_dev) {
+			DEBUG_WARN("%p: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
+					ci, from_dev->name);
+			goto done;
+		}
+
+		/*
+		 * Sync the flow direction.
+		 * eth1 to ovs-br1
+		 */
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+
+		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+
+		ecm_classifier_ovs_stats_sync(&flow,
+				sync->return_tx_packet_count, sync->return_tx_byte_count,
+				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				from_dev, br_dev,
+				smac, dmac,
+				src_ip, dst_ip,
+				sport, dport, tci, tpid);
+		dev_put(br_dev);
+	}
+
+	/*
+	 * For routed flow, to side can be multiple OVS bridge ports and
+	 * the ports can be part of different OVS bridge master.
+	 *
+	 * 1. outdev = eth2
+	 * indev = ovs-br2
+	 * Sync the flow direction.
+	 * ovs-br2 to eth2
+	 *
+	 * 2. outdev = eth3
+	 * indev = ovs-br2
+	 * Sync the flow direction.
+	 * ovs-br2 to eth3
+	 *
+	 * 3. outdev = eth3
+	 * indev = ovs-br3
+	 * Sync the flow direction.
+	 * ovs-br3 to eth3
+	 *
+	 */
+	for (i = 0; i < valid_ifcnt; i++) {
+		ether_addr_copy(smac, to_ovs_brdev[i]->dev_addr);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+
+		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+
+		ecm_classifier_ovs_stats_sync(&flow,
+				sync->return_tx_packet_count, sync->return_tx_byte_count,
+				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				to_ovs_brdev[i], to_ovs_port[i],
+				smac, dmac,
+				src_ip, dst_ip,
+				sport, dport, tci, tpid);
+	}
+
+done:
+	if (from_dev)
+		dev_put(from_dev);
+
+	for (i = 0; i < valid_ifcnt; i++) {
+		dev_put(to_ovs_port[i]);
+	}
+}
+#endif
+
 /*
  * ecm_classifier_ovs_sync_to_stats()
  *	Common sync_to function for IPv4 and IPv6.
@@ -990,7 +1437,19 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		return;
 	}
 
+#ifdef ECM_MULTICAST_ENABLE
+	/*
+	 * Check for multicast connection.
+	 */
+	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
+		ecm_classifier_ovs_multicast_sync_to_stats(ecvi, ci, sync);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+#endif
+
 	memset(&flow, 0, sizeof(flow));
+
 	/*
 	 * Get the possible OVS bridge ports.
 	 */

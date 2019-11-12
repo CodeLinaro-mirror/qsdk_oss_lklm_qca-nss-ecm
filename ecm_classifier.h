@@ -88,8 +88,8 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 #define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG 0x00000080	/* Contains OVS VLAN tags */
-#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG 0x00000100
-								/* Contains OVS QinQ VLAN tags */
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG 0x00000100	/* Contains OVS QinQ VLAN tags */
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL 0x00000200		/* Multicast OVS flow */
 #endif
 
 /*

@@ -28,6 +28,7 @@
  */
 #define ecm_front_end_is_bridge_port(dev) (dev && (dev->priv_flags & IFF_BRIDGE_PORT))
 #define ecm_front_end_is_bridge_device(dev) (dev->priv_flags & IFF_EBRIDGE)
+#define ecm_front_end_is_ovs_bridge_device(dev) (dev->priv_flags & IFF_OPENVSWITCH)
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
@@ -103,6 +104,7 @@ typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_get_method
 typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_type_get_method_t)(struct net_device *dev, uint32_t type);
 typedef int32_t (*ecm_front_end_connection_ae_interface_type_get_method_t)(struct ecm_front_end_connection_instance *feci, struct net_device *dev);
 typedef void (*ecm_front_end_connection_regenerate_method_t)(struct ecm_front_end_connection_instance *feci, struct ecm_db_connection_instance *ci);
+typedef void (*ecm_front_end_connection_multicast_update_method_t)(ip_addr_t ip_grp_addr, struct net_device *brdev);
 
 /*
  * Acceleration limiting modes.
@@ -153,6 +155,7 @@ struct ecm_front_end_connection_instance {
 #ifdef ECM_STATE_OUTPUT_ENABLE
 	ecm_front_end_connection_state_get_callback_t state_get;		/* Obtain state for this object */
 #endif
+	ecm_front_end_connection_multicast_update_method_t multicast_update;	/* Update existing multicast connection */
 
 	/*
 	 * Accel/decel mode statistics.

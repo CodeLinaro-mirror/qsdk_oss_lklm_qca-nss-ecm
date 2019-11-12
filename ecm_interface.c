@@ -259,6 +259,18 @@ static void ecm_interface_ovpn_update_route(struct net_device *dev, uint32_t *fr
 struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 {
 	struct net_device *master;
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	if (ecm_interface_is_ovs_bridge_port(dev)) {
+		master = ovsmgr_dev_get_master(dev);
+		if (!master) {
+			return NULL;
+		}
+
+		dev_hold(master);
+		return master;
+	}
+#endif
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3,6,0))
 	rcu_read_lock();
 	master = netdev_master_upper_dev_get_rcu(dev);
@@ -907,7 +919,11 @@ bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if
 			continue;
 		}
 
-		if (ecm_front_end_is_bridge_device(br_dev)) {
+		if (ecm_front_end_is_bridge_device(br_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			|| ecm_front_end_is_ovs_bridge_device(br_dev)
+#endif
+				) {
 			dev_put(br_dev);
 			return true;
 		}
@@ -916,6 +932,37 @@ bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if
 	return false;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_check_for_br_dev);
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_interface_multicast_check_for_ovs_br_dev()
+ * 	Check if OVS bridge dev exists in given list of interfaces.
+ */
+bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t max_if)
+{
+	int i;
+
+	for (i = 0; i < max_if; i++) {
+		struct net_device *br_dev;
+
+		br_dev = dev_get_by_index(&init_net, dest_if[i]);
+		if (!br_dev) {
+			/*
+			 * Interface got deleted; but is yet to be updated in MFC table
+			 */
+			DEBUG_WARN("Could not find a valid netdev for interface: %d\n", dest_if[i]);
+			continue;
+		}
+
+		if (ecm_front_end_is_ovs_bridge_device(br_dev)) {
+			dev_put(br_dev);
+			return true;
+		}
+		dev_put(br_dev);
+	}
+	return false;
+}
+#endif
 
 /*
  * ecm_interface_multicast_is_iface_type()
@@ -1426,6 +1473,86 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 #endif
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_interface_multicast_ovs_to_interface_get_and_ref()
+ * 	Populate ov_ ports/bridge device from multicast 'to' list.
+ * 	Returns the number of ovs port count.
+ */
+int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connection_instance *ci, struct net_device **to_ovs_port,
+							struct net_device **to_ovs_brdev)
+{
+	struct net_device *dev;
+	struct ecm_db_iface_instance *to_mc_ifaces;
+	int32_t *to_mc_ifaces_first, *to_iface_first, if_cnt, i;
+	int ovs_port_cnt = 0;
+
+	if_cnt = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(ci, &to_mc_ifaces, &to_mc_ifaces_first);
+	if (!if_cnt) {
+		DEBUG_WARN("%p: Not able to find 'to' interfaces", ci);
+		return 0;
+	}
+
+	/*
+	 * The 'to' interfaces ports can be part of different OVS bridges.
+	 * ovs-br1-(eth0, eth1, eth2)
+	 * ovs-br2-(eth3)
+	 * ovs-br3 (eth4, eth5)
+	 *
+	 * to_ovs_port: eth0, eth1, eth2, eth3. eth4. eth5
+	 * to_ovs_brdev: ovs-br1, ovs-br1, ovs-br1, ovs-br2, ovs-br3, ovs-br3
+	 */
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+		struct ecm_db_iface_instance *ii_temp;
+		int32_t j;
+
+		/*
+		 * Find interface list, skip if invalid.
+		 */
+		to_iface_first = ecm_db_multicast_if_first_get_at_index(to_mc_ifaces_first, i);
+		if (*to_iface_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+			continue;
+		}
+
+		/*
+		 * We need to find 'to' multicast port to
+		 * update the OVS statistics.
+		 */
+		ii_temp = ecm_db_multicast_if_heirarchy_get(to_mc_ifaces, i);
+		for (j = ECM_DB_IFACE_HEIRARCHY_MAX - 1; j >= *to_iface_first; j--) {
+			struct net_device *br_dev;
+			struct ecm_db_iface_instance **ifaces;
+			struct ecm_db_iface_instance *to_iface;
+			struct ecm_db_iface_instance *ii_single;
+
+			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, j);
+			ifaces = (struct ecm_db_iface_instance **)ii_single;
+			to_iface = *ifaces;
+			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(to_iface));
+			if (unlikely(!dev)) {
+				DEBUG_WARN("%p: Failed to get net device with %d index\n", ci, j);
+				continue;
+			}
+
+			if (!ecm_interface_is_ovs_bridge_port(dev)) {
+				DEBUG_TRACE("%p: %s_dev: %s at %d index is not an OVS bridge port\n", ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_TO], dev->name, j);
+				dev_put(dev);
+				continue;
+			}
+
+			br_dev = ovsmgr_dev_get_master(dev);
+			DEBUG_ASSERT(br_dev, "%p: master dev for the OVS port:%s is NULL\n", ci, dev->name);
+			to_ovs_port[ovs_port_cnt] = dev;
+			to_ovs_brdev[ovs_port_cnt] = br_dev;
+			DEBUG_TRACE("%p: %s_dev: %s at %d index is an OVS bridge port. OVS bridge: %s\n", ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_TO], dev->name, j, br_dev->name);
+			ovs_port_cnt++;
+			break;
+		}
+	}
+
+	ecm_db_multicast_connection_to_interfaces_deref_all(to_mc_ifaces, to_mc_ifaces_first);
+	return ovs_port_cnt;
+}
+
 /*
  * ecm_interface_is_ovs_bridge_port()
  *	Returns true if dev is OpenVswitch (OVS) bridge port.
@@ -2417,6 +2544,27 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get(struct sk_buff *
 
 	memset(&flow, 0, sizeof(flow));
 
+	/*
+	 * Consider a routing flow
+	 * eth1-ovsbr1----->ovsbr2-eth2
+	 * The 2 ovs data path rules should look like the following,
+	 * 1. ingress port:eth1, egress_port:ovsbr1
+	 * 2. ingress_port:ovsbr2, egress_port:eth2
+	 *
+	 * Copy the multicast mac address, in case of
+	 * smac is NULL and src_ip is multicast.
+	 * During multicast 'from' hierarchy creation, the ECM
+	 * copies the source MAC as multicast MAC as the
+	 * reverse direction rule is not present in the ovs
+	 * data path rule set.
+	 */
+	if (ecm_ip_addr_is_multicast(src_ip) && !smac) {
+		struct ethhdr *skb_eth_hdr;
+
+		skb_eth_hdr = eth_hdr(skb);
+		ether_addr_copy(flow.smac, skb_eth_hdr->h_dest);
+	}
+
 	flow.indev = br_dev;
 	flow.outdev = NULL;
 
@@ -3355,14 +3503,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 		 */
 		if (!ii) {
 			DEBUG_WARN("Failed to establish interface: %p, name: %s\n", dest_dev, dest_dev->name);
-			dev_put(dest_dev);
-
-			/*
-			 * Release the interfaces heirarchy we constructed to this point.
-			 */
-			ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
-			ecm_db_connection_interfaces_deref(to_list_single, current_interface_index);
-			return ECM_DB_IFACE_HEIRARCHY_MAX;
+			goto fail;
 		}
 
 		/*
@@ -3407,33 +3548,27 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 				}
 
 				/*
-				 * BRIDGE?
+				 * LINUX_BRIDGE/OVS_BRIDGE?
 				 */
-				if (ecm_front_end_is_bridge_device(dest_dev)) {
-					if (!ecm_front_end_is_bridge_port(br_slave_dev)) {
-						DEBUG_ASSERT(NULL, "%p: expected only bridge slave here\n", interface);
+				if (ecm_front_end_is_bridge_device(dest_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+					|| ecm_front_end_is_ovs_bridge_device(dest_dev)
+#endif
+				   ) {
+					if (!br_slave_dev) {
+						goto fail;
+					}
 
-						/*
-						 * Release the interfaces heirarchy we constructed to this point.
-						 */
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
-						ecm_db_connection_interfaces_deref(to_list_single, current_interface_index);
-						dev_put(dest_dev);
-						return ECM_DB_IFACE_HEIRARCHY_MAX;
+					if (!ecm_front_end_is_bridge_port(br_slave_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+					&& !ecm_interface_is_ovs_bridge_port(br_slave_dev)
+#endif
+					) {
+						DEBUG_ASSERT(NULL, "%p: expected only bridge slave here\n", interface);
+						goto fail;
 					}
 
 					next_dev = br_slave_dev;
-					if (!next_dev) {
-						DEBUG_WARN("Unable to obtain output port \n");
-
-						/*
-						 * Release the interfaces heirarchy we constructed to this point.
-						 */
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
-						ecm_db_connection_interfaces_deref(to_list_single, current_interface_index);
-						dev_put(dest_dev);
-						return ECM_DB_IFACE_HEIRARCHY_MAX;
-					}
 					DEBUG_TRACE("Net device: %p is BRIDGE, next_dev: %p (%s)\n", dest_dev, next_dev, next_dev->name);
 					dev_hold(next_dev);
 					break;
@@ -3499,14 +3634,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 
 					if (!(next_dev && netif_carrier_ok(next_dev))) {
 						DEBUG_WARN("Unable to obtain LAG output slave device\n");
-						dev_put(dest_dev);
-
-						/*
-						 * Release the interfaces heirarchy we constructed to this point.
-						 */
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
-						ecm_db_connection_interfaces_deref(to_list_single, current_interface_index);
-						return ECM_DB_IFACE_HEIRARCHY_MAX;
+						goto fail;
 					}
 
 					dev_hold(next_dev);
@@ -3665,6 +3793,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 		dest_dev_type = dest_dev->type;
 	}
 
+fail:
 	dev_put(dest_dev);
 
 	ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
@@ -3749,7 +3878,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 	 */
 	for (if_index = 0, valid_if = 0; if_index < max_if; if_index++) {
 		dst_if_index = ecm_db_multicast_if_first_get_at_index(dst_if_index_base, if_index);
-
 		if (*dst_if_index == ECM_INTERFACE_LOOPBACK_DEV_INDEX) {
 			continue;
 		}
@@ -3782,8 +3910,11 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 		}
 
 		dest_dev_type = dest_dev->type;
-
-		if (ecm_front_end_is_bridge_device(dest_dev)) {
+		if (ecm_front_end_is_bridge_device(dest_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			|| ecm_front_end_is_ovs_bridge_device(dest_dev)
+#endif
+		   ) {
 			struct net_device *mc_br_slave_dev = NULL;
 			uint32_t mc_max_dst = ECM_DB_MULTICAST_IF_MAX;
 			uint32_t mc_dst_if_index[ECM_DB_MULTICAST_IF_MAX];
@@ -3878,7 +4009,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			}
 
 			valid_if += br_if;
-
 		} else {
 
 			DEBUG_ASSERT(valid_if < ECM_DB_MULTICAST_IF_MAX, "Bad array index size %d\n", valid_if);
@@ -5445,6 +5575,45 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 					break;
 				}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				/*
+				 * OVS_BRIDGE?
+				 */
+				if (ecm_front_end_is_ovs_bridge_device(dest_dev)) {
+					/*
+					 * Bridge
+					 * Figure out which port device the skb will go to using the dest_addr.
+					 */
+					uint8_t mac_addr[ETH_ALEN];
+
+					if (!ecm_interface_multicast_get_next_node_mac_address(next_dest_addr, dest_dev, ip_version, mac_addr)) {
+						dev_put(src_dev);
+						dev_put(dest_dev);
+
+						/*
+						 * Release the interfaces hierarchy we constructed to this point.
+						 */
+						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+						return ECM_DB_IFACE_HEIRARCHY_MAX;
+					}
+					next_dev = ecm_interface_ovs_bridge_port_dev_get(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
+											 is_routed, src_node_addr, mac_addr, layer4hdr);
+					if (!next_dev) {
+						DEBUG_WARN("Unable to obtain output port for: %pM\n", mac_addr);
+						dev_put(src_dev);
+						dev_put(dest_dev);
+
+						/*
+						 * Release the interfaces hierarchy we constructed to this point.
+						 */
+						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+						return ECM_DB_IFACE_HEIRARCHY_MAX;
+					}
+					DEBUG_TRACE("Net device: %p is BRIDGE, next_dev: %p (%s)\n", dest_dev, next_dev, next_dev->name);
+					break;
+				}
+#endif
+
 #ifdef ECM_INTERFACE_BOND_ENABLE
 				/*
 				 * LAG?
@@ -6456,7 +6625,8 @@ static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
  *	Return true if outdated interfaces found
  */
 static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_connection_instance *ci, struct ecm_multicast_if_update *mc_updates,
-						   uint32_t flags, bool is_br_snooper, uint32_t *mc_dst_if_index, uint32_t max_to_dev)
+						   uint32_t flags, bool is_br_snooper, uint32_t *mc_dst_if_index, uint32_t max_to_dev,
+						   struct net_device *brdev)
 {
 	struct ecm_db_iface_instance *mc_ifaces;
 	struct ecm_db_iface_instance *ii_temp;
@@ -6502,23 +6672,39 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
 		to_iface = *ifaces;
 		ii_type = ecm_db_iface_type_get(to_iface);
 
-		/*
-		 * If the update was received from bridge snooper, do not consider entries in the
-		 * interface list that are not part of a bridge.
-		 */
-		if (is_br_snooper && (ii_type != ECM_DB_IFACE_TYPE_BRIDGE)) {
-			continue;
-		}
-
-		/*
-		 * If the update was received from MFC, do not consider entries in the
-		 * interface list that are part of a bridge. The bridge entries will be
-		 * taken care by the Bridge Snooper Callback
-		 */
-		if (ii_type == ECM_DB_IFACE_TYPE_BRIDGE) {
+		if ((ii_type == ECM_DB_IFACE_TYPE_BRIDGE) || (ii_type == ECM_DB_IFACE_TYPE_OVS_BRIDGE)) {
+			/*
+			 * If the update was received from MFC, do not consider entries in the
+			 * interface list that are part of a bridge/ovs_bridge. The bridge/ovs_bridge entries will be
+			 * taken care by the Bridge Snooper Callback
+			 */
 			if (!is_br_snooper && !(flags & ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG)) {
 				continue;
 			}
+
+			/*
+			 * If update was received from Bridge snooper.
+			 * Check for the correct bridge interface in the 'to' list
+			 * as ECM support multibridge multicast.
+			 */
+			if (is_br_snooper) {
+				struct net_device *to_dev;
+
+				to_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(to_iface));
+				if (to_dev) {
+					if (to_dev->ifindex != brdev->ifindex) {
+						dev_put(to_dev);
+						continue;
+					}
+					dev_put(to_dev);
+				}
+			}
+		} else if (is_br_snooper) {
+			/*
+			 * If the update was received from bridge snooper, do not consider entries in the
+			 * interface list that are not part of a bridge or ovs bridge.
+			 */
+			continue;
 		}
 
 		/*
@@ -6693,14 +6879,17 @@ static bool ecm_interface_multicast_find_new_iface_instances(struct ecm_db_conne
  * interface list
  */
 bool ecm_interface_multicast_find_updates_to_iface_list(struct ecm_db_connection_instance *ci, struct ecm_multicast_if_update *mc_updates,
-						uint32_t flags, bool is_br_snooper, uint32_t *mc_dst_if_index, uint32_t max_to_dev)
+						uint32_t flags, bool is_br_snooper, uint32_t *mc_dst_if_index, uint32_t max_to_dev,
+						struct net_device *brdev)
 {
 	bool join;
 	bool leave;
+
 	/*
 	 * Find destination interfaces that have left the group
 	 */
-	leave = ecm_interface_multicast_find_outdated_iface_instances(ci, mc_updates, flags, is_br_snooper, mc_dst_if_index, max_to_dev);
+	leave = ecm_interface_multicast_find_outdated_iface_instances(ci, mc_updates, flags, is_br_snooper, mc_dst_if_index, max_to_dev, brdev);
+
 	/*
 	 * Find new destination interfaces that have joined the group
 	 */
@@ -7249,6 +7438,7 @@ static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *fl
 
 /*
  * ecm_interface_ovs_flow_defunct_connections()
+ *	This event can be triggered when the OVS flow is deleted due to flow timeout.
  *	Defunct the connections based on the OVS flow information.
  */
 static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *flow)
@@ -7280,7 +7470,48 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 	}
 
 	/*
-	 * If 5-tuple is not valid, then delete the flows by
+	 * For multicast flows, ovs manager will set source ip
+	 * as 0.0.0.0, we need to get the 'ci' from multicast
+	 * destination ip
+	 */
+	if (ecm_ip_addr_is_multicast(dest_ip)) {
+#ifdef ECM_MULTICAST_ENABLE
+		ip_addr_t grp_ip;
+		struct ecm_db_connection_instance *ci;
+		struct ecm_db_multicast_tuple_instance *ti;
+
+		/*
+		 * Get the for the group in the tuple_instance table. As OVS
+		 * does not support "source specific multicast" there can be
+		 * only one tuple entry for a group.
+		 */
+		ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
+		if (!ti) {
+			DEBUG_WARN("%p: no multicast tuple entry found\n", flow);
+			return;
+		}
+
+		/*
+		 * Force destruction of the connection by making it defunct
+		 */
+		while (ti) {
+			struct ecm_db_multicast_tuple_instance *ti_next;
+
+			ecm_db_multicast_tuple_instance_group_ip_get(ti, grp_ip);
+			if (ECM_IP_ADDR_MATCH(grp_ip, dest_ip)) {
+				ci = ecm_db_multicast_connection_get_from_tuple(ti);
+				ecm_db_connection_make_defunct(ci);
+			}
+			ti_next = ecm_db_multicast_connection_get_and_ref_next(ti);
+			ecm_db_multicast_connection_deref(ti);
+			ti = ti_next;
+		}
+#endif
+		return;
+	}
+
+	/*
+	 * For unicast if 5-tuple is not valid, then delete the flows by
 	 * {smac/dmac and indev/outdev}
 	 */
 	if ((flow->tuple.protocol == IPPROTO_TCP || flow->tuple.protocol == IPPROTO_UDP) &&
@@ -7313,6 +7544,89 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 	}
 }
 
+#ifdef ECM_MULTICAST_ENABLE
+/*
+ * ecm_interface_multicast_ovs_flow_update_connections()
+ *	Update the connections based on the OVS flow information.
+ *
+ *	This event is triggered by OVS when a new OVS port joins an
+ *	already existing OVS multicast flow. We rely on this event rather
+ *	than the MCS update event when an OVS port joins an existing flow.
+ *	This is because when the MCS event is received, the OVS may not
+ *	have yet updated its flow entry to add the new port,
+ *	so ECM will not be able to query OVS to validate the new flow entry
+ */
+static void ecm_interface_multicast_ovs_flow_update_connections(struct ovsmgr_dp_flow *flow)
+{
+	ip_addr_t ip_dest_addr;
+	struct ecm_db_connection_instance *ci;
+	struct ecm_db_multicast_tuple_instance *ti;
+	struct ecm_front_end_connection_instance *feci;
+	struct net_device *brdev;
+
+	if (flow->tuple.ip_version == 4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(ip_dest_addr, flow->tuple.ipv4.dst);
+		DEBUG_TRACE("IPv4: Src: %pI4:%d protocol: %d Dst: %pI4:%d\n",
+			   &flow->tuple.ipv4.src, flow->tuple.src_port,
+			   flow->tuple.protocol,
+			   &flow->tuple.ipv4.dst, flow->tuple.dst_port);
+	} else if (flow->tuple.ip_version == 6) {
+		ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, flow->tuple.ipv6.dst);
+		DEBUG_TRACE("IPv6: Src: %pI6:%d protocol: %d Dst: %pI6:%d\n",
+			   &flow->tuple.ipv6.src, flow->tuple.src_port,
+			   flow->tuple.protocol,
+			   &flow->tuple.ipv6.dst, flow->tuple.dst_port);
+	} else {
+		DEBUG_WARN("%p: Unsupported IP version: %d\n", flow, flow->tuple.ip_version);
+		return;
+	}
+
+	if (!ecm_ip_addr_is_multicast(ip_dest_addr)) {
+		DEBUG_WARN("%p: Change notification is supported only for multicast flows\n", flow);
+		return;
+	}
+
+	/*
+	 * Get the OVS bridge device.
+	 */
+	if (ecm_front_end_is_ovs_bridge_device(flow->outdev)) {
+		brdev = flow->outdev;
+	} else if (ecm_interface_is_ovs_bridge_port(flow->outdev)) {
+		brdev = ovsmgr_dev_get_master(flow->outdev);
+		if (!brdev) {
+			DEBUG_WARN("%p: Master device for OVS port: %s is NULL!\n", flow, flow->outdev->name);
+			return;
+		}
+	} else {
+		DEBUG_WARN("%p: egress port: %s is neither OVS bridge nor OVS port\n", flow, flow->outdev->name);
+		return;
+	}
+
+	/*
+	 * Get the first entry for the group in the tuple_instance table,
+	 */
+	ti = ecm_db_multicast_connection_get_and_ref_first(ip_dest_addr);
+	if (!ti) {
+		DEBUG_WARN("%p: no multicast tuple entry found\n", flow);
+		return;
+	}
+
+	ci = ecm_db_multicast_connection_get_from_tuple(ti);
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	/*
+	 * The source IP address in the OVS flow passed to us is always found
+	 * to be NULL. So, update the all multicast connections for this group address.
+	 */
+	if (feci->multicast_update) {
+		feci->multicast_update(ip_dest_addr, brdev);
+	}
+
+	feci->deref(feci);
+	ecm_db_multicast_connection_deref(ti);
+}
+#endif
+
 /*
  * ecm_interface_ovs_notifier_callback()
  * 	Netdevice notifier callback to inform us of change of state of a netdevice
@@ -7334,6 +7648,11 @@ static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsign
 		break;
 	case OVSMGR_DP_FLOW_TBL_FLUSH:
 		ecm_db_connection_make_defunct_by_assignment_type(ECM_CLASSIFIER_TYPE_OVS);
+		break;
+	case OVSMGR_DP_FLOW_CHANGE:
+#ifdef ECM_MULTICAST_ENABLE
+		ecm_interface_multicast_ovs_flow_update_connections(ovs_info->flow);
+#endif
 		break;
 	}
 

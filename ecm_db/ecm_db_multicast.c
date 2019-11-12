@@ -1000,4 +1000,35 @@ int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instan
 
 	return ret;
 }
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+/*
+ * ecm_db_multicast_ovs_verify_to_list()
+ * 	Verify the 'to' interface list with OVS classifier.
+ */
+bool ecm_db_multicast_ovs_verify_to_list(struct ecm_db_connection_instance *ci)
+{
+	struct ecm_classifier_process_response aci_pr;
+	struct ecm_classifier_instance *aci;
+	bool is_defunct = false;
+
+	/*
+	 * Get the OVS classifier instance from the connection.
+	 */
+	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_OVS);
+	if (!aci) {
+		DEBUG_WARN("%p: no OVS classifier\n", ci);
+		return is_defunct;
+	}
+
+	memset(&aci_pr, 0, sizeof(aci_pr));
+	aci->process(aci, ECM_TRACKER_SENDER_MAX, NULL, NULL, &aci_pr);
+	if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL) {
+		is_defunct = true;
+	}
+
+	aci->deref(aci);
+	return is_defunct;
+}
+#endif
 #endif
