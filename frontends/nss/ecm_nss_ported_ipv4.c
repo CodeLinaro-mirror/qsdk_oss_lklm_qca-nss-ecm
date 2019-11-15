@@ -874,6 +874,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%p: OVPN - unsupported\n", npci);
 #endif
 			break;
+
 		default:
 			DEBUG_TRACE("%p: Ignoring: %d (%s)\n", npci, ii_type, ii_name);
 		}
@@ -2381,9 +2382,9 @@ done:
 	 * When a DNAT is applied it is observed that following NAT rules are appended in iptables
 	 *
 	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p tcp -m tcp --dport 3389 -m comment --comment "wan" -j SNAT
-	 * 		 --to-source 192.168.1.1
+	 *		 --to-source 192.168.1.1
 	 * -A nat_reflection_out -s 192.168.1.0/24 -d 192.168.1.4/32 -p udp -m udp --dport 3389 -m comment --comment "wan" -j SNAT
-	 * 		 --to-source 192.168.1.1
+	 *		 --to-source 192.168.1.1
 	 *
 	 * This Shows that SNAT is getting applied on bridged packet also. However it is observed that
 	 * the SNAT is updated in ct after the packet has crossed this function through bridge hook.
