@@ -1735,7 +1735,7 @@ static int ecm_nss_ported_ipv6_connection_state_get(struct ecm_front_end_connect
 		return result;
 	}
 
- 	return ecm_state_prefix_remove(sfi);
+	return ecm_state_prefix_remove(sfi);
 }
 #endif
 
