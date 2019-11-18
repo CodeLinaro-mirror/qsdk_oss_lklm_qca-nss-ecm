@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -17,6 +17,11 @@
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/of.h>
+
+/*
+ * Constant used with constructing acceleration rules.
+ */
+#define ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED 0xFFF
 
 /*
  * Bridge device macros

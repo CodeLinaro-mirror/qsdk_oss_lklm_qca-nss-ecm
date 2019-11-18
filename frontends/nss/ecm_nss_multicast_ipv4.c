@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -484,8 +484,8 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 		return -1;
 	}
 
-	create->ingress_vlan_tag[0] =   ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	create->ingress_vlan_tag[1] =   ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+	create->ingress_vlan_tag[0] =   ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	create->ingress_vlan_tag[1] =   ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
 	/*
 	 * Set the source NSS interface identifier
@@ -522,8 +522,8 @@ static int ecm_nss_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	 */
 	for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-		create->if_rule[vif].egress_vlan_tag[0] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-		create->if_rule[vif].egress_vlan_tag[1] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+		create->if_rule[vif].egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+		create->if_rule[vif].egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 #endif
 
 		/*
@@ -941,8 +941,8 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 		return;
 	}
 
-	create->ingress_vlan_tag[0] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	create->ingress_vlan_tag[1] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+	create->ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	create->ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 	from_nss_iface = from_ifaces[from_ifaces_first];
 	from_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
 	if (from_nss_iface_id < 0) {
@@ -1046,8 +1046,8 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 		to_nss_iface_id = -1;
 
-		create->if_rule[vif].egress_vlan_tag[0] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-		create->if_rule[vif].egress_vlan_tag[1] = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+		create->if_rule[vif].egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+		create->if_rule[vif].egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
 		ii_temp = ecm_db_multicast_if_heirarchy_get(to_ifaces, vif);
 		to_ii_first = ecm_db_multicast_if_first_get_at_index(to_ifaces_first, vif);

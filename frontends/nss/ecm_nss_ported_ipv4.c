@@ -413,10 +413,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * Initialize VLAN tag information
 	 */
-	nircm->vlan_primary_rule.ingress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_primary_rule.egress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_secondary_rule.ingress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_secondary_rule.egress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_primary_rule.ingress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_primary_rule.egress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_secondary_rule.ingress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_secondary_rule.egress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
 	/*
 	 * Get the interface lists of the connection, we must have at least one interface in the list to continue
@@ -1021,8 +1021,8 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #endif
 
 	if (ecm_nss_ipv4_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
-	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED) &&
-	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED)) {
+	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
+	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
 		int vlan_present = 0;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 		vlan_present = vlan_tx_tag_present(skb);
@@ -1041,6 +1041,22 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_VLAN_VALID;
 		}
 	}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+		/*
+		 * Copy the both primary and secondary (if exist) VLAN tags.
+		 */
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			nircm->vlan_primary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+			nircm->vlan_primary_rule.egress_vlan_tag = pr->egress_vlan_tag[0];
+			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_VLAN_VALID;
+		}
+
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			nircm->vlan_secondary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+			nircm->vlan_secondary_rule.egress_vlan_tag = pr->egress_vlan_tag[1];
+		}
+#endif
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
@@ -2607,6 +2623,24 @@ done:
 			DEBUG_TRACE("%p: timer group: %p, type: %d, group: %d\n", ci, aci, aci->type_get(aci), aci_pr.timer_group);
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress vlan tags 0: %u, egress vlan tags 0: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.ingress_vlan_tag[0], aci_pr.egress_vlan_tag[0]);
+			prevalent_pr.ingress_vlan_tag[0] = aci_pr.ingress_vlan_tag[0];
+			prevalent_pr.egress_vlan_tag[0] = aci_pr.egress_vlan_tag[0];
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress vlan tags 1: %u, egress vlan tags 1: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.ingress_vlan_tag[1], aci_pr.egress_vlan_tag[1]);
+			prevalent_pr.ingress_vlan_tag[1] = aci_pr.ingress_vlan_tag[1];
+			prevalent_pr.egress_vlan_tag[1] = aci_pr.egress_vlan_tag[1];
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
+		}
+#endif
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*

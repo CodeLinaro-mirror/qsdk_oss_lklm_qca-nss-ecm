@@ -2415,6 +2415,8 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get(struct sk_buff *
 	DEBUG_TRACE("%p: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (smac:%pM, dmac:%pM)\n",
 				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip), ip_version, protocol, smac, dmac);
 
+	memset(&flow, 0, sizeof(flow));
+
 	flow.indev = br_dev;
 	flow.outdev = NULL;
 

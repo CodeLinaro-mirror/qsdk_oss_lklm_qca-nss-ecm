@@ -86,6 +86,12 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG 0x00000040	/* Contains flow & return ingress qos tags */
 #endif
 
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG 0x00000080	/* Contains OVS VLAN tags */
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG 0x00000100
+								/* Contains OVS QinQ VLAN tags */
+#endif
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call
@@ -107,6 +113,10 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	uint8_t flow_dscp;				/* DSCP mark for flow */
 	uint8_t return_dscp;				/* DSCP mark for return */
+#endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	uint32_t ingress_vlan_tag[2];			/* Ingress VLAN tags */
+	uint32_t egress_vlan_tag[2];			/* Egress VLAN tags */
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
@@ -263,6 +273,26 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			/* Else don't care */
 		}
 	}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+		if ((result = ecm_state_write(sfi, "ingress_vlan_tag[0]", "0x%x", pr->ingress_vlan_tag[0]))) {
+			return result;
+		}
+		if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
+			return result;
+		}
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+		if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr->ingress_vlan_tag[1]))) {
+			return result;
+		}
+		if ((result = ecm_state_write(sfi, "egress_vlan_tag[1]", "0x%x", pr->egress_vlan_tag[1]))) {
+			return result;
+		}
+	}
+#endif
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {

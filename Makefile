@@ -28,6 +28,9 @@ endif
 ifeq ($(EXAMPLES_BUILD_MARK),y)
 obj-m += examples/ecm_mark_test.o
 endif
+ifeq ($(EXAMPLES_BUILD_OVS),y)
+obj-m += examples/ecm_ovs.o
+endif
 
 ecm-y := \
 	 ecm_tracker_udp.o \
