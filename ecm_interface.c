@@ -1100,7 +1100,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 #else
 	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, NULL, &dst_addr);
 #endif
-	if (neigh == NULL) {
+	if (IS_ERR(neigh)) {
 		DEBUG_TRACE("Neighbour lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		dst_release(&rt6i->dst);
 		return;
