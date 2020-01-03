@@ -56,7 +56,7 @@ ecm-y := \
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
 # nss as ECM's front end.
 # #############################################################################
-ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64 ipq60xx ipq60xx_64))
+ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
 ECM_FRONT_END_NSS_ENABLE=y
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
@@ -188,7 +188,7 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
-ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64))
+ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
 ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
