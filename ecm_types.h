@@ -19,6 +19,15 @@
 #include <linux/printk.h>
 
 /*
+ * Flow/Return direction types.
+ */
+enum ecm_conn_dir {
+	ECM_CONN_DIR_FLOW,
+	ECM_CONN_DIR_RETURN,
+	ECM_CONN_DIR_MAX
+};
+
+/*
  * The ECM IP address is an array of 4 32 bit numbers.
  * This is enough to record both an IPv6 address aswell as an IPv4 address.
  * IPv4 addresses are stored encoded in an IPv6 as the usual ::FFFF:x:y/96

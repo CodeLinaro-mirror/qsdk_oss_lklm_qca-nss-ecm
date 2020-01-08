@@ -718,7 +718,7 @@ static void ecm_classifier_nl_sync_to_v4(struct ecm_classifier_instance *aci, st
 {
 	struct ecm_classifier_nl_instance *cnli;
 
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		/*
 		 * Nothing to update.
 		 * We only care about flows that are actively being accelerated.
@@ -774,7 +774,7 @@ static void ecm_classifier_nl_sync_to_v6(struct ecm_classifier_instance *aci, st
 	cnli = (struct ecm_classifier_nl_instance *)aci;
 	DEBUG_CHECK_MAGIC(cnli, ECM_CLASSIFIER_NL_INSTANCE_MAGIC, "%p: magic failed", cnli);
 
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		/*
 		 * No traffic has been accelerated.
 		 * Nothing to update. We only care about flows that are actively being accelerated.

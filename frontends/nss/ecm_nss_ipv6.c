@@ -1834,14 +1834,14 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	 * Copy the sync data to the classifier sync structure to
 	 * update the classifiers' stats.
 	 */
-	class_sync.flow_tx_packet_count = sync->flow_tx_packet_count;
-	class_sync.flow_tx_byte_count = sync->flow_tx_byte_count;
-	class_sync.flow_rx_packet_count = sync->flow_rx_packet_count;
-	class_sync.flow_rx_byte_count = sync->flow_rx_byte_count;
-	class_sync.return_tx_packet_count = sync->return_tx_packet_count;
-	class_sync.return_tx_byte_count = sync->return_tx_byte_count;
-	class_sync.return_rx_packet_count = sync->return_rx_packet_count;
-	class_sync.return_rx_byte_count = sync->return_rx_byte_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
 	class_sync.reason = sync->reason;
 
 	/*

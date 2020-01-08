@@ -1324,8 +1324,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				sync->return_tx_packet_count, sync->return_tx_byte_count,
-				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
+				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				from_dev, to_ovs_port[0],
 				smac, dmac,
 				src_ip, dst_ip,
@@ -1404,8 +1404,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				sync->return_tx_packet_count, sync->return_tx_byte_count,
-				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
+				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				from_dev, br_dev,
 				smac, dmac,
 				src_ip, dst_ip,
@@ -1444,8 +1444,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				sync->return_tx_packet_count, sync->return_tx_byte_count,
-				sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
+				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				to_ovs_brdev[i], to_ovs_port[i],
 				smac, dmac,
 				src_ip, dst_ip,
@@ -1545,8 +1545,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 
 		DEBUG_TRACE("%p: Flow direction stats update\n", aci);
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->flow_rx_packet_count, sync->flow_rx_byte_count,
-				  sync->return_tx_packet_count, sync->return_tx_byte_count,
+				  sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
+				  sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
 				  from_dev, to_dev,
 				  smac, dmac,
 				  src_ip, dst_ip,
@@ -1569,8 +1569,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		}
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->flow_tx_packet_count, sync->flow_tx_byte_count,
-				  sync->return_rx_packet_count, sync->return_rx_byte_count,
+				  sync->tx_packet_count[ECM_CONN_DIR_FLOW], sync->tx_byte_count[ECM_CONN_DIR_FLOW],
+				  sync->rx_packet_count[ECM_CONN_DIR_RETURN], sync->rx_byte_count[ECM_CONN_DIR_RETURN],
 				  to_dev, from_dev,
 				  dmac, smac,
 				  dst_ip, src_ip,
@@ -1609,8 +1609,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->return_tx_packet_count, sync->return_tx_byte_count,
-				  sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				  sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
+				  sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				  from_dev, br_dev,
 				  smac, dmac,
 				  src_ip, dst_ip,
@@ -1621,8 +1621,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		 * All the flow parameters are reversed.
 		 */
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->flow_tx_packet_count, sync->flow_tx_byte_count,
-				  sync->return_rx_packet_count, sync->return_rx_byte_count,
+				  sync->tx_packet_count[ECM_CONN_DIR_FLOW], sync->tx_byte_count[ECM_CONN_DIR_FLOW],
+				  sync->rx_packet_count[ECM_CONN_DIR_RETURN], sync->rx_byte_count[ECM_CONN_DIR_RETURN],
 				  br_dev, from_dev,
 				  dmac, smac,
 				  dst_ip, src_ip,
@@ -1655,8 +1655,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->return_tx_packet_count, sync->return_tx_byte_count,
-				  sync->flow_rx_packet_count, sync->flow_rx_byte_count,
+				  sync->tx_packet_count[ECM_CONN_DIR_RETURN], sync->tx_byte_count[ECM_CONN_DIR_RETURN],
+				  sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				  br_dev, to_dev,
 				  smac, dmac,
 				  src_ip, dst_ip,
@@ -1666,8 +1666,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		 * All the flow parameters are reversed.
 		 */
 		ecm_classifier_ovs_stats_sync(&flow,
-				  sync->flow_tx_packet_count, sync->flow_tx_byte_count,
-				  sync->return_rx_packet_count, sync->return_rx_byte_count,
+				  sync->tx_packet_count[ECM_CONN_DIR_FLOW], sync->tx_byte_count[ECM_CONN_DIR_FLOW],
+				  sync->rx_packet_count[ECM_CONN_DIR_RETURN], sync->rx_byte_count[ECM_CONN_DIR_RETURN],
 				  to_dev, br_dev,
 				  dmac, smac,
 				  dst_ip, src_ip,
@@ -1694,7 +1694,7 @@ static void ecm_classifier_ovs_sync_to_v4(struct ecm_classifier_instance *aci, s
 	 * Nothing to update.
 	 * We only care about flows that are actively being accelerated.
 	 */
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		return;
 	}
 
@@ -1733,7 +1733,7 @@ static void ecm_classifier_ovs_sync_to_v6(struct ecm_classifier_instance *aci, s
 	 * Nothing to update.
 	 * We only care about flows that are actively being accelerated.
 	 */
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		return;
 	}
 

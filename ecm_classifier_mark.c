@@ -460,7 +460,7 @@ static void ecm_classifier_mark_sync_to_v4(struct ecm_classifier_instance *aci, 
 	 * Nothing to update.
 	 * We only care about flows that are actively being accelerated.
 	 */
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		return;
 	}
 
@@ -536,7 +536,7 @@ static void ecm_classifier_mark_sync_to_v6(struct ecm_classifier_instance *aci, 
 	 * Nothing to update.
 	 * We only care about flows that are actively being accelerated.
 	 */
-	if (!(sync->flow_tx_packet_count || sync->return_tx_packet_count)) {
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
 		return;
 	}
 

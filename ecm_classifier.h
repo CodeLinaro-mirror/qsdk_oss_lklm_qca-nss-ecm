@@ -132,17 +132,10 @@ struct ecm_classifier_process_response {
  * in this data structure to update the classifiers.
  */
 struct ecm_classifier_rule_sync {
-	/*
-	 * TODO: Use directional arrays for flow/return.
-	 */
-	uint32_t flow_tx_packet_count;
-	uint32_t flow_tx_byte_count;
-	uint32_t flow_rx_packet_count;
-	uint32_t flow_rx_byte_count;
-	uint32_t return_tx_packet_count;
-	uint32_t return_tx_byte_count;
-	uint32_t return_rx_packet_count;
-	uint32_t return_rx_byte_count;
+	uint32_t tx_packet_count[ECM_CONN_DIR_MAX];
+	uint32_t tx_byte_count[ECM_CONN_DIR_MAX];
+	uint32_t rx_packet_count[ECM_CONN_DIR_MAX];
+	uint32_t rx_byte_count[ECM_CONN_DIR_MAX];
 	uint32_t reason;
 };
 
