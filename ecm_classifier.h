@@ -117,6 +117,10 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	uint32_t ingress_vlan_tag[2];			/* Ingress VLAN tags */
 	uint32_t egress_vlan_tag[2];			/* Egress VLAN tags */
+#ifdef ECM_MULTICAST_ENABLE
+	int32_t egress_netdev_index[ECM_DB_MULTICAST_IF_MAX];	 /* Multicast egress net device interface index */
+	uint32_t egress_mc_vlan_tag[ECM_DB_MULTICAST_IF_MAX][2]; /* Multicast egress VLAN tags */
+#endif
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
@@ -276,21 +280,81 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
-		if ((result = ecm_state_write(sfi, "ingress_vlan_tag[0]", "0x%x", pr->ingress_vlan_tag[0]))) {
-			return result;
+#ifdef ECM_MULTICAST_ENABLE
+		int i;
+#endif
+
+		/*
+		 * TODO: Clean up the function later to print classifier
+		 * specific data in each classifier’s state_get function.
+		 */
+		if (pr->ingress_vlan_tag[0] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[0]", "0x%x", pr->ingress_vlan_tag[0]))) {
+				return result;
+			}
 		}
-		if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
-			return result;
+
+		if (pr->egress_vlan_tag[0] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
+				return result;
+			}
 		}
+
+#ifdef ECM_MULTICAST_ENABLE
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+
+			if (pr->egress_mc_vlan_tag[i][0] == 0xFFF) {
+				continue;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
+				return result;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[0]", "0x%x", pr->egress_mc_vlan_tag[i][0]))) {
+				return result;
+			}
+		}
+#endif
 	}
 
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
-		if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr->ingress_vlan_tag[1]))) {
-			return result;
+#ifdef ECM_MULTICAST_ENABLE
+		int i;
+#endif
+
+		/*
+		 * TODO: Clean up the function later to print classifier
+		 * specific data in each classifier’s state_get function.
+		 */
+		if (pr->ingress_vlan_tag[1] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr->ingress_vlan_tag[1]))) {
+				return result;
+			}
 		}
-		if ((result = ecm_state_write(sfi, "egress_vlan_tag[1]", "0x%x", pr->egress_vlan_tag[1]))) {
-			return result;
+
+		if (pr->egress_vlan_tag[1] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[1]", "0x%x", pr->egress_vlan_tag[1]))) {
+				return result;
+			}
 		}
+
+#ifdef ECM_MULTICAST_ENABLE
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+
+			if (pr->egress_mc_vlan_tag[i][1] == 0xFFF) {
+				continue;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
+				return result;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[1]", "0x%x", pr->egress_mc_vlan_tag[i][1]))) {
+				return result;
+			}
+		}
+#endif
 	}
 #endif
 
@@ -334,4 +398,3 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 
 extern struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_connection_instance *ci, ecm_classifier_type_t type);
 extern bool ecm_classifier_reclassify(struct ecm_db_connection_instance *ci, int assignment_count, struct ecm_classifier_instance *assignments[]);
-

@@ -339,6 +339,17 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	memset(&flow, 0, sizeof(struct ovsmgr_dp_flow));
 
 	/*
+	 * During multicast update path, skb is passed as NULL.
+	 * We need to fill the ingress_vlan with the same vlan
+	 * information that we have stored during connection instance
+	 * creation. OVS manager needs this information to provide the
+	 * right response.
+	 */
+	if (!skb) {
+		flow.ingress_vlan = ecm_db_multicast_tuple_get_ovs_ingress_vlan(ci->ti);
+	}
+
+	/*
 	 * If the flow is a routed flow, set the is_routed flag of the flow.
 	 */
 	if (ecm_db_connection_is_routed_get(ci)) {
@@ -372,6 +383,17 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	}
 
 	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
+
+	ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	ecvi->process_response.egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+		ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+		ecvi->process_response.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+		ecvi->process_response.egress_netdev_index[i] = -1;
+	}
 
 	/*
 	 * Call the external callback and get the result.
@@ -430,6 +452,38 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			goto done1;
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
 			DEBUG_TRACE("%p: Acceleration allowed for multicast OVS port: %s\n", ci, to_dev[i]->name);
+			break;
+		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_ACCEL:
+		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL:
+			/*
+			 * Allow accel after setting the external module response.
+			 * Primary VLAN tag is always present even it is QinQ.
+			 */
+			DEBUG_WARN("%p: External callback process succeeded\n", ci);
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+			ecvi->process_response.egress_netdev_index[i] = flow.outdev->ifindex;
+
+			if (resp.ingress_vlan[0].h_vlan_TCI) {
+				ecvi->process_response.ingress_vlan_tag[0] = resp.ingress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[0].h_vlan_TCI;
+				DEBUG_TRACE("%p: Ingress vlan tag[0] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[0]);
+			}
+
+			if (resp.egress_vlan[0].h_vlan_TCI) {
+				ecvi->process_response.egress_mc_vlan_tag[i][0] = resp.egress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[0].h_vlan_TCI;
+				DEBUG_TRACE("%p: Multicast egress vlan tag[%d][0] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][0]);
+			}
+
+			if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
+				if (resp.ingress_vlan[1].h_vlan_TCI) {
+					ecvi->process_response.ingress_vlan_tag[1] = resp.ingress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[1].h_vlan_TCI;
+					DEBUG_TRACE("%p: Ingress vlan tag[1] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[1]);
+				}
+
+				if (resp.egress_vlan[1].h_vlan_TCI) {
+					ecvi->process_response.egress_mc_vlan_tag[i][1] = resp.egress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[1].h_vlan_TCI;
+					DEBUG_TRACE("%p: Multicast egress vlan tag[%d][1] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][1]);
+				}
+			}
 			break;
 		default:
 			DEBUG_TRACE("%p: Invalid response: %d\n", ci, result);

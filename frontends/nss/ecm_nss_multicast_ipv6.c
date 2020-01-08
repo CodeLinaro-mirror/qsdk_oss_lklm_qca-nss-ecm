@@ -427,7 +427,8 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
  * 	and sends a 'multicast update' command to NSS to inform about these interface state changes.
  */
 static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_end_connection_instance *feci,
-							       struct ecm_multicast_if_update *rp)
+							       struct ecm_multicast_if_update *rp,
+							       struct ecm_classifier_process_response *pr)
 {
 	struct ecm_nss_multicast_ipv6_connection_instance *nmci = (struct ecm_nss_multicast_ipv6_connection_instance *)feci;
 	uint16_t regen_occurrances;
@@ -701,6 +702,24 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				 * The interface has joined the group
 				 */
 				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_JOIN;
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+				if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+					/*
+					 * Set primary egress VLAN tag
+					 */
+					if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+						create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
+						create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+					}
+
+					/*
+					 * Set secondary egress VLAN tag
+					 */
+					if (pr->egress_mc_vlan_tag[vif][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+						create->if_rule[valid_vif_idx].egress_vlan_tag[1] = pr->egress_mc_vlan_tag[vif][1];
+					}
+				}
+#endif
 			} else if (rp->if_leave_idx[vif]) {
 
 				/*
@@ -1214,7 +1233,17 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				memcpy(create->if_rule[valid_vif_idx].if_mac, to_nss_iface_address, ETH_ALEN);
 				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
 			}
-
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+			if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+				/*
+				 * Set egress VLAN tag
+				 */
+				if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+					create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
+					create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+				}
+			}
+#endif
 			valid_vif_idx++;
 		}
 	}
@@ -1245,6 +1274,20 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_DSCP_MARKING_VALID;
 	}
 #endif
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+		/*
+		 * Set ingress VLAN tag
+		 */
+		if (pr->ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			create->ingress_vlan_tag[0] = pr->ingress_vlan_tag[0];
+			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_INGRESS_VLAN_VALID;
+			ecm_db_multicast_tuple_set_ovs_ingress_vlan(feci->ci->ti, pr->ingress_vlan_tag);
+		}
+	}
+#endif
+
 	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
 	memcpy(create->dest_mac, dest_mac, ETH_ALEN);
 
@@ -2067,6 +2110,10 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 	}
 
 	while (ti) {
+		struct ecm_classifier_process_response aci_pr;
+
+		memset(&aci_pr, 0, sizeof(aci_pr));
+
 		/*
 		 * We now have a 5-tuple which has been accelerated. Query the MCS bridge to receive a list
 		 * of interfaces left or joined a group for a source.
@@ -2277,7 +2324,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * Verify the 'to' interface list with OVS classifier.
 		 */
 		if (ecm_front_end_is_ovs_bridge_device(brdev) &&
-			ecm_db_multicast_ovs_verify_to_list(ci)) {
+			ecm_db_multicast_ovs_verify_to_list(ci, &aci_pr)) {
 			/*
 			 * We defunct the flow when the OVS returns "DENY_ACCEL" for the port.
 			 * This can happen when the first port has joined on an OVS bridge
@@ -2301,7 +2348,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 			goto find_next_tuple;
 		}
 
-		ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync);
+		ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
 		if (ret < 0) {
 			feci->decelerate(feci);
 			feci->deref(feci);
@@ -3382,6 +3429,35 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			}
 		}
 #endif
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			int i;
+
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+			prevalent_pr.ingress_vlan_tag[0] = aci_pr.ingress_vlan_tag[0];
+			prevalent_pr.ingress_vlan_tag[1] = aci_pr.ingress_vlan_tag[1];
+
+			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+				prevalent_pr.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+				prevalent_pr.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+
+				/*
+				 * Set primary VLAN tag
+				 */
+				if (aci_pr.egress_mc_vlan_tag[i][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+					prevalent_pr.egress_mc_vlan_tag[i][0] = aci_pr.egress_mc_vlan_tag[i][0];
+				}
+
+				/*
+				 * Set secondary VLAN tag
+				 */
+				if (aci_pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+					prevalent_pr.egress_mc_vlan_tag[i][1] = aci_pr.egress_mc_vlan_tag[i][1];
+				}
+			}
+		}
+#endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
@@ -3544,6 +3620,9 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 		 * apply the updates received from event handler
 		 */
 		while (tuple_instance) {
+			struct ecm_classifier_process_response aci_pr;
+
+			memset(&aci_pr, 0, sizeof(aci_pr));
 			/*
 			 * Get the source/group IP address for this multicast tuple and match
 			 * with the source and group IP received from the event handler. If
@@ -3664,15 +3743,14 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			 * Verify the 'to' interface list with OVS classifier.
 			 */
 			if (ecm_interface_multicast_check_for_ovs_br_dev(to_dev_idx, max_to_dev) &&
-				ecm_db_multicast_ovs_verify_to_list(ci)) {
-				DEBUG_TRACE("%p: Verification of the ovs 'to_list' has failed. Hence, defunct the connection: %p\n", feci, feci->ci);
-
+				ecm_db_multicast_ovs_verify_to_list(ci, &aci_pr)) {
 				/*
 				 * We defunct the flow when the OVS returns "DENY_ACCEL" for the port.
 				 * This can happen when the first port has joined on an OVS bridge
 				 * on a flow that already exists. In this case, OVS needs to see the
 				 * packet to update the flow. So we defunct the existing rule.
 				 */
+				DEBUG_TRACE("%p: Verification of the ovs 'to_list' has failed. Hence, defunct the connection: %p\n", feci, feci->ci);
 				ecm_db_connection_make_defunct(ci);
 				feci->deref(feci);
 				ecm_db_multicast_connection_deref(tuple_instance);
@@ -3695,7 +3773,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			 * Update the new rules in FW. If returns error decelerate the connection
 			 * and flush the Multicast rules.
 			 */
-			ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync);
+			ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
 			if (ret < 0) {
 				feci->decelerate(feci);
 				feci->deref(feci);

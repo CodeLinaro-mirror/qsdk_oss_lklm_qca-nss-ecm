@@ -69,8 +69,6 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_end_connection_instance *feci, struct net_device *dev, struct sk_buff *skb);
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 bool ecm_interface_is_ovs_bridge_port(const struct net_device *dev);
-bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t max_if);
-int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connection_instance *ci, struct net_device **to_ovs_port, struct net_device **to_ovs_brdev);
 #endif
 #ifdef ECM_MULTICAST_ENABLE
 int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *interfaces, struct net_device *in_dev, ip_addr_t packet_src_addr, ip_addr_t packet_dest_addr, uint8_t maxvif, uint32_t *dst_dev, uint32_t *to_interface_first, bool mfc_update, __be16 *layer4hdr, struct sk_buff *skb);
@@ -93,6 +91,12 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 					struct net_device *given_src_dev,
 					uint8_t *dest_node_addr, uint8_t *src_node_addr,
 					__be16 *layer4hdr, struct sk_buff *skb);
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t max_if);
+int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connection_instance *ci,
+					struct net_device **to_ovs_port,
+					struct net_device **to_ovs_brdev);
+#endif
 #endif
 
 int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
