@@ -4308,6 +4308,33 @@ static struct net_device *ecm_interface_should_update_egress_device_bridged(
 	return bridge;
 }
 
+static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct net_device *dev, int ip_version, int protocol)
+{
+	if (ip_version == 4) {
+		if (protocol == IPPROTO_IPV6) {
+			return true;
+		}
+
+		if (protocol == IPPROTO_UDP && udp_hdr(skb)->dest == htons(4500)) {
+			return true;
+		}
+	}
+
+	if (ip_version == 6 && protocol == IPPROTO_IPIP) {
+		return true;
+	}
+
+	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP) {
+		return true;
+	}
+
+	if (dev->type == ARPHRD_NONE && dev->priv_flags & IFF_TUN_TAP) {
+		return true;
+	}
+
+	return false;
+}
+
 /*
  * ecm_interface_heirarchy_construct()
  *	Construct an interface heirarchy.
@@ -4416,10 +4443,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 * E.G. IF WE TRIED TO RUN A TUNNEL OVER A VLAN OR QINQ THIS WILL BREAK AS WE DON'T DISCOVER THAT HIERARCHY
 	 */
 	if (dest_dev && from_local_addr) {
-		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-		    ((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
-					  (protocol == IPPROTO_GRE) ||
-		    ((given_dest_dev->type == ARPHRD_NONE) && (given_dest_dev->priv_flags & IFF_TUN_TAP))) {
+		if (ecm_interface_is_tunnel_endpoint(skb, given_dest_dev, ip_version, protocol)) {
 			dev_put(dest_dev);
 			dest_dev = given_dest_dev;
 			if (dest_dev) {
@@ -4515,10 +4539,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 * E.G. IF WE TRIED TO RUN A TUNNEL OVER A VLAN OR QINQ THIS WILL BREAK AS WE DON'T DISCOVER THAT HIERARCHY
 	 */
 	if (src_dev && from_local_addr) {
-		if (((ip_version == 4) && (protocol == IPPROTO_IPV6)) ||
-		    ((ip_version == 6) && (protocol == IPPROTO_IPIP)) ||
-					  (protocol == IPPROTO_GRE) ||
-		    ((given_src_dev->type == ARPHRD_NONE) && (given_src_dev->priv_flags & IFF_TUN_TAP))) {
+		if (ecm_interface_is_tunnel_endpoint(skb, given_src_dev, ip_version, protocol)) {
 			dev_put(src_dev);
 			src_dev = given_src_dev;
 			if (src_dev) {
