@@ -73,9 +73,11 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev(struct net_devi
 		return NSS_IPSEC_CMN_INTERFACE;
 	}
 
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
 	if (dev->type == ARPHRD_RAWIP) {
 		return nss_rmnet_rx_get_ifnum(dev);
 	}
+#endif
 
 	return nss_cmn_get_interface_number_by_dev(dev);
 }
