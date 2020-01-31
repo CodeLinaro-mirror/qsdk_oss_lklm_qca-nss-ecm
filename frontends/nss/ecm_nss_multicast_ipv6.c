@@ -710,13 +710,13 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 					if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 						create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
 						create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
-					}
 
-					/*
-					 * Set secondary egress VLAN tag
-					 */
-					if (pr->egress_mc_vlan_tag[vif][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-						create->if_rule[valid_vif_idx].egress_vlan_tag[1] = pr->egress_mc_vlan_tag[vif][1];
+						/*
+						 * Set secondary egress VLAN tag
+						 */
+						if (pr->egress_mc_vlan_tag[vif][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+							create->if_rule[valid_vif_idx].egress_vlan_tag[1] = pr->egress_mc_vlan_tag[vif][1];
+						}
 					}
 				}
 #endif
@@ -1236,11 +1236,18 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 			if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
 				/*
-				 * Set egress VLAN tag
+				 * Set primary egress VLAN tag
 				 */
 				if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 					create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
 					create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+
+					/*
+					 * Set secondary egress VLAN tag
+					 */
+					if (pr->egress_mc_vlan_tag[vif][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+						create->if_rule[valid_vif_idx].egress_vlan_tag[1] = pr->egress_mc_vlan_tag[vif][1];
+					}
 				}
 			}
 #endif
@@ -3447,13 +3454,13 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 				 */
 				if (aci_pr.egress_mc_vlan_tag[i][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 					prevalent_pr.egress_mc_vlan_tag[i][0] = aci_pr.egress_mc_vlan_tag[i][0];
-				}
 
-				/*
-				 * Set secondary VLAN tag
-				 */
-				if (aci_pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-					prevalent_pr.egress_mc_vlan_tag[i][1] = aci_pr.egress_mc_vlan_tag[i][1];
+					/*
+					 * Set secondary VLAN tag
+					 */
+					if (aci_pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+						prevalent_pr.egress_mc_vlan_tag[i][1] = aci_pr.egress_mc_vlan_tag[i][1];
+					}
 				}
 			}
 		}
