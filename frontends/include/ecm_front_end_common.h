@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016, 2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2019-2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -288,3 +288,8 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
+extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
+						      struct net_device *outdev,
+						      struct sk_buff *skb,
+						      struct nf_conntrack_tuple *tuple,
+						      int ip_version);

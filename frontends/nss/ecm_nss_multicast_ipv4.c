@@ -30,6 +30,7 @@
 #include <linux/string.h>
 #include <net/route.h>
 #include <net/ip.h>
+#include <net/addrconf.h>
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>

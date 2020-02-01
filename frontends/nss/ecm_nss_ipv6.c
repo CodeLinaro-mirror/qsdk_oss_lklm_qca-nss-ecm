@@ -1058,32 +1058,6 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 
 	/*
-	 * If it's a PPTP GRE/GRE pass-through flow then check if out_dev or
-	 * in_dev are not a PPTP device. If ecm_interface_is_pptp() return
-	 * false then don't accelerate it.
-	 */
-	if ((ip_hdr.protocol == IPPROTO_GRE) && !ecm_interface_is_pptp(skb, out_dev)) {
-		/*
-		 * If any of the input or output interface is a GRE V4 TAP/TUN interface
-		 * we can continue to accelerate it.
-		 */
-		if ((in_dev->priv_flags & IFF_GRE_V4_TAP) || (out_dev->priv_flags & IFF_GRE_V4_TAP)) {
-#ifndef ECM_INTERFACE_GRE_TAP_ENABLE
-			DEBUG_TRACE("GRE TAP acceleration is disabled\n");
-			return NF_ACCEPT;
-#endif
-			DEBUG_TRACE("GRE TAP flow\n");
-		} else {
-#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-			DEBUG_TRACE("GRE TUN flow\n");
-#else
-			DEBUG_TRACE("PPTP GRE pass through flow\n");
-			return NF_ACCEPT;
-#endif
-		}
-	}
-
-	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
@@ -1163,6 +1137,16 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 vxlan_done:
 		;
 #endif
+	}
+
+	/*
+	 * Check if we can accelerate the GRE protocol.
+	 */
+	if (ip_hdr.protocol == IPPROTO_GRE) {
+		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 6)) {
+			DEBUG_WARN("%p: GRE protocol is not allowed\n", skb);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*

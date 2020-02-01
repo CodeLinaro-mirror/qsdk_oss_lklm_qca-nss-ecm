@@ -31,6 +31,7 @@
 #include <net/ip_fib.h>
 #include <net/ip.h>
 #include <net/tcp.h>
+#include <net/addrconf.h>
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <linux/inet.h>
@@ -138,13 +139,6 @@ struct ecm_interface_wifi_event {
 };
 
 static struct ecm_interface_wifi_event __ewn;
-
-#ifdef ECM_IPV6_ENABLE
-/*
- * TODO: Remove once the Linux image and headers get propogated.
- */
-struct net_device *ipv6_dev_find(struct net *net, struct in6_addr *addr, int strict);
-#endif
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 /*
