@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014,2015,2017-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014,2015,2017-2020 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -160,6 +160,11 @@ enum ecm_db_timer_groups {
 typedef enum ecm_db_timer_groups ecm_db_timer_group_t;
 typedef void (*ecm_db_timer_group_entry_callback_t)(void *arg);	/* Timer entry has expired */
 
+/*
+ * Ignore IP version check in connection instance
+ */
+#define ECM_DB_IP_VERSION_IGNORE 0
+
 #ifdef ECM_MULTICAST_ENABLE
 
 struct ecm_db_multicast_tuple_instance;
@@ -269,6 +274,7 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_RAWIP,			/* Interface is a RAWIP interface */
 	ECM_DB_IFACE_TYPE_OVPN,				/* Interface is a OVPN interface */
 	ECM_DB_IFACE_TYPE_VXLAN,			/* Interface is a VxLAN interface */
+	ECM_DB_IFACE_TYPE_OVS_BRIDGE,			/* Interface is a OpenvSwitch bridge interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -304,6 +310,12 @@ struct ecm_db_interface_info_lag {			/* type == ECM_DB_IFACE_TYPE_LAG */
 struct ecm_db_interface_info_bridge {			/* type == ECM_DB_IFACE_TYPE_BRIDGE */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 };
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+struct ecm_db_interface_info_ovs_bridge {		/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
+	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
+};
+#endif
 
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 struct ecm_db_interface_info_pppoe {			/* type == ECM_DB_IFACE_TYPE_PPPOE */

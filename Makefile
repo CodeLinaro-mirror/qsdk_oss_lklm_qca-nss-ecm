@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, 2018-2019, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018-2020, The Linux Foundation. All rights reserved.
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -27,6 +27,9 @@ obj-m += examples/ecm_pcc_test.o
 endif
 ifeq ($(EXAMPLES_BUILD_MARK),y)
 obj-m += examples/ecm_mark_test.o
+endif
+ifeq ($(EXAMPLES_BUILD_OVS),y)
+obj-m += examples/ecm_ovs.o
 endif
 
 ecm-y := \
@@ -56,7 +59,7 @@ ecm-y := \
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
 # nss as ECM's front end.
 # #############################################################################
-ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64 ipq60xx ipq60xx_64))
+ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
 ECM_FRONT_END_NSS_ENABLE=y
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
@@ -177,6 +180,11 @@ endif
 endif
 
 # #############################################################################
+# Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
+# #############################################################################
+ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
 # #############################################################################
 ECM_INTERFACE_VLAN_ENABLE=y
@@ -188,7 +196,7 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
-ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64))
+ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
 ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
@@ -206,6 +214,12 @@ ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv6.o
 endif
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
+
+# #############################################################################
+# Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
+ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
@@ -324,6 +338,7 @@ ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
 ccflags-y += -DECM_CLASSIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_OVS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_MARK_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1

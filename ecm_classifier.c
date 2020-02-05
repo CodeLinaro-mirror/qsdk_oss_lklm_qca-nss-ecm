@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016, 2018-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2016, 2018-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -53,6 +53,9 @@
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
 #include "ecm_classifier_mark.h"
 #endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+#include "ecm_classifier_ovs.h"
+#endif
 
 /*
  * ecm_classifier_assign_classifier()
@@ -67,6 +70,7 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
 	case ECM_CLASSIFIER_TYPE_PCC: {
 		struct ecm_classifier_pcc_instance *pcci;
+
 		pcci = ecm_classifier_pcc_instance_alloc(ci);
 		if (!pcci) {
 			DEBUG_TRACE("%p: Failed to create Parental Controls classifier\n", ci);
@@ -77,9 +81,24 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		return (struct ecm_classifier_instance *)pcci;
 	}
 #endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	case ECM_CLASSIFIER_TYPE_OVS: {
+		struct ecm_classifier_ovs_instance *ecvi;
+
+		ecvi = ecm_classifier_ovs_instance_alloc(ci);
+		if (!ecvi) {
+			DEBUG_TRACE("%p: Failed to create ovs classifier\n", ci);
+			return NULL;
+		}
+		DEBUG_TRACE("%p: Created ovs classifier: %p\n", ci, ecvi);
+		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)ecvi);
+		return (struct ecm_classifier_instance *)ecvi;
+	}
+#endif
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 	case ECM_CLASSIFIER_TYPE_NL: {
 		struct ecm_classifier_nl_instance *cnli;
+
 		cnli = ecm_classifier_nl_instance_alloc(ci);
 		if (!cnli) {
 			DEBUG_TRACE("%p: Failed to create Netlink classifier\n", ci);
@@ -93,6 +112,7 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	case ECM_CLASSIFIER_TYPE_DSCP: {
 		struct ecm_classifier_dscp_instance *cdscpi;
+
 		cdscpi = ecm_classifier_dscp_instance_alloc(ci);
 		if (!cdscpi) {
 			DEBUG_TRACE("%p: Failed to create DSCP classifier\n", ci);
@@ -106,6 +126,7 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 #ifdef ECM_CLASSIFIER_HYFI_ENABLE
 	case ECM_CLASSIFIER_TYPE_HYFI: {
 		struct ecm_classifier_hyfi_instance *chfi;
+
 		chfi = ecm_classifier_hyfi_instance_alloc(ci);
 		if (!chfi) {
 			DEBUG_TRACE("%p: Failed to create HyFi classifier\n", ci);
@@ -119,6 +140,7 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 #ifdef ECM_CLASSIFIER_MARK_ENABLE
 	case ECM_CLASSIFIER_TYPE_MARK: {
 		struct ecm_classifier_mark_instance *ecmi;
+
 		ecmi = ecm_classifier_mark_instance_alloc(ci);
 		if (!ecmi) {
 			DEBUG_TRACE("%p: Failed to create mark classifier\n", ci);

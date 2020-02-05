@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -413,10 +413,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * Initialize VLAN tag information
 	 */
-	nircm->vlan_primary_rule.ingress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_primary_rule.egress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_secondary_rule.ingress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
-	nircm->vlan_secondary_rule.egress_vlan_tag = ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_primary_rule.ingress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_primary_rule.egress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_secondary_rule.ingress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	nircm->vlan_secondary_rule.egress_vlan_tag = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
 	/*
 	 * Get the interface lists of the connection, we must have at least one interface in the list to continue
@@ -527,15 +527,42 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%p: Bridge - ignore additional\n", npci);
 				break;
 			}
+
 			ecm_db_iface_bridge_address_get(ii, from_nss_iface_address);
 			if (is_valid_ether_addr(from_nss_iface_address)) {
-				memcpy(nircm->src_mac_rule.flow_src_mac, from_nss_iface_address, ETH_ALEN);
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_FLOW_VALID;
 				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
 			}
 
 			DEBUG_TRACE("%p: Bridge - mac: %pM\n", npci, from_nss_iface_address);
 			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%p: OVS Bridge\n", npci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%p: OVS Bridge - ignore additional\n", npci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, from_nss_iface_address);
+			if (is_valid_ether_addr(from_nss_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
+			}
+
+			DEBUG_TRACE("%p: OVS Bridge - mac: %pM\n", npci, from_nss_iface_address);
+#else
+			rule_invalid = true;
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%p: Ethernet\n", npci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -722,6 +749,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 */
 		interface_type_counts[ii_type]++;
 	}
+
 	if (rule_invalid) {
 		DEBUG_WARN("%p: from/src Rule invalid\n", npci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -765,15 +793,42 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%p: Bridge - ignore additional\n", npci);
 				break;
 			}
+
 			ecm_db_iface_bridge_address_get(ii, to_nss_iface_address);
 			if (is_valid_ether_addr(to_nss_iface_address)) {
-				memcpy(nircm->src_mac_rule.return_src_mac, to_nss_iface_address, ETH_ALEN);
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_RETURN_VALID;
 				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
 			}
 
 			DEBUG_TRACE("%p: Bridge - mac: %pM\n", npci, to_nss_iface_address);
 			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%p: OVS Bridge\n", npci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%p: OVS Bridge - ignore additional\n", npci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, to_nss_iface_address);
+			if (is_valid_ether_addr(to_nss_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
+			}
+
+			DEBUG_TRACE("%p: OVS Bridge - mac: %pM\n", npci, to_nss_iface_address);
+#else
+			rule_invalid = true;
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%p: Ethernet\n", npci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -912,6 +967,7 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 */
 		interface_type_counts[ii_type]++;
 	}
+
 	if (rule_invalid) {
 		DEBUG_WARN("%p: to/dest Rule invalid\n", npci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -965,8 +1021,8 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #endif
 
 	if (ecm_nss_ipv4_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
-	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED) &&
-	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED)) {
+	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
+	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
 		int vlan_present = 0;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
 		vlan_present = vlan_tx_tag_present(skb);
@@ -985,6 +1041,22 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_VLAN_VALID;
 		}
 	}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+		/*
+		 * Copy the both primary and secondary (if exist) VLAN tags.
+		 */
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			nircm->vlan_primary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+			nircm->vlan_primary_rule.egress_vlan_tag = pr->egress_vlan_tag[0];
+			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_VLAN_VALID;
+		}
+
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			nircm->vlan_secondary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+			nircm->vlan_secondary_rule.egress_vlan_tag = pr->egress_vlan_tag[1];
+		}
+#endif
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
@@ -2551,6 +2623,24 @@ done:
 			DEBUG_TRACE("%p: timer group: %p, type: %d, group: %d\n", ci, aci, aci->type_get(aci), aci_pr.timer_group);
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress vlan tags 0: %u, egress vlan tags 0: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.ingress_vlan_tag[0], aci_pr.egress_vlan_tag[0]);
+			prevalent_pr.ingress_vlan_tag[0] = aci_pr.ingress_vlan_tag[0];
+			prevalent_pr.egress_vlan_tag[0] = aci_pr.egress_vlan_tag[0];
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			DEBUG_TRACE("%p: aci: %p, type: %d, ingress vlan tags 1: %u, egress vlan tags 1: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.ingress_vlan_tag[1], aci_pr.egress_vlan_tag[1]);
+			prevalent_pr.ingress_vlan_tag[1] = aci_pr.ingress_vlan_tag[1];
+			prevalent_pr.egress_vlan_tag[1] = aci_pr.egress_vlan_tag[1];
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
+		}
+#endif
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*

@@ -84,6 +84,9 @@ struct ecm_db_multicast_tuple_instance {
 	struct ecm_db_multicast_tuple_instance *next;	/* Next instance in global list */
 	struct ecm_db_multicast_tuple_instance *prev;	/* Previous instance in global list */
 	struct ecm_db_connection_instance *ci;	/* Pointer to the DB Connection Instance */
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	struct vlan_hdr ovs_ingress_vlan;	/* Ingress vlan tag for ovs bridge. */
+#endif
 	uint16_t src_port;	/* RO: IPv4/v6 Source Port */
 	uint16_t dst_port;	/* RO: IPv4/v6 Destination Port */
 	ip_addr_t src_ip;	/* RO: IPv4/v6 Source Address */
@@ -460,6 +463,10 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_alloc(ip
 	ti->refs = 1;
 	ti->next = NULL;
 	ti->prev = NULL;
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ti->ovs_ingress_vlan.h_vlan_TCI = 0;
+	ti->ovs_ingress_vlan.h_vlan_encapsulated_proto = 0;
+#endif
 	DEBUG_SET_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC);
 
 	return ti;
@@ -1000,4 +1007,58 @@ int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instan
 
 	return ret;
 }
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+/*
+ * ecm_db_multicast_ovs_verify_to_list()
+ * 	Verify the 'to' interface list with OVS classifier.
+ */
+bool ecm_db_multicast_ovs_verify_to_list(struct ecm_db_connection_instance *ci, struct ecm_classifier_process_response *aci_pr)
+{
+	struct ecm_classifier_instance *aci;
+	bool is_defunct = false;
+
+	/*
+	 * Get the OVS classifier instance from the connection.
+	 */
+	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_OVS);
+	if (!aci) {
+		DEBUG_WARN("%p: no OVS classifier\n", ci);
+		return is_defunct;
+	}
+
+	aci->process(aci, ECM_TRACKER_SENDER_MAX, NULL, NULL, aci_pr);
+	if (aci_pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL) {
+		is_defunct = true;
+	}
+
+	aci->deref(aci);
+	return is_defunct;
+}
+
+/*
+ * ecm_db_multicast_tuple_set_ovs_ingress_vlan()
+ * 	Set ingress VLAN tag for OVS ports.
+ */
+void ecm_db_multicast_tuple_set_ovs_ingress_vlan(struct ecm_db_multicast_tuple_instance *ti, uint32_t *ingress_vlan_tag)
+{
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%p: magic failed", ti);
+
+	ti->ovs_ingress_vlan.h_vlan_TCI = ingress_vlan_tag[0] & 0xffff;
+	ti->ovs_ingress_vlan.h_vlan_encapsulated_proto = (ingress_vlan_tag[0] >> 16) & 0xffff;
+}
+
+/*
+ * ecm_db_multicast_tuple_get_ovs_ingress_vlan()
+ * 	Get ingress VLAN tag for OVS ports.
+ */
+struct vlan_hdr ecm_db_multicast_tuple_get_ovs_ingress_vlan(struct ecm_db_multicast_tuple_instance *ti)
+{
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%p: magic failed", ti);
+
+	return ti->ovs_ingress_vlan;
+}
+#endif
+#endif
 #endif

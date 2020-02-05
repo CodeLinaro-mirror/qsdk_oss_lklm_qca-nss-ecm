@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2018-2019, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018-2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -29,13 +29,6 @@
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 #include <net/vxlan.h>
 #endif
-
-/*
- * Some constants used with constructing NSS acceleration rules.
- * GGG TODO These should be provided by the NSS driver itself!
- */
-#define ECM_NSS_CONNMGR_VLAN_ID_NOT_CONFIGURED 0xFFF
-#define ECM_NSS_CONNMGR_VLAN_MARKING_NOT_CONFIGURED 0xFFFF
 
 /*
  * This macro converts ECM ip_addr_t to NSS IPv6 address

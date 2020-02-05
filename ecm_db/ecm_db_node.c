@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, 2020 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -821,11 +821,12 @@ static bool ecm_db_should_keep_connection(
 
 /*
  * ecm_db_traverse_node_connection_list_and_defunct()
- *	traverse a node in the specified direction  and calls ecm_db_connection_make_defunct()
- *	for each entry
+ *	traverse a node in the specified direction and calls ecm_db_connection_make_defunct()
+ *	for each entry.  If ip_version is valid (non-zero), then defunct the
+ *	connections matching version.
  */
 void ecm_db_traverse_node_connection_list_and_defunct(
-	struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir)
+	struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version)
 {
 	struct ecm_db_connection_instance *ci = NULL;
 
@@ -837,12 +838,17 @@ void ecm_db_traverse_node_connection_list_and_defunct(
 		struct ecm_db_connection_instance *cin;
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
+			if (ip_version != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_version)) {
+				DEBUG_TRACE("%p: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
+				goto keep_node_conn;
+			}
+
 			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
 			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
 		}
-
+keep_node_conn:
 		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
 		ecm_db_connection_deref(ci);
 		ci = cin;
@@ -850,6 +856,68 @@ void ecm_db_traverse_node_connection_list_and_defunct(
 	DEBUG_INFO("%p: Defuncting from node connection list complete\n", node);
 }
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_traverse_snode_dnode_connection_list_and_defunct()
+ *	Defunct connections between node1 (sni) and node2 (which has dmac address)
+ */
+void ecm_db_traverse_snode_dnode_connection_list_and_defunct(
+	struct ecm_db_node_instance *sni, uint8_t *dmac, int ip_version, ecm_db_obj_dir_t dir)
+{
+	struct ecm_db_connection_instance *ci = NULL;
+
+	if (dir != ECM_DB_OBJ_DIR_FROM && dir != ECM_DB_OBJ_DIR_TO) {
+		DEBUG_WARN("Direction is incorrect: %d\n", dir);
+		return;
+	}
+
+	/*
+	 * Iterate all connection instances which are sent or received from
+	 * given node instannce (sni).
+	 */
+	ci = ecm_db_node_connections_get_and_ref_first(sni, dir);
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		struct ecm_db_node_instance *dni;
+
+		/*
+		 * Find the connection instance which match given MAC address (dmac)
+		 */
+		if (dir == ECM_DB_OBJ_DIR_FROM) {
+			/*
+			 * Direction is FROM, then sni is source node.
+			 * find the node in TO direction.
+			 */
+			dni = ci->node[ECM_DB_OBJ_DIR_TO];
+		} else {
+			/*
+			 * Direction is TO, then sni is destination node.
+			 * find the node in FROM direction.
+			 */
+			dni = ci->node[ECM_DB_OBJ_DIR_FROM];
+		}
+
+		/*
+		 * if the MAC address of node (dni) match MAC address (dmac)
+		 * then delete the connection instance.
+		 */
+		if (ecm_db_node_is_mac_addr_equal(dni, dmac)) {
+			if (ip_version != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_version)) {
+				DEBUG_TRACE("%p: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
+				goto keep_sni_conn;
+			}
+
+			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
+			ecm_db_connection_make_defunct(ci);
+		}
+keep_sni_conn:
+		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+	DEBUG_INFO("%p: Defuncting from node connection list complete\n", sni);
+}
+#endif
 #endif
 
 /*

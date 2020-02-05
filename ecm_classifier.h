@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2018-2019, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -33,6 +33,9 @@ enum ecm_classifier_types {
 #endif
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 	ECM_CLASSIFIER_TYPE_NL,			/* Provides netlink interface */
+#endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	ECM_CLASSIFIER_TYPE_OVS,		/* OVS classifier */
 #endif
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
 	ECM_CLASSIFIER_TYPE_PCC,		/* Parental control subsystem support classifier */
@@ -83,6 +86,12 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG 0x00000040	/* Contains flow & return ingress qos tags */
 #endif
 
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG 0x00000080	/* Contains OVS VLAN tags */
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG 0x00000100	/* Contains OVS QinQ VLAN tags */
+#define ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL 0x00000200		/* Multicast OVS flow */
+#endif
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call
@@ -105,6 +114,14 @@ struct ecm_classifier_process_response {
 	uint8_t flow_dscp;				/* DSCP mark for flow */
 	uint8_t return_dscp;				/* DSCP mark for return */
 #endif
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	uint32_t ingress_vlan_tag[2];			/* Ingress VLAN tags */
+	uint32_t egress_vlan_tag[2];			/* Egress VLAN tags */
+#ifdef ECM_MULTICAST_ENABLE
+	int32_t egress_netdev_index[ECM_DB_MULTICAST_IF_MAX];	 /* Multicast egress net device interface index */
+	uint32_t egress_mc_vlan_tag[ECM_DB_MULTICAST_IF_MAX][2]; /* Multicast egress VLAN tags */
+#endif
+#endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
 };
@@ -115,8 +132,17 @@ struct ecm_classifier_process_response {
  * in this data structure to update the classifiers.
  */
 struct ecm_classifier_rule_sync {
+	/*
+	 * TODO: Use directional arrays for flow/return.
+	 */
 	uint32_t flow_tx_packet_count;
+	uint32_t flow_tx_byte_count;
+	uint32_t flow_rx_packet_count;
+	uint32_t flow_rx_byte_count;
 	uint32_t return_tx_packet_count;
+	uint32_t return_tx_byte_count;
+	uint32_t return_rx_packet_count;
+	uint32_t return_rx_byte_count;
 	uint32_t reason;
 };
 
@@ -252,6 +278,86 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 		}
 	}
 
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+#ifdef ECM_MULTICAST_ENABLE
+		int i;
+#endif
+
+		/*
+		 * TODO: Clean up the function later to print classifier
+		 * specific data in each classifier’s state_get function.
+		 */
+		if (pr->ingress_vlan_tag[0] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[0]", "0x%x", pr->ingress_vlan_tag[0]))) {
+				return result;
+			}
+		}
+
+		if (pr->egress_vlan_tag[0] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
+				return result;
+			}
+		}
+
+#ifdef ECM_MULTICAST_ENABLE
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+
+			if (pr->egress_mc_vlan_tag[i][0] == 0xFFF) {
+				continue;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
+				return result;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[0]", "0x%x", pr->egress_mc_vlan_tag[i][0]))) {
+				return result;
+			}
+		}
+#endif
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+#ifdef ECM_MULTICAST_ENABLE
+		int i;
+#endif
+
+		/*
+		 * TODO: Clean up the function later to print classifier
+		 * specific data in each classifier’s state_get function.
+		 */
+		if (pr->ingress_vlan_tag[1] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr->ingress_vlan_tag[1]))) {
+				return result;
+			}
+		}
+
+		if (pr->egress_vlan_tag[1] != 0xFFF) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[1]", "0x%x", pr->egress_vlan_tag[1]))) {
+				return result;
+			}
+		}
+
+#ifdef ECM_MULTICAST_ENABLE
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+
+			if (pr->egress_mc_vlan_tag[i][1] == 0xFFF) {
+				continue;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
+				return result;
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[1]", "0x%x", pr->egress_mc_vlan_tag[i][1]))) {
+				return result;
+			}
+		}
+#endif
+	}
+#endif
+
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		if ((result = ecm_state_write(sfi, "flow_qos_tag", "%u", pr->flow_qos_tag))) {
@@ -292,4 +398,3 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 
 extern struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_connection_instance *ci, ecm_classifier_type_t type);
 extern bool ecm_classifier_reclassify(struct ecm_db_connection_instance *ci, int assignment_count, struct ecm_classifier_instance *assignments[]);
-
