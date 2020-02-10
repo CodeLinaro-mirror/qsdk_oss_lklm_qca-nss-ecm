@@ -51,8 +51,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_classifier.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -1802,6 +1802,9 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm_db_connection_instance *ci)
 {
 	struct ecm_classifier_ovs_instance *ecvi;
+#ifdef ECM_MULTICAST_ENABLE
+	int i;
+#endif
 
 	/*
 	 * Allocate the instance
@@ -1836,6 +1839,14 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 
 	ecvi->process_response.process_actions = 0;
 	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;
+	ecvi->process_response.egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+#ifdef ECM_MULTICAST_ENABLE
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+		ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+		ecvi->process_response.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	}
+#endif
 
 	/*
 	 * Final check if we are pending termination
