@@ -1501,7 +1501,6 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		return;
 	}
 #endif
-
 	memset(&flow, 0, sizeof(flow));
 
 	/*
@@ -1509,7 +1508,6 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	 */
 	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
 	to_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_TO, true);
-	DEBUG_ASSERT(from_dev || to_dev, "%p: None of the from/to interfaces is OVS bridge port\n", aci);
 
 	/*
 	 * IP version and protocol are common for routed and bridge flows.
@@ -1533,7 +1531,18 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	if (!flow.is_routed) {
 		/*
 		 * Sync the flow direction (eth1 to eth2)
+		 *
+		 * ECM depends on netdev private flags to identify
+		 * if it is an OVS port, if the port is removed from
+		 * bridge while traffic is running then the device is
+		 * not part of bridge.  Do not update statistics if ports
+		 * are removed from bridge.
 		 */
+		if (!from_dev || !to_dev) {
+			ecm_db_connection_deref(ci);
+			return;
+		}
+
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
@@ -1583,7 +1592,6 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	 * is a routed flow between two OVS bridges. (e.g: ovs-br1 and ovs-br2)
 	 *
 	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2----->PC2
-	 *
 	 */
 	if (from_dev) {
 		/*
