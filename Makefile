@@ -180,6 +180,11 @@ endif
 endif
 
 # #############################################################################
+# Define ECM_XFRM_ENABLE=y in order to enable
+# #############################################################################
+ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
 # #############################################################################
 ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
