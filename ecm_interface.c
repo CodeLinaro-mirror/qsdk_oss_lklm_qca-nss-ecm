@@ -3885,13 +3885,13 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 		dest_dev = dev_get_by_index(&init_net, *dst_if_index);
 		if (!dest_dev) {
 			if (!src_dev_is_bridge) {
-				int i;
-
 				/*
 				 * If already constructed any interface heirarchies before hitting
 				 * this error condition then Deref all interface heirarchies.
 				 */
 				if (valid_if > 0) {
+					int i;
+
 					for (i = 0; i < valid_if; i++) {
 						ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
 						ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
@@ -3902,11 +3902,14 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				/*
 				 * If valid netdev not found, Return 0
 				 */
+				if (br_dev_src) {
+					dev_put(br_dev_src);
+				}
+
 				return 0;
 			}
 
 			dest_dev = br_dev_src;
-
 		}
 
 		dest_dev_type = dest_dev->type;
@@ -3945,6 +3948,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 					}
 				}
 
+				if (br_dev_src && (dest_dev != br_dev_src)) {
+					dev_put(br_dev_src);
+				}
+
 				dev_put(dest_dev);
 				return 0;
 			}
@@ -3972,6 +3979,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 						ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
 					}
 
+					if (br_dev_src && (dest_dev != br_dev_src)) {
+						dev_put(br_dev_src);
+					}
+
 					dev_put(dest_dev);
 					dev_put(mc_br_slave_dev);
 					return 0;
@@ -3995,6 +4006,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 							ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
 							ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
 						}
+					}
+
+					if (br_dev_src && (dest_dev != br_dev_src)) {
+						dev_put(br_dev_src);
 					}
 
 					dev_put(dest_dev);
@@ -4032,6 +4047,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 					}
 				}
 
+				if (br_dev_src && (dest_dev != br_dev_src)) {
+					dev_put(br_dev_src);
+				}
+
 				dev_put(dest_dev);
 				return 0;
 			}
@@ -4042,8 +4061,15 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			valid_if++;
 		}
 
-		dev_put(dest_dev);
+		if (dest_dev != br_dev_src) {
+			dev_put(dest_dev);
+		}
 	}
+
+	if (br_dev_src) {
+		dev_put(br_dev_src);
+	}
+
 	return total_ii_count;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_routed);
