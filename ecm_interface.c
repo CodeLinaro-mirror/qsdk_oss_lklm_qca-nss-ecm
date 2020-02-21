@@ -992,6 +992,39 @@ bool ecm_interface_multicast_is_iface_type(int32_t mc_if_index[], int32_t max_if
 }
 
 /*
+ * ecm_interface_multicast_filter_src_interface()
+ * 	Filter the source interface from the list.
+ */
+int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_instance *ci, uint32_t *mc_dst_if_index)
+{
+	struct ecm_db_iface_instance *ii;
+	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	ecm_db_iface_type_t ii_type;
+	int32_t from_ifaces_first;
+	int32_t from_iface_identifier;
+	int32_t if_index = ECM_DB_IFACE_HEIRARCHY_MAX;
+
+	/*
+	 * Get the interface lists of the connection, we must have at least one interface in the list to continue
+	 */
+	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
+	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		return if_index;
+	}
+
+	ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+	ii_type = ecm_db_iface_type_get(ii);
+	if ((ii_type == ECM_DB_IFACE_TYPE_BRIDGE) || (ii_type == ECM_DB_IFACE_TYPE_OVS_BRIDGE)) {
+		ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 2];
+	}
+
+	from_iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+	if_index = ecm_interface_multicast_check_for_src_ifindex(mc_dst_if_index, ECM_DB_IFACE_HEIRARCHY_MAX, from_iface_identifier);
+	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+	return if_index;
+}
+
+/*
  * ecm_interface_multicast_check_for_src_if_index()
  * 	Find if a source netdev ifindex is matching with list of
  * 	multicast destination netdev ifindex. If find a match then

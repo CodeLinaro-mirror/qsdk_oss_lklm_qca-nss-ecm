@@ -91,6 +91,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 					struct net_device *given_src_dev,
 					uint8_t *dest_node_addr, uint8_t *src_node_addr,
 					__be16 *layer4hdr, struct sk_buff *skb);
+int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_instance *ci, uint32_t *mc_dst_if_index);
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t max_if);
 int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connection_instance *ci,
