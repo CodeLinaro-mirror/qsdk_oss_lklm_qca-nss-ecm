@@ -7673,7 +7673,7 @@ static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsign
 		ecm_interface_ovs_flow_defunct_connections(ovs_info->flow);
 		break;
 	case OVSMGR_DP_FLOW_TBL_FLUSH:
-		ecm_db_connection_make_defunct_by_assignment_type(ECM_CLASSIFIER_TYPE_OVS);
+		ecm_db_connection_defunct_all();
 		break;
 	case OVSMGR_DP_FLOW_CHANGE:
 #ifdef ECM_MULTICAST_ENABLE
