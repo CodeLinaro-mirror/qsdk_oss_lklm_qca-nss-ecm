@@ -685,6 +685,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			rule_invalid = true;
 			DEBUG_TRACE("%p: OVPN - unsupported\n", npci);
 #endif
+			break;
 		case ECM_DB_IFACE_TYPE_VXLAN:
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 			DEBUG_TRACE("%p: From VXLAN interface\n", npci);
