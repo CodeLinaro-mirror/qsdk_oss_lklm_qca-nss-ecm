@@ -3846,9 +3846,17 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 
 	/*
 	 * Check if the source net_dev is a bridge slave.
+	 *
+	 * TODO: We are already considering ingress bridge device and
+	 * adding it to dst_dev in ecm_nss_multicast_ipv4_connection_process().
+	 * Check if this can be removed.
 	 */
 	if (in_dev && !mfc_update) {
-		if (ecm_front_end_is_bridge_port(in_dev)) {
+		if (ecm_front_end_is_bridge_port(in_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				|| ecm_interface_is_ovs_bridge_port(in_dev)
+#endif
+		   ) {
 			br_dev_src = ecm_interface_get_and_hold_dev_master(in_dev);
 			DEBUG_ASSERT(br_dev_src, "Expected a master\n");
 
@@ -3868,7 +3876,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				 */
 				max_if++;
 			}
-
 		}
 	}
 
@@ -6690,8 +6697,11 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
 			 * If the update was received from MFC, do not consider entries in the
 			 * interface list that are part of a bridge/ovs_bridge. The bridge/ovs_bridge entries will be
 			 * taken care by the Bridge Snooper Callback
+			 *
+			 * TODO: Check if an assert is needed for the flag
+			 * ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG to be set, if is_br_snooper is false.
 			 */
-			if (!is_br_snooper && !(flags & ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG)) {
+			if (!is_br_snooper && (flags & ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG)) {
 				continue;
 			}
 

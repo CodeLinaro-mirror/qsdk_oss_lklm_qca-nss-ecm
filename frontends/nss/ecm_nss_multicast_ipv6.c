@@ -2738,51 +2738,86 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			DEBUG_WARN("Not found a valid vif count %d\n", mc_if_cnt);
 			return NF_ACCEPT;
 		}
+	}
+
+	/*
+	 * For "bridge + route" scenario, we can receive packet from both bridge and route hook.
+	 * If MFC returns valid interface count (mc_if_cnt), then we need to check for "bridge + route"
+	 * scenario.
+	 */
+	if (mc_if_cnt > 0) {
+		is_routed = true;
 
 		/*
 		 * Check for the presence of a bridge device in the destination
 		 * interface list given to us by MFC
 		 */
-
 		br_dev_found_in_mfc = ecm_interface_multicast_check_for_br_dev(mc_dest_if, mc_if_cnt);
-	} else {
-		if (mc_if_cnt > 0) {
+
+		/*
+		 * We are processing a routed multicast flow.
+		 * Check if the source interface is a bridge device. If this is the case,
+		 * this flow could be a "bridge + route" flow.
+		 * So, we query the bridge device as well for possible joinees
+		 */
+		if (ecm_front_end_is_bridge_device(in_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				|| ecm_front_end_is_ovs_bridge_device(in_dev)
+#endif
+		   ) {
+			int32_t mc_if_cnt_bridge;
+			uint32_t dst_dev_bridge[ECM_DB_MULTICAST_IF_MAX];
+
+			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
+			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			if (mc_if_cnt_bridge <= 0) {
+				DEBUG_WARN("%p: No bridge ports have joined multicast group\n", ci);
+				goto process_packet;
+			}
 
 			/*
-			 *  In case of Bridge + Route there is chance that Bridge post routing hook called first and
-			 *  is_route flag is false. To make sure this is a routed flow, query the MFC and if MFC if_cnt
-			 *  is not Zero than this is a routed flow.
+			 * Check for max interface limit.
 			 */
-			is_routed = true;
-			br_dev_found_in_mfc = ecm_interface_multicast_check_for_br_dev(mc_dest_if, mc_if_cnt);
-		} else {
-			out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
-			DEBUG_ASSERT(out_dev_master, "Expected a master\n");
-
-			/*
-			 * Packet flow is pure bridge. Try to query the snooper for the destination
-			 * interface list
-			 */
-			mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
-			if (mc_if_cnt <= 0) {
-				DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
+			if (mc_if_cnt == ECM_DB_MULTICAST_IF_MAX) {
+				DEBUG_WARN("Interface count reached max limit: %d. Could not handle the connection", mc_if_cnt);
 				goto done;
 			}
 
 			/*
-			 * The source interface could have joined the group as well.
-			 * In such cases, the destination interface list returned by
-			 * the snooper would include the source interface as well.
-			 * We need to filter the source interface from the list in such cases.
+			 * Update the dst_dev with in_dev as it is a bridge + route case
 			 */
-			mc_if_cnt = ecm_interface_multicast_check_for_src_ifindex(mc_dest_if, mc_if_cnt, in_dev->ifindex);
-			if (mc_if_cnt <= 0) {
-				DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
-				goto done;
-			}
+			mc_dest_if[mc_if_cnt++] = in_dev->ifindex;
+			br_dev_found_in_mfc = true;
 		}
+
+		goto process_packet;
 	}
 
+	/*
+	 * Packet flow is pure bridge. Try to query the snooper for the destination
+	 * interface list
+	 */
+	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
+	DEBUG_ASSERT(out_dev_master, "Expected a master\n");
+	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
+	if (mc_if_cnt <= 0) {
+		DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
+		goto done;
+	}
+
+	/*
+	 * The source interface could have joined the group as well.
+	 * In such cases, the destination interface list returned by
+	 * the snooper would include the source interface as well.
+	 * We need to filter the source interface from the list in such cases.
+	 */
+	mc_if_cnt = ecm_interface_multicast_check_for_src_ifindex(mc_dest_if, mc_if_cnt, in_dev->ifindex);
+	if (mc_if_cnt <= 0) {
+		DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
+		goto done;
+	}
+
+process_packet:
 	/*
 	 * In pure bridge flow, do not process further if Hop Limit is less than two.
 	 */
@@ -2948,7 +2983,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 		}
 
 		interface_idx_cnt = ecm_nss_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master, ip_src_addr,
-										      ip_dest_addr, mc_if_cnt, mc_dest_if, to_list_first, src_node_addr,  is_routed, skb);
+										ip_dest_addr, mc_if_cnt, mc_dest_if, to_list_first, src_node_addr,  is_routed, skb);
 		if (interface_idx_cnt == 0) {
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
@@ -3112,10 +3147,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			 * Add the tuple instance and attach it with connection instance
 			 */
 			ecm_db_multicast_tuple_instance_add(tuple_instance, nci);
-			if (br_dev_found_in_mfc) {
-				ecm_db_multicast_tuple_instance_flags_set(tuple_instance, ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG);
-			}
-
 			spin_unlock_bh(&ecm_nss_ipv6_lock);
 
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
@@ -3136,15 +3167,29 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 		kfree(to_list_first);
 
 	} else {
-		bool is_dest_interface_list_empty;
+		bool is_dest_interface_list_empty, routed;
+
+		is_dest_interface_list_empty = ecm_db_multicast_connection_to_interfaces_set_check(ci);
+		routed = ecm_db_connection_is_routed_get(ci);
 
 		/*
-		 * At this pont the feci->accel_mode is ECM_FRONT_END_ACCELERATION_MODE_DEACCEL because the
+		 * Check if there was an update to the 'routed' status for an existing flow.
+		 * This can happen if the flow is a bridge+route flow, and the MFC rule was not added
+		 * at the time the flow was originally created when the packet was processed by the
+		 * bridge hook. In this case, we defunct the flow to re-create it again.
+		 */
+		if (routed != is_routed) {
+			ecm_db_connection_make_defunct(ci);
+			ecm_db_connection_deref(ci);
+			goto done;
+		}
+
+		/*
+		 * At this point the feci->accel_mode is DECEL because the
 		 * MC connection has expired and we had received a callback from MFC which had freed the
 		 * multicast destination interface heirarchy. In this case, we reconstruct the multicast
 		 * destination interface heirarchy and re-accelerate the connection.
 		 */
-		is_dest_interface_list_empty = ecm_db_multicast_connection_to_interfaces_set_check(ci);
 		if (!is_dest_interface_list_empty) {
 			struct ecm_db_iface_instance *to_list;
 			struct ecm_db_iface_instance *to_list_temp[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -3175,9 +3220,9 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
 			interface_idx_cnt = ecm_nss_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master,\
-												   ip_src_addr, ip_dest_addr, mc_if_cnt,\
-												   mc_dest_if, to_list_first, src_node_addr,
-												   is_routed, skb);
+					ip_src_addr, ip_dest_addr, mc_if_cnt,\
+					mc_dest_if, to_list_first, src_node_addr,
+					is_routed, skb);
 			feci->deref(feci);
 			if (interface_idx_cnt == 0) {
 				DEBUG_WARN("Failed to reconstruct 'to mc' heirarchy list\n");
@@ -3199,23 +3244,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
 			}
 
-			/*
-			 * if a bridge dev is present in the MFC destination then set the
-			 * ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG in tuple_instance
-			 */
-			if (br_dev_found_in_mfc) {
-				struct ecm_db_multicast_tuple_instance *tuple_instance;
-				tuple_instance = ecm_db_multicast_connection_find_and_ref(ip_src_addr, ip_dest_addr);
-				if (!tuple_instance) {
-					ecm_db_connection_deref(ci);
-					kfree(to_list);
-					kfree(to_list_first);
-					goto done;
-				}
-
-				ecm_db_multicast_tuple_instance_flags_set(tuple_instance, ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG);
-				ecm_db_multicast_connection_deref(tuple_instance);
-			}
 			kfree(to_list);
 			kfree(to_list_first);
 
@@ -3228,6 +3256,22 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 				goto done;
 			}
 		}
+	}
+
+	/*
+	 * if a bridge dev is present in the MFC destination then set the
+	 * ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG in tuple_instance
+	 */
+	if (br_dev_found_in_mfc) {
+		struct ecm_db_multicast_tuple_instance *tuple_instance;
+		tuple_instance = ecm_db_multicast_connection_find_and_ref(ip_src_addr, ip_dest_addr);
+		if (!tuple_instance) {
+			ecm_db_connection_deref(ci);
+			goto done;
+		}
+
+		ecm_db_multicast_tuple_instance_flags_set(tuple_instance, ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG);
+		ecm_db_multicast_connection_deref(tuple_instance);
 	}
 
 #ifdef CONFIG_NET_CLS_ACT
