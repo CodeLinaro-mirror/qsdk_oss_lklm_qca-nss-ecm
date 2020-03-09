@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -285,12 +285,12 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	}
 
 	/*
-	 * Check the TCP connection state.
+	 * Check the TCP connection state, when the ct is NULL.
+	 * ct valid case was already checked in the ecm_nss{sfe}_ported_ipv4{6}_process functions.
 	 * If we are not established then we deny acceleration.
-	 * Take lead from conntrack if exists.
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
-	if (ct == NULL) {
+	if (!ct) {
 		DEBUG_TRACE("%p: No Conntrack found for packet, using ECM tracker state\n", cdii);
 		if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
 			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
@@ -298,29 +298,10 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 		}
 	} else {
 		/*
-		 * Unconfirmed connection may be dropped by Linux at the final step,
-		 * So we don't allow acceleration for the unconfirmed connections.
-		 */
-		if (!nf_ct_is_confirmed(ct)) {
-			DEBUG_TRACE("%p: Unconfirmed connection\n", ct);
-			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-			goto return_response;
-		}
-
-		/*
-		 * Don't try to manage a non-established connection.
-		 */
-		if (!test_bit(IPS_ASSURED_BIT, &ct->status)) {
-			DEBUG_TRACE("%p: Non-established connection\n", ct);
-			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-			goto return_response;
-		}
-
-		/*
-		 * If the connection is shutting down do not manage it.
-		 * state can not be SYN_SENT, SYN_RECV because connection is assured
-		 * Not managed states: FIN_WAIT, CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSE.
-		 */
+		* If the connection is shutting down do not manage it.
+		* state can not be SYN_SENT, SYN_RECV because connection is assured
+		* Not managed states: FIN_WAIT, CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSE.
+		*/
 		spin_lock_bh(&ct->lock);
 		if (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
 			spin_unlock_bh(&ct->lock);
@@ -333,7 +314,6 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 
 return_response:
 	;
-
 	/*
 	 * Return the process response
 	 */

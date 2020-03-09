@@ -1708,7 +1708,24 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 
+	/*
+	 * Unconfirmed connection may be dropped by Linux at the final step,
+	 * So we don't allow acceleration for the unconfirmed connections.
+	 */
+	if (likely(ct) && !nf_ct_is_confirmed(ct)) {
+		DEBUG_WARN("%p: Unconfirmed connection\n", ct);
+		return NF_ACCEPT;
+	}
+
 	if (protocol == IPPROTO_TCP) {
+		/*
+		 * Don't try to manage a non-established connection.
+		 */
+		if (likely(ct) && !test_bit(IPS_ASSURED_BIT, &ct->status)) {
+			DEBUG_WARN("%p: Non-established TCP connection\n", ct);
+			return NF_ACCEPT;
+		}
+
 		/*
 		 * Extract TCP header to obtain port information
 		 */
