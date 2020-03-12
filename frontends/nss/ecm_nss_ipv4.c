@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -28,6 +28,7 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
+#include <net/addrconf.h>
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
@@ -82,8 +83,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_classifier.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -101,6 +102,9 @@
 #endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv4.h"
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#include <ovsmgr.h>
+#endif
 
 #define ECM_NSS_IPV4_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_NSS_IPV4_STATS_SYNC_UDELAY 4000	/* Delay for 4 ms */
@@ -465,6 +469,9 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#endif
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
@@ -1070,32 +1077,6 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	}
 
 	/*
-	 * If it's a PPTP GRE/GRE pass-through flow then check if out_dev or
-	 * in_dev are not a PPTP device. If ecm_interface_is_pptp() return
-	 * false then don't accelerate it.
-	 */
-	if ((ip_hdr.protocol == IPPROTO_GRE) && !ecm_interface_is_pptp(skb, out_dev)) {
-		/*
-		 * If any of the input or output interface is a GRE V4 TAP/TUN interface
-		 * we can continue to accelerate it.
-		 */
-		if ((in_dev->priv_flags & IFF_GRE_V4_TAP) || (out_dev->priv_flags & IFF_GRE_V4_TAP)) {
-#ifndef ECM_INTERFACE_GRE_TAP_ENABLE
-			DEBUG_TRACE("GRE TAP acceleration is disabled\n");
-			return NF_ACCEPT;
-#endif
-			DEBUG_TRACE("GRE TAP flow\n");
-		} else {
-#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-			DEBUG_TRACE("GRE TUN flow\n");
-#else
-			DEBUG_TRACE("PPTP GRE pass through flow\n");
-			return NF_ACCEPT;
-#endif
-		}
-	}
-
-	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
         ct = nf_ct_get(skb, &ctinfo);
@@ -1175,6 +1156,16 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 vxlan_done:
 		;
 #endif
+	}
+
+	/*
+	 * Check if we can accelerate the GRE protocol.
+	 */
+	if (ip_hdr.protocol == IPPROTO_GRE) {
+		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 4)) {
+			DEBUG_WARN("%p: GRE protocol is not allowed\n", skb);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*
@@ -1631,13 +1622,15 @@ static unsigned int ecm_nss_ipv4_post_routing_hook(const struct nf_hook_ops *ops
 		return NF_ACCEPT;
 	}
 
+#ifndef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	/*
-	 * skip OpenVSwitch flows.
+	 * skip OpenVSwitch flows because we don't accelerate them
 	 */
-	if (ecm_interface_is_ovs(out) || ecm_interface_is_ovs(in)) {
+	if (netif_is_ovs_master(out) || netif_is_ovs_master(in)) {
 		dev_put(in);
 		return NF_ACCEPT;
 	}
+#endif
 
 	DEBUG_TRACE("Post routing process skb %p, out: %p (%s), in: %p (%s)\n", skb, out, out->name, in, in->name);
 	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
@@ -1866,6 +1859,75 @@ skip_ipv4_bridge_flow:
 	return result;
 }
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_nss_ipv4_ovs_dp_process()
+ *      Process OVS IPv4 bridged packets.
+ */
+unsigned int ecm_nss_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device *out)
+{
+        struct ethhdr *skb_eth_hdr;
+        bool can_accel = true;
+        struct net_device *in;
+
+	/*
+	 * Don't process broadcast.
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		return 1;
+	}
+
+	if (skb->protocol != ntohs(ETH_P_IP)) {
+		DEBUG_WARN("%p: Wrong skb protocol: %d", skb, skb->protocol);
+		return 1;
+	}
+
+        skb_eth_hdr = eth_hdr(skb);
+        if (!skb_eth_hdr) {
+                DEBUG_WARN("%p: Not Eth\n", skb);
+                return 1;
+        }
+
+        in = dev_get_by_index(&init_net, skb->skb_iif);
+        if (!in) {
+                DEBUG_WARN("%p: No in device\n", skb);
+                return 1;
+        }
+
+        DEBUG_TRACE("%p: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
+
+	if (netif_is_ovs_master(in)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_dest, in->dev_addr)) {
+			DEBUG_TRACE("%p: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	if (netif_is_ovs_master(out)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, out->dev_addr)) {
+			DEBUG_TRACE("%p: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+        ecm_nss_ipv4_ip_process((struct net_device *)out, in,
+                                skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IP);
+
+        dev_put(in);
+
+        return 0;
+}
+
+static struct ovsmgr_dp_hook_ops ecm_nss_ipv4_dp_hooks = {
+	.protocol = 4,
+	.hook_num = OVSMGR_DP_HOOK_POST_FLOW_PROC,
+	.hook = ecm_nss_ipv4_ovs_dp_process,
+};
+#endif
+
 /*
  * ecm_nss_ipv4_process_one_conn_sync_msg()
  *	Process one connection sync message.
@@ -2047,8 +2109,14 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 	 * Copy the sync data to the classifier sync structure to
 	 * update the classifiers' stats.
 	 */
-	class_sync.flow_tx_packet_count = sync->flow_tx_packet_count;
-	class_sync.return_tx_packet_count = sync->return_tx_packet_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
 	class_sync.reason = sync->reason;
 
 	/*
@@ -2811,6 +2879,9 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_dp_hook_register(&ecm_nss_ipv4_dp_hooks);
+#endif
 	return 0;
 
 task_cleanup:
@@ -2857,5 +2928,9 @@ void ecm_nss_ipv4_exit(void)
 	 * Clean up the stats sync queue/work
 	 */
 	ecm_nss_ipv4_sync_queue_exit();
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	ovsmgr_dp_hook_unregister(&ecm_nss_ipv4_dp_hooks);
+#endif
 }
 EXPORT_SYMBOL(ecm_nss_ipv4_exit);

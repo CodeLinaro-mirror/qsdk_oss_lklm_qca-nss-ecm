@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2016, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -20,9 +20,11 @@
 #include <linux/debugfs.h>
 #include <linux/inet.h>
 #include <linux/etherdevice.h>
+#include <linux/inetdevice.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#include <net/addrconf.h>
 
 /*
  * Debug output levels
@@ -38,13 +40,14 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_classifier.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_front_end_common.h"
+#include "ecm_interface.h"
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
@@ -80,3 +83,139 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
+/*
+ * ecm_front_end_gre_proto_is_accel_allowed()
+ * 	Handle the following GRE cases:
+ *
+ * 1. PPTP locally terminated - allow acceleration
+ * 2. PPTP pass through - do not allow acceleration
+ * 3. GRE V4 or V6 TAP - allow acceleration
+ * 4. GRE V4 or V6 TUN - allow acceleration
+ * 5. NVGRE locally terminated - do not allow acceleration
+ * 6. NVGRE pass through - do not allow acceleration
+ * 7. GRE pass through - allow acceleration
+ */
+bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
+							     struct net_device *outdev,
+							     struct sk_buff *skb,
+							     struct nf_conntrack_tuple *tuple,
+							     int ip_version)
+{
+	struct net_device *dev;
+	struct gre_hdr *greh;
+
+	skb_pull(skb, sizeof(struct iphdr));
+	greh = (struct gre_hdr *)(skb->data);
+	skb_push(skb, sizeof(struct iphdr));
+
+	if (greh->version == GRE_VERSION_PPTP) {
+		/*
+		 * Case 1: PPTP locally terminated
+		 */
+		if (ecm_interface_is_pptp(skb, outdev)) {
+			DEBUG_TRACE("%p: PPTP GRE locally terminated - allow acceleration\n", skb);
+			return true;
+		}
+
+		/*
+		 * Case 2: PPTP pass through
+		 */
+		DEBUG_TRACE("%p: PPTP GRE pass through - do not allow acceleration\n", skb);
+		return false;
+	}
+
+	if (greh->version != GRE_VERSION_1701) {
+		DEBUG_WARN("%p: Unknown GRE version - do not allow acceleration\n", skb);
+		return false;
+	}
+
+	/*
+	 * Case 3: GRE V4 or V6 TAP
+	 */
+	if ((indev->priv_flags & IFF_GRE_V4_TAP) || (outdev->priv_flags & IFF_GRE_V4_TAP)
+		||(indev->priv_flags & IFF_GRE_V6_TAP) || (outdev->priv_flags & IFF_GRE_V6_TAP)) {
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+		DEBUG_TRACE("%p: GRE IPv%d TAP flow - allow acceleration\n", skb, ip_version);
+		return true;
+#else
+		DEBUG_TRACE("%p: GRE IPv%d TAP feature is disabled - do not allow acceleration\n", skb, ip_version);
+		return false;
+#endif
+	}
+
+	/*
+	 * Case 4: GRE V4 or V6 TUN
+	 */
+	if ((indev->type == ARPHRD_IPGRE) || (outdev->type == ARPHRD_IPGRE)
+		|| (indev->type == ARPHRD_IP6GRE) || (outdev->type == ARPHRD_IP6GRE)) {
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+		DEBUG_TRACE("%p: GRE IPv%d TUN flow - allow acceleration\n", skb, ip_version);
+		return true;
+#else
+		DEBUG_TRACE("%p: GRE IPv%d TUN feature is disabled - do not allow acceleration\n", skb, ip_version);
+		return false;
+#endif
+	}
+
+	/*
+	 * Case 5: NVGRE locally terminated
+	 *
+	 * Check both source and dest interface.
+	 * If either is locally terminated, we cannot accelerate.
+	 */
+	if (ip_version == 4) {
+		dev = ip_dev_find(&init_net, tuple->src.u3.ip);
+		if (dev) {
+			/*
+			 * Source IP address is local
+			 */
+			dev_put(dev);
+			DEBUG_TRACE("%p: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
+			return false;
+		}
+
+		dev = ip_dev_find(&init_net, tuple->dst.u3.ip);
+		if (dev) {
+			/*
+			 * Destination IP address is local
+			 */
+			dev_put(dev);
+			DEBUG_TRACE("%p: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
+			return false;
+		}
+	} else {
+		dev = ipv6_dev_find(&init_net, &(tuple->src.u3.in6), 1);
+		if (dev) {
+			/*
+			 * Source IP address is local
+			 */
+			dev_put(dev);
+			DEBUG_TRACE("%p: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
+			return false;
+		}
+
+		dev = ipv6_dev_find(&init_net, &(tuple->dst.u3.in6), 1);
+		if (dev) {
+			/*
+			 * Destination IP address is local
+			 */
+			dev_put(dev);
+			DEBUG_TRACE("%p: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
+			return false;
+		}
+	}
+
+	/*
+	 * Case 6: NVGRE pass through
+	 */
+	if (greh->key) {
+		DEBUG_TRACE("%p: NVGRE pass through - do not allow acceleration\n", skb);
+		return false;
+	}
+
+	/*
+	 * Case 7: GRE pass through
+	 */
+	DEBUG_TRACE("%p: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
+	return true;
+}

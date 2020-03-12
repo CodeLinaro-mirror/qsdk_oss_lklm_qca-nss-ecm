@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -60,8 +60,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_classifier.h"
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
 
@@ -114,7 +114,8 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"GRE_TAP",
 	"RAWIP",
 	"OVPN",
-	"VxLAN"
+	"VxLAN",
+	"OVS_BRIDGE"
 };
 
 /*
@@ -380,6 +381,36 @@ static int ecm_db_iface_bridge_state_get(struct ecm_db_iface_instance *ii, struc
 
 	return ecm_state_prefix_remove(sfi);
 }
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_iface_ovs_bridge_state_get()
+ * 	Return interface type specific state
+ */
+static int ecm_db_iface_ovs_bridge_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	uint8_t address[ETH_ALEN];
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(address, ii->type_info.ovsb.address, ETH_ALEN);
+	spin_unlock_bh(&ecm_db_lock);
+
+	if ((result = ecm_state_prefix_add(sfi, "ovs_bridge"))) {
+		return result;
+	}
+	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "address", "%pM", address))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 /*
@@ -1355,7 +1386,7 @@ void ecm_db_iface_ethernet_address_get(struct ecm_db_iface_instance *ii, uint8_t
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
 	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_ETHERNET, "%p: Bad type, expected ethernet, actual: %d\n", ii, ii->type);
 	spin_lock_bh(&ecm_db_lock);
-	memcpy(address, ii->type_info.ethernet.address, sizeof(ii->type_info.ethernet.address));
+	ether_addr_copy(address, ii->type_info.ethernet.address);
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_iface_ethernet_address_get);
@@ -1369,10 +1400,25 @@ void ecm_db_iface_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
 	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_BRIDGE, "%p: Bad type, expected bridge, actual: %d\n", ii, ii->type);
 	spin_lock_bh(&ecm_db_lock);
-	memcpy(address, ii->type_info.bridge.address, sizeof(ii->type_info.bridge.address));
+	ether_addr_copy(address, ii->type_info.bridge.address);
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_iface_bridge_address_get);
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_iface_ovs_bridge_address_get()
+ *	Obtain the ethernet address for a ovs bridge interface
+ */
+void ecm_db_iface_ovs_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *address)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
+	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_OVS_BRIDGE, "%p: Bad type, expected ovs bridge, actual: %d\n", ii, ii->type);
+	spin_lock_bh(&ecm_db_lock);
+	ether_addr_copy(address, ii->type_info.ovsb.address);
+	spin_unlock_bh(&ecm_db_lock);
+}
+#endif
 
 /*
  * _ecm_db_iface_identifier_hash_table_insert_entry()
@@ -1552,7 +1598,7 @@ void ecm_db_iface_vlan_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
 	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_VLAN, "%p: Bad type, expected vlan, actual: %d\n", ii, ii->type);
 	spin_lock_bh(&ecm_db_lock);
-	memcpy(vlan_info->address, ii->type_info.vlan.address, sizeof(ii->type_info.vlan.address));
+	ether_addr_copy(vlan_info->address, ii->type_info.vlan.address);
 	vlan_info->vlan_tag = ii->type_info.vlan.vlan_tag;
 	vlan_info->vlan_tpid = ii->type_info.vlan.vlan_tpid;
 	spin_unlock_bh(&ecm_db_lock);
@@ -1679,6 +1725,45 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address)
 }
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_bridge);
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_iface_find_and_ref_ovs_bridge()
+ *	Lookup and return a iface reference if any
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Lookup OVS bridge iface with addr %pM\n", address);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+
+	/*
+	 * Iterate the chain looking for a host with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_OVS_BRIDGE) || memcmp(ii->type_info.ovsb.address, address, ETH_ALEN)) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("iface found %p\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Iface not found\n");
+	return NULL;
+}
+#endif
+
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
  * ecm_db_iface_find_and_ref_lag()
@@ -1729,7 +1814,7 @@ void ecm_db_iface_pppoe_session_info_get(struct ecm_db_iface_instance *ii, struc
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
 	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_PPPOE, "%p: Bad type, expected pppoe, actual: %d\n", ii, ii->type);
 	spin_lock_bh(&ecm_db_lock);
-	memcpy(pppoe_info->remote_mac, ii->type_info.pppoe.remote_mac, sizeof(ii->type_info.pppoe.remote_mac));
+	ether_addr_copy(pppoe_info->remote_mac, ii->type_info.pppoe.remote_mac);
 	pppoe_info->pppoe_session_id = ii->type_info.pppoe.pppoe_session_id;
 	spin_unlock_bh(&ecm_db_lock);
 }
@@ -2616,6 +2701,57 @@ void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii, uint8_t *address,
 	ecm_db_iface_add_to_db(ii, hash_index);
 }
 EXPORT_SYMBOL(ecm_db_iface_add_bridge);
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_iface_add_ovs_bridge()
+ *	Add a iface instance into the database
+ */
+void ecm_db_iface_add_ovs_bridge(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
+					int32_t interface_identifier, int32_t ae_interface_identifier,
+					ecm_db_iface_final_callback_t final, void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_interface_info_ovs_bridge *type_info;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
+	DEBUG_ASSERT(address, "%p: address null\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%p: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%p: inserted\n", ii);
+	DEBUG_ASSERT(name, "%p: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_OVS_BRIDGE;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_ovs_bridge_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strlcpy(ii->name, name, IFNAMSIZ);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = ae_interface_identifier;
+
+	/*
+	 * Type specific info
+	 */
+	type_info = &ii->type_info.ovsb;
+	memcpy(type_info->address, address, ETH_ALEN);
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+
+	ecm_db_iface_add_to_db(ii, hash_index);
+}
+#endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 /*

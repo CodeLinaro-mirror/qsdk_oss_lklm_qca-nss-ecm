@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -60,8 +60,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
+#include "ecm_classifier.h"
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
 
@@ -3263,6 +3263,63 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 					      host1_port,
 					      host2_port);
 }
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_db_connection_from_ovs_flow_get_and_ref()
+ *	Look-up a connection based on OVS flow 5-tuple information.
+ */
+struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(struct ovsmgr_dp_flow *flow)
+{
+	ip_addr_t src_addr;
+	ip_addr_t dst_addr;
+	int src_port;
+	int dst_port;
+	int protocol;
+
+	/*
+	 * Look up the associated connection for this OVS flow
+	 */
+	protocol = flow->tuple.protocol;
+	src_port = ntohs(flow->tuple.src_port);
+	dst_port = ntohs(flow->tuple.dst_port);
+
+	if (flow->tuple.ip_version == 4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_addr, flow->tuple.ipv4.src);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dst_addr, flow->tuple.ipv4.dst);
+		DEBUG_TRACE("%p: OVS IPv4 flow lookup src: " ECM_IP_ADDR_DOT_FMT ":%d, "
+			    "dest: " ECM_IP_ADDR_DOT_FMT ":%d, "
+			    "protocol %d\n",
+			    flow,
+			    ECM_IP_ADDR_TO_DOT(src_addr),
+			    src_port,
+			    ECM_IP_ADDR_TO_DOT(dst_addr),
+			    dst_port,
+			    protocol);
+	} else if (flow->tuple.ip_version == 6) {
+		ECM_NIN6_ADDR_TO_IP_ADDR(src_addr, flow->tuple.ipv6.src);
+		ECM_NIN6_ADDR_TO_IP_ADDR(dst_addr, flow->tuple.ipv6.dst);
+		DEBUG_TRACE("%p: OVS IPv6 flow lookup src: " ECM_IP_ADDR_OCTAL_FMT ":%d, "
+			    "dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, "
+			    "protocol %d\n",
+			    flow,
+			    ECM_IP_ADDR_TO_OCTAL(src_addr),
+			    src_port,
+			    ECM_IP_ADDR_TO_OCTAL(dst_addr),
+			    dst_port,
+			    protocol);
+	} else {
+		DEBUG_WARN("%p: Invalid IP version: %d\n", flow, flow->tuple.ip_version);
+		return NULL;
+	}
+
+	return ecm_db_connection_find_and_ref(src_addr,
+					      dst_addr,
+					      protocol,
+					      src_port,
+					      dst_port);
+}
+#endif
 
 /*
  * ecm_db_front_end_instance_ref_and_set()

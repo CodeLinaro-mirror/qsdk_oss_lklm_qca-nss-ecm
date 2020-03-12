@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -87,7 +87,12 @@ void ecm_db_node_ref(struct ecm_db_node_instance *ni);
 int ecm_db_node_deref(struct ecm_db_node_instance *ni);
 
 #ifdef ECM_DB_XREF_ENABLE
-void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir);
+void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version);
+
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+void ecm_db_traverse_snode_dnode_connection_list_and_defunct(
+	struct ecm_db_node_instance *sni, uint8_t *dmac, int ip_version, ecm_db_obj_dir_t dir);
+#endif
 #endif
 
 void ecm_db_node_adress_get(struct ecm_db_node_instance *ni, uint8_t *address_buffer);

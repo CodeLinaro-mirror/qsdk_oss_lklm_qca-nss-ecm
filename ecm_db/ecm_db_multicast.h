@@ -58,4 +58,11 @@ bool ecm_db_multicast_connection_to_interfaces_set_check(struct ecm_db_connectio
 int _ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance *ti);
 int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instance *ci, struct ecm_state_file_instance *sfi);
 int ecm_db_multicast_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci);
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+bool ecm_db_multicast_ovs_verify_to_list(struct ecm_db_connection_instance *ci, struct ecm_classifier_process_response *aci_pr);
+void ecm_db_multicast_tuple_set_ovs_ingress_vlan(struct ecm_db_multicast_tuple_instance *ti, uint32_t *ingress_vlan_tag);
+struct vlan_hdr ecm_db_multicast_tuple_get_ovs_ingress_vlan(struct ecm_db_multicast_tuple_instance *ti);
+#endif
+#endif
 #endif
