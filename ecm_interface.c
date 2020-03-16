@@ -3802,6 +3802,25 @@ fail:
 }
 
 /*
+ * ecm_interface_hierarchy_delete()
+ * 	Delete hierarchy of the requested interfaces.
+ */
+static inline void ecm_interface_hierarchy_delete(struct ecm_db_iface_instance *interfaces,
+							uint32_t *interface_first_base,
+							int valid_if)
+{
+	struct ecm_db_iface_instance *to_list_single[ECM_DB_IFACE_HEIRARCHY_MAX];
+	struct ecm_db_iface_instance *ifaces;
+	int i;
+
+	for (i = 0; i < valid_if; i++) {
+		ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
+		ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
+		ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
+	}
+}
+
+/*
  * ecm_interface_multicast_heirarchy_construct_routed()
  * 	Create destination interface heirarchy for a routed multicast connectiona
  *
@@ -3822,7 +3841,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 								uint32_t *interface_first_base, bool mfc_update,
 								__be16 *layer4hdr, struct sk_buff *skb)
 {
-	struct ecm_db_iface_instance *to_list_single[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *ifaces;
 	struct net_device *dest_dev = NULL;
 	struct net_device *br_dev_src = NULL;
@@ -3835,7 +3853,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 	int if_index;
 	int ii_cnt;
 	int total_ii_count = 0;
-	bool src_dev_is_bridge = false;
+	bool src_dev_is_bridge = false, dest_dev_is_br_dev_src = false;
 
 	DEBUG_TRACE("Construct interface heirarchy for dest_addr: " ECM_IP_ADDR_DOT_FMT " src_addr: " ECM_IP_ADDR_DOT_FMT "total destination ifs %d\n",
 			ECM_IP_ADDR_TO_DOT(packet_dest_addr), ECM_IP_ADDR_TO_DOT(packet_src_addr), max_if);
@@ -3882,6 +3900,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			continue;
 		}
 
+		dest_dev_is_br_dev_src = false;
 		dest_dev = dev_get_by_index(&init_net, *dst_if_index);
 		if (!dest_dev) {
 			if (!src_dev_is_bridge) {
@@ -3890,26 +3909,23 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				 * this error condition then Deref all interface heirarchies.
 				 */
 				if (valid_if > 0) {
-					int i;
-
-					for (i = 0; i < valid_if; i++) {
-						ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
-						ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
-					}
+					ecm_interface_hierarchy_delete(interfaces, interface_first_base, valid_if);
 				}
 
-				/*
-				 * If valid netdev not found, Return 0
-				 */
-				if (br_dev_src) {
-					dev_put(br_dev_src);
-				}
-
-				return 0;
+				goto fail1;
 			}
 
 			dest_dev = br_dev_src;
+
+			/*
+			 * In some cases when WAN interface is added to bridge and traffic is downstream,
+			 * the bridge device is part of the destination list from MFC, and at the same time
+			 * 'src_dev_is_bridge' will be true as well. In such cases we will need to release
+			 * the hold on the bridge device separately for dest_dev and br_dev_src.
+			 * Setting this flag to true indicates that this is not the case,
+			 * and that releasing the hold once is enough.
+			 */
+			dest_dev_is_br_dev_src = true;
 		}
 
 		dest_dev_type = dest_dev->type;
@@ -3933,7 +3949,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			}
 
 			if ((if_num < 0) || (if_num > ECM_DB_MULTICAST_IF_MAX)) {
-				int i;
 				DEBUG_WARN("MCS is not ready\n");
 
 				/*
@@ -3941,19 +3956,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				 * this error condition then Deref all interface heirarchies.
 				 */
 				if (valid_if > 0) {
-					for (i = 0; i < valid_if; i++) {
-						ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
-						ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
-					}
+					ecm_interface_hierarchy_delete(interfaces, interface_first_base, valid_if);
 				}
 
-				if (br_dev_src && (dest_dev != br_dev_src)) {
-					dev_put(br_dev_src);
-				}
-
-				dev_put(dest_dev);
-				return 0;
+				goto fail2;
 			}
 
 			if (in_dev && !mfc_update) {
@@ -3961,34 +3967,20 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			}
 
 			for (br_if = 0; br_if < if_num; br_if++) {
+				int total_if = valid_if + br_if;
+
 				mc_br_slave_dev = dev_get_by_index(&init_net, mc_dst_if_index[br_if]);
 				if (!mc_br_slave_dev) {
 					continue;
 				}
 
-				if ((valid_if + br_if) > ECM_DB_MULTICAST_IF_MAX) {
-					int i;
-
-					/*
-					 * If already constructed any interface heirarchies before hitting
-					 * this error condition then Deref all interface heirarchies.
-					 */
-					for (i = 0; i < (valid_if + br_if); i++) {
-						ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
-						ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
-					}
-
-					if (br_dev_src && (dest_dev != br_dev_src)) {
-						dev_put(br_dev_src);
-					}
-
-					dev_put(dest_dev);
+				if (total_if > ECM_DB_MULTICAST_IF_MAX) {
+					ecm_interface_hierarchy_delete(interfaces, interface_first_base, total_if);
 					dev_put(mc_br_slave_dev);
-					return 0;
+					goto fail2;
 				}
 
-				ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, valid_if + br_if);
+				ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, total_if);
 				/*
 				 * Construct a single interface heirarchy of a multicast dev.
 				 */
@@ -3999,25 +3991,15 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 					 * If already constructed any interface heirarchies before hitting
 					 * this error condition then Deref all interface heirarchies.
 					 */
-					if ((valid_if + br_if) > 0) {
-						int i;
-						for (i = 0; i < (valid_if + br_if); i++) {
-							ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
-							ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
-							ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
-						}
+					if (total_if > 0) {
+						ecm_interface_hierarchy_delete(interfaces, interface_first_base, total_if);
 					}
 
-					if (br_dev_src && (dest_dev != br_dev_src)) {
-						dev_put(br_dev_src);
-					}
-
-					dev_put(dest_dev);
 					dev_put(mc_br_slave_dev);
-					return 0;
+					goto fail2;
 				}
 
-				interface_first = ecm_db_multicast_if_first_get_at_index(interface_first_base, (valid_if + br_if));
+				interface_first = ecm_db_multicast_if_first_get_at_index(interface_first_base, total_if);
 				*interface_first = ii_cnt;
 				total_ii_count += ii_cnt;
 				dev_put(mc_br_slave_dev);
@@ -4039,20 +4021,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				 * this error condition then Deref all interface heirarchies.
 				 */
 				if (valid_if > 0) {
-					int i;
-					for (i = 0; i < valid_if; i++) {
-						ifaces = ecm_db_multicast_if_heirarchy_get(interfaces, i);
-						ecm_db_multicast_copy_if_heirarchy(to_list_single, ifaces);
-						ecm_db_connection_interfaces_deref(to_list_single, interface_first_base[i]);
-					}
+					ecm_interface_hierarchy_delete(interfaces, interface_first_base, valid_if);
 				}
 
-				if (br_dev_src && (dest_dev != br_dev_src)) {
-					dev_put(br_dev_src);
-				}
-
-				dev_put(dest_dev);
-				return 0;
+				goto fail2;
 			}
 
 			interface_first = ecm_db_multicast_if_first_get_at_index(interface_first_base, valid_if);
@@ -4061,7 +4033,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			valid_if++;
 		}
 
-		if (dest_dev != br_dev_src) {
+		if (!dest_dev_is_br_dev_src) {
 			dev_put(dest_dev);
 		}
 	}
@@ -4071,6 +4043,18 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 	}
 
 	return total_ii_count;
+
+fail2:
+	if (!dest_dev_is_br_dev_src) {
+		dev_put(dest_dev);
+	}
+
+fail1:
+	if (br_dev_src) {
+		dev_put(br_dev_src);
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_routed);
 
