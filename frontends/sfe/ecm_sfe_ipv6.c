@@ -256,13 +256,14 @@ struct ecm_db_node_instance *ecm_sfe_ipv6_node_establish_and_ref(struct ecm_fron
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
 					DEBUG_ASSERT(master, "Expected a master\n");
-					ecm_interface_send_neighbour_solicitation(master, addr);
+					ecm_interface_send_neighbour_solicitation(master, gw_addr);
 					dev_put(master);
 				} else {
-					ecm_interface_send_neighbour_solicitation(dev, addr);
+					ecm_interface_send_neighbour_solicitation(dev, gw_addr);
 				}
 
-				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT " gw: " ECM_IP_ADDR_OCTAL_FMT "\n",
+					    ECM_IP_ADDR_TO_OCTAL(addr), ECM_IP_ADDR_TO_OCTAL(gw_addr));
 				return NULL;
 			}
 done:
