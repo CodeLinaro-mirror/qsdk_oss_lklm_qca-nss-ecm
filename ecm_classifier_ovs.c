@@ -581,6 +581,10 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 	 *
 	 * 3. SNAT/DNAT Enabled:	TO				TO_NAT		FROM/FROM_NAT
 	 * 4. SNAT/DNAT Disabled:	TO/TO_NAT					FROM/FROM_NAT
+	 *
+	 * 5. Tunnelled packet:  PC1 ------------> eth1---[ovs-br1]---gretap (DUT) eth0----->[gretap device]
+	 * 	After the packet is encapsulated, the packet is routed and the
+	 * 	flow is not relavant flow.
 	 */
 	if (from_dev) {
 		/*
@@ -591,12 +595,16 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		 * Case 3/4
 		 * from_dev = eth2
 		 * br_dev = ovs-br2
+		 *
+		 * case 5
+		 * from_dev = greptap
+		 * br_dev = NULL
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
 			DEBUG_WARN("%p: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					ecvi, from_dev->name);
-			goto route_deny_accel;
+			goto route_not_relevant;
 		}
 
 		DEBUG_TRACE("%p: processing route flow from_dev = %s, br_dev = %s", ecvi, from_dev->name, br_dev->name);
@@ -807,6 +815,17 @@ route_deny_accel:
 	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
 	ecvi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+	*process_response = ecvi->process_response;
+	spin_unlock_bh(&ecm_classifier_ovs_lock);
+
+	return;
+
+route_not_relevant:
+	/*
+	 * ecm_classifier_ovs_lock MUST be held
+	 */
+	spin_lock_bh(&ecm_classifier_ovs_lock);
+	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 	*process_response = ecvi->process_response;
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 }
