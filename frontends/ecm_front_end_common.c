@@ -22,6 +22,10 @@
 #include <linux/etherdevice.h>
 #include <linux/inetdevice.h>
 #include <net/netfilter/nf_conntrack.h>
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#include <linux/netfilter/xt_dscp.h>
+#include <net/netfilter/nf_conntrack_dscpremark_ext.h>
+#endif
 #include <net/ip.h>
 #include <net/ipv6.h>
 #include <net/addrconf.h>
@@ -217,5 +221,59 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	 * Case 7: GRE pass through
 	 */
 	DEBUG_TRACE("%p: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
+	return true;
+}
+
+/*
+ * ecm_front_end_tcp_check_ct_and_fill_dscp()
+ *	Checks the conntrack status and fill the DSCP
+ *	extension entry for later use.
+ */
+bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
+					      struct ecm_tracker_ip_header *iph,
+					      struct sk_buff *skb,
+					      ecm_tracker_sender_type_t sender)
+{
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+	struct nf_ct_dscpremark_ext *dscpcte;
+
+	/*
+	 * Extract the priority and DSCP from skb during the TCP handshake
+	 * and store into ct extension for each direction.
+	 */
+	spin_lock_bh(&ct->lock);
+	dscpcte = nf_ct_dscpremark_ext_find(ct);
+	if (dscpcte && ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			dscpcte->flow_priority = skb->priority;
+			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
+			DEBUG_TRACE("%p: sender: %d flow priority: %d flow dscp: %d\n",
+				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp);
+		} else {
+			dscpcte->reply_priority =  skb->priority;
+			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
+			DEBUG_TRACE("%p: sender: %d reply priority: %d reply dscp: %d\n",
+				    ct, sender, dscpcte->reply_priority, dscpcte->reply_dscp);
+		}
+	}
+	spin_unlock_bh(&ct->lock);
+#endif
+	/*
+	 * Unconfirmed connection may be dropped by Linux at the final step,
+	 * So we don't allow acceleration for the unconfirmed connections.
+	 */
+	if (!nf_ct_is_confirmed(ct)) {
+		DEBUG_WARN("%p: Unconfirmed TCP connection\n", ct);
+		return false;
+	}
+
+	/*
+	 * Don't try to manage a non-established connection.
+	 */
+	if (!test_bit(IPS_ASSURED_BIT, &ct->status)) {
+		DEBUG_WARN("%p: Non-established TCP connection\n", ct);
+		return false;
+	}
+
 	return true;
 }
