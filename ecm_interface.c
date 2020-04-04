@@ -2523,15 +2523,16 @@ done:
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
- * ecm_interface_ovs_bridge_port_dev_get()
+ * ecm_interface_ovs_bridge_port_dev_get_and_ref()
  * 	Looks up the slave port in the bridge devices port list.
  */
-static struct net_device *ecm_interface_ovs_bridge_port_dev_get(struct sk_buff *skb, struct net_device *br_dev,
+static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct sk_buff *skb, struct net_device *br_dev,
 								ip_addr_t src_ip, ip_addr_t dst_ip, int ip_version,
 								int protocol, bool is_routed, uint8_t *smac,
 								uint8_t *dmac, __be16 *layer4hdr)
 {
 	struct ovsmgr_dp_flow flow;
+	struct net_device *dev;
 
 	DEBUG_TRACE("%p: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (smac:%pM, dmac:%pM)\n",
 				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip), ip_version, protocol, smac, dmac);
@@ -2592,7 +2593,12 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get(struct sk_buff *
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
 	}
 
-	return ovsmgr_port_find(skb, br_dev, &flow);
+	dev = ovsmgr_port_find(skb, br_dev, &flow);
+	if (dev) {
+		dev_hold(dev);
+	}
+
+	return dev;
 }
 #endif
 
@@ -4808,7 +4814,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						goto done;
 					}
 
-					next_dev = ecm_interface_ovs_bridge_port_dev_get(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
+					next_dev = ecm_interface_ovs_bridge_port_dev_get_and_ref(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
 											 is_routed, src_node_addr, mac_addr, layer4hdr);
 					if (!next_dev) {
 						DEBUG_WARN("%p: Unable to obtain OVS output port for: %pM\n", feci, mac_addr);
@@ -5637,7 +5643,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					}
-					next_dev = ecm_interface_ovs_bridge_port_dev_get(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
+					next_dev = ecm_interface_ovs_bridge_port_dev_get_and_ref(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
 											 is_routed, src_node_addr, mac_addr, layer4hdr);
 					if (!next_dev) {
 						DEBUG_WARN("Unable to obtain output port for: %pM\n", mac_addr);
