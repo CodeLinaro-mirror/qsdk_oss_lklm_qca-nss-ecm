@@ -304,9 +304,6 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	}
 
 	/*
-	 * Extract the priority and DSCP from skb and store into ct extension
-	 * for each direction.
-	 *
 	 * For TCP flows, we would have the values for both the directions by
 	 * the time the connection is established. For UDP flows, we copy
 	 * over the values from one direction to another if we find the
@@ -318,42 +315,29 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	if (protocol == IPPROTO_TCP) {
 		/*
-		 * Store the priority and DSCP in the extension during the TCP handshake.
+		 * TCP is established at this point, priority and DSCP values were already in the extension instance.
+		 * They were extracted from the skb in the frontend file. So, copy them from there.
 		 */
-		if (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
-			if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-				dscpcte->flow_priority = skb->priority;
-				dscpcte->flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;	/* NOTE: XT_DSCP_SHIFT is okay for V4 and V6 */
-			} else {
-				dscpcte->reply_priority =  skb->priority;
-				dscpcte->reply_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;	/* NOTE: XT_DSCP_SHIFT is okay for V4 and V6 */
-			}
+		if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
+				((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
+			flow_qos_tag = dscpcte->flow_priority;
+			return_qos_tag = dscpcte->reply_priority;
+			flow_dscp = dscpcte->flow_dscp;
+			return_dscp = dscpcte->reply_dscp;
 		} else {
-			/*
-			 * TCP is established, priority and DSCP values were already in the extension instance.
-			 * So, copy them from there.
+			/* TCP is in established state and the direction of this packet is opposite to the direction of the ct
+			 * in which the TCP connection was initiated. This can be the case when the ECM rule was originally
+			 * created in the direction of the ct, but defuncted for some reason. And the next packet that is now being
+			 * processed by ECM for this TCP connection is in the opposite direction relative to ct. So, we ensure that
+			 * we retrieve the qos_tag/dscp from the ct based on the direction of the new ECM connection relative to the ct
 			 */
-			if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
-					((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
-				flow_qos_tag = dscpcte->flow_priority;
-				return_qos_tag = dscpcte->reply_priority;
-				flow_dscp = dscpcte->flow_dscp;
-				return_dscp = dscpcte->reply_dscp;
-			} else {
-				/* TCP is in established state and the direction of this packet is opposite to the direction of the ct
-				 * in which the TCP connection was initiated. This can be the case when the ECM rule was originally
-				 * created in the direction of the ct, but defuncted for some reason. And the next packet that is now being
-				 * processed by ECM for this TCP connection is in the opposite direction relative to ct. So, we ensure that
-				 * we retrieve the qos_tag/dscp from the ct based on the direction of the new ECM connection relative to the ct
-				 */
-				return_qos_tag = dscpcte->flow_priority;
-				flow_qos_tag = dscpcte->reply_priority;
-				return_dscp = dscpcte->flow_dscp;
-				flow_dscp = dscpcte->reply_dscp;
-			}
-			DEBUG_TRACE("TCP Flow DSCP: %x Flow priority: %d, Return DSCP: %x Return priority: %d sender: %d ct_dir: %d\n",
-				    flow_dscp, flow_qos_tag, return_dscp, return_qos_tag, sender, CTINFO2DIR(ctinfo));
+			return_qos_tag = dscpcte->flow_priority;
+			flow_qos_tag = dscpcte->reply_priority;
+			return_dscp = dscpcte->flow_dscp;
+			flow_dscp = dscpcte->reply_dscp;
 		}
+		DEBUG_TRACE("TCP Flow DSCP: %x Flow priority: %d, Return DSCP: %x Return priority: %d sender: %d ct_dir: %d\n",
+			    flow_dscp, flow_qos_tag, return_dscp, return_qos_tag, sender, CTINFO2DIR(ctinfo));
 
 	} else { /* UDP */
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {

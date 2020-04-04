@@ -1805,21 +1805,12 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 
-	/*
-	 * Unconfirmed connection may be dropped by Linux at the final step,
-	 * So we don't allow acceleration for the unconfirmed connections.
-	 */
-	if (likely(ct) && !nf_ct_is_confirmed(ct)) {
-		DEBUG_WARN("%p: Unconfirmed connection\n", ct);
-		return NF_ACCEPT;
-	}
-
 	if (protocol == IPPROTO_TCP) {
 		/*
-		 * Don't try to manage a non-established connection.
+		 * Check the conntrack status and the DSCP information.
 		 */
-		if (likely(ct) && !test_bit(IPS_ASSURED_BIT, &ct->status)) {
-			DEBUG_WARN("%p: Non-established TCP connection\n", ct);
+		if (likely(ct) && !ecm_front_end_tcp_check_ct_and_fill_dscp(ct, iph, skb, sender)) {
+			DEBUG_WARN("%p: TCP Conntrack is not ready for acceleration\n", ct);
 			return NF_ACCEPT;
 		}
 
@@ -1892,6 +1883,15 @@ unsigned int ecm_sfe_ported_ipv4_process(struct net_device *out_dev, struct net_
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), src_port, src_port_nat, ECM_IP_ADDR_TO_DOT(ip_dest_addr),
 				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), dest_port, dest_port_nat, ecm_dir);
 	} else if (protocol == IPPROTO_UDP) {
+		/*
+		 * Unconfirmed connection may be dropped by Linux at the final step,
+		 * So we don't allow acceleration for the unconfirmed connections.
+		 */
+		if (likely(ct) && !nf_ct_is_confirmed(ct)) {
+			DEBUG_WARN("%p: Unconfirmed connection\n", ct);
+			return NF_ACCEPT;
+		}
+
 		/*
 		 * Extract UDP header to obtain port information
 		 */
