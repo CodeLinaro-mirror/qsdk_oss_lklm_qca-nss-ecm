@@ -877,7 +877,8 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
-	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	if (ecm_ip_addr_is_multicast(dst_ip)) {
 		ecm_classifier_ovs_process_multicast(ci, skb, ecvi, process_response);
 		ecm_db_connection_deref(ci);
 		return;
@@ -1509,7 +1510,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	/*
 	 * Check for multicast connection.
 	 */
-	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+	if (ecm_ip_addr_is_multicast(dst_ip)) {
 		ecm_classifier_ovs_multicast_sync_to_stats(ecvi, ci, sync);
 		ecm_db_connection_deref(ci);
 		return;
