@@ -1046,6 +1046,13 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		return NF_ACCEPT;
 	}
 
+#ifdef ECM_XFRM_ENABLE
+	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
+		DEBUG_TRACE("%p xfrm flow; skip it\n", skb);
+		return NF_ACCEPT;
+	}
+#endif
+
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */

@@ -30,6 +30,10 @@
 #include <net/vxlan.h>
 #endif
 
+#ifdef ECM_XFRM_ENABLE
+#include <net/xfrm.h>
+#endif
+
 /*
  * This macro converts ECM ip_addr_t to NSS IPv6 address
  */
@@ -295,4 +299,67 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 	return do_accel;
 }
+#endif
+
+#ifdef ECM_XFRM_ENABLE
+
+/*
+ * ecm_nss_common_is_xfrm_flow()
+ *	Skip xfrm flows
+ */
+static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+	struct net *net;
+	struct xfrm_state *x;
+	struct ip_esp_hdr *esph;
+
+	net = dev_net(skb->dev);
+	if (likely(!net->xfrm.policy_count[XFRM_POLICY_OUT])) {
+		return false;
+	}
+
+	/*
+	 * if it's a xfrm flow, don't accelerate it.
+	 */
+	if (ip_hdr->protocol != IPPROTO_ESP) {
+		struct dst_entry *dst;
+
+		/*
+		 * skb's sp is set for decapsulated packet
+		 */
+		if (skb->sp) {
+			DEBUG_TRACE("%p: Skipping wan-to-lan packet proto(%d)\n", skb, ip_hdr->protocol);
+			return true;
+		}
+
+		/*
+		 * dst->xfrm is valid for lan to wan plain packet
+		 */
+		dst = skb_dst(skb);
+		if (dst && dst->xfrm) {
+			DEBUG_TRACE("%p: Skipping lan-to-wan packet proto(%d)\n", skb, ip_hdr->protocol);
+			return true;
+		}
+
+		return false;
+	}
+
+	if (ip_hdr->is_v4) {
+		esph = (struct ip_esp_hdr *)(skb->data + (ip_hdr->h.v4_hdr.ihl << 2));
+	} else {
+		esph = (struct ip_esp_hdr *)(skb->data + sizeof(struct ipv6hdr));
+	}
+
+	/*
+	 * State look up will fail for non xfrm flows
+	 */
+	x = xfrm_state_lookup_byspi(net, esph->spi, ip_hdr->is_v4 ? AF_INET : AF_INET6);
+	if (x) {
+		DEBUG_TRACE("%p: Skipping lan-to-wan ESP packet\n", skb);
+		return true;
+	}
+
+	return false;
+}
+
 #endif

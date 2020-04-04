@@ -100,6 +100,7 @@
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_nss_non_ported_ipv4.h"
 #endif
+#include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv4.h"
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1064,6 +1065,13 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 		DEBUG_TRACE("skb %p is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
+
+#ifdef ECM_XFRM_ENABLE
+	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
+		DEBUG_TRACE("%p xfrm flow; skip it\n", skb);
+		return NF_ACCEPT;
+	}
+#endif
 
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
