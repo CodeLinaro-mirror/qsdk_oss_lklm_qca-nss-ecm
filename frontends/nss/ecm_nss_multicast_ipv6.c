@@ -2165,30 +2165,11 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * We need to filter the source interface from the list in such cases.
 		 */
 		if (if_num > 0) {
-			struct ecm_db_iface_instance *ii;
-			struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-			ecm_db_iface_type_t ii_type;
-			int32_t from_ifaces_first;
-			int32_t from_iface_identifier;
-
-			/*
-			 * Get the interface lists of the connection, we must have at least one interface in the list to continue
-			 */
-			from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
-			if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+			if_num = ecm_interface_multicast_filter_src_interface(ci, mc_dst_dev);
+			if (if_num == ECM_DB_IFACE_HEIRARCHY_MAX) {
 				DEBUG_WARN("%p: MCS Snooper Update: no interfaces in from_interfaces list!\n", ci);
 				goto find_next_tuple;
 			}
-
-			ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
-			ii_type = ecm_db_iface_type_get(ii);
-			if (ii_type == ECM_DB_IFACE_TYPE_BRIDGE) {
-				ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 2];
-			}
-
-			from_iface_identifier = ecm_db_iface_interface_identifier_get(ii);
-			if_num = ecm_interface_multicast_check_for_src_ifindex(mc_dst_dev, if_num, from_iface_identifier);
-			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		}
 
 		/*
@@ -2360,23 +2341,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		/*
 		 * Release the interfaces that may have left the connection
 		 */
-		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX && mc_sync.if_leave_cnt; i++) {
-
-			/*
-			 * Is this entry marked? If yes, then the corresponding entry
-			 * in the 'to_mcast_interfaces' array in the ci has left the
-			 * connection
-			 */
-			if (mc_sync.if_leave_idx[i]) {
-
-				/*
-				 * Release the interface heirarchy for this
-				 * interface since it has left the group
-				 */
-				ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
-				mc_sync.if_leave_cnt--;
-			}
-		}
+		ecm_db_multicast_connection_to_interfaces_leave(ci, &mc_sync);
 
 find_next_tuple:
 		ti_next = ecm_db_multicast_connection_get_and_ref_next(ti);
@@ -3786,24 +3751,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			/*
 			 * Release the interfaces that may have left the connection
 			 */
-			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX && mc_sync.if_leave_cnt; i++) {
-
-				/*
-				 * Is this entry marked? If yes, then the corresponding entry
-				 * in the 'to_mcast_interfaces' array in the ci has left the
-				 * connection
-				 */
-				if (!mc_sync.if_leave_idx[i]) {
-					continue;
-				}
-
-				/*
-				 * Release the interface heirarchy for this
-				 * interface since it has left the group
-				 */
-				ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
-				mc_sync.if_leave_cnt--;
-			}
+			ecm_db_multicast_connection_to_interfaces_leave(ci, &mc_sync);
 
 			/*
 			 * Move on to the next flow for the same source and group

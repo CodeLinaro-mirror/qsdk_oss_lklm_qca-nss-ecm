@@ -2223,30 +2223,11 @@ static void ecm_nss_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		 * We need to filter the source interface from the list in such cases.
 		 */
 		if (if_num > 0) {
-			struct ecm_db_iface_instance *ii;
-			struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-			ecm_db_iface_type_t ii_type;
-			int32_t from_ifaces_first;
-			int32_t from_iface_identifier;
-
-			/*
-			 * Get the interface lists of the connection, we must have at least one interface in the list to continue
-			 */
-			from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
-			if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+			if_num = ecm_interface_multicast_filter_src_interface(ci, mc_dst_dev);
+			if (if_num == ECM_DB_IFACE_HEIRARCHY_MAX) {
 				DEBUG_WARN("%p: MCS Snooper Update: no interfaces in from_interfaces list!\n", ci);
 				goto find_next_tuple;
 			}
-
-			ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
-			ii_type = ecm_db_iface_type_get(ii);
-			if (ii_type == ECM_DB_IFACE_TYPE_BRIDGE) {
-				ii = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 2];
-			}
-
-			from_iface_identifier = ecm_db_iface_interface_identifier_get(ii);
-			if_num = ecm_interface_multicast_check_for_src_ifindex(mc_dst_dev, if_num, from_iface_identifier);
-			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		}
 
 		/*
@@ -2429,21 +2410,7 @@ static void ecm_nss_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		/*
 		 * Release the interfaces that may have left the connection
 		 */
-		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX && mc_update.if_leave_cnt; i++) {
-			/*
-			 * Is this entry marked? If yes, then the corresponding entry
-			 * in the 'to_mcast_interfaces' array in the ci has left the
-			 * connection
-			 */
-			if (mc_update.if_leave_idx[i]) {
-				/*
-				 * Release the interface hierarchy for this
-				 * interface since it has left the group
-				 */
-				ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
-				mc_update.if_leave_cnt--;
-			}
-		}
+		ecm_db_multicast_connection_to_interfaces_leave(ci, &mc_update);
 
 find_next_tuple:
 		ti_next = ecm_db_multicast_connection_get_and_ref_next(ti);
@@ -3844,10 +3811,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
 			if (!(ECM_IP_ADDR_MATCH(src_addr, src_ip) && ECM_IP_ADDR_MATCH(grp_addr, dest_ip))) {
 				DEBUG_TRACE("%p: Multicast tuple not matched, try next multicast tuple %d\n", tuple_instance, op);
-				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
-				ecm_db_multicast_connection_deref(tuple_instance);
-				tuple_instance = tuple_instance_next;
-				continue;
+				goto find_next_tuple;
 			}
 
 			/*
@@ -3877,12 +3841,9 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			 */
 			if_update = ecm_interface_multicast_find_updates_to_iface_list(ci, &mc_update, mc_flag, false, to_dev_idx, max_to_dev, NULL);
 			if (!if_update) {
-				DEBUG_TRACE("%p: no update, check next multicast tuple: %p\n", ci, tuple_instance);
 				spin_unlock_bh(&ecm_nss_ipv4_lock);
-				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
-				ecm_db_multicast_connection_deref(tuple_instance);
-				tuple_instance = tuple_instance_next;
-				continue;
+				DEBUG_TRACE("%p: no update, check next multicast tuple: %p\n", ci, tuple_instance);
+				goto find_next_tuple;
 			}
 
 			found_br_dev = ecm_interface_multicast_check_for_br_dev(to_dev_idx, max_to_dev);
@@ -3902,8 +3863,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 				to_list = (struct ecm_db_iface_instance *)kzalloc(ECM_DB_TO_MCAST_INTERFACES_SIZE, GFP_ATOMIC | __GFP_NOWARN);
 				if (!to_list) {
 					feci->deref(feci);
-					ecm_db_multicast_connection_deref(tuple_instance);
-					return;
+					goto find_next_tuple;
 				}
 
 				/*
@@ -3928,9 +3888,8 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 					DEBUG_WARN("Failed to obtain 'to_mcast_update' heirarchy list\n");
 					feci->decelerate(feci);
 					feci->deref(feci);
-					ecm_db_multicast_connection_deref(tuple_instance);
 					kfree(to_list);
-					return;
+					goto find_next_tuple;
 				}
 
 				/*
@@ -3967,8 +3926,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 				DEBUG_TRACE("%p: Verification of the ovs 'to_list' has failed. Hence, defunct the connection: %p\n", feci, feci->ci);
 				ecm_db_connection_make_defunct(ci);
 				feci->deref(feci);
-				ecm_db_multicast_connection_deref(tuple_instance);
-				return;
+				goto find_next_tuple;
 			}
 #endif
 			/*
@@ -3979,8 +3937,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 					(feci->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL)) {
 				DEBUG_TRACE("%p: Ignoring wrong mode accel for conn: %p\n", feci, feci->ci);
 				feci->deref(feci);
-				ecm_db_multicast_connection_deref(tuple_instance);
-				return;
+				goto find_next_tuple;
 			}
 
 			/*
@@ -3991,8 +3948,7 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			if (ret < 0) {
 				feci->decelerate(feci);
 				feci->deref(feci);
-				ecm_db_multicast_connection_deref(tuple_instance);
-				return;
+				goto find_next_tuple;
 			}
 
 			feci->deref(feci);
@@ -4000,24 +3956,9 @@ static void ecm_mfc_update_event_callback(__be32 group, __be32 origin, uint32_t 
 			/*
 			 * Release the interfaces that may have left the connection
 			 */
-			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX && mc_update.if_leave_cnt; i++) {
-				/*
-				 * Is this entry marked? If yes, then the corresponding entry
-				 * in the 'to_mcast_interfaces' array in the ci has left the
-				 * connection
-				 */
-				if (!mc_update.if_leave_idx[i]) {
-					continue;
-				}
+			ecm_db_multicast_connection_to_interfaces_leave(ci, &mc_update);
 
-				/*
-				 * Release the interface heirarchy for this
-				 * interface since it has left the group
-				 */
-				ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
-				mc_update.if_leave_cnt--;
-			}
-
+find_next_tuple:
 			/*
 			 * Move on to the next flow for the same source and group
 			 */

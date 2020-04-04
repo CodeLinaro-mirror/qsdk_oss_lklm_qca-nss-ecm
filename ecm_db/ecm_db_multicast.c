@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1061,4 +1061,35 @@ struct vlan_hdr ecm_db_multicast_tuple_get_ovs_ingress_vlan(struct ecm_db_multic
 }
 #endif
 #endif
+
+/*
+ * ecm_db_multicast_connection_to_interfaces_leave()
+ * 	Remove 'to' interfaces from the connection if it has left the group.
+ */
+void ecm_db_multicast_connection_to_interfaces_leave(struct ecm_db_connection_instance *ci, struct ecm_multicast_if_update *mc_update)
+{
+	int i;
+
+	if (!mc_update->if_leave_cnt) {
+		return;
+	}
+
+	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX && mc_update->if_leave_cnt; i++) {
+		/*
+		 * Is this entry marked? If yes, then the corresponding entry
+		 * in the 'to_mcast_interfaces' array in the ci has left the
+		 * connection.
+		 */
+		if (!mc_update->if_leave_idx[i]) {
+			continue;
+		}
+
+		/*
+		 * Release the interface heirarchy for this
+		 * interface since it has left the group
+		 */
+		ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
+		mc_update->if_leave_cnt--;
+	}
+}
 #endif
