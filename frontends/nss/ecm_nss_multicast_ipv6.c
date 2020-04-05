@@ -2530,6 +2530,15 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv6_node_establish_and_re
 #endif
 			if (!ecm_interface_mac_addr_get(addr, node_addr, &on_link, gw_addr)) {
 				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+
+				/*
+				 * If there is a gw_addr found during the lookup, use that address
+				 * for neighbour solicitation request.
+				 */
+				if (!ECM_IP_ADDR_IS_NULL(gw_addr)) {
+					ECM_IP_ADDR_COPY(addr, gw_addr);
+				}
+
 				if (ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
