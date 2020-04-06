@@ -43,7 +43,6 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
@@ -1138,8 +1137,11 @@ static bool ecm_tracker_tcp_extract_mss(struct sk_buff *skb, uint16_t *mss, stru
 	 * Parse the TCP header options
 	 */
 	memset(&opt_rx, 0, sizeof(opt_rx));
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 	tcp_parse_options(skb, &opt_rx, 0, NULL);
-
+#else
+	tcp_parse_options(dev_net(skb->dev), skb, &opt_rx, 0, NULL);
+#endif
 	/*
 	 * Was there an MSS?
 	 */

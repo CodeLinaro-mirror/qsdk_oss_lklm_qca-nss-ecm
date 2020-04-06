@@ -168,6 +168,8 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		to = out_dev;
 		to_other = out_dev;
 	} else {
+		__be32 rt_gw4;
+
 		if (!rt) {
 			DEBUG_WARN("rtable is NULL\n");
 			return false;
@@ -182,9 +184,13 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			DEBUG_WARN("No rt_iif dev\n");
 			return false;
 		}
-
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 2, 0))
+		rt_gw4 = rt->rt_gateway;
+#else
+		rt_gw4 = rt->rt_gw4;
+#endif
 		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
-		DEBUG_TRACE("%p: rt_gateway: %pI4\n", rt, &rt->rt_gateway);
+		DEBUG_TRACE("%p: rt gateway: %pI4\n", rt, &rt_gw4);
 
 		DEBUG_INFO("ip_src_addr" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr));
 		DEBUG_INFO("ip_src_addr_nat" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr_nat));
@@ -197,7 +203,7 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			 * behind a gateway.
 			 */
 			DEBUG_TRACE("Gateway address will be looked up overwrite the rt_dst_addr\n");
-			ECM_NIN4_ADDR_TO_IP_ADDR(rt_dst_addr, rt->rt_gateway)
+			ECM_NIN4_ADDR_TO_IP_ADDR(rt_dst_addr, rt_gw4)
 			gateway = true;
 		}
 

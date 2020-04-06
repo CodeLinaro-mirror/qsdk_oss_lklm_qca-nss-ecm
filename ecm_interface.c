@@ -63,7 +63,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
@@ -532,8 +531,11 @@ static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
 		ecm_interface_route_release(&ecm_rt);
 		return false;
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
 	ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
+#else
+	ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gw4)
+#endif
 	ecm_interface_route_release(&ecm_rt);
 	return true;
 }
@@ -588,7 +590,11 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	rt = ecm_rt.rt.rtv4;
 	if (rt->rt_uses_gateway || (rt->rt_flags & RTF_GATEWAY)) {
 		*on_link = false;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
 		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
+#else
+		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gw4)
+#endif
 	} else {
 		*on_link = true;
 	}
@@ -1081,6 +1087,15 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_int
 }
 
 #ifdef ECM_IPV6_ENABLE
+struct rt6_info *ecm_interface_ipv6_route_lookup(struct net *netf, struct in6_addr *addr)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0))
+	return rt6_lookup(netf, addr, NULL, 0, 0);
+#else
+	return rt6_lookup(netf, addr, NULL, 0, NULL, 0);
+#endif
+}
+
 /*
  * ecm_interface_addr_find_route_by_addr_ipv6()
  *	Return the route for the given IP address.  Returns NULL on failure.
@@ -1095,7 +1110,7 @@ static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t addr, struct ecm_int
 	 * Get a route to the given IP address, this will allow us to also find the interface
 	 * it is using to communicate with that IP address.
 	 */
-	ecm_rt->rt.rtv6 = rt6_lookup(&init_net, &naddr, NULL, 0, 0);
+	ecm_rt->rt.rtv6 = ecm_interface_ipv6_route_lookup(&init_net, &naddr);
 	if (!ecm_rt->rt.rtv6) {
 		DEBUG_TRACE("No output route to: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		return NULL;
@@ -1169,7 +1184,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	/*
 	 * Find the route entry
 	 */
-	rt6i = rt6_lookup(netf, &dst_addr, NULL, 0, 0);
+	rt6i = ecm_interface_ipv6_route_lookup(netf, &dst_addr);
 	if (!rt6i) {
 		DEBUG_TRACE("IPv6 Route lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		return;
@@ -1189,7 +1204,11 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	 * Issue a Neighbour soliciation request
 	 */
 	DEBUG_TRACE("Issue Neighbour solicitation request\n");
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
 	ndisc_send_ns(dev, &dst_addr, &mc_dst_addr, &src_addr);
+#else
+	ndisc_send_ns(dev, &dst_addr, &mc_dst_addr, &src_addr, 0);
+#endif
 	neigh_release(neigh);
 	dst_release(&rt6i->dst);
 }
@@ -1278,7 +1297,8 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
 	struct in6_addr ipv6_addr;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(ipv6_addr, addr);
-	rt = rt6_lookup(&init_net, &ipv6_addr, NULL, 0, 0);
+
+	rt = ecm_interface_ipv6_route_lookup(&init_net, &ipv6_addr);
 	if (!rt) {
 		return NULL;
 	}
@@ -1298,6 +1318,8 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
  */
 bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 {
+/* TODO: Remove the check when PPTP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
@@ -1323,6 +1345,9 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 }
 
 /*
@@ -1334,6 +1359,8 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
  */
 bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver)
 {
+/* TODO: Remove the check when L2TP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	uint32_t flag = 0;
 	struct net_device *in;
 
@@ -1367,6 +1394,9 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 }
 
 /*
@@ -1378,6 +1408,8 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
  */
 bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out)
 {
+/* TODO: Remove the check when PPTP/L2TP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
@@ -1401,6 +1433,9 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 
 }
 
@@ -4311,9 +4346,11 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 		return true;
 	}
 
+#ifdef ECM_INTERFACE_OVPN_ENABLE
 	if (dev->type == ARPHRD_NONE && dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
 		return true;
 	}
+#endif
 
 	return false;
 }
@@ -7104,7 +7141,11 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	iov_iter_init(&msg.msg_iter, READ, &iov, 1, 1);
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
 	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
+#else
+	size = sock_recvmsg(sock, &msg, msg.msg_flags);
+#endif
 	set_fs(oldfs);
 
 	return size;
@@ -7121,7 +7162,7 @@ static void ecm_interface_wifi_event_thread(void)
 	unsigned char buf[512];
 	int len = sizeof(buf);
 
-	allow_signal(SIGKILL|SIGSTOP);
+	kernel_sigaction(SIGKILL, SIG_DFL);
 	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &__ewn.sock);
 	if (err < 0) {
 		DEBUG_ERROR("failed to create sock\n");
@@ -7193,7 +7234,8 @@ int ecm_interface_wifi_event_stop(void)
 	}
 
 	DEBUG_INFO("kill ecm_interface_wifi_event thread\n");
-	force_sig(SIGKILL, __ewn.thread);
+
+	send_sig(SIGKILL, __ewn.thread, 1);
 	err = kthread_stop(__ewn.thread);
 	__ewn.thread = NULL;
 

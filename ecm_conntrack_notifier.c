@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2017, 2019-2020 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -51,7 +51,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
@@ -346,12 +345,18 @@ static int ecm_conntrack_event(unsigned int events, struct nf_ct_event *item)
 	}
 
 	/*
-	 * Special untracked connection is not monitored
+	 * Fake untracked conntrack objects were removed on 4.12 kernel version
+	 * and onwards.
 	 */
-	if (ct == nf_ct_untracked_get()) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
+	if (unlikely(ct == nf_ct_untracked_get())) {
+		/*
+		 * Special untracked connection is not monitored
+		 */
 		DEBUG_TRACE("Fake connection event - ignoring\n");
 		return NOTIFY_DONE;
 	}
+#endif
 
 	/*
 	 * Only interested if this is IPv4 or IPv6.

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, 2020, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -42,7 +42,6 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
@@ -387,7 +386,11 @@ EXPORT_SYMBOL(ecm_db_time_get);
  *	Manage expiration of connections
  * NOTE: This is softirq context
  */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
 static void ecm_db_timer_callback(unsigned long data)
+#else
+static void ecm_db_timer_callback(struct timer_list *tm)
+#endif
 {
 	uint32_t timer;
 
@@ -425,9 +428,13 @@ void ecm_db_timer_init(void)
 	/*
 	 * Set a timer to manage cleanup of expired connections
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
 	init_timer(&ecm_db_timer);
 	ecm_db_timer.function = ecm_db_timer_callback;
 	ecm_db_timer.data = 0;
+#else
+	timer_setup(&ecm_db_timer, ecm_db_timer_callback, 0);
+#endif
 	ecm_db_timer.expires = jiffies + HZ;
 	add_timer(&ecm_db_timer);
 

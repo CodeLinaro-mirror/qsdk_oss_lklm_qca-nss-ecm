@@ -87,6 +87,8 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
+/* TODO: Remove the check when GRE support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 /*
  * ecm_front_end_gre_proto_is_accel_allowed()
  * 	Handle the following GRE cases:
@@ -223,6 +225,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	DEBUG_TRACE("%p: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
 	return true;
 }
+#endif
 
 /*
  * ecm_front_end_tcp_check_ct_and_fill_dscp()

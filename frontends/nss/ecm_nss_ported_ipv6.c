@@ -47,7 +47,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
@@ -1986,6 +1985,7 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 
 		layer4hdr = (__be16*)udp_hdr;
 
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
 		/*
 		 * Deny acceleration for L2TP-over-UDP tunnel
 		 */
@@ -1993,7 +1993,7 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 			DEBUG_TRACE("Skip packets for L2TP tunnel in skb %p\n", skb);
 			can_accel = false;
 		}
-
+#endif
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
 		 */

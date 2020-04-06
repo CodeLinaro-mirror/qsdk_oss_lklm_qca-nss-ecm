@@ -52,7 +52,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <linux/netfilter/nf_conntrack_zones_common.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/nf_conntrack_timeout.h>
@@ -1082,7 +1081,17 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 		reply_tuple.dst.u3.ip = orig_tuple.src.u3.ip;
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
+		/*
+		 * Fake untracked conntrack objects were removed on 4.12 kernel version
+		 * and onwards.
+		 * So, for the newer kernels, instead of comparing the ct with the percpu
+		 * fake conntrack, we can check the ct status.
+		 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
 		if (unlikely(ct == nf_ct_untracked_get())) {
+#else
+		if (unlikely(ctinfo == IP_CT_UNTRACKED)) {
+#endif
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 			/*
 			 * If the conntrack connection is set as untracked,
@@ -1155,10 +1164,16 @@ vxlan_done:
 	 * Check if we can accelerate the GRE protocol.
 	 */
 	if (ip_hdr.protocol == IPPROTO_GRE) {
+/* TODO: Remove the check when GRE support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 4)) {
 			DEBUG_WARN("%p: GRE protocol is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
+#else
+		DEBUG_WARN("%p: ECM GRE is unsupported\n", skb);
+		return NF_ACCEPT;
+#endif
 	}
 
 	/*
@@ -2207,7 +2222,9 @@ sync_conntrack:
 	}
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
+#endif
 	DEBUG_TRACE("%p: NSS Sync: conntrack connection\n", ct);
 
 	ecm_front_end_flow_and_return_directions_get(ct, flow_ip, 4, &flow_dir, &return_dir);
@@ -2218,7 +2235,11 @@ sync_conntrack:
 	 */
 	if (!test_bit(IPS_FIXED_TIMEOUT_BIT, &ct->status)) {
 		spin_lock_bh(&ct->lock);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 		ct->timeout.expires += delta_jiffies;
+#else
+		ct->timeout += delta_jiffies;
+#endif
 		spin_unlock_bh(&ct->lock);
 	}
 
@@ -2272,18 +2293,28 @@ sync_conntrack:
 			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
 
 			if (reply_pkts != 0) {
-				struct nf_conntrack_l4proto *l4proto;
+				struct nf_conntrack_l4proto *l4proto __maybe_unused;
 				unsigned int *timeouts;
 
 				set_bit(IPS_SEEN_REPLY_BIT, &ct->status);
 				set_bit(IPS_ASSURED_BIT, &ct->status);
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 				l4proto = __nf_ct_l4proto_find(AF_INET, IPPROTO_UDP);
 				timeouts = nf_ct_timeout_lookup(&init_net, ct, l4proto);
 
 				spin_lock_bh(&ct->lock);
 				ct->timeout.expires = jiffies + timeouts[UDP_CT_REPLIED];
 				spin_unlock_bh(&ct->lock);
+#else
+				timeouts = nf_ct_timeout_lookup(ct);
+				if (!timeouts) {
+					timeouts = udp_get_timeouts(nf_ct_net(ct));
+				}
+
+				spin_lock_bh(&ct->lock);
+				ct->timeout = jiffies + timeouts[UDP_CT_REPLIED];
+				spin_unlock_bh(&ct->lock);
+#endif
 			}
 		}
 		break;
@@ -2793,39 +2824,48 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 	/*
 	 * Register netfilter hooks
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 	result = nf_register_hooks(ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+#else
+	result = nf_register_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+#endif
 	if (result < 0) {
 		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		nss_ipv4_notify_unregister();
-		goto task_cleanup;
+		goto task_cleanup_1;
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
 	result = ecm_nss_multicast_ipv4_init(ecm_nss_ipv4_dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Failed to init ecm ipv4 multicast frontend\n");
-		nss_ipv4_notify_unregister();
-		nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-		goto task_cleanup;
+		goto task_cleanup_2;
 	}
 #endif
 
 	if (!ecm_nss_ipv4_sync_queue_init()) {
 		DEBUG_ERROR("Failed to create ecm ipv4 connection sync workqueue\n");
-		nss_ipv4_notify_unregister();
-#ifdef ECM_MULTICAST_ENABLE
-		ecm_nss_multicast_ipv4_exit();
-#endif
-		nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-		goto task_cleanup;
+		goto task_cleanup_3;
 	}
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_dp_hook_register(&ecm_nss_ipv4_dp_hooks);
 #endif
 	return 0;
+
+task_cleanup_3:
+#ifdef ECM_MULTICAST_ENABLE
+		ecm_nss_multicast_ipv4_exit();
+task_cleanup_2:
+#endif
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
+	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
+			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
+				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+#endif
+task_cleanup_1:
+	nss_ipv4_notify_unregister();
 
 task_cleanup:
 
@@ -2848,9 +2888,13 @@ void ecm_nss_ipv4_exit(void)
 	/*
 	 * Stop the network stack hooks
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
 			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-
+#else
+	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
+				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+#endif
 	/*
 	 * Unregister from the Linux NSS Network driver
 	 */
