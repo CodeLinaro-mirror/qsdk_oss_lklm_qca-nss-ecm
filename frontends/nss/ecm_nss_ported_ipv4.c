@@ -1025,18 +1025,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
 	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
 		int vlan_present = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-		vlan_present = vlan_tx_tag_present(skb);
-#else
 		vlan_present = skb_vlan_tag_present(skb);
-#endif
 		if (vlan_present) {
 			uint32_t vlan_value;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-			vlan_value = (ETH_P_8021Q << 16) | vlan_tx_tag_get(skb);
-#else
 			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
-#endif
 			nircm->vlan_primary_rule.ingress_vlan_tag = vlan_value;
 			nircm->vlan_primary_rule.egress_vlan_tag = vlan_value;
 			nircm->valid_flags |= NSS_IPV4_RULE_CREATE_VLAN_VALID;

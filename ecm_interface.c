@@ -50,11 +50,7 @@
 #endif
 #include <linux/inetdevice.h>
 #if defined(ECM_INTERFACE_TUNIPIP6_ENABLE) || defined(ECM_INTERFACE_SIT_ENABLE)
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 9, 0))
-#include <net/ipip.h>
-#else
 #include <net/ip_tunnels.h>
-#endif
 #endif
 #include <net/ip6_tunnel.h>
 #include <net/addrconf.h>
@@ -265,7 +261,6 @@ struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 		return master;
 	}
 #endif
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,6,0))
 	rcu_read_lock();
 	master = netdev_master_upper_dev_get_rcu(dev);
 	if (!master) {
@@ -274,13 +269,7 @@ struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 	}
 	dev_hold(master);
 	rcu_read_unlock();
-#else
-	master = dev->master;
-	if (!master) {
-		return NULL;
-	}
-	dev_hold(master);
-#endif
+
 	return master;
 }
 EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
@@ -291,11 +280,7 @@ EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
  */
 static inline struct net_device *ecm_interface_vlan_real_dev(struct net_device *vlan_dev)
 {
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 6, 0))
 	return vlan_dev_next_dev(vlan_dev);
-#else
-	return vlan_dev_real_dev(vlan_dev);
-#endif
 }
 
 /*
@@ -441,14 +426,8 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 
 	rcu_read_lock();
 	dst = ecm_rt.dst;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = dst_get_neighbour_noref(dst);
-	if (neigh) {
-		neigh_hold(neigh);
-	}
-#else
+
 	neigh = dst_neigh_lookup(dst, &daddr);
-#endif
 	if (!neigh) {
 		neigh = neigh_lookup(&nd_tbl, &daddr, dst->dev);
 	}
@@ -549,11 +528,7 @@ static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
 	 * Is this destination reachable via a gateway?
 	 */
 	rt = ecm_rt.rt.rtv4;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-	if (!(rt->rt_dst != rt->rt_gateway) && !(rt->rt_flags & RTF_GATEWAY)) {
-#else
 	if (!rt->rt_uses_gateway && !(rt->rt_flags & RTF_GATEWAY)) {
-#endif
 		ecm_interface_route_release(&ecm_rt);
 		return false;
 	}
@@ -611,11 +586,7 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 * Is this destination on link or off-link via a gateway?
 	 */
 	rt = ecm_rt.rt.rtv4;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	if ((rt->rt_dst != rt->rt_gateway) || (rt->rt_flags & RTF_GATEWAY)) {
-#else
 	if (rt->rt_uses_gateway || (rt->rt_flags & RTF_GATEWAY)) {
-#endif
 		*on_link = false;
 		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
 	} else {
@@ -627,14 +598,8 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 */
 	rcu_read_lock();
 	dst = ecm_rt.dst;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = dst_get_neighbour_noref(dst);
-	if (neigh) {
-		neigh_hold(neigh);
-	}
-#else
+
 	neigh = dst_neigh_lookup(dst, &ipv4_addr);
-#endif
 	if (!neigh) {
 		neigh = neigh_lookup(&arp_tbl, &ipv4_addr, dst->dev);
 	}
@@ -1213,11 +1178,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	/*
 	 * Find the neighbor entry
 	 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, &dst_addr);
-#else
 	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, NULL, &dst_addr);
-#endif
 	if (IS_ERR(neigh)) {
 		DEBUG_TRACE("Neighbour lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		dst_release(&rt6i->dst);
@@ -1228,11 +1189,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	 * Issue a Neighbour soliciation request
 	 */
 	DEBUG_TRACE("Issue Neighbour solicitation request\n");
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-	ndisc_send_ns(dev, neigh, &dst_addr, &mc_dst_addr, &src_addr);
-#else
 	ndisc_send_ns(dev, &dst_addr, &mc_dst_addr, &src_addr);
-#endif
 	neigh_release(neigh);
 	dst_release(&rt6i->dst);
 }
@@ -2765,11 +2722,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 */
 			ether_addr_copy(type_info.vlan.address, dev->dev_addr);
 			type_info.vlan.vlan_tag = vlan_dev_vlan_id(dev);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0))
-			type_info.vlan.vlan_tpid = ETH_P_8021Q;
-#else
 			type_info.vlan.vlan_tpid = ntohs(vlan_dev_vlan_proto(dev));
-#endif
 			DEBUG_TRACE("%p: Net device: %p is VLAN, mac: %pM, vlan_id: %x vlan_tpid: %x\n",
 					feci, dev, type_info.vlan.address, type_info.vlan.vlan_tag, type_info.vlan.vlan_tpid);
 
@@ -6482,11 +6435,7 @@ static void ecm_interface_mtu_change(struct net_device *dev)
  */
 static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, unsigned long event, void *ptr)
 {
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 10, 0))
-	struct net_device *dev __attribute__ ((unused)) = (struct net_device *)ptr;
-#else
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-#endif
 	struct net_device *master = NULL;
 
 	DEBUG_INFO("Net device notifier for: %p, name: %s, event: %lx\n", dev, dev->name, event);
@@ -7142,12 +7091,7 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0))
-	msg.msg_iov   = &iov;
-	msg.msg_iovlen = 1;
-#else
 	iov_iter_init(&msg.msg_iter, READ, &iov, 1, 1);
-#endif
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);

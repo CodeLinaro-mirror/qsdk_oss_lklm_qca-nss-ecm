@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2019-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -225,17 +225,10 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
  * ecm_mac_addr_equal()
  *	Compares two MAC addresses.
  */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-static inline unsigned ecm_mac_addr_equal(const u8 *addr1, const u8 *addr2)
-{
-	return compare_ether_addr(addr1, addr2);
-}
-#else
 static inline bool ecm_mac_addr_equal(const u8 *addr1, const u8 *addr2)
 {
 	return !ether_addr_equal(addr1, addr2);
 }
-#endif
 
 /*
  * ecm_ip_addr_is_non_unicast()

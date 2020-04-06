@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1138,16 +1138,7 @@ static bool ecm_tracker_tcp_extract_mss(struct sk_buff *skb, uint16_t *mss, stru
 	 * Parse the TCP header options
 	 */
 	memset(&opt_rx, 0, sizeof(opt_rx));
-	{
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3,6,0))
-		const u8 *hash_location;
-		tcp_parse_options(skb, &opt_rx, &hash_location, 0);
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
-		tcp_parse_options(skb, &opt_rx, 0, NULL);
-#else
-#error "Unsupported kernel version for tcp_parse_options()"
-#endif
-	}
+	tcp_parse_options(skb, &opt_rx, 0, NULL);
 
 	/*
 	 * Was there an MSS?

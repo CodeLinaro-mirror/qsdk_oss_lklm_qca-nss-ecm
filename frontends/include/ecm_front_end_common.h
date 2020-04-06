@@ -105,11 +105,7 @@ static inline bool ecm_front_end_acceleration_rejected(struct sk_buff *skb)
 		return true;
 	}
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-	acct = nf_conn_acct_find(ct);
-#else
 	acct = nf_conn_acct_find(ct)->counter;
-#endif
 	if (acct) {
 		long long packets = atomic64_read(&acct[CTINFO2DIR(ctinfo)].packets);
 		if ((packets > 0xff) && (packets & 0xff)) {
