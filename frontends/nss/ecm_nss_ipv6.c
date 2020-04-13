@@ -516,7 +516,16 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 					return NULL;
 				}
 
-				DEBUG_TRACE("Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(gw_addr));
+				/*
+				 * The found gateway address can be all zeros,
+				 * so in this case use the host address.
+				 */
+				if (ECM_IP_ADDR_IS_NULL(gw_addr)) {
+					DEBUG_TRACE("GW address is found as zeros, so use host IP\n");
+					ECM_IP_ADDR_COPY(gw_addr, addr);
+				} else {
+					DEBUG_TRACE("Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(gw_addr));
+				}
 
 				if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
 					DEBUG_TRACE("Found the mac address for gateway\n");
