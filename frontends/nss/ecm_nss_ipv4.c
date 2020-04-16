@@ -529,7 +529,7 @@ done:
 			 * There is no MAC address for TUN/TAP device.
 			 * Return if skb->dst is TUN/TAP device.
 			 */
-			if (!out_dev || out_dev->priv_flags & IFF_TUN_TAP) {
+			if (!out_dev || out_dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
 				DEBUG_WARN("failed to update node_addr dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_DOT_FMT "\n",
 						dev->name, out_dev->name, ECM_IP_ADDR_TO_DOT(addr));
 				return NULL;

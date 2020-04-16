@@ -136,8 +136,8 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	/*
 	 * Case 3: GRE V4 or V6 TAP
 	 */
-	if ((indev->priv_flags & IFF_GRE_V4_TAP) || (outdev->priv_flags & IFF_GRE_V4_TAP)
-		||(indev->priv_flags & IFF_GRE_V6_TAP) || (outdev->priv_flags & IFF_GRE_V6_TAP)) {
+	if ((indev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))
+		|| (outdev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))) {
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 		DEBUG_TRACE("%p: GRE IPv%d TAP flow - allow acceleration\n", skb, ip_version);
 		return true;
