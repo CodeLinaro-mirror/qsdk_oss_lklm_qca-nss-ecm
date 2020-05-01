@@ -108,9 +108,11 @@ struct ecm_classifier_process_response {
 	bool drop;					/* Drop packet at hand */
 	uint32_t flow_qos_tag;				/* QoS tag to use for the packet */
 	uint32_t return_qos_tag;			/* QoS tag to use for the packet */
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	uint16_t igs_flow_qos_tag;			/* Ingress QoS tag to use for the packet */
 	uint16_t igs_return_qos_tag;			/* Ingress QoS tag to use for the return packet */
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#endif
 	uint8_t flow_dscp;				/* DSCP mark for flow */
 	uint8_t return_dscp;				/* DSCP mark for return */
 #endif
@@ -360,7 +362,7 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			return result;
 		}
 	}
-
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
 		if ((result = ecm_state_write(sfi, "igs_flow_qos_tag", "%u", pr->igs_flow_qos_tag))) {
 			return result;
@@ -369,7 +371,7 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			return result;
 		}
 	}
-
+#endif
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
 		if ((result = ecm_state_write(sfi, "flow_dscp", "%u", pr->flow_dscp))) {
 			return result;

@@ -1308,6 +1308,7 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	create->qos_tag = (uint32_t)pr->flow_qos_tag;
 	create->valid_flags |= NSS_IPV4_MC_RULE_CREATE_FLAG_QOS_VALID;
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * Set up ingress shaper flow qos tags.
 	 */
@@ -1315,7 +1316,7 @@ static void ecm_nss_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 		create->igs_qos_tag = (uint16_t)pr->igs_flow_qos_tag;
 		create->valid_flags |= NSS_IPV4_MC_RULE_CREATE_FLAG_IGS_VALID;
 	}
-
+#endif
 	/*
 	 * DSCP information?
 	 */
@@ -3475,7 +3476,7 @@ process_packet:
 		ecm_db_multicast_connection_deref(tuple_instance);
 	}
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	/*
 	 * Check if IGS feature is enabled or not.
 	 */
@@ -3621,6 +3622,7 @@ process_packet:
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
 		 */
@@ -3631,7 +3633,7 @@ process_packet:
 			prevalent_pr.igs_return_qos_tag = aci_pr.igs_return_qos_tag;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
 		}
-
+#endif
 		/*
 		 * If any classifier denied DSCP remarking then that overrides every classifier
 		 */

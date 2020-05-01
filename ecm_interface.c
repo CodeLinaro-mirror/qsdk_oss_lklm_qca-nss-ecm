@@ -160,7 +160,7 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
  */
 int ecm_interface_src_check;
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * IGS enabled flag.
  *	If it is enabled, the acceleration engine will deny the acceleration for the new
@@ -7200,7 +7200,7 @@ int ecm_interface_wifi_event_stop(void)
 	return err;
 }
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * ecm_interface_igs_enabled_handler()
  * 	IGS enabled check sysctl node handler.
@@ -7282,7 +7282,7 @@ static struct ctl_table ecm_interface_table[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_src_check_handler,
 	},
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	{
 		.procname		= "igs_enabled",
 		.data			= &ecm_interface_igs_enabled,

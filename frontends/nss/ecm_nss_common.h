@@ -227,7 +227,7 @@ static inline int32_t ecm_nss_common_ipsec_get_ifnum(int32_t ifnum)
 }
 #endif
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * ecm_nss_common_igs_acceleration_is_allowed()
  *	Return true, if flow acceleration is allowed for an IGS interface.
@@ -304,7 +304,6 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 #endif
 
 #ifdef ECM_XFRM_ENABLE
-
 /*
  * ecm_nss_common_is_xfrm_flow()
  *	Skip xfrm flows
@@ -363,5 +362,4 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 
 	return false;
 }
-
 #endif

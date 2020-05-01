@@ -411,6 +411,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	cdscpi->process_response.flow_qos_tag = flow_qos_tag;
 	cdscpi->process_response.return_qos_tag = return_qos_tag;
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * IGS qostag values in conntrack are stored as per the direction of the flow.
 	 * But ECM always create an acceleration connection rule treating packet's source
@@ -430,7 +431,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 		cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_flow_qos_tag;
 		cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_reply_qos_tag;
 	}
-
+#endif
 	/*
 	 * Check if we need to set DSCP
 	 */
