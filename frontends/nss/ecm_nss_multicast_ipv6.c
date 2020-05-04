@@ -1171,7 +1171,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 
 				vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 				if (vlan_out_dev) {
-					vlan_prio = vlan_dev_get_egress_prio(vlan_out_dev, pr->flow_qos_tag);
+					vlan_prio = vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 					create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] |= vlan_prio;
 					dev_put(vlan_out_dev);
 					vlan_out_dev = NULL;

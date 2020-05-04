@@ -625,7 +625,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			vlan_in_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_in_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_in_dev, pr->return_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_in_dev, pr->return_qos_tag);
 				dev_put(vlan_in_dev);
 				vlan_in_dev = NULL;
 			}
@@ -867,7 +867,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_out_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_out_dev, pr->flow_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 				dev_put(vlan_out_dev);
 				vlan_out_dev = NULL;
 			}
