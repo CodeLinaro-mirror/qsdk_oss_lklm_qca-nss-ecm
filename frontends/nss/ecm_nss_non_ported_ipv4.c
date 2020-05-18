@@ -678,7 +678,7 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
-				if (dev->priv_flags & IFF_GRE_V4_TAP) {
+				if (dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) {
 					/*
 					 * Clear QOS_VALID to prevent outer rule from overwriting
 					 * inner flow's QoS classification.

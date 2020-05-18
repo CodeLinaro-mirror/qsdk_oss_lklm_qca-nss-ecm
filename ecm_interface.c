@@ -1304,7 +1304,7 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
 	if (out->type == ARPHRD_PPP) {
-		if (out->priv_flags & IFF_PPP_PPTP) {
+		if (out->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			return true;
 		}
 	}
@@ -1315,7 +1315,7 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 	}
 
 	if (in->type == ARPHRD_PPP) {
-		if (in->priv_flags & IFF_PPP_PPTP) {
+		if (in->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			dev_put(in);
 			return true;
 		}
@@ -1339,10 +1339,10 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 
 	switch (ver) {
 	case 2:
-		flag = IFF_PPP_L2TPV2;
+		flag = IFF_EXT_PPP_L2TPV2;
 		break;
 	case 3:
-		flag = IFF_PPP_L2TPV3;
+		flag = IFF_EXT_PPP_L2TPV3;
 		break;
 	default:
 		break;
@@ -1351,7 +1351,7 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->priv_flags & flag) {
+	if (out->priv_flags_ext & flag) {
 		return true;
 	}
 
@@ -1360,7 +1360,7 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 		return true;
 	}
 
-	if (in->priv_flags & flag) {
+	if (in->priv_flags_ext & flag) {
 		dev_put(in);
 		return true;
 	}
@@ -1383,8 +1383,8 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-			       IFF_PPP_PPTP)) {
+	if (out->priv_flags_ext & (IFF_EXT_PPP_L2TPV2 | IFF_EXT_PPP_L2TPV3 |
+			       IFF_EXT_PPP_PPTP)) {
 		return true;
 	}
 
@@ -1393,8 +1393,8 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 		return true;
 	}
 
-	if (in->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-			      IFF_PPP_PPTP)) {
+	if (in->priv_flags_ext & (IFF_EXT_PPP_L2TPV2 | IFF_EXT_PPP_L2TPV3 |
+			      IFF_EXT_PPP_PPTP)) {
 		dev_put(in);
 		return true;
 	}
@@ -2847,7 +2847,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		/*
 		 * GRE TAP?
 		 */
-		if (dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)) {
+		if (dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
 			interface_type = feci->ae_interface_type_get(feci, dev);
 			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
@@ -3111,7 +3111,7 @@ identifier_update:
 	/*
 	 * OVPN Tunnel?
 	 */
-	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags & IFF_TUN_TAP)) {
+	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags_ext & IFF_EXT_TUN_TAP)) {
 		struct net_device *tun_dev = NULL;
 		ip_addr_t saddr, daddr;
 
@@ -3177,7 +3177,7 @@ identifier_update:
 	 * ppp_is_multilink() and ppp_hold_channels() which acquire same lock
 	 */
 
-	if ((dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
+	if ((dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
 		if (skb && (skb->skb_iif == dev->ifindex)) {
 			struct pppol2tp_common_addr info;
 
@@ -3235,7 +3235,7 @@ identifier_update:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags & IFF_PPP_PPTP)) {
+	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags_ext & IFF_EXT_PPP_PPTP)) {
 		struct gre_hdr_pptp *gre_hdr;
 		uint16_t proto;
 		int ret;
@@ -4304,7 +4304,7 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 		return true;
 	}
 
-	if (dev->type == ARPHRD_NONE && dev->priv_flags & IFF_TUN_TAP) {
+	if (dev->type == ARPHRD_NONE && dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
 		return true;
 	}
 
@@ -4438,7 +4438,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	/*
 	 * if the address is a local address and indev=l2tp.
 	 */
-	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -4452,7 +4452,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	/*
 	 * if the address is a local address and indev=PPTP.
 	 */
-	if (protocol == IPPROTO_GRE && given_dest_dev && (given_dest_dev->priv_flags & IFF_PPP_PPTP)){
+	if (protocol == IPPROTO_GRE && given_dest_dev && (given_dest_dev->priv_flags_ext & IFF_EXT_PPP_PPTP)){
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -5017,7 +5017,7 @@ lag_success:
 			/*
 			 * OVPN ?
 			 */
-			if ((dest_dev_type == ARPHRD_NONE) && (dest_dev->priv_flags & IFF_TUN_TAP)) {
+			if ((dest_dev_type == ARPHRD_NONE) && (dest_dev->priv_flags_ext & IFF_EXT_TUN_TAP)) {
 				DEBUG_TRACE("Net device: %p is OVPN, device name: %s\n", dest_dev, dest_dev->name);
 				break;
 			}
@@ -5036,7 +5036,7 @@ lag_success:
 			DEBUG_TRACE("%p: Net device: %p is PPP\n", feci, dest_dev);
 
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
-			if ((given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+			if ((given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 				if (skb->skb_iif == dest_dev->ifindex) {
 					DEBUG_TRACE("%p: Net device: %p PPP channel is PPPoL2TPV2\n", feci, dest_dev);
 					break;
@@ -5045,7 +5045,7 @@ lag_success:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-			if (protocol == IPPROTO_GRE && dest_dev && (dest_dev->priv_flags & IFF_PPP_PPTP)) {
+			if (protocol == IPPROTO_GRE && dest_dev && (dest_dev->priv_flags_ext & IFF_EXT_PPP_PPTP)) {
 				DEBUG_TRACE("%p: Net device: %p PPP channel is PPTP\n", feci, dest_dev);
 				break;
 			}
@@ -5313,7 +5313,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	/*
 	 * if the address is a local address and indev=l2tp.
 	 */
-	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -5819,7 +5819,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 			DEBUG_TRACE("Net device: %p is PPP\n", dest_dev);
 
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
-			if ((given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+			if ((given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 				if (skb->skb_iif == dest_dev->ifindex) {
 					DEBUG_TRACE("Net device: %p PPP channel is PPPoL2TPV2\n", dest_dev);
 					break;

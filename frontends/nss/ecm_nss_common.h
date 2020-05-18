@@ -163,7 +163,7 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		/*
 		 * If device is not GRETAP then return NONE.
 		 */
-		if (!(dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP))) {
+		if (!(dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))) {
 			break;
 		}
 #endif
@@ -193,7 +193,7 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		break;
 	case ARPHRD_PPP:
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-		if (dev->priv_flags & IFF_PPP_PPTP) {
+		if (dev->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			if (feci->protocol == IPPROTO_GRE) {
 				return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_OUTER;
 			}
