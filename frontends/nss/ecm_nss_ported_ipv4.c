@@ -2148,7 +2148,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
-		if ((is_vxlan_dev(in_dev) || is_vxlan_dev(out_dev)) && is_routed) {
+		if ((netif_is_vxlan(in_dev) || netif_is_vxlan(out_dev)) && is_routed) {
 			DEBUG_TRACE("VxLAN outer connection, make src and dest idents same\n");
 			src_port = src_port_nat = dest_port;
 		}

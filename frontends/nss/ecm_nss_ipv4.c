@@ -183,6 +183,9 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 	uint8_t node_addr[ETH_ALEN];
 #if defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
 	ip_addr_t local_ip, remote_ip;
+#endif
+
+#if defined(ECM_INTERFACE_VXLAN_ENABLE) || defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
 	struct net_device *local_dev;
 #endif
 
@@ -1102,10 +1105,10 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 			 * Eth1 ---> Bridge ---> VxLAN0(Bridge Port) ---> Eth0(WAN)
 			 * The packets from VxLAN0 to Eth0 will be routed.
 			 *
-			 * is_vxlan_dev API is used to identify the VxLAN device &
+			 * netif_is_vxlan API is used to identify the VxLAN device &
 			 * is_routed flag is used to identify the outer flow.
 			 */
-			if (is_routed && is_vxlan_dev(in_dev)) {
+			if (is_routed && netif_is_vxlan(in_dev)) {
 				DEBUG_TRACE("%p: Untracked CT for VxLAN\n", skb);
 				ECM_IP_ADDR_TO_NIN4_ADDR(orig_tuple.src.u3.ip, ip_hdr.src_addr);
 				ECM_IP_ADDR_TO_NIN4_ADDR(orig_tuple.dst.u3.ip, ip_hdr.dest_addr);

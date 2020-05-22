@@ -68,6 +68,12 @@ ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_VXLAN_ENABLE=y in order
+# to enable support for VXLAN interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
 # #############################################################################
 ECM_INTERFACE_VLAN_ENABLE=y

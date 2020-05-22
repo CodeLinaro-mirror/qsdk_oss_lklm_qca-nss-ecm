@@ -99,7 +99,7 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev_type(struct net
 	/*
 	 * Find VxLAN dev type based on type, 0 for outer & 1 for inner.
 	 */
-	if (is_vxlan_dev(dev)) {
+	if (netif_is_vxlan(dev)) {
 		if (!type) {
 			return NSS_VXLAN_INTERFACE;
 		}

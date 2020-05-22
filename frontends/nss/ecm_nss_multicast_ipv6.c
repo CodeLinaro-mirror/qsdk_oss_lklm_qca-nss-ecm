@@ -2685,7 +2685,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 	if ((in_dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) ||
 	    (in_dev->type == ARPHRD_SIT) || (in_dev->type == ARPHRD_PPP) ||
 	    (in_dev->type == ARPHRD_TUNNEL6) ||
-	    (is_vxlan_dev(in_dev)) || (is_vxlan_dev(out_dev))) {
+	    (netif_is_vxlan(in_dev)) || (netif_is_vxlan(out_dev))) {
 		DEBUG_TRACE("in_dev: %p, in_type: %d, out_dev: %p, out_type: %d",
 				in_dev, in_dev->type, out_dev, out_dev->type);
 		return NF_ACCEPT;
