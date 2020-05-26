@@ -29,6 +29,7 @@
 #include <net/ip.h>
 #include <net/ipv6.h>
 #include <net/addrconf.h>
+#include <net/gre.h>
 
 /*
  * Debug output levels
@@ -87,8 +88,6 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
-/* TODO: Remove the check when GRE support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 /*
  * ecm_front_end_gre_proto_is_accel_allowed()
  * 	Handle the following GRE cases:
@@ -108,13 +107,14 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 							     int ip_version)
 {
 	struct net_device *dev;
-	struct gre_hdr *greh;
+	struct gre_base_hdr *greh;
 
 	skb_pull(skb, sizeof(struct iphdr));
-	greh = (struct gre_hdr *)(skb->data);
+	greh = (struct gre_base_hdr *)(skb->data);
 	skb_push(skb, sizeof(struct iphdr));
 
-	if (greh->version == GRE_VERSION_PPTP) {
+
+	if ((greh->flags & GRE_VERSION) == ECM_GRE_VERSION_1) {
 		/*
 		 * Case 1: PPTP locally terminated
 		 */
@@ -130,7 +130,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		return false;
 	}
 
-	if (greh->version != GRE_VERSION_1701) {
+	if ((greh->flags & GRE_VERSION) != ECM_GRE_VERSION_0) {
 		DEBUG_WARN("%p: Unknown GRE version - do not allow acceleration\n", skb);
 		return false;
 	}
@@ -214,7 +214,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	/*
 	 * Case 6: NVGRE pass through
 	 */
-	if (greh->key) {
+	if (greh->flags & GRE_KEY) {
 		DEBUG_TRACE("%p: NVGRE pass through - do not allow acceleration\n", skb);
 		return false;
 	}
@@ -225,7 +225,6 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	DEBUG_TRACE("%p: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
 	return true;
 }
-#endif
 
 /*
  * ecm_front_end_tcp_check_ct_and_fill_dscp()

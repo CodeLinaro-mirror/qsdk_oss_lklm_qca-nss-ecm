@@ -288,14 +288,11 @@ extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
 
-/* TODO: Remove the check when GRE support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct net_device *outdev,
 						      struct sk_buff *skb,
 						      struct nf_conntrack_tuple *tuple,
 						      int ip_version);
-#endif
 extern bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 						     struct ecm_tracker_ip_header *iph,
 						     struct sk_buff *skb,

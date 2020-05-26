@@ -166,6 +166,9 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		if (!(dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))) {
 			break;
 		}
+#if __has_attribute(__fallthrough__)
+		__attribute__((__fallthrough__));
+#endif
 #endif
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	case ARPHRD_IPGRE:

@@ -19,6 +19,19 @@
 #include <linux/printk.h>
 
 /*
+ * Common ECM macro to handle the kernel macro name change from kernel version 4.9 and above.
+ * GRE_VERSION_1701 and GRE_VERSION_PPTP macros in kernel version <  4.9 needs to be converted
+ * to big endian since GRE_VERSION with which it compares is in big endian
+ */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#define ECM_GRE_VERSION_0   __cpu_to_be16(GRE_VERSION_1701)
+#define ECM_GRE_VERSION_1   __cpu_to_be16(GRE_VERSION_PPTP)
+#else
+#define ECM_GRE_VERSION_0   GRE_VERSION_0
+#define ECM_GRE_VERSION_1   GRE_VERSION_1
+#endif
+
+/*
  * Flow/Return direction types.
  */
 enum ecm_conn_dir {

@@ -62,6 +62,18 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
+# to enable support for GRE TAP interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
+
+# #############################################################################
+# Define ECM_INTERFACE_GRE_TUN_ENABLE=y in order
+# to enable support for GRE TUN interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_TUNIPIP6_ENABLE=y in order
 # to enable support for TUNIPIP6 interface.
 # #############################################################################

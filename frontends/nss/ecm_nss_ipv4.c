@@ -1164,16 +1164,10 @@ vxlan_done:
 	 * Check if we can accelerate the GRE protocol.
 	 */
 	if (ip_hdr.protocol == IPPROTO_GRE) {
-/* TODO: Remove the check when GRE support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 4)) {
 			DEBUG_WARN("%p: GRE protocol is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
-#else
-		DEBUG_WARN("%p: ECM GRE is unsupported\n", skb);
-		return NF_ACCEPT;
-#endif
 	}
 
 	/*
