@@ -14,6 +14,8 @@
  **************************************************************************
  */
 
+extern int ecm_classifier_accel_delay_pkts;	/* Default slow path packets allowed before the acceleration */
+
 struct ecm_classifier_instance;
 
 /*

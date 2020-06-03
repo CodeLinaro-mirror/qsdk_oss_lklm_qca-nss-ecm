@@ -58,6 +58,14 @@
 #endif
 
 /*
+ * Default slow path packets allowed before the acceleration
+ *  0 - The feature is disabled. Acceleration starts immediately.
+ *  1 - Acceleration will not start until both direction traffic is seen.
+ *  N - Acceleration will not start until N packets are seen in the slow path.
+ */
+int ecm_classifier_accel_delay_pkts = 0;
+
+/*
  * ecm_classifier_assign_classifier()
  *	Instantiate and assign classifier of type upon the connection, also returning it if it could be allocated.
  */

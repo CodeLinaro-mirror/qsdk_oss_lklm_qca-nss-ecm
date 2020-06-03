@@ -1309,9 +1309,11 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
+		 * Reset the slow path counter as well.
 		 */
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
+		feci->stats.slow_path_packets = 0;
 		spin_unlock_bh(&feci->lock);
 		kfree(nim);
 		return;
@@ -1887,6 +1889,9 @@ static int ecm_nss_non_ported_ipv4_connection_state_get(struct ecm_front_end_con
 	if ((result = ecm_state_write(sfi, "ae_nack_limit", "%d", stats.ae_nack_limit))) {
 		return result;
 	}
+	if ((result = ecm_state_write(sfi, "slow_path_packets", "%d", stats.slow_path_packets))) {
+		return result;
+	}
 
 	return ecm_state_prefix_remove(sfi);
 }
@@ -1988,6 +1993,7 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 							uint16_t l2_encap_proto)
 {
 	struct ecm_db_connection_instance *ci;
+	struct ecm_front_end_connection_instance *feci;
 	int protocol;
 	int src_port;
 	int src_port_nat;
@@ -2049,7 +2055,6 @@ unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct 
 		struct ecm_db_mapping_instance *mi[ECM_DB_OBJ_DIR_MAX];
 		struct ecm_db_node_instance *ni[ECM_DB_OBJ_DIR_MAX];
 		struct ecm_classifier_default_instance *dci;
-		struct ecm_front_end_connection_instance *feci;
 		struct ecm_db_connection_instance *nci;
 		ecm_classifier_type_t classifier_type;
 		int32_t to_list_first;
@@ -2346,9 +2351,9 @@ done:
 	 * Check if IGS feature is enabled or not.
 	 */
 	if (unlikely(ecm_interface_igs_enabled)) {
-		struct ecm_front_end_connection_instance *feci = ecm_db_connection_front_end_get_and_ref(ci);
-		bool ret = ecm_nss_common_igs_acceleration_is_allowed(feci, skb);
-
+		bool ret;
+		feci = ecm_db_connection_front_end_get_and_ref(ci);
+		ret = ecm_nss_common_igs_acceleration_is_allowed(feci, skb);
 		feci->deref(feci);
 		if (!ret) {
 			DEBUG_WARN("%px: Acceleration denied.\n", ci);
@@ -2384,6 +2389,15 @@ done:
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
 		ecm_nss_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, NULL, skb);
 	}
+
+	/*
+	 * Increment the slow path packet counter.
+	 */
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	spin_lock_bh(&feci->lock);
+	feci->stats.slow_path_packets++;
+	spin_unlock_bh(&feci->lock);
+	feci->deref(feci);
 
 	/*
 	 * Iterate the assignments and call to process!
@@ -2554,7 +2568,6 @@ done:
 	 */
 	if (protocol == IPPROTO_IPV6
 			&& prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
-		struct ecm_front_end_connection_instance *feci;
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		ecm_nss_non_ported_ipv4_sit_set_peer((struct ecm_nss_non_ported_ipv4_connection_instance *)feci, skb);
@@ -2566,7 +2579,6 @@ done:
 	 * Accelerate?
 	 */
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
-		struct ecm_front_end_connection_instance *feci;
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		ecm_nss_non_ported_ipv4_connection_accelerate(feci, is_l2_encap, &prevalent_pr);
