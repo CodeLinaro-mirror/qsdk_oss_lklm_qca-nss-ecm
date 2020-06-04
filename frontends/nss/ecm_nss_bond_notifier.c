@@ -46,7 +46,7 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_bridge.h>
 #include <linux/if_bridge.h>
-#include <linux/if_bonding.h>
+#include <net/bonding.h>
 #include <net/arp.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_acct.h>
