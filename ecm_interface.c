@@ -44,6 +44,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/socket.h>
 #include <linux/wireless.h>
+#include <net/gre.h>
 
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 #include <linux/if_bridge.h>
@@ -3271,15 +3272,17 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags_ext & IFF_EXT_PPP_PPTP)) {
-		struct gre_hdr_pptp *gre_hdr;
+		struct gre_base_hdr *gre_hdr;
 		uint16_t proto;
 		int ret;
 
 		skb_pull(skb, sizeof(struct iphdr));
-		gre_hdr = (struct gre_hdr_pptp *)(skb->data);
+		gre_hdr = (struct gre_base_hdr *)(skb->data);
 		proto = ntohs(gre_hdr->protocol);
-		if ((gre_hdr->version == GRE_VERSION_PPTP) && (proto == GRE_PROTOCOL_PPTP)) {
-			ret = pptp_session_find(&opt, gre_hdr->call_id, v4_hdr->daddr);
+		if ((gre_hdr->flags & GRE_VERSION) == ECM_GRE_VERSION_1) {
+			ecm_gre_hdr_pptp *hdr = (ecm_gre_hdr_pptp *)gre_hdr;
+
+			ret = pptp_session_find(&opt, hdr->call_id, v4_hdr->daddr);
 			if (ret < 0) {
 				skb_push(skb, sizeof(struct iphdr));
 				DEBUG_WARN("%px: PPTP session info not found\n", feci);
