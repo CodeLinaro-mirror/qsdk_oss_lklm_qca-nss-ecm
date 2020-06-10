@@ -1319,8 +1319,6 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
  */
 bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 {
-/* TODO: Remove the check when PPTP support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
@@ -1346,9 +1344,6 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 
 	dev_put(in);
 	return false;
-#else
-	return false;
-#endif
 }
 
 /*
@@ -1360,8 +1355,6 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
  */
 bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver)
 {
-/* TODO: Remove the check when L2TP support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	uint32_t flag = 0;
 	struct net_device *in;
 
@@ -1395,9 +1388,6 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 
 	dev_put(in);
 	return false;
-#else
-	return false;
-#endif
 }
 
 /*
@@ -1409,8 +1399,6 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
  */
 bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out)
 {
-/* TODO: Remove the check when PPTP/L2TP support is added */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
@@ -1434,10 +1422,6 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 
 	dev_put(in);
 	return false;
-#else
-	return false;
-#endif
-
 }
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
