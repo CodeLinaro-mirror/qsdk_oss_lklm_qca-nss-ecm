@@ -170,6 +170,7 @@ struct ecm_front_end_connection_instance {
 	struct ecm_db_connection_instance *ci;			/* RO: The connection instance relating to this instance. */
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
+	bool destroy_fail_handle_pending;			/* Set while handling the connection destroy failure */
 	ecm_front_end_acceleration_mode_t accel_mode;		/* Indicates the type of acceleration being applied to a connection, if any. */
 	spinlock_t lock;					/* Lock for structure data */
 	int refs;						/* Integer to trap we never go negative */
