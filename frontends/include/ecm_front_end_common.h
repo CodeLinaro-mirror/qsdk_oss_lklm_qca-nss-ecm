@@ -177,6 +177,13 @@ static inline bool ecm_front_end_common_connection_defunct_check(struct ecm_fron
 	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%p: feci lock is not held\n", feci);
 
 	/*
+	 * If we have not completed the destroy failure handling, do nothing.
+	 */
+	if (feci->destroy_fail_handle_pending) {
+		return false;
+	}
+
+	/*
 	 * If connection has already become defunct, do nothing.
 	 */
 	if (feci->is_defunct) {
@@ -273,6 +280,7 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 	 */
 	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_ACCEL;
 	feci->is_defunct = false;
+	feci->destroy_fail_handle_pending = true;
 	spin_unlock_bh(&feci->lock);
 
 	/*
@@ -280,6 +288,10 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 	 * tried to be defuncted again, when the timeout expires (its value is 5 seconds).
 	 */
 	ecm_db_connection_defunct_timer_remove_and_set(feci->ci, ECM_DB_TIMER_GROUPS_CONNECTION_DEFUNCT_RETRY_TIMEOUT);
+
+	spin_lock_bh(&feci->lock);
+	feci->destroy_fail_handle_pending = false;
+	spin_unlock_bh(&feci->lock);
 
 	return false;
 }
