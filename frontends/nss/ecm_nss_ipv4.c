@@ -1771,7 +1771,9 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
 	 * Case 2:
 	 *	For routed packets the skb will have the src mac matching the bridge mac.
 	 * Case 3:
-	 *	If the packet was not local (case 1) or routed (case 2) then we process.
+	 *	If the packet was not local (case 1) or routed (case 2) then
+	 *	we process. There is an exception to case 2: when hairpin mode
+	 *	is enabled, we process.
 	 */
 
 	/*
@@ -1783,14 +1785,28 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
 		dev_put(bridge);
 		return NF_ACCEPT;
 	}
+
+	/*
+	 * This flag needs to be checked in slave port(eth0/ath0)
+	 * and not on master interface(br-lan). Hairpin flag can be
+	 * enabled/disabled for ports individually.
+	 */
 	if (in == out) {
-		DEBUG_TRACE("skb: %p, bridge: %p (%s), port bounce on %p (%s)\n", skb, bridge, bridge->name, out, out->name);
-		goto skip_ipv4_bridge_flow;
+		if (!br_is_hairpin_enabled(in)) {
+			DEBUG_TRACE("skb: %p, bridge: %p (%s), ignoring"
+					"the packet, hairpin not enabled"
+					"on port %p (%s)\n", skb, bridge,
+					bridge->name, out, out->name);
+			goto skip_ipv4_bridge_flow;
+		}
+		DEBUG_TRACE("skb: %p, bridge: %p (%s), hairpin enabled on port"
+				"%p (%s)\n", skb, bridge, bridge->name, out, out->name);
 	}
+
+	/*
+	 * Case 2: Routed trafffic would be handled by the INET post routing.
+	 */
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
-		/*
-		 * Case 2: Routed trafffic would be handled by the INET post routing.
-		 */
 		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
 		goto skip_ipv4_bridge_flow;
 	}
