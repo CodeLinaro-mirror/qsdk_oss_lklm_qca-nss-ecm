@@ -2773,7 +2773,8 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		/*
 		 * VxLAN?
 		 */
-		if (is_vxlan_dev(dev)) {
+		if (netif_is_vxlan(dev)) {
+			u32 vni;
 			struct vxlan_dev *vxlan_tun;
 			ip_addr_t vxlan_saddr, vxlan_daddr;
 
@@ -2781,16 +2782,15 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 * VxLAN
 			 */
 			vxlan_tun = netdev_priv(dev);
-
+			vni = vxlan_get_vni(vxlan_tun);
 			DEBUG_TRACE("%p: Net device: %p is VxLAN, mac: %pM, vni: %d\n",
-					feci, dev, dev->dev_addr, vxlan_tun->cfg.vni);
-
+					feci, dev, dev->dev_addr, vni);
 			interface_type = ecm_interface_vxlan_type_get(skb);
 			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 			DEBUG_TRACE("%p: VxLAN netdevice interface ae_interface_num: %d, interface_type: %d\n",
 					feci, ae_interface_num, interface_type);
 
-			type_info.vxlan.vni = vxlan_tun->cfg.vni;
+			type_info.vxlan.vni = vni;
 			type_info.vxlan.if_type = interface_type;
 
 			/*
@@ -4513,7 +4513,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	if (from_local_addr &&
 	    given_dest_dev &&
 	    (given_dest_dev->type == ARPHRD_ETHER) &&
-	    (is_vxlan_dev(given_dest_dev))) {
+	    (netif_is_vxlan(given_dest_dev))) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
