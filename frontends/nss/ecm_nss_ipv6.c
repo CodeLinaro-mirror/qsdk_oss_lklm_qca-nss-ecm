@@ -2016,10 +2016,10 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 		current_jiffies = jiffies;
 
 		if (time_is_after_jiffies(ecm_nss_ipv6_roll_check_jiffies))  {
-			ecm_nss_ipv6_next_req_time = 0;
+			ecm_nss_ipv6_next_req_time = jiffies + ECM_NSS_IPV6_STATS_SYNC_PERIOD;
 		}
 
-		if (ecm_nss_ipv6_next_req_time > current_jiffies) {
+		if (time_after(ecm_nss_ipv6_next_req_time, current_jiffies)) {
 			msleep(jiffies_to_msecs(ecm_nss_ipv6_next_req_time - current_jiffies));
 		}
 		ecm_nss_ipv6_roll_check_jiffies = jiffies;
