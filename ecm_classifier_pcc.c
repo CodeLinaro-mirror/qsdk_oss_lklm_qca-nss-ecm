@@ -173,7 +173,7 @@ void ecm_classifier_pcc_unregister_begin(struct ecm_classifier_pcc_registrant *r
 	}
 	if (reg != r) {
 		spin_unlock_bh(&ecm_classifier_pcc_lock);
-		DEBUG_WARN("Unexpected registrant, given: %p, expecting: %p\n", r, reg);
+		DEBUG_WARN("Unexpected registrant, given: %px, expecting: %px\n", r, reg);
 		return;
 	}
 
@@ -240,7 +240,7 @@ void ecm_classifier_pcc_permit_accel_v4(uint8_t *src_mac, __be32 src_ip, int src
 		return;
 	}
 	pcci = (struct ecm_classifier_pcc_instance *)classi;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	/*
 	 * Set the permitted accel state to PERMITTED
@@ -311,7 +311,7 @@ void ecm_classifier_pcc_permit_accel_v6(uint8_t *src_mac, struct in6_addr *src_i
 		return;
 	}
 	pcci = (struct ecm_classifier_pcc_instance *)classi;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	/*
 	 * Set the permitted accel state to PERMITTED
@@ -376,7 +376,7 @@ void ecm_classifier_pcc_deny_accel_v4(uint8_t *src_mac, __be32 src_ip, int src_p
 		return;
 	}
 	pcci = (struct ecm_classifier_pcc_instance *)classi;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	/*
 	 * Set the permitted accel state to DENIED
@@ -454,7 +454,7 @@ void ecm_classifier_pcc_deny_accel_v6(uint8_t *src_mac, struct in6_addr *src_ip,
 		return;
 	}
 	pcci = (struct ecm_classifier_pcc_instance *)classi;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	/*
 	 * Set the permitted accel state to DENIED
@@ -503,7 +503,7 @@ static void ecm_classifier_pcc_unregister_force(struct ecm_classifier_pcc_instan
 	/*
 	 * Release our ref upon the registrant that we took when it was registered
 	 */
-	DEBUG_INFO("Force unregistration of: %p\n", reg);
+	DEBUG_INFO("Force unregistration of: %px\n", reg);
 	reg->deref(reg);
 
 	/*
@@ -524,8 +524,8 @@ static void ecm_classifier_pcc_unregister_force(struct ecm_classifier_pcc_instan
 static void _ecm_classifier_pcc_ref(struct ecm_classifier_pcc_instance *pcci)
 {
 	pcci->refs++;
-	DEBUG_TRACE("%p: pcci ref %d\n", pcci, pcci->refs);
-	DEBUG_ASSERT(pcci->refs > 0, "%p: ref wrap\n", pcci);
+	DEBUG_TRACE("%px: pcci ref %d\n", pcci, pcci->refs);
+	DEBUG_ASSERT(pcci->refs > 0, "%px: ref wrap\n", pcci);
 }
 
 /*
@@ -537,7 +537,7 @@ static void ecm_classifier_pcc_ref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	_ecm_classifier_pcc_ref(pcci);
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
@@ -552,11 +552,11 @@ static int ecm_classifier_pcc_deref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	pcci->refs--;
-	DEBUG_ASSERT(pcci->refs >= 0, "%p: refs wrapped\n", pcci);
-	DEBUG_TRACE("%p: Parental Controls classifier deref %d\n", pcci, pcci->refs);
+	DEBUG_ASSERT(pcci->refs >= 0, "%px: refs wrapped\n", pcci);
+	DEBUG_TRACE("%px: Parental Controls classifier deref %d\n", pcci, pcci->refs);
 	if (pcci->refs) {
 		int refs = pcci->refs;
 		spin_unlock_bh(&ecm_classifier_pcc_lock);
@@ -567,14 +567,14 @@ static int ecm_classifier_pcc_deref(struct ecm_classifier_instance *ci)
 	 * Object to be destroyed
 	 */
 	ecm_classifier_pcc_count--;
-	DEBUG_ASSERT(ecm_classifier_pcc_count >= 0, "%p: ecm_classifier_pcc_count wrap\n", pcci);
+	DEBUG_ASSERT(ecm_classifier_pcc_count >= 0, "%px: ecm_classifier_pcc_count wrap\n", pcci);
 
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
 
 	/*
 	 * Final
 	 */
-	DEBUG_INFO("%p: Final Parental Controls classifier instance\n", pcci);
+	DEBUG_INFO("%px: Final Parental Controls classifier instance\n", pcci);
 	kfree(pcci);
 
 	return 0;
@@ -605,7 +605,7 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	ip_addr_t dst_ip;
 	struct ecm_classifier_pcc_registrant *registrant;
 
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: invalid state magic\n", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: invalid state magic\n", pcci);
 
 	/*
 	 * Get connection
@@ -827,7 +827,7 @@ static ecm_classifier_type_t ecm_classifier_pcc_type_get(struct ecm_classifier_i
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 	return ECM_CLASSIFIER_TYPE_PCC;
 }
 
@@ -840,7 +840,7 @@ static bool ecm_classifier_pcc_reclassify_allowed(struct ecm_classifier_instance
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 	return true;
 }
 
@@ -852,7 +852,7 @@ static void ecm_classifier_pcc_reclassify(struct ecm_classifier_instance *aci)
 {
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	/*
 	 * Connection needs to be reset to 'as new'
@@ -878,7 +878,7 @@ static void ecm_classifier_pcc_last_process_response_get(struct ecm_classifier_i
 {
 	struct ecm_classifier_pcc_instance *pcci;
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	*process_response = pcci->process_response;
@@ -894,7 +894,7 @@ static void ecm_classifier_pcc_sync_to_v4(struct ecm_classifier_instance *aci, s
 	struct ecm_classifier_pcc_instance *pcci __attribute__((unused));
 
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 }
 
 /*
@@ -906,7 +906,7 @@ static void ecm_classifier_pcc_sync_from_v4(struct ecm_classifier_instance *aci,
 	struct ecm_classifier_pcc_instance *pcci __attribute__((unused));
 
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 }
 
 /*
@@ -918,7 +918,7 @@ static void ecm_classifier_pcc_sync_to_v6(struct ecm_classifier_instance *aci, s
 	struct ecm_classifier_pcc_instance *pcci __attribute__((unused));
 
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 }
 
 /*
@@ -930,7 +930,7 @@ static void ecm_classifier_pcc_sync_from_v6(struct ecm_classifier_instance *aci,
 	struct ecm_classifier_pcc_instance *pcci __attribute__((unused));
 
 	pcci = (struct ecm_classifier_pcc_instance *)aci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 }
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
@@ -948,7 +948,7 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	uint32_t reg_calls_from;
 
 	pcci = (struct ecm_classifier_pcc_instance *)ci;
-	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%p: magic failed", pcci);
+	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: magic failed", pcci);
 
 	if ((result = ecm_state_prefix_add(sfi, "pcc"))) {
 		return result;
@@ -960,7 +960,6 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	reg_calls_to = pcci->reg_calls_to;
 	reg_calls_from = pcci->reg_calls_from;
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
-
 
 	if ((result = ecm_state_write(sfi, "accel_permit_state", "%d", accel_permit_state))) {
 		return result;
@@ -1044,10 +1043,10 @@ struct ecm_classifier_pcc_instance *ecm_classifier_pcc_instance_alloc(struct ecm
 	 */
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	ecm_classifier_pcc_count++;
-	DEBUG_ASSERT(ecm_classifier_pcc_count > 0, "%p: ecm_classifier_pcc_count wrap\n", pcci);
+	DEBUG_ASSERT(ecm_classifier_pcc_count > 0, "%px: ecm_classifier_pcc_count wrap\n", pcci);
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
 
-	DEBUG_INFO("Parental Controls classifier instance alloc: %p\n", pcci);
+	DEBUG_INFO("Parental Controls classifier instance alloc: %px\n", pcci);
 	return pcci;
 }
 EXPORT_SYMBOL(ecm_classifier_pcc_instance_alloc);

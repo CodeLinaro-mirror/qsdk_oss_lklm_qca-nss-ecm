@@ -557,7 +557,7 @@ done:
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("%p: RAWIP interface unsupported\n", feci);
+			DEBUG_TRACE("%px: RAWIP interface unsupported\n", feci);
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_OVPN:
@@ -587,17 +587,17 @@ done:
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 			local_dev = ecm_interface_dev_find_by_local_addr(addr);
 			if (!local_dev) {
-				DEBUG_WARN("%p: Failed to find local netdevice of VxLAN tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n",
+				DEBUG_WARN("%px: Failed to find local netdevice of VxLAN tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n",
 						feci, ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
 
 			if (!ecm_interface_mac_addr_get_no_route(local_dev, addr, node_addr)) {
-				DEBUG_WARN("%p: Couldn't find mac address for local dev\n", feci);
+				DEBUG_WARN("%px: Couldn't find mac address for local dev\n", feci);
 				dev_put(local_dev);
 				return NULL;
 			}
-			DEBUG_TRACE("%p: Found the mac address for local dev\n", feci);
+			DEBUG_TRACE("%px: Found the mac address for local dev\n", feci);
 			dev_put(local_dev);
 			done = true;
 			break;
@@ -634,7 +634,7 @@ done:
 	 */
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		DEBUG_TRACE("%p: node established\n", ni);
+		DEBUG_TRACE("%px: node established\n", ni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
@@ -669,7 +669,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%p: node established\n", nni);
+	DEBUG_TRACE("%px: node established\n", nni);
 	return nni;
 }
 
@@ -691,7 +691,7 @@ struct ecm_db_host_instance *ecm_nss_ipv6_host_establish_and_ref(ip_addr_t addr)
 	 */
 	hi = ecm_db_host_find_and_ref(addr);
 	if (hi) {
-		DEBUG_TRACE("%p: host established\n", hi);
+		DEBUG_TRACE("%px: host established\n", hi);
 		return hi;
 	}
 
@@ -719,7 +719,7 @@ struct ecm_db_host_instance *ecm_nss_ipv6_host_establish_and_ref(ip_addr_t addr)
 
 	spin_unlock_bh(&ecm_nss_ipv6_lock);
 
-	DEBUG_TRACE("%p: host established\n", nhi);
+	DEBUG_TRACE("%px: host established\n", nhi);
 	return nhi;
 }
 
@@ -742,7 +742,7 @@ struct ecm_db_mapping_instance *ecm_nss_ipv6_mapping_establish_and_ref(ip_addr_t
 	 */
 	mi = ecm_db_mapping_find_and_ref(addr, port);
 	if (mi) {
-		DEBUG_TRACE("%p: mapping established\n", mi);
+		DEBUG_TRACE("%px: mapping established\n", mi);
 		return mi;
 	}
 
@@ -789,7 +789,7 @@ struct ecm_db_mapping_instance *ecm_nss_ipv6_mapping_establish_and_ref(ip_addr_t
 	/*
 	 * Return the mapping instance
 	 */
-	DEBUG_INFO("%p: mapping established\n", nmi);
+	DEBUG_INFO("%px: mapping established\n", nmi);
 	return nmi;
 }
 
@@ -867,7 +867,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	struct ecm_front_end_interface_construct_instance efeici;
 	 ecm_db_direction_t ecm_dir;
 
-	DEBUG_INFO("%p: re-gen needed\n", ci);
+	DEBUG_INFO("%px: re-gen needed\n", ci);
 
 	/*
 	 * We may need to swap the devices around depending on who the sender of the packet that triggered the re-gen is
@@ -878,7 +878,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		/*
 		 * This is a packet sent by the destination of the connection, i.e. it is a packet issued by the 'from' side of the connection.
 		 */
-		DEBUG_TRACE("%p: Re-gen swap devs\n", ci);
+		DEBUG_TRACE("%px: Re-gen swap devs\n", ci);
 		tmp_dev = out_dev;
 		out_dev = in_dev;
 		in_dev = tmp_dev;
@@ -917,7 +917,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv6_retry_regen;
 	}
 
-	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'from' interface heirarchy list\n", ci);
 	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
@@ -927,7 +927,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
-	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'to' interface heirarchy list\n", ci);
 	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
@@ -951,9 +951,9 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	 */
 	reclassify_allowed = true;
 	for (i = 0; i < assignment_count; ++i) {
-		DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+		DEBUG_TRACE("%px: Calling to reclassify: %px, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
 		if (!assignments[i]->reclassify_allowed(assignments[i])) {
-			DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+			DEBUG_TRACE("%px: reclassify denied: %px, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
 			reclassify_allowed = false;
 			break;
 		}
@@ -963,22 +963,22 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		/*
 		 * Regeneration came to a successful conclusion even though reclassification was denied
 		 */
-		DEBUG_WARN("%p: re-classify denied\n", ci);
+		DEBUG_WARN("%px: re-classify denied\n", ci);
 		goto ecm_ipv6_regen_done;
 	}
 
 	/*
 	 * Reclassify
 	 */
-	DEBUG_INFO("%p: reclassify\n", ci);
+	DEBUG_INFO("%px: reclassify\n", ci);
 	if (!ecm_classifier_reclassify(ci, assignment_count, assignments)) {
 		/*
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
-		DEBUG_WARN("%p: Regeneration: reclassify failed\n", ci);
+		DEBUG_WARN("%px: Regeneration: reclassify failed\n", ci);
 		goto ecm_ipv6_regen_done;
 	}
-	DEBUG_INFO("%p: reclassify success\n", ci);
+	DEBUG_INFO("%px: reclassify success\n", ci);
 
 ecm_ipv6_regen_done:
 
@@ -1024,7 +1024,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * Obtain the IP header from the skb
 	 */
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
-		DEBUG_WARN("Invalid ip header in skb %p\n", skb);
+		DEBUG_WARN("Invalid ip header in skb %px\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1032,7 +1032,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 * Process only IPv6 packets
 	 */
 	if (ip_hdr.is_v4) {
-		DEBUG_TRACE("Not an IPv6 packet, skb %p\n", skb);
+		DEBUG_TRACE("Not an IPv6 packet, skb %px\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1050,13 +1050,13 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	}
 
 	if (ip_hdr.fragmented) {
-		DEBUG_TRACE("skb %p is fragmented\n", skb);
+		DEBUG_TRACE("skb %px is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
 
 #ifdef ECM_XFRM_ENABLE
 	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
-		DEBUG_TRACE("%p xfrm flow; skip it\n", skb);
+		DEBUG_TRACE("%px xfrm flow; skip it\n", skb);
 		return NF_ACCEPT;
 	}
 #endif
@@ -1066,7 +1066,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
 	if (unlikely(!ct)) {
-		DEBUG_TRACE("%p: no ct\n", skb);
+		DEBUG_TRACE("%px: no ct\n", skb);
 		ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.src.u3.in6, ip_hdr.src_addr);
 		ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.dst.u3.in6, ip_hdr.dest_addr);
 		orig_tuple.dst.protonum = ip_hdr.protocol;
@@ -1099,7 +1099,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 			 * is_routed flag is used to identify the outer flow.
 			 */
 			if (is_routed && netif_is_vxlan(in_dev)) {
-				DEBUG_TRACE("%p: Untracked CT for VxLAN\n", skb);
+				DEBUG_TRACE("%px: Untracked CT for VxLAN\n", skb);
 				ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.src.u3.in6, ip_hdr.src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(orig_tuple.dst.u3.in6, ip_hdr.dest_addr);
 				orig_tuple.dst.protonum = ip_hdr.protocol;
@@ -1110,7 +1110,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 				goto vxlan_done;
 			}
 #endif
-			DEBUG_TRACE("%p: ct: untracked\n", skb);
+			DEBUG_TRACE("%px: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}
 
@@ -1119,14 +1119,14 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		 * then acceleration is denied (connection needs assistance from HLOS to function)
 		 */
 		if (nfct_help(ct)) {
-			DEBUG_TRACE("%p: Connection has helper\n", ct);
+			DEBUG_TRACE("%px: Connection has helper\n", ct);
 			can_accel = false;
 		}
 
 		/*
 		 * Extract conntrack connection information
 		 */
-		DEBUG_TRACE("%p: ct: %p, ctinfo: %x\n", skb, ct, ctinfo);
+		DEBUG_TRACE("%px: ct: %px, ctinfo: %x\n", skb, ct, ctinfo);
 		orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 		reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
 		if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
@@ -1145,7 +1145,7 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 			 * We cannot use the protocol information from the ct (typically the packet at hand is ICMP error that is related to the ct we have here).
 			 */
 			orig_tuple.dst.protonum = ip_hdr.protocol;
-			DEBUG_TRACE("%p: related ct, actual protocol: %u\n", skb, orig_tuple.dst.protonum);
+			DEBUG_TRACE("%px: related ct, actual protocol: %u\n", skb, orig_tuple.dst.protonum);
 		}
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 vxlan_done:
@@ -1158,7 +1158,7 @@ vxlan_done:
 	 */
 	if (ip_hdr.protocol == IPPROTO_GRE) {
 		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 6)) {
-			DEBUG_WARN("%p: GRE protocol is not allowed\n", skb);
+			DEBUG_WARN("%px: GRE protocol is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
 	}
@@ -1168,11 +1168,11 @@ vxlan_done:
 	 */
 	ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.in6);
 	if (ecm_ip_addr_is_multicast(ip_dest_addr)) {
-		DEBUG_TRACE("skb %p multicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
+		DEBUG_TRACE("skb %px multicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
 #ifdef ECM_MULTICAST_ENABLE
 
 		if (unlikely(ecm_front_end_ipv6_mc_stopped)) {
-			DEBUG_TRACE("%p: Multicast disabled by ecm_front_end_ipv6_mc_stopped = %d\n", skb, ecm_front_end_ipv6_mc_stopped);
+			DEBUG_TRACE("%px: Multicast disabled by ecm_front_end_ipv6_mc_stopped = %d\n", skb, ecm_front_end_ipv6_mc_stopped);
 			return NF_ACCEPT;
 		}
 
@@ -1248,11 +1248,11 @@ vxlan_done:
 	 * NOTE: Only need to check the non-nat src/dest addresses here.
 	 */
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_dest_addr))) {
-		DEBUG_TRACE("skb %p non-unicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
+		DEBUG_TRACE("skb %px non-unicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
 		return NF_ACCEPT;
 	}
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_src_addr))) {
-		DEBUG_TRACE("skb %p non-unicast saddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_src_addr));
+		DEBUG_TRACE("skb %px non-unicast saddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_src_addr));
 		return NF_ACCEPT;
 	}
 
@@ -1297,7 +1297,7 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result;
 
-	DEBUG_TRACE("%p: Routing: %s\n", out, out->name);
+	DEBUG_TRACE("%px: Routing: %s\n", out, out->name);
 
 	/*
 	 * If operations have stopped then do not process packets
@@ -1314,7 +1314,7 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(void *priv,
 	 * Don't process broadcast or multicast
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
-		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1364,7 +1364,7 @@ static unsigned int ecm_nss_ipv6_post_routing_hook(void *priv,
 	}
 #endif
 
-	DEBUG_TRACE("Post routing process skb %p, out: %p, in: %p\n", skb, out, in);
+	DEBUG_TRACE("Post routing process skb %px, out: %px, in: %px\n", skb, out, in);
 	result = ecm_nss_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, skb, 0);
 	dev_put(in);
 	return result;
@@ -1397,7 +1397,7 @@ static unsigned int ecm_nss_ipv6_pppoe_bridge_process(struct net_device *out,
 	skb->protocol = htons(ETH_P_IPV6);
 
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
-		DEBUG_WARN("Invalid ip header in skb %p\n", skb);
+		DEBUG_WARN("Invalid ip header in skb %px\n", skb);
 		goto skip_ipv6_process;
 	}
 
@@ -1405,7 +1405,7 @@ static unsigned int ecm_nss_ipv6_pppoe_bridge_process(struct net_device *out,
 	 * Return if destination IP address is multicast address.
 	 */
 	if (ecm_ip_addr_is_multicast(ip_hdr.dest_addr)) {
-		DEBUG_WARN("Multicast acceleration is not support in PPPoE bridge %p\n", skb);
+		DEBUG_WARN("Multicast acceleration is not support in PPPoE bridge %px\n", skb);
 		goto skip_ipv6_process;
 	}
 
@@ -1438,7 +1438,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result = NF_ACCEPT;
 
-	DEBUG_TRACE("%p: Bridge: %s\n", out, out->name);
+	DEBUG_TRACE("%px: Bridge: %s\n", out, out->name);
 
 	/*
 	 * If operations have stopped then do not process packets
@@ -1455,7 +1455,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 	 * Don't process broadcast or multicast
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
-		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1471,12 +1471,12 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 	 */
 	skb_eth_hdr = eth_hdr(skb);
 	if (!skb_eth_hdr) {
-		DEBUG_TRACE("%p: Not Eth\n", skb);
+		DEBUG_TRACE("%px: Not Eth\n", skb);
 		return NF_ACCEPT;
 	}
 	eth_type = ntohs(skb_eth_hdr->h_proto);
 	if (unlikely((eth_type != 0x86DD) && (eth_type != ETH_P_PPP_SES))) {
-		DEBUG_TRACE("%p: Not IP/PPPoE session\n", skb);
+		DEBUG_TRACE("%px: Not IP/PPPoE session\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1500,7 +1500,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 		/*
 		 * Case 1.
 		 */
-		DEBUG_TRACE("Local traffic: %p, ignoring traffic to bridge: %p (%s) \n", skb, bridge, bridge->name);
+		DEBUG_TRACE("Local traffic: %px, ignoring traffic to bridge: %px (%s) \n", skb, bridge, bridge->name);
 		dev_put(bridge);
 		return NF_ACCEPT;
 	}
@@ -1520,7 +1520,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 	 */
 	in = br_port_dev_get(bridge, skb_eth_hdr->h_source, NULL, 0);
 	if (!in) {
-		DEBUG_TRACE("skb: %p, no in device for bridge: %p (%s)\n", skb, bridge, bridge->name);
+		DEBUG_TRACE("skb: %px, no in device for bridge: %px (%s)\n", skb, bridge, bridge->name);
 		dev_put(bridge);
 		return NF_ACCEPT;
 	}
@@ -1532,21 +1532,21 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 	 */
 	if (in == out) {
 		if (!br_is_hairpin_enabled(in)) {
-			DEBUG_TRACE("skb: %p, bridge: %p (%s), ignoring"
+			DEBUG_TRACE("skb: %px, bridge: %px (%s), ignoring"
 					"the packet, hairpin not enabled"
-					"on port %p (%s)\n", skb, bridge,
+					"on port %px (%s)\n", skb, bridge,
 					bridge->name, out, out->name);
 			goto skip_ipv6_bridge_flow;
 		}
-		DEBUG_TRACE("skb: %p, bridge: %p (%s), hairpin enabled on port"
-				"%p (%s)\n", skb, bridge, bridge->name, out, out->name);
+		DEBUG_TRACE("skb: %px, bridge: %px (%s), hairpin enabled on port"
+				"%px (%s)\n", skb, bridge, bridge->name, out, out->name);
 	}
 
 	/*
 	 * Case 2: Routed trafffic would be handled by the INET post routing.
 	 */
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
-		DEBUG_TRACE("skb: %p, Ignoring routed packet to bridge: %p (%s)\n", skb, bridge, bridge->name);
+		DEBUG_TRACE("skb: %px, Ignoring routed packet to bridge: %px (%s)\n", skb, bridge, bridge->name);
 		goto skip_ipv6_bridge_flow;
 	}
 
@@ -1557,13 +1557,13 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 		 * 	 For now, we are passing 0, but this needs to be handled later.
 		 */
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
-			DEBUG_WARN("skb: %p, No fdb entry for this mac address %pM in the bridge: %p (%s)\n",
+			DEBUG_WARN("skb: %px, No fdb entry for this mac address %pM in the bridge: %px (%s)\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name);
 			goto skip_ipv6_bridge_flow;
 		}
 	}
 
-	DEBUG_TRACE("Bridge process skb: %p, bridge: %p (%s), In: %p (%s), Out: %p (%s)\n",
+	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
 	if (unlikely(eth_type != 0x86DD)) {
@@ -1571,7 +1571,7 @@ static unsigned int ecm_nss_ipv6_bridge_post_routing_hook(void *priv,
 		 * Check if PPPoE bridge acceleration is disabled.
 		 */
 		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_DIS) {
-			DEBUG_TRACE("skb: %p, PPPoE bridge flow acceleration is disabled\n", skb);
+			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
 			goto skip_ipv6_bridge_flow;
 		}
 
@@ -1603,32 +1603,32 @@ unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device 
 	 * Don't process broadcast.
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
-		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
 		return 1;
 	}
 
 	if (skb->protocol != ntohs(ETH_P_IPV6)) {
-		DEBUG_WARN("%p: Wrong skb protocol: %d", skb, skb->protocol);
+		DEBUG_WARN("%px: Wrong skb protocol: %d", skb, skb->protocol);
 		return 1;
 	}
 
         skb_eth_hdr = eth_hdr(skb);
         if (!skb_eth_hdr) {
-                DEBUG_WARN("%p: Not Eth\n", skb);
+                DEBUG_WARN("%px: Not Eth\n", skb);
                 return 1;
         }
 
         in = dev_get_by_index(&init_net, skb->skb_iif);
         if (!in) {
-                DEBUG_WARN("%p: No in device\n", skb);
+                DEBUG_WARN("%px: No in device\n", skb);
                 return 1;
         }
 
-        DEBUG_TRACE("%p: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
+        DEBUG_TRACE("%px: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
 
 	if (netif_is_ovs_master(in)) {
 		if (!ecm_mac_addr_equal(skb_eth_hdr->h_dest, in->dev_addr)) {
-			DEBUG_TRACE("%p: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
+			DEBUG_TRACE("%px: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
 			dev_put(in);
 			return 1;
 		}
@@ -1636,7 +1636,7 @@ unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device 
 
 	if (netif_is_ovs_master(out)) {
 		if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, out->dev_addr)) {
-			DEBUG_TRACE("%p: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
+			DEBUG_TRACE("%px: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
 			dev_put(in);
 			return 1;
 		}
@@ -1690,7 +1690,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	 * Note that we use _xlate versions for destination - for egressing connections this would be the wan IP address,
 	 * but for ingressing this would be the LAN side (non-nat'ed) address and is what we need for lookup of our connection.
 	 */
-	DEBUG_INFO("%p: NSS Sync, lookup connection using\n" \
+	DEBUG_INFO("%px: NSS Sync, lookup connection using\n" \
 			"Protocol: %d\n" \
 			"src_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n" \
 			"dest_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
@@ -1701,11 +1701,11 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 
 	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident);
 	if (!ci) {
-		DEBUG_TRACE("%p: NSS Sync: no connection\n", sync);
+		DEBUG_TRACE("%px: NSS Sync: no connection\n", sync);
 		return;
 	}
 
-	DEBUG_TRACE("%p: Sync conn %p\n", sync, ci);
+	DEBUG_TRACE("%px: Sync conn %px\n", sync, ci);
 
 	/*
 	 * Get the elapsed time since the last sync and add this elapsed time
@@ -1734,9 +1734,9 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 	if (sync->flow_tx_packet_count || sync->return_tx_packet_count) {
-		DEBUG_TRACE("%p: flow_rx_packet_count: %u, flow_rx_byte_count: %u, return_rx_packet_count: %u, , return_rx_byte_count: %u\n",
+		DEBUG_TRACE("%px: flow_rx_packet_count: %u, flow_rx_byte_count: %u, return_rx_packet_count: %u, , return_rx_byte_count: %u\n",
 				ci, sync->flow_rx_packet_count, sync->flow_rx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
-		DEBUG_TRACE("%p: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
+		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
 #ifdef ECM_MULTICAST_ENABLE
 		if (ecm_ip_addr_is_multicast(return_ip)) {
@@ -1829,7 +1829,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
 		struct ecm_classifier_instance *aci;
 		aci = assignments[aci_index];
-		DEBUG_TRACE("%p: sync to: %p, type: %d\n", feci, aci, aci->type_get(aci));
+		DEBUG_TRACE("%px: sync to: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_to_v6(aci, &class_sync);
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
@@ -1841,14 +1841,14 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 		 * terminated by the ecm.
 		 * NOTE: We take no action here since that is performed by the destroy message ack.
 		 */
-		DEBUG_INFO("%p: ECM initiated final sync seen: %d\n", ci, sync->reason);
+		DEBUG_INFO("%px: ECM initiated final sync seen: %d\n", ci, sync->reason);
 		break;
 	case NSS_IPV6_SYNC_REASON_FLUSH:
 	case NSS_IPV6_SYNC_REASON_EVICT:
 		/*
 		 * NSS has ended acceleration without instruction from the ECM.
 		 */
-		DEBUG_INFO("%p: NSS Initiated final sync seen: %d\n", ci, sync->reason);
+		DEBUG_INFO("%px: NSS Initiated final sync seen: %d\n", ci, sync->reason);
 
 		/*
 		 * NSS Decelerated the connection
@@ -1865,7 +1865,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 				DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(flow_ip));
 			} else {
 				if (sync->flow_tx_packet_count) {
-					DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %p\n", ECM_IP_ADDR_TO_OCTAL(flow_ip), neigh);
+					DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %px\n", ECM_IP_ADDR_TO_OCTAL(flow_ip), neigh);
 					neigh_event_send(neigh, NULL);
 				}
 
@@ -1882,7 +1882,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 					DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(return_ip));
 				} else {
 					if (sync->return_tx_packet_count) {
-						DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %p\n", ECM_IP_ADDR_TO_OCTAL(return_ip), neigh);
+						DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %px\n", ECM_IP_ADDR_TO_OCTAL(return_ip), neigh);
 						neigh_event_send(neigh, NULL);
 					}
 
@@ -1898,7 +1898,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 				DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(return_ip));
 			} else {
 				if (sync->return_tx_packet_count) {
-					DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %p\n", ECM_IP_ADDR_TO_OCTAL(return_ip), neigh);
+					DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %px\n", ECM_IP_ADDR_TO_OCTAL(return_ip), neigh);
 					neigh_event_send(neigh, NULL);
 				}
 
@@ -1912,7 +1912,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	 * If connection should be re-generated then we need to force a deceleration
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_peek(ci))) {
-		DEBUG_TRACE("%p: Connection generation changing, terminating acceleration", ci);
+		DEBUG_TRACE("%px: Connection generation changing, terminating acceleration", ci);
 		feci->decelerate(feci);
 	}
 
@@ -1948,7 +1948,7 @@ sync_conntrack:
 	 */
 	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
 	if (!h) {
-		DEBUG_WARN("%p: NSS Sync: no conntrack connection\n", sync);
+		DEBUG_WARN("%px: NSS Sync: no conntrack connection\n", sync);
 		return;
 	}
 
@@ -1956,7 +1956,7 @@ sync_conntrack:
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
 #endif
-	DEBUG_TRACE("%p: NSS Sync: conntrack connection\n", ct);
+	DEBUG_TRACE("%px: NSS Sync: conntrack connection\n", ct);
 
 	ecm_front_end_flow_and_return_directions_get(ct, flow_ip, 6, &flow_dir, &return_dir);
 

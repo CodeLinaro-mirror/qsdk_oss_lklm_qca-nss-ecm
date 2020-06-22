@@ -113,25 +113,24 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	greh = (struct gre_base_hdr *)(skb->data);
 	skb_push(skb, sizeof(struct iphdr));
 
-
 	if ((greh->flags & GRE_VERSION) == ECM_GRE_VERSION_1) {
 		/*
 		 * Case 1: PPTP locally terminated
 		 */
 		if (ecm_interface_is_pptp(skb, outdev)) {
-			DEBUG_TRACE("%p: PPTP GRE locally terminated - allow acceleration\n", skb);
+			DEBUG_TRACE("%px: PPTP GRE locally terminated - allow acceleration\n", skb);
 			return true;
 		}
 
 		/*
 		 * Case 2: PPTP pass through
 		 */
-		DEBUG_TRACE("%p: PPTP GRE pass through - do not allow acceleration\n", skb);
+		DEBUG_TRACE("%px: PPTP GRE pass through - do not allow acceleration\n", skb);
 		return false;
 	}
 
 	if ((greh->flags & GRE_VERSION) != ECM_GRE_VERSION_0) {
-		DEBUG_WARN("%p: Unknown GRE version - do not allow acceleration\n", skb);
+		DEBUG_WARN("%px: Unknown GRE version - do not allow acceleration\n", skb);
 		return false;
 	}
 
@@ -141,10 +140,10 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	if ((indev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))
 		|| (outdev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))) {
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
-		DEBUG_TRACE("%p: GRE IPv%d TAP flow - allow acceleration\n", skb, ip_version);
+		DEBUG_TRACE("%px: GRE IPv%d TAP flow - allow acceleration\n", skb, ip_version);
 		return true;
 #else
-		DEBUG_TRACE("%p: GRE IPv%d TAP feature is disabled - do not allow acceleration\n", skb, ip_version);
+		DEBUG_TRACE("%px: GRE IPv%d TAP feature is disabled - do not allow acceleration\n", skb, ip_version);
 		return false;
 #endif
 	}
@@ -155,10 +154,10 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	if ((indev->type == ARPHRD_IPGRE) || (outdev->type == ARPHRD_IPGRE)
 		|| (indev->type == ARPHRD_IP6GRE) || (outdev->type == ARPHRD_IP6GRE)) {
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-		DEBUG_TRACE("%p: GRE IPv%d TUN flow - allow acceleration\n", skb, ip_version);
+		DEBUG_TRACE("%px: GRE IPv%d TUN flow - allow acceleration\n", skb, ip_version);
 		return true;
 #else
-		DEBUG_TRACE("%p: GRE IPv%d TUN feature is disabled - do not allow acceleration\n", skb, ip_version);
+		DEBUG_TRACE("%px: GRE IPv%d TUN feature is disabled - do not allow acceleration\n", skb, ip_version);
 		return false;
 #endif
 	}
@@ -176,7 +175,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			 * Source IP address is local
 			 */
 			dev_put(dev);
-			DEBUG_TRACE("%p: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
+			DEBUG_TRACE("%px: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
 			return false;
 		}
 
@@ -186,7 +185,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			 * Destination IP address is local
 			 */
 			dev_put(dev);
-			DEBUG_TRACE("%p: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
+			DEBUG_TRACE("%px: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
 			return false;
 		}
 	} else {
@@ -196,7 +195,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			 * Source IP address is local
 			 */
 			dev_put(dev);
-			DEBUG_TRACE("%p: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
+			DEBUG_TRACE("%px: NVGRE locally terminated (src) - do not allow acceleration\n", skb);
 			return false;
 		}
 
@@ -206,7 +205,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			 * Destination IP address is local
 			 */
 			dev_put(dev);
-			DEBUG_TRACE("%p: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
+			DEBUG_TRACE("%px: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
 			return false;
 		}
 	}
@@ -215,14 +214,14 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	 * Case 6: NVGRE pass through
 	 */
 	if (greh->flags & GRE_KEY) {
-		DEBUG_TRACE("%p: NVGRE pass through - do not allow acceleration\n", skb);
+		DEBUG_TRACE("%px: NVGRE pass through - do not allow acceleration\n", skb);
 		return false;
 	}
 
 	/*
 	 * Case 7: GRE pass through
 	 */
-	DEBUG_TRACE("%p: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
+	DEBUG_TRACE("%px: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
 	return true;
 }
 
@@ -249,12 +248,12 @@ bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			dscpcte->flow_priority = skb->priority;
 			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
-			DEBUG_TRACE("%p: sender: %d flow priority: %d flow dscp: %d\n",
+			DEBUG_TRACE("%px: sender: %d flow priority: %d flow dscp: %d\n",
 				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp);
 		} else {
 			dscpcte->reply_priority =  skb->priority;
 			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
-			DEBUG_TRACE("%p: sender: %d reply priority: %d reply dscp: %d\n",
+			DEBUG_TRACE("%px: sender: %d reply priority: %d reply dscp: %d\n",
 				    ct, sender, dscpcte->reply_priority, dscpcte->reply_dscp);
 		}
 	}
@@ -265,7 +264,7 @@ bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 	 * So we don't allow acceleration for the unconfirmed connections.
 	 */
 	if (!nf_ct_is_confirmed(ct)) {
-		DEBUG_WARN("%p: Unconfirmed TCP connection\n", ct);
+		DEBUG_WARN("%px: Unconfirmed TCP connection\n", ct);
 		return false;
 	}
 
@@ -273,7 +272,7 @@ bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 	 * Don't try to manage a non-established connection.
 	 */
 	if (!test_bit(IPS_ASSURED_BIT, &ct->status)) {
-		DEBUG_WARN("%p: Non-established TCP connection\n", ct);
+		DEBUG_WARN("%px: Non-established TCP connection\n", ct);
 		return false;
 	}
 

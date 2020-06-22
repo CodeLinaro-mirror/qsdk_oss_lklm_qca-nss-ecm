@@ -128,11 +128,11 @@ static void ecm_classifier_dscp_ref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_dscp_instance *cdscpi;
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 	spin_lock_bh(&ecm_classifier_dscp_lock);
 	cdscpi->refs++;
-	DEBUG_TRACE("%p: cdscpi ref %d\n", cdscpi, cdscpi->refs);
-	DEBUG_ASSERT(cdscpi->refs > 0, "%p: ref wrap\n", cdscpi);
+	DEBUG_TRACE("%px: cdscpi ref %d\n", cdscpi, cdscpi->refs);
+	DEBUG_ASSERT(cdscpi->refs > 0, "%px: ref wrap\n", cdscpi);
 	spin_unlock_bh(&ecm_classifier_dscp_lock);
 }
 
@@ -145,11 +145,11 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_dscp_instance *cdscpi;
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 	spin_lock_bh(&ecm_classifier_dscp_lock);
 	cdscpi->refs--;
-	DEBUG_ASSERT(cdscpi->refs >= 0, "%p: refs wrapped\n", cdscpi);
-	DEBUG_TRACE("%p: DSCP classifier deref %d\n", cdscpi, cdscpi->refs);
+	DEBUG_ASSERT(cdscpi->refs >= 0, "%px: refs wrapped\n", cdscpi);
+	DEBUG_TRACE("%px: DSCP classifier deref %d\n", cdscpi, cdscpi->refs);
 	if (cdscpi->refs) {
 		int refs = cdscpi->refs;
 		spin_unlock_bh(&ecm_classifier_dscp_lock);
@@ -160,7 +160,7 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 	 * Object to be destroyed
 	 */
 	ecm_classifier_dscp_count--;
-	DEBUG_ASSERT(ecm_classifier_dscp_count >= 0, "%p: ecm_classifier_dscp_count wrap\n", cdscpi);
+	DEBUG_ASSERT(ecm_classifier_dscp_count >= 0, "%px: ecm_classifier_dscp_count wrap\n", cdscpi);
 
 	/*
 	 * UnLink the instance from our list
@@ -171,7 +171,7 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 	if (cdscpi->prev) {
 		cdscpi->prev->next = cdscpi->next;
 	} else {
-		DEBUG_ASSERT(ecm_classifier_dscp_instances == cdscpi, "%p: list bad %p\n", cdscpi, ecm_classifier_dscp_instances);
+		DEBUG_ASSERT(ecm_classifier_dscp_instances == cdscpi, "%px: list bad %px\n", cdscpi, ecm_classifier_dscp_instances);
 		ecm_classifier_dscp_instances = cdscpi->next;
 	}
 	cdscpi->next = NULL;
@@ -181,7 +181,7 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 	/*
 	 * Final
 	 */
-	DEBUG_INFO("%p: Final DSCP classifier instance\n", cdscpi);
+	DEBUG_INFO("%px: Final DSCP classifier instance\n", cdscpi);
 	kfree(cdscpi);
 
 	return 0;
@@ -212,7 +212,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	bool dscp_marked = false;
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 
 	/*
 	 * Are we yet to decide if this instance is relevant to the connection?
@@ -254,7 +254,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	ci = ecm_db_connection_serial_find_and_ref(cdscpi->ci_serial);
 	if (!ci) {
-		DEBUG_TRACE("%p: No ci found for %u\n", cdscpi, cdscpi->ci_serial);
+		DEBUG_TRACE("%px: No ci found for %u\n", cdscpi, cdscpi->ci_serial);
 		spin_lock_bh(&ecm_classifier_dscp_lock);
 		cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto dscp_classifier_out;
@@ -458,7 +458,7 @@ static void ecm_classifier_dscp_sync_to_v4(struct ecm_classifier_instance *aci, 
 	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
 }
 
 /*
@@ -470,7 +470,7 @@ static void ecm_classifier_dscp_sync_from_v4(struct ecm_classifier_instance *aci
 	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
 }
 
 /*
@@ -482,7 +482,7 @@ static void ecm_classifier_dscp_sync_to_v6(struct ecm_classifier_instance *aci, 
 	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
 }
 
 /*
@@ -494,7 +494,7 @@ static void ecm_classifier_dscp_sync_from_v6(struct ecm_classifier_instance *aci
 	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
 }
 
 /*
@@ -506,7 +506,7 @@ static ecm_classifier_type_t ecm_classifier_dscp_type_get(struct ecm_classifier_
 	struct ecm_classifier_dscp_instance *cdscpi;
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 	return ECM_CLASSIFIER_TYPE_DSCP;
 }
 
@@ -520,7 +520,7 @@ static void ecm_classifier_dscp_last_process_response_get(struct ecm_classifier_
 	struct ecm_classifier_dscp_instance *cdscpi;
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 
 	spin_lock_bh(&ecm_classifier_dscp_lock);
 	*process_response = cdscpi->process_response;
@@ -535,7 +535,7 @@ static bool ecm_classifier_dscp_reclassify_allowed(struct ecm_classifier_instanc
 {
 	struct ecm_classifier_dscp_instance *cdscpi;
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 
 	return true;
 }
@@ -548,7 +548,7 @@ static void ecm_classifier_dscp_reclassify(struct ecm_classifier_instance *ci)
 {
 	struct ecm_classifier_dscp_instance *cdscpi;
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed\n", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
 
 	/*
 	 * Revert back to MAYBE relevant - we will evaluate when we get the next process() call.
@@ -570,7 +570,7 @@ static int ecm_classifier_dscp_state_get(struct ecm_classifier_instance *ci, str
 	struct ecm_classifier_process_response process_response;
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)ci;
-	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%p: magic failed", cdscpi);
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
 
 	if ((result = ecm_state_prefix_add(sfi, "dscp"))) {
 		return result;
@@ -635,7 +635,7 @@ struct ecm_classifier_dscp_instance *ecm_classifier_dscp_instance_alloc(struct e
 	 */
 	if (ecm_classifier_dscp_terminate_pending) {
 		spin_unlock_bh(&ecm_classifier_dscp_lock);
-		DEBUG_INFO("%p: Terminating\n", ci);
+		DEBUG_INFO("%px: Terminating\n", ci);
 		kfree(cdscpi);
 		return NULL;
 	}
@@ -653,10 +653,10 @@ struct ecm_classifier_dscp_instance *ecm_classifier_dscp_instance_alloc(struct e
 	 * Increment stats
 	 */
 	ecm_classifier_dscp_count++;
-	DEBUG_ASSERT(ecm_classifier_dscp_count > 0, "%p: ecm_classifier_dscp_count wrap\n", cdscpi);
+	DEBUG_ASSERT(ecm_classifier_dscp_count > 0, "%px: ecm_classifier_dscp_count wrap\n", cdscpi);
 	spin_unlock_bh(&ecm_classifier_dscp_lock);
 
-	DEBUG_INFO("DSCP instance alloc: %p\n", cdscpi);
+	DEBUG_INFO("DSCP instance alloc: %px\n", cdscpi);
 	return cdscpi;
 }
 EXPORT_SYMBOL(ecm_classifier_dscp_instance_alloc);

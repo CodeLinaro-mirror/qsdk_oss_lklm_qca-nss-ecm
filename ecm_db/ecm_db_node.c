@@ -114,10 +114,10 @@ int _ecm_db_node_count_get(void)
  */
 void _ecm_db_node_ref(struct ecm_db_node_instance *ni)
 {
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed\n", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
 	ni->refs++;
-	DEBUG_TRACE("%p: node ref %d\n", ni, ni->refs);
-	DEBUG_ASSERT(ni->refs > 0, "%p: ref wrap\n", ni);
+	DEBUG_TRACE("%px: node ref %d\n", ni, ni->refs);
+	DEBUG_ASSERT(ni->refs > 0, "%px: ref wrap\n", ni);
 }
 
 /*
@@ -141,7 +141,7 @@ void ecm_db_node_data_stats_get(struct ecm_db_node_instance *ni, uint64_t *from_
 						uint64_t *from_data_total_dropped, uint64_t *to_data_total_dropped,
 						uint64_t *from_packet_total_dropped, uint64_t *to_packet_total_dropped)
 {
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", ni);
 	spin_lock_bh(&ecm_db_lock);
 	if (from_data_total) {
 		*from_data_total = ni->from_data_total;
@@ -178,7 +178,7 @@ EXPORT_SYMBOL(ecm_db_node_data_stats_get);
  */
 void ecm_db_node_adress_get(struct ecm_db_node_instance *ni, uint8_t *address_buffer)
 {
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", ni);
 	memcpy(address_buffer, ni->address, ETH_ALEN);
 }
 EXPORT_SYMBOL(ecm_db_node_adress_get);
@@ -207,7 +207,7 @@ EXPORT_SYMBOL(ecm_db_nodes_get_and_ref_first);
 struct ecm_db_node_instance *ecm_db_node_get_and_ref_next(struct ecm_db_node_instance *ni)
 {
 	struct ecm_db_node_instance *nin;
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", ni);
 	spin_lock_bh(&ecm_db_lock);
 	nin = ni->next;
 	if (nin) {
@@ -227,12 +227,12 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 #if (DEBUG_LEVEL >= 1)
 	int dir;
 #endif
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed\n", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
 
 	spin_lock_bh(&ecm_db_lock);
 	ni->refs--;
-	DEBUG_TRACE("%p: node deref %d\n", ni, ni->refs);
-	DEBUG_ASSERT(ni->refs >= 0, "%p: ref wrap\n", ni);
+	DEBUG_TRACE("%px: node deref %d\n", ni, ni->refs);
+	DEBUG_ASSERT(ni->refs >= 0, "%px: ref wrap\n", ni);
 
 	if (ni->refs > 0) {
 		int refs = ni->refs;
@@ -243,7 +243,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 #ifdef ECM_DB_XREF_ENABLE
 #if (DEBUG_LEVEL >= 1)
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
-		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%p: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
+		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%px: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
 	}
 #endif
 #endif
@@ -260,7 +260,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		 * Remove from the global list
 		 */
 		if (!ni->prev) {
-			DEBUG_ASSERT(ecm_db_nodes == ni, "%p: node table bad\n", ni);
+			DEBUG_ASSERT(ecm_db_nodes == ni, "%px: node table bad\n", ni);
 			ecm_db_nodes = ni->next;
 		} else {
 			ni->prev->next = ni->next;
@@ -275,7 +275,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		 * Link out of hash table
 		 */
 		if (!ni->hash_prev) {
-			DEBUG_ASSERT(ecm_db_node_table[ni->hash_index] == ni, "%p: hash table bad\n", ni);
+			DEBUG_ASSERT(ecm_db_node_table[ni->hash_index] == ni, "%px: hash table bad\n", ni);
 			ecm_db_node_table[ni->hash_index] = ni->hash_next;
 		} else {
 			ni->hash_prev->hash_next = ni->hash_next;
@@ -286,14 +286,14 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		ni->hash_next = NULL;
 		ni->hash_prev = NULL;
 		ecm_db_node_table_lengths[ni->hash_index]--;
-		DEBUG_ASSERT(ecm_db_node_table_lengths[ni->hash_index] >= 0, "%p: invalid table len %d\n", ni, ecm_db_node_table_lengths[ni->hash_index]);
+		DEBUG_ASSERT(ecm_db_node_table_lengths[ni->hash_index] >= 0, "%px: invalid table len %d\n", ni, ecm_db_node_table_lengths[ni->hash_index]);
 
 #ifdef ECM_DB_XREF_ENABLE
 		/*
 		 * Unlink it from the iface node list
 		 */
 		if (!ni->node_prev) {
-			DEBUG_ASSERT(ni->iface->nodes == ni, "%p: nodes table bad\n", ni);
+			DEBUG_ASSERT(ni->iface->nodes == ni, "%px: nodes table bad\n", ni);
 			ni->iface->nodes = ni->node_next;
 		} else {
 			ni->node_prev->node_next = ni->node_next;
@@ -311,7 +311,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		/*
 		 * Throw removed event to listeners
 		 */
-		DEBUG_TRACE("%p: Throw node removed event\n", ni);
+		DEBUG_TRACE("%px: Throw node removed event\n", ni);
 		li = ecm_db_listeners_get_and_ref_first();
 		while (li) {
 			struct ecm_db_listener_instance *lin;
@@ -353,7 +353,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 	 */
 	spin_lock_bh(&ecm_db_lock);
 	ecm_db_node_count--;
-	DEBUG_ASSERT(ecm_db_node_count >= 0, "%p: node count wrap\n", ni);
+	DEBUG_ASSERT(ecm_db_node_count >= 0, "%px: node count wrap\n", ni);
 	spin_unlock_bh(&ecm_db_lock);
 
 	return 0;
@@ -366,7 +366,7 @@ EXPORT_SYMBOL(ecm_db_node_deref);
  */
 bool ecm_db_node_is_mac_addr_equal(struct ecm_db_node_instance *ni, uint8_t *address)
 {
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", ni);
 
 	if (ecm_mac_addr_equal(ni->address, address)) {
 		return false;
@@ -385,7 +385,7 @@ struct ecm_db_node_instance *ecm_db_node_find_and_ref(uint8_t *address, struct e
 	ecm_db_node_hash_t hash_index;
 	struct ecm_db_node_instance *ni;
 
-	DEBUG_TRACE("Lookup node with addr %pMi and iface %p\n", address, ii);
+	DEBUG_TRACE("Lookup node with addr %pMi and iface %px\n", address, ii);
 
 	/*
 	 * Compute the hash chain index and prepare to walk the chain
@@ -410,7 +410,7 @@ struct ecm_db_node_instance *ecm_db_node_find_and_ref(uint8_t *address, struct e
 
 		_ecm_db_node_ref(ni);
 		spin_unlock_bh(&ecm_db_lock);
-		DEBUG_TRACE("node found %p\n", ni);
+		DEBUG_TRACE("node found %px\n", ni);
 		return ni;
 	}
 	spin_unlock_bh(&ecm_db_lock);
@@ -453,7 +453,7 @@ EXPORT_SYMBOL(ecm_db_node_chain_get_and_ref_first);
 struct ecm_db_node_instance *ecm_db_node_chain_get_and_ref_next(struct ecm_db_node_instance *ni)
 {
 	struct ecm_db_node_instance *nin;
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", ni);
 
 	spin_lock_bh(&ecm_db_lock);
 	nin = ni->hash_next;
@@ -470,7 +470,7 @@ EXPORT_SYMBOL(ecm_db_node_chain_get_and_ref_next);
  */
 struct ecm_db_iface_instance *ecm_db_node_iface_get_and_ref(struct ecm_db_node_instance *ni)
 {
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed\n", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
 
 	spin_lock_bh(&ecm_db_lock);
 	_ecm_db_iface_ref(ni->iface);
@@ -493,15 +493,15 @@ void ecm_db_node_add(struct ecm_db_node_instance *ni, struct ecm_db_iface_instan
 	struct ecm_db_listener_instance *li;
 
 	spin_lock_bh(&ecm_db_lock);
-	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed\n", ni);
-	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed\n", ii);
-	DEBUG_ASSERT(address, "%p: address null\n", ni);
-	DEBUG_ASSERT((ni->iface == NULL), "%p: iface not null\n", ni);
-	DEBUG_ASSERT(!(ni->flags & ECM_DB_NODE_FLAGS_INSERTED), "%p: inserted\n", ni);
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed\n", ii);
+	DEBUG_ASSERT(address, "%px: address null\n", ni);
+	DEBUG_ASSERT((ni->iface == NULL), "%px: iface not null\n", ni);
+	DEBUG_ASSERT(!(ni->flags & ECM_DB_NODE_FLAGS_INSERTED), "%px: inserted\n", ni);
 #ifdef ECM_DB_XREF_ENABLE
 #if (DEBUG_LEVEL >= 1)
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
-		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%p: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
+		DEBUG_ASSERT((ni->connections[dir] == NULL) && (ni->connections_count[dir] == 0), "%px: %s connections not null\n", ni, ecm_db_obj_dir_strings[dir]);
 	}
 #endif
 #endif
@@ -544,7 +544,7 @@ void ecm_db_node_add(struct ecm_db_node_instance *ni, struct ecm_db_iface_instan
 	}
 	ecm_db_node_table[hash_index] = ni;
 	ecm_db_node_table_lengths[hash_index]++;
-	DEBUG_ASSERT(ecm_db_node_table_lengths[hash_index] > 0, "%p: invalid table len %d\n", ni, ecm_db_node_table_lengths[hash_index]);
+	DEBUG_ASSERT(ecm_db_node_table_lengths[hash_index] > 0, "%px: invalid table len %d\n", ni, ecm_db_node_table_lengths[hash_index]);
 
 	/*
 	 * Set time of add
@@ -568,7 +568,7 @@ void ecm_db_node_add(struct ecm_db_node_instance *ni, struct ecm_db_iface_instan
 	/*
 	 * Throw add event to the listeners
 	 */
-	DEBUG_TRACE("%p: Throw node added event\n", ni);
+	DEBUG_TRACE("%px: Throw node added event\n", ni);
 	li = ecm_db_listeners_get_and_ref_first();
 	while (li) {
 		struct ecm_db_listener_instance *lin;
@@ -610,7 +610,7 @@ int ecm_db_node_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_nod
 	uint64_t to_packet_total_dropped;
 #endif
 
-	DEBUG_TRACE("Prep node msg for %p\n", ni);
+	DEBUG_TRACE("Prep node msg for %px\n", ni);
 
 	/*
 	 * Create a small xml stats block for our managed node, like:
@@ -745,7 +745,7 @@ struct ecm_db_node_instance *ecm_db_node_alloc(void)
 	ecm_db_node_count++;
 	spin_unlock_bh(&ecm_db_lock);
 
-	DEBUG_TRACE("Node created %p\n", ni);
+	DEBUG_TRACE("Node created %px\n", ni);
 	return ni;
 }
 EXPORT_SYMBOL(ecm_db_node_alloc);
@@ -760,7 +760,7 @@ ecm_db_node_connections_get_and_ref_first(struct ecm_db_node_instance *node,
 					  ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *ci;
-	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%p: magic failed", node);
+	DEBUG_CHECK_MAGIC(node, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed", node);
 	spin_lock_bh(&ecm_db_lock);
 	ci = node->connections[dir];
 	if (ci) {
@@ -779,7 +779,7 @@ ecm_db_node_connection_get_and_ref_next(struct ecm_db_connection_instance *ci,
 					ecm_db_obj_dir_t dir)
 {
 	struct ecm_db_connection_instance *cin;
-	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
 	spin_lock_bh(&ecm_db_lock);
 	cin = ci->node_next[dir];
 	if (cin) {
@@ -838,21 +838,21 @@ void ecm_db_traverse_node_connection_list_and_defunct(
 
 		if (!ecm_db_should_keep_connection(ci, node->address)) {
 			if (ip_version != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_version)) {
-				DEBUG_TRACE("%p: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
+				DEBUG_TRACE("%px: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
 				goto keep_node_conn;
 			}
 
-			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
+			DEBUG_TRACE("%px: defunct %d\n", ci, ci->serial);
 			ecm_db_connection_make_defunct(ci);
 		} else {
-			DEBUG_TRACE("%p: keeping connection %d\n", ci, ci->serial);
+			DEBUG_TRACE("%px: keeping connection %d\n", ci, ci->serial);
 		}
 keep_node_conn:
 		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting from node connection list complete\n", node);
+	DEBUG_INFO("%px: Defuncting from node connection list complete\n", node);
 }
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -902,11 +902,11 @@ void ecm_db_traverse_snode_dnode_connection_list_and_defunct(
 		 */
 		if (ecm_db_node_is_mac_addr_equal(dni, dmac)) {
 			if (ip_version != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_version)) {
-				DEBUG_TRACE("%p: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
+				DEBUG_TRACE("%px: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
 				goto keep_sni_conn;
 			}
 
-			DEBUG_TRACE("%p: defunct %d\n", ci, ci->serial);
+			DEBUG_TRACE("%px: defunct %d\n", ci, ci->serial);
 			ecm_db_connection_make_defunct(ci);
 		}
 keep_sni_conn:
@@ -914,7 +914,7 @@ keep_sni_conn:
 		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
-	DEBUG_INFO("%p: Defuncting from node connection list complete\n", sni);
+	DEBUG_INFO("%px: Defuncting from node connection list complete\n", sni);
 }
 #endif
 #endif

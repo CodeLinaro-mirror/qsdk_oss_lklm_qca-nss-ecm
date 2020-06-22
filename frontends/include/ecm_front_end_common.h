@@ -174,7 +174,7 @@ static inline void ecm_front_end_flow_and_return_directions_get(struct nf_conn *
  */
 static inline bool ecm_front_end_common_connection_defunct_check(struct ecm_front_end_connection_instance *feci)
 {
-	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%p: feci lock is not held\n", feci);
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
 
 	/*
 	 * If we have not completed the destroy failure handling, do nothing.
@@ -223,7 +223,7 @@ static inline bool ecm_front_end_common_connection_defunct_check(struct ecm_fron
  */
 static inline bool ecm_front_end_common_connection_decelerate_accel_mode_check(struct ecm_front_end_connection_instance *feci)
 {
-	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%p: feci lock is not held\n", feci);
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
 
 	/*
 	 * If decelerate is in error or already pending then ignore
@@ -269,7 +269,7 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 		 */
 		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
 		spin_unlock_bh(&feci->lock);
-		DEBUG_WARN("%p: Decel failed - driver fail limit\n", feci);
+		DEBUG_WARN("%px: Decel failed - driver fail limit\n", feci);
 		return true;
 	}
 

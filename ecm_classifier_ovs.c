@@ -132,11 +132,11 @@ static void ecm_classifier_ovs_ref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 	spin_lock_bh(&ecm_classifier_ovs_lock);
 	ecvi->refs++;
-	DEBUG_ASSERT(ecvi->refs > 0, "%p: ref wrap\n", ecvi);
-	DEBUG_TRACE("%p: ecvi ref %d\n", ecvi, ecvi->refs);
+	DEBUG_ASSERT(ecvi->refs > 0, "%px: ref wrap\n", ecvi);
+	DEBUG_TRACE("%px: ecvi ref %d\n", ecvi, ecvi->refs);
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 }
 
@@ -149,11 +149,11 @@ static int ecm_classifier_ovs_deref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 	spin_lock_bh(&ecm_classifier_ovs_lock);
 	ecvi->refs--;
-	DEBUG_ASSERT(ecvi->refs >= 0, "%p: refs wrapped\n", ecvi);
-	DEBUG_TRACE("%p: ecvi deref %d\n", ecvi, ecvi->refs);
+	DEBUG_ASSERT(ecvi->refs >= 0, "%px: refs wrapped\n", ecvi);
+	DEBUG_TRACE("%px: ecvi deref %d\n", ecvi, ecvi->refs);
 	if (ecvi->refs) {
 		int refs = ecvi->refs;
 		spin_unlock_bh(&ecm_classifier_ovs_lock);
@@ -164,7 +164,7 @@ static int ecm_classifier_ovs_deref(struct ecm_classifier_instance *ci)
 	 * Object to be destroyed
 	 */
 	ecm_classifier_ovs_count--;
-	DEBUG_ASSERT(ecm_classifier_ovs_count >= 0, "%p: ecm_classifier_ovs_count wrap\n", ecvi);
+	DEBUG_ASSERT(ecm_classifier_ovs_count >= 0, "%px: ecm_classifier_ovs_count wrap\n", ecvi);
 
 	/*
 	 * UnLink the instance from our list
@@ -175,7 +175,7 @@ static int ecm_classifier_ovs_deref(struct ecm_classifier_instance *ci)
 	if (ecvi->prev) {
 		ecvi->prev->next = ecvi->next;
 	} else {
-		DEBUG_ASSERT(ecm_classifier_ovs_instances == ecvi, "%p: list bad %p\n", ecvi, ecm_classifier_ovs_instances);
+		DEBUG_ASSERT(ecm_classifier_ovs_instances == ecvi, "%px: list bad %px\n", ecvi, ecm_classifier_ovs_instances);
 		ecm_classifier_ovs_instances = ecvi->next;
 	}
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
@@ -183,7 +183,7 @@ static int ecm_classifier_ovs_deref(struct ecm_classifier_instance *ci)
 	/*
 	 * Final
 	 */
-	DEBUG_INFO("%p: Final ovs classifier instance\n", ecvi);
+	DEBUG_INFO("%px: Final ovs classifier instance\n", ecvi);
 	kfree(ecvi);
 
 	return 0;
@@ -205,7 +205,7 @@ static inline struct net_device *ecm_classifier_ovs_interface_get_and_ref(struct
 	 */
 	if_first = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, dir);
 	if (if_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		DEBUG_WARN("%p: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
 		return NULL;
 	}
 
@@ -216,30 +216,30 @@ static inline struct net_device *ecm_classifier_ovs_interface_get_and_ref(struct
 		struct net_device *dev = dev_get_by_index(&init_net,
 							  ecm_db_iface_interface_identifier_get(interfaces[i]));
 		if (!dev) {
-			DEBUG_WARN("%p: Failed to get net device with %d index\n", ci, i);
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, i);
 			continue;
 		}
 
 		if (ovs_port) {
 			if (ecm_interface_is_ovs_bridge_port(dev)) {
 				ecm_db_connection_interfaces_deref(interfaces, if_first);
-				DEBUG_TRACE("%p: %s_dev: %s at %d index is an OVS bridge port\n", ci, ecm_db_obj_dir_strings[dir], dev->name, i);
+				DEBUG_TRACE("%px: %s_dev: %s at %d index is an OVS bridge port\n", ci, ecm_db_obj_dir_strings[dir], dev->name, i);
 				return dev;
 			}
 
 		} else {
 			if (ovsmgr_is_ovs_master(dev)) {
 				ecm_db_connection_interfaces_deref(interfaces, if_first);
-				DEBUG_TRACE("%p: %s_dev: %s at %d index is an OVS bridge dev\n", ci, ecm_db_obj_dir_strings[dir], dev->name, i);
+				DEBUG_TRACE("%px: %s_dev: %s at %d index is an OVS bridge dev\n", ci, ecm_db_obj_dir_strings[dir], dev->name, i);
 				return dev;
 			}
 		}
 
-		DEBUG_TRACE("%p: dev: %s index: %d\n", ci, dev->name, i);
+		DEBUG_TRACE("%px: dev: %s index: %d\n", ci, dev->name, i);
 		dev_put(dev);
 	}
 
-	DEBUG_TRACE("%p: No OVS bridge port on the %s direction\n", ci, ecm_db_obj_dir_strings[dir]);
+	DEBUG_TRACE("%px: No OVS bridge port on the %s direction\n", ci, ecm_db_obj_dir_strings[dir]);
 	ecm_db_connection_interfaces_deref(interfaces, if_first);
 	return NULL;
 }
@@ -268,7 +268,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
 	if_cnt = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(ci, &to_mc_ifaces, &to_mc_ifaces_first);
 	if (!if_cnt) {
-		DEBUG_WARN("%p: No multicast 'to' interface found\n", ci);
+		DEBUG_WARN("%px: No multicast 'to' interface found\n", ci);
 		drop = true;
 		goto done1;
 	}
@@ -316,7 +316,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	ecm_db_multicast_connection_to_interfaces_deref_all(to_mc_ifaces, to_mc_ifaces_first);
 
 	if (!from_dev && !valid_ovs_ports) {
-		DEBUG_WARN("%p: None of the from/to interfaces are OVS bridge port\n", ci);
+		DEBUG_WARN("%px: None of the from/to interfaces are OVS bridge port\n", ci);
 		goto done2;
 	}
 
@@ -331,7 +331,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 		 * Keep the classifier relevant to connection for stats update..
 		 */
 		spin_unlock_bh(&ecm_classifier_ovs_lock);
-		DEBUG_WARN("%p: No external process callback set\n", ci);
+		DEBUG_WARN("%px: No external process callback set\n", ci);
 		goto done1;
 	}
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
@@ -379,7 +379,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
 	} else {
-		DEBUG_ASSERT(NULL, "%p: unexpected ip_version: %d", ci, flow.tuple.ip_version );
+		DEBUG_ASSERT(NULL, "%px: unexpected ip_version: %d", ci, flow.tuple.ip_version );
 	}
 
 	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
@@ -438,7 +438,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 		result = cb(&flow, skb, &resp);
 		switch(result) {
 		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL_EGRESS:
-			DEBUG_TRACE("%p: %s is not a valid OVS port\n", ci, to_dev[i]->name);
+			DEBUG_TRACE("%px: %s is not a valid OVS port\n", ci, to_dev[i]->name);
 			ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
 			break;
 		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL:
@@ -447,11 +447,11 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			 * for any of the OVS port, then the connection should be
 			 * deleted.
 			 */
-			DEBUG_TRACE("%p: flow does not exist for the OVS port: %s\n", ci, to_dev[i]->name);
+			DEBUG_TRACE("%px: flow does not exist for the OVS port: %s\n", ci, to_dev[i]->name);
 			deny_accel = true;
 			goto done1;
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
-			DEBUG_TRACE("%p: Acceleration allowed for multicast OVS port: %s\n", ci, to_dev[i]->name);
+			DEBUG_TRACE("%px: Acceleration allowed for multicast OVS port: %s\n", ci, to_dev[i]->name);
 			break;
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_ACCEL:
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL:
@@ -459,34 +459,34 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			 * Allow accel after setting the external module response.
 			 * Primary VLAN tag is always present even it is QinQ.
 			 */
-			DEBUG_WARN("%p: External callback process succeeded\n", ci);
+			DEBUG_WARN("%px: External callback process succeeded\n", ci);
 			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
 			ecvi->process_response.egress_netdev_index[i] = flow.outdev->ifindex;
 
 			if (resp.ingress_vlan[0].h_vlan_TCI) {
 				ecvi->process_response.ingress_vlan_tag[0] = resp.ingress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[0].h_vlan_TCI;
-				DEBUG_TRACE("%p: Ingress vlan tag[0] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[0]);
+				DEBUG_TRACE("%px: Ingress vlan tag[0] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[0]);
 			}
 
 			if (resp.egress_vlan[0].h_vlan_TCI) {
 				ecvi->process_response.egress_mc_vlan_tag[i][0] = resp.egress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[0].h_vlan_TCI;
-				DEBUG_TRACE("%p: Multicast egress vlan tag[%d][0] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][0]);
+				DEBUG_TRACE("%px: Multicast egress vlan tag[%d][0] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][0]);
 			}
 
 			if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
 				if (resp.ingress_vlan[1].h_vlan_TCI) {
 					ecvi->process_response.ingress_vlan_tag[1] = resp.ingress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[1].h_vlan_TCI;
-					DEBUG_TRACE("%p: Ingress vlan tag[1] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[1]);
+					DEBUG_TRACE("%px: Ingress vlan tag[1] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[1]);
 				}
 
 				if (resp.egress_vlan[1].h_vlan_TCI) {
 					ecvi->process_response.egress_mc_vlan_tag[i][1] = resp.egress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[1].h_vlan_TCI;
-					DEBUG_TRACE("%p: Multicast egress vlan tag[%d][1] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][1]);
+					DEBUG_TRACE("%px: Multicast egress vlan tag[%d][1] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][1]);
 				}
 			}
 			break;
 		default:
-			DEBUG_TRACE("%p: Invalid response: %d\n", ci, result);
+			DEBUG_TRACE("%px: Invalid response: %d\n", ci, result);
 		}
 
 		if (deny_accel) {
@@ -501,7 +501,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	 * Deny the multicast connection as there are no active 'to' interface.
 	 */
 	if (!ecm_db_multicast_connection_to_interfaces_get_count(ci)) {
-		DEBUG_TRACE("%p: No valid multicast 'to' interfaces found\n", ci);
+		DEBUG_TRACE("%px: No valid multicast 'to' interfaces found\n", ci);
 		deny_accel = true;
 	}
 
@@ -602,12 +602,12 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
-			DEBUG_WARN("%p: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
+			DEBUG_WARN("%px: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					ecvi, from_dev->name);
 			goto route_not_relevant;
 		}
 
-		DEBUG_TRACE("%p: processing route flow from_dev = %s, br_dev = %s", ecvi, from_dev->name, br_dev->name);
+		DEBUG_TRACE("%px: processing route flow from_dev = %s, br_dev = %s", ecvi, from_dev->name, br_dev->name);
 
 		/*
 		 * We always take the flow from bridge to port, so indev is brdige and outdev is port device.
@@ -628,7 +628,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
 		} else {
-			DEBUG_ASSERT(NULL, "%p: unexpected ip_version: %d", ecvi, flow.tuple.ip_version );
+			DEBUG_ASSERT(NULL, "%px: unexpected ip_version: %d", ecvi, flow.tuple.ip_version );
 		}
 
 		ether_addr_copy(flow.smac, br_dev->dev_addr);
@@ -652,7 +652,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			/*
 			 * Allow accel after setting the external module response.
 			 */
-			DEBUG_WARN("%p: External callback process succeeded\n", ecvi);
+			DEBUG_WARN("%px: External callback process succeeded\n", ecvi);
 
 			spin_lock_bh(&ecm_classifier_ovs_lock);
 			if (resp.egress_vlan[0].h_vlan_TCI) {
@@ -678,7 +678,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			 * External callback failed to process VLAN process. So, let's deny the acceleration
 			 * and try more with the subsequent packets.
 			 */
-			DEBUG_WARN("%p: External callback failed to process VLAN tags\n", ecvi);
+			DEBUG_WARN("%px: External callback failed to process VLAN tags\n", ecvi);
 			goto route_deny_accel;
 
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
@@ -686,7 +686,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			/*
 			 * There is no VLAN tag in the flow. Just allow the acceleration.
 			 */
-			DEBUG_WARN("%p: External callback didn't find any VLAN relation\n", ecvi);
+			DEBUG_WARN("%px: External callback didn't find any VLAN relation\n", ecvi);
 			break;
 
 		default:
@@ -706,12 +706,12 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_TO, false);
 		if (!br_dev) {
-			DEBUG_WARN("%p: to_dev = %s is a OVS bridge port, bridge interface is not found\n",
+			DEBUG_WARN("%px: to_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					ecvi, to_dev->name);
 			goto route_deny_accel;
 		}
 
-		DEBUG_TRACE("%p: processing route flow to_dev = %s, br_dev = %s", ecvi, to_dev->name, br_dev->name);
+		DEBUG_TRACE("%px: processing route flow to_dev = %s, br_dev = %s", ecvi, to_dev->name, br_dev->name);
 
 		flow.indev = br_dev;
 		flow.outdev = to_dev;
@@ -729,7 +729,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
 		} else {
-			DEBUG_ASSERT(NULL, "%p: unexpected ip_version: %d", ecvi, flow.tuple.ip_version );
+			DEBUG_ASSERT(NULL, "%px: unexpected ip_version: %d", ecvi, flow.tuple.ip_version );
 		}
 
 		ether_addr_copy(flow.smac, br_dev->dev_addr);
@@ -753,7 +753,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			/*
 			 * Allow accel after setting the external module response.
 			 */
-			DEBUG_WARN("%p: External callback process succeeded\n", ecvi);
+			DEBUG_WARN("%px: External callback process succeeded\n", ecvi);
 
 			spin_lock_bh(&ecm_classifier_ovs_lock);
 			if (resp.egress_vlan[0].h_vlan_TCI) {
@@ -779,7 +779,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			 * External callback failed to process VLAN process. So, let's deny the acceleration
 			 * and try more with the subsequent packets.
 			 */
-			DEBUG_WARN("%p: External callback failed to process VLAN tags\n", ecvi);
+			DEBUG_WARN("%px: External callback failed to process VLAN tags\n", ecvi);
 			goto route_deny_accel;
 
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
@@ -787,7 +787,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			/*
 			 * There is no VLAN tag in the flow. Just allow the acceleration.
 			 */
-			DEBUG_WARN("%p: External callback didn't find any VLAN relation\n", ecvi);
+			DEBUG_WARN("%px: External callback didn't find any VLAN relation\n", ecvi);
 			break;
 
 		default:
@@ -851,7 +851,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 	struct net_device *from_dev = NULL;
 	struct net_device *to_dev = NULL;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: invalid state magic\n", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: invalid state magic\n", ecvi);
 
 	/*
 	 * Not relevant to the connection if not enabled.
@@ -860,7 +860,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * Not relevant.
 		 */
-		DEBUG_WARN("%p: ovs classifier is not enabled\n", aci);
+		DEBUG_WARN("%px: ovs classifier is not enabled\n", aci);
 		goto not_relevant;
 	}
 
@@ -872,7 +872,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * Connection has gone from under us
 		 */
-		DEBUG_WARN("%p: connection instance gone while processing classifier\n", aci);
+		DEBUG_WARN("%px: connection instance gone while processing classifier\n", aci);
 		goto not_relevant;
 	}
 
@@ -895,7 +895,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * So, the classifier is not relevant to this connection.
 		 */
-		DEBUG_WARN("%p: None of the from/to interfaces are OVS bridge port\n", aci);
+		DEBUG_WARN("%px: None of the from/to interfaces are OVS bridge port\n", aci);
 		ecm_db_connection_deref(ci);
 		goto not_relevant;
 	}
@@ -911,7 +911,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		 * Keep the classifier relevant to connection for stats update..
 		 */
 		spin_unlock_bh(&ecm_classifier_ovs_lock);
-		DEBUG_WARN("%p: No external process callback set\n", aci);
+		DEBUG_WARN("%px: No external process callback set\n", aci);
 		if (from_dev)
 			dev_put(from_dev);
 
@@ -947,7 +947,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 	 * We should also make sure that both devices are on the same OVS bridge.
 	 */
 	if (!from_dev || !to_dev) {
-		DEBUG_ERROR("%p: One of the ports is NULL from_dev: %p to_dev: %p\n", aci, from_dev, to_dev);
+		DEBUG_ERROR("%px: One of the ports is NULL from_dev: %px to_dev: %px\n", aci, from_dev, to_dev);
 
 		if (from_dev)
 			dev_put(from_dev);
@@ -971,7 +971,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 	 * (e.g: ACK packets of the TCP connection) these values should be reversed.
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		DEBUG_TRACE("%p: sender is SRC\n", aci);
+		DEBUG_TRACE("%px: sender is SRC\n", aci);
 		flow.indev = from_dev;
 		flow.outdev = to_dev;
 
@@ -983,7 +983,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, flow.smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, flow.dmac);
 	} else {
-		DEBUG_TRACE("%p: sender is DEST\n", aci);
+		DEBUG_TRACE("%px: sender is DEST\n", aci);
 		flow.indev = to_dev;
 		flow.outdev = from_dev;
 
@@ -1004,7 +1004,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
 	} else {
-		DEBUG_ASSERT(NULL, "%p: unexpected ip_version: %d", aci, flow.tuple.ip_version );
+		DEBUG_ASSERT(NULL, "%px: unexpected ip_version: %d", aci, flow.tuple.ip_version );
 	}
 
 	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
@@ -1029,7 +1029,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * Allow accel after setting the external module response.
 		 */
-		DEBUG_WARN("%p: External callback process succeeded\n", aci);
+		DEBUG_WARN("%px: External callback process succeeded\n", aci);
 
 		spin_lock_bh(&ecm_classifier_ovs_lock);
 		ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
@@ -1112,7 +1112,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		 * External callback failed to process VLAN process. So, let's deny the acceleration
 		 * and try more with the subsequent packets.
 		 */
-		DEBUG_WARN("%p: External callback failed to process VLAN tags\n", aci);
+		DEBUG_WARN("%px: External callback failed to process VLAN tags\n", aci);
 		goto deny_accel;
 
 	case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
@@ -1120,7 +1120,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * There is no VLAN tag in the flow. Just allow the acceleration.
 		 */
-		DEBUG_WARN("%p: External callback didn't find any VLAN relation\n", aci);
+		DEBUG_WARN("%px: External callback didn't find any VLAN relation\n", aci);
 		spin_lock_bh(&ecm_classifier_ovs_lock);
 		goto allow_accel;
 
@@ -1172,7 +1172,7 @@ static ecm_classifier_type_t ecm_classifier_ovs_type_get(struct ecm_classifier_i
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 	return ECM_CLASSIFIER_TYPE_OVS;
 }
 
@@ -1185,7 +1185,7 @@ static bool ecm_classifier_ovs_reclassify_allowed(struct ecm_classifier_instance
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 	return true;
 }
 
@@ -1197,7 +1197,7 @@ static void ecm_classifier_ovs_reclassify(struct ecm_classifier_instance *aci)
 {
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 
 	/*
 	 * Revert back to MAYBE relevant - we will evaluate when we get the next process() call.
@@ -1216,7 +1216,7 @@ static void ecm_classifier_ovs_last_process_response_get(struct ecm_classifier_i
 {
 	struct ecm_classifier_ovs_instance *ecvi;
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 
 	spin_lock_bh(&ecm_classifier_ovs_lock);
 	*process_response = ecvi->process_response;
@@ -1259,13 +1259,13 @@ static inline void ecm_classifier_ovs_stats_sync(struct ovsmgr_dp_flow *flow,
 	if (flow->tuple.ip_version == 4) {
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow->tuple.ipv4.src, sip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow->tuple.ipv4.dst, dip);
-		DEBUG_TRACE("%p: STATS: src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
 				flow, flow->smac, flow->indev->name, &flow->tuple.ipv4.src, flow->tuple.src_port, flow->tuple.protocol,
 				&flow->tuple.ipv4.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac);
 	} else {
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow->tuple.ipv6.src, sip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow->tuple.ipv6.dst, dip);
-		DEBUG_TRACE("%p: STATS: src MAC: %pM src_dev: %s src: %pI6:%d proto: %d dest: %pI6:%d dest_dev: %s dest MAC: %pM\n",
+		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI6:%d proto: %d dest: %pI6:%d dest_dev: %s dest MAC: %pM\n",
 				flow, flow->smac, flow->indev->name, &flow->tuple.ipv6.src, flow->tuple.src_port, flow->tuple.protocol,
 				&flow->tuple.ipv6.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac);
 	}
@@ -1307,7 +1307,7 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
 	if_cnt = ecm_interface_multicast_ovs_to_interface_get_and_ref(ci, to_ovs_port, to_ovs_brdev);
 	if (!from_dev && !if_cnt) {
-		DEBUG_WARN("%p: None of the from/to interfaces is OVS bridge port\n", ci);
+		DEBUG_WARN("%px: None of the from/to interfaces is OVS bridge port\n", ci);
 		return;
 	}
 
@@ -1402,7 +1402,7 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
-			DEBUG_WARN("%p: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
+			DEBUG_WARN("%px: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					ci, from_dev->name);
 			goto done;
 		}
@@ -1498,11 +1498,11 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 
 	struct ecm_classifier_ovs_instance *ecvi = (struct ecm_classifier_ovs_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 
 	ci = ecm_db_connection_serial_find_and_ref(ecvi->ci_serial);
 	if (!ci) {
-		DEBUG_TRACE("%p: No ci found for %u\n", ecvi, ecvi->ci_serial);
+		DEBUG_TRACE("%px: No ci found for %u\n", ecvi, ecvi->ci_serial);
 		return;
 	}
 
@@ -1538,7 +1538,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	if (ecvi->process_response.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 		tci = ecvi->process_response.ingress_vlan_tag[0] & 0xffff;
 		tpid = (ecvi->process_response.ingress_vlan_tag[0] >> 16) & 0xffff;
-		DEBUG_TRACE("%p: Ingress VLAN : %x:%x\n", aci, tci, tpid);
+		DEBUG_TRACE("%px: Ingress VLAN : %x:%x\n", aci, tci, tpid);
 	}
 
 	/*
@@ -1568,7 +1568,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
-		DEBUG_TRACE("%p: Flow direction stats update\n", aci);
+		DEBUG_TRACE("%px: Flow direction stats update\n", aci);
 		ecm_classifier_ovs_stats_sync(&flow,
 				  sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				  from_dev, to_dev,
@@ -1580,7 +1580,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		 * Sync the return direction (eth2 to eth1)
 		 * All the flow parameters are reversed.
 		 */
-		DEBUG_TRACE("%p: Return direction stats update\n", aci);
+		DEBUG_TRACE("%px: Return direction stats update\n", aci);
 
 		/*
 		 * Reset the tci and tpid values and get the egress side of the flow.
@@ -1589,7 +1589,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		if (ecvi->process_response.egress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 			tci = ecvi->process_response.egress_vlan_tag[0] & 0xffff;
 			tpid = (ecvi->process_response.egress_vlan_tag[0] >> 16) & 0xffff;
-			DEBUG_TRACE("%p: Egress VLAN : %x:%x\n", aci, tci, tpid);
+			DEBUG_TRACE("%px: Egress VLAN : %x:%x\n", aci, tci, tpid);
 		}
 
 		ecm_classifier_ovs_stats_sync(&flow,
@@ -1614,7 +1614,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
-			DEBUG_WARN("%p: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
+			DEBUG_WARN("%px: from_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					aci, from_dev->name);
 			goto done;
 		}
@@ -1657,7 +1657,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_TO, false);
 		if (!br_dev) {
-			DEBUG_WARN("%p: to_dev = %s is a OVS bridge port, bridge interface is not found\n",
+			DEBUG_WARN("%px: to_dev = %s is a OVS bridge port, bridge interface is not found\n",
 					aci, to_dev->name);
 			goto done;
 		}
@@ -1738,7 +1738,7 @@ static void ecm_classifier_ovs_sync_from_v4(struct ecm_classifier_instance *aci,
 	struct ecm_classifier_ovs_instance *ecvi __attribute__((unused));
 
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 }
 
 /*
@@ -1777,7 +1777,7 @@ static void ecm_classifier_ovs_sync_from_v6(struct ecm_classifier_instance *aci,
 	struct ecm_classifier_ovs_instance *ecvi __attribute__((unused));
 
 	ecvi = (struct ecm_classifier_ovs_instance *)aci;
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 }
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
@@ -1792,7 +1792,7 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 	struct ecm_classifier_process_response process_response;
 
 	ecvi = (struct ecm_classifier_ovs_instance *)ci;
-	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%p: magic failed", ecvi);
+	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
 
 	if ((result = ecm_state_prefix_add(sfi, "ovs"))) {
 		return result;
@@ -1829,7 +1829,7 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 	 */
 	ecvi = (struct ecm_classifier_ovs_instance *)kzalloc(sizeof(struct ecm_classifier_ovs_instance), GFP_ATOMIC | __GFP_NOWARN);
 	if (!ecvi) {
-		DEBUG_WARN("i%p: Failed to allocate ovs Classifier instance\n", ci);
+		DEBUG_WARN("i%px: Failed to allocate ovs Classifier instance\n", ci);
 		return NULL;
 	}
 
@@ -1872,7 +1872,7 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 	spin_lock_bh(&ecm_classifier_ovs_lock);
 	if (ecm_classifier_ovs_terminate_pending) {
 		spin_unlock_bh(&ecm_classifier_ovs_lock);
-		DEBUG_WARN("%p: Terminating\n", ci);
+		DEBUG_WARN("%px: Terminating\n", ci);
 		kfree(ecvi);
 		return NULL;
 	}
@@ -1890,10 +1890,10 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 	 * Increment stats
 	 */
 	ecm_classifier_ovs_count++;
-	DEBUG_ASSERT(ecm_classifier_ovs_count > 0, "%p: ecm_classifier_ovs_count wrap for instance: %p\n", ci, ecvi);
+	DEBUG_ASSERT(ecm_classifier_ovs_count > 0, "%px: ecm_classifier_ovs_count wrap for instance: %px\n", ci, ecvi);
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 
-	DEBUG_INFO("%p: ovs classifier instance alloc: %p\n", ci, ecvi);
+	DEBUG_INFO("%px: ovs classifier instance alloc: %px\n", ci, ecvi);
 	return ecvi;
 }
 EXPORT_SYMBOL(ecm_classifier_ovs_instance_alloc);

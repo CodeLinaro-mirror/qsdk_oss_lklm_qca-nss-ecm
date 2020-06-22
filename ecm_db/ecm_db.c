@@ -309,7 +309,7 @@ int ecm_db_init(struct dentry *dentry)
 
 	ecm_db_li = ecm_db_listener_alloc();
 	if (!ecm_db_li) {
-		DEBUG_ERROR("%p: Failed to allocate a listener instance\n", dentry);
+		DEBUG_ERROR("%px: Failed to allocate a listener instance\n", dentry);
 		goto init_cleanup_4;
 	}
 	ecm_db_listener_add(ecm_db_li,

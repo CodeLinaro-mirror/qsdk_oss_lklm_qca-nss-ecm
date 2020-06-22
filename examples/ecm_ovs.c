@@ -43,14 +43,14 @@ static ecm_classifier_ovs_result_t ecm_ovs_process(struct ovsmgr_dp_flow *flow, 
 	switch (status) {
 	case OVSMGR_FLOW_STATUS_DENY_ACCEL:
 	case OVSMGR_FLOW_STATUS_UNKNOWN:
-		pr_debug("%p: Deny accelerating the flow\n", flow);
+		pr_debug("%px: Deny accelerating the flow\n", flow);
 		return ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL;
 	case OVSMGR_FLOW_STATUS_DENY_ACCEL_EGRESS:
-		pr_debug("%p: Deny accelerating the flow, egress %s is not allowed\n", flow, flow->outdev->name);
+		pr_debug("%px: Deny accelerating the flow, egress %s is not allowed\n", flow, flow->outdev->name);
 		return ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL_EGRESS;
 	case OVSMGR_FLOW_STATUS_ALLOW_VLAN_ACCEL:
 	case OVSMGR_FLOW_STATUS_ALLOW_VLAN_QINQ_ACCEL:
-		pr_debug("%p: Accelerate, VLAN data is valid\n", flow);
+		pr_debug("%px: Accelerate, VLAN data is valid\n", flow);
 		/*
 		 * Outer ingress VLAN
 		 */
@@ -131,4 +131,3 @@ MODULE_DESCRIPTION("ECM OVS Test");
 #ifdef MODULE_LICENSE
 MODULE_LICENSE("Dual BSD/GPL");
 #endif
-

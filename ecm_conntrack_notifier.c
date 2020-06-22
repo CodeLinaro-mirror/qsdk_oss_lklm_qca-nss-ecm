@@ -105,14 +105,14 @@ static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 {
 	struct ecm_db_connection_instance *ci;
 
-	DEBUG_INFO("Destroy event for ct: %p\n", ct);
+	DEBUG_INFO("Destroy event for ct: %px\n", ct);
 
 	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
 	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
+		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
-	DEBUG_INFO("%p: Connection defunct %p\n", ct, ci);
+	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
 
 	/*
 	 * Force destruction of the connection by making it defunct
@@ -131,7 +131,7 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifier_instance *__attribute__((unused))cls;
 
-	DEBUG_INFO("Mark event for ct: %p\n", ct);
+	DEBUG_INFO("Mark event for ct: %px\n", ct);
 
 	/*
 	 * Ignore transitions to zero
@@ -142,7 +142,7 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 
 	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
 	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
+		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
 
@@ -187,7 +187,7 @@ int ecm_conntrack_ipv6_event(unsigned long events, struct nf_conn *ct)
 	 * handle destroy events
 	 */
 	if (events & (1 << IPCT_DESTROY)) {
-		DEBUG_TRACE("%p: Event is destroy\n", ct);
+		DEBUG_TRACE("%px: Event is destroy\n", ct);
 		ecm_conntrack_ipv6_event_destroy(ct);
 	}
 
@@ -196,7 +196,7 @@ int ecm_conntrack_ipv6_event(unsigned long events, struct nf_conn *ct)
 	 * handle mark change events
 	 */
 	if (events & (1 << IPCT_MARK)) {
-		DEBUG_TRACE("%p: Event is mark\n", ct);
+		DEBUG_TRACE("%px: Event is mark\n", ct);
 		ecm_conntrack_ipv6_event_mark(ct);
 	}
 #endif
@@ -212,14 +212,14 @@ static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 {
 	struct ecm_db_connection_instance *ci;
 
-	DEBUG_INFO("Destroy event for ct: %p\n", ct);
+	DEBUG_INFO("Destroy event for ct: %px\n", ct);
 
 	ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
 	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
+		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
-	DEBUG_INFO("%p: Connection defunct %p\n", ct, ci);
+	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
 
 	/*
 	 * Force destruction of the connection by making it defunct
@@ -238,7 +238,7 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifier_instance *__attribute__((unused))cls;
 
-	DEBUG_INFO("Mark event for ct: %p\n", ct);
+	DEBUG_INFO("Mark event for ct: %px\n", ct);
 
 	/*
 	 * Ignore transitions to zero
@@ -249,7 +249,7 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 
 	ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
 	if (!ci) {
-		DEBUG_TRACE("%p: not found\n", ct);
+		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
 
@@ -295,7 +295,7 @@ int ecm_conntrack_ipv4_event(unsigned long events, struct nf_conn *ct)
 	 * handle destroy events
 	 */
 	if (events & (1 << IPCT_DESTROY)) {
-		DEBUG_TRACE("%p: Event is destroy\n", ct);
+		DEBUG_TRACE("%px: Event is destroy\n", ct);
 		ecm_conntrack_ipv4_event_destroy(ct);
 	}
 
@@ -304,7 +304,7 @@ int ecm_conntrack_ipv4_event(unsigned long events, struct nf_conn *ct)
 	 * handle mark change events
 	 */
 	if (events & (1 << IPCT_MARK)) {
-		DEBUG_TRACE("%p: Event is mark\n", ct);
+		DEBUG_TRACE("%px: Event is mark\n", ct);
 		ecm_conntrack_ipv4_event_mark(ct);
 	}
 #endif

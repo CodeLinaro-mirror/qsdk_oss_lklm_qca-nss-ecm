@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -168,11 +168,11 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		DEBUG_TRACE("out_dev: %s\n", out_dev->name);
 		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
 		DEBUG_TRACE("rt_iif_dev: %s\n", rt_iif_dev->name);
-		DEBUG_TRACE("%p: rt6i_dst.addr: %pi6\n", rt, &rt->rt6i_dst.addr);
-		DEBUG_TRACE("%p: rt6i_src.addr: %pi6\n", rt, &rt->rt6i_src.addr);
-		DEBUG_TRACE("%p: rt6i_gateway: %pi6\n", rt, &rt->rt6i_gateway);
-		DEBUG_TRACE("%p: rt6i_idev: %s\n", rt, rt->rt6i_idev->dev->name);
-		DEBUG_TRACE("%p: skb->dev: %s\n", rt, skb->dev->name);
+		DEBUG_TRACE("%px: rt6i_dst.addr: %pi6\n", rt, &rt->rt6i_dst.addr);
+		DEBUG_TRACE("%px: rt6i_src.addr: %pi6\n", rt, &rt->rt6i_src.addr);
+		DEBUG_TRACE("%px: rt6i_gateway: %pi6\n", rt, &rt->rt6i_gateway);
+		DEBUG_TRACE("%px: rt6i_idev: %s\n", rt, rt->rt6i_idev->dev->name);
+		DEBUG_TRACE("%px: skb->dev: %s\n", rt, skb->dev->name);
 
 		DEBUG_INFO("ip_src_addr: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(ip_src_addr));
 		DEBUG_INFO("ip_dest_addr: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
@@ -260,4 +260,3 @@ void ecm_front_end_ipv6_exit(void)
 		break;
 	}
 }
-

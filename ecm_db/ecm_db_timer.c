@@ -110,7 +110,7 @@ bool _ecm_db_timer_group_entry_remove(struct ecm_db_timer_group_entry *tge)
 		/*
 		 * First in the group
 		 */
-		DEBUG_ASSERT(timer_group->head == tge, "%p: bad head, expecting %p, got %p\n", timer_group, tge, timer_group->head);
+		DEBUG_ASSERT(timer_group->head == tge, "%px: bad head, expecting %px, got %px\n", timer_group, tge, timer_group->head);
 		timer_group->head = tge->next;
 	}
 
@@ -120,7 +120,7 @@ bool _ecm_db_timer_group_entry_remove(struct ecm_db_timer_group_entry *tge)
 		/*
 		 * No next so this must be the last item - we need to adjust the tail pointer
 		 */
-		DEBUG_ASSERT(timer_group->tail == tge, "%p: bad tail, expecting %p got %p\n", timer_group, tge, timer_group->tail);
+		DEBUG_ASSERT(timer_group->tail == tge, "%px: bad tail, expecting %px got %px\n", timer_group, tge, timer_group->tail);
 		timer_group->tail = tge->prev;
 	}
 
@@ -153,7 +153,7 @@ void _ecm_db_timer_group_entry_set(struct ecm_db_timer_group_entry *tge, ecm_db_
 {
 	struct ecm_db_timer_group *timer_group;
 
-	DEBUG_ASSERT(tge->group == ECM_DB_TIMER_GROUPS_MAX, "%p: already set\n", tge);
+	DEBUG_ASSERT(tge->group == ECM_DB_TIMER_GROUPS_MAX, "%px: already set\n", tge);
 
 	/*
 	 * Set group
@@ -286,7 +286,7 @@ bool ecm_db_timer_group_entry_touch(struct ecm_db_timer_group_entry *tge)
 		/*
 		 * Since there is no next this must be the tail
 		 */
-		DEBUG_ASSERT(timer_group->tail == tge, "%p: bad tail, expecting %p got %p\n", timer_group, tge, timer_group->tail);
+		DEBUG_ASSERT(timer_group->tail == tge, "%px: bad tail, expecting %px got %px\n", timer_group, tge, timer_group->tail);
 		timer_group->tail = tge->prev;
 	}
 
@@ -346,14 +346,14 @@ static uint32_t ecm_db_timer_groups_check(uint32_t time_now)
 				/*
 				 * First in the group
 				 */
-				DEBUG_ASSERT(timer_group->head == tge, "%p: bad head, expecting %p got %p\n", timer_group, tge, timer_group->head);
+				DEBUG_ASSERT(timer_group->head == tge, "%px: bad head, expecting %px got %px\n", timer_group, tge, timer_group->head);
 				timer_group->head = NULL;
 			}
 			timer_group->tail = tge->prev;
 			tge->group = ECM_DB_TIMER_GROUPS_MAX;
 			spin_unlock_bh(&ecm_db_lock);
 			expired++;
-			DEBUG_TRACE("%p: Expired\n", tge);
+			DEBUG_TRACE("%px: Expired\n", tge);
 			tge->fn(tge->arg);
 			spin_lock_bh(&ecm_db_lock);
 		}

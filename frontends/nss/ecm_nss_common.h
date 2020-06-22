@@ -251,7 +251,7 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 	 */
 	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		DEBUG_WARN("%p: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
+		DEBUG_WARN("%px: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
 		return false;
 	}
 
@@ -267,7 +267,7 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 		ii = to_ifaces[list_index];
 		to_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 		if (unlikely(!to_dev)) {
-			DEBUG_TRACE("%p: No valid device found for %d index.\n",
+			DEBUG_TRACE("%px: No valid device found for %d index.\n",
 					feci, ecm_db_iface_interface_identifier_get(ii));
 			continue;
 		}
@@ -286,7 +286,7 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 		nf_ct_get(skb, &ctinfo);
 		if ((ctinfo != IP_CT_ESTABLISHED) &&
 				(ctinfo != IP_CT_ESTABLISHED_REPLY)) {
-			DEBUG_INFO("%p: New flow at ingress device, "
+			DEBUG_INFO("%px: New flow at ingress device, "
 					"rejecting the acceleration.\n", feci);
 
 			/*
@@ -332,7 +332,7 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 		 * skb's sp is set for decapsulated packet
 		 */
 		if (skb->sp) {
-			DEBUG_TRACE("%p: Skipping wan-to-lan packet proto(%d)\n", skb, ip_hdr->protocol);
+			DEBUG_TRACE("%px: Skipping wan-to-lan packet proto(%d)\n", skb, ip_hdr->protocol);
 			return true;
 		}
 
@@ -341,7 +341,7 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 		 */
 		dst = skb_dst(skb);
 		if (dst && dst->xfrm) {
-			DEBUG_TRACE("%p: Skipping lan-to-wan packet proto(%d)\n", skb, ip_hdr->protocol);
+			DEBUG_TRACE("%px: Skipping lan-to-wan packet proto(%d)\n", skb, ip_hdr->protocol);
 			return true;
 		}
 
@@ -359,7 +359,7 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 	 */
 	x = xfrm_state_lookup_byspi(net, esph->spi, ip_hdr->is_v4 ? AF_INET : AF_INET6);
 	if (x) {
-		DEBUG_TRACE("%p: Skipping lan-to-wan ESP packet\n", skb);
+		DEBUG_TRACE("%px: Skipping lan-to-wan ESP packet\n", skb);
 		return true;
 	}
 

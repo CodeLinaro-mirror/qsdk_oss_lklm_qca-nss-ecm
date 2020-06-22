@@ -293,7 +293,7 @@ done:
 	 */
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		DEBUG_TRACE("%p: node established\n", ni);
+		DEBUG_TRACE("%px: node established\n", ni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
@@ -328,7 +328,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%p: node established\n", nni);
+	DEBUG_TRACE("%px: node established\n", nni);
 	return nni;
 }
 
@@ -350,7 +350,7 @@ struct ecm_db_host_instance *ecm_sfe_ipv4_host_establish_and_ref(ip_addr_t addr)
 	 */
 	hi = ecm_db_host_find_and_ref(addr);
 	if (hi) {
-		DEBUG_TRACE("%p: host established\n", hi);
+		DEBUG_TRACE("%px: host established\n", hi);
 		return hi;
 	}
 
@@ -378,7 +378,7 @@ struct ecm_db_host_instance *ecm_sfe_ipv4_host_establish_and_ref(ip_addr_t addr)
 
 	spin_unlock_bh(&ecm_sfe_ipv4_lock);
 
-	DEBUG_TRACE("%p: host established\n", nhi);
+	DEBUG_TRACE("%px: host established\n", nhi);
 	return nhi;
 }
 
@@ -401,7 +401,7 @@ struct ecm_db_mapping_instance *ecm_sfe_ipv4_mapping_establish_and_ref(ip_addr_t
 	 */
 	mi = ecm_db_mapping_find_and_ref(addr, port);
 	if (mi) {
-		DEBUG_TRACE("%p: mapping established\n", mi);
+		DEBUG_TRACE("%px: mapping established\n", mi);
 		return mi;
 	}
 
@@ -448,7 +448,7 @@ struct ecm_db_mapping_instance *ecm_sfe_ipv4_mapping_establish_and_ref(ip_addr_t
 	/*
 	 * Return the mapping instance
 	 */
-	DEBUG_INFO("%p: mapping established\n", nmi);
+	DEBUG_INFO("%px: mapping established\n", nmi);
 	return nmi;
 }
 
@@ -535,7 +535,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	struct ecm_front_end_interface_construct_instance efeici;
 	 ecm_db_direction_t ecm_dir;
 
-	DEBUG_INFO("%p: re-gen needed\n", ci);
+	DEBUG_INFO("%px: re-gen needed\n", ci);
 
 	/*
 	 * We may need to swap the devices around depending on who the sender of the packet that triggered the re-gen is
@@ -546,7 +546,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		/*
 		 * This is a packet sent by the destination of the connection, i.e. it is a packet issued by the 'from' side of the connection.
 		 */
-		DEBUG_TRACE("%p: Re-gen swap devs\n", ci);
+		DEBUG_TRACE("%px: Re-gen swap devs\n", ci);
 		tmp_dev = out_dev;
 		out_dev = in_dev;
 		in_dev = tmp_dev;
@@ -594,7 +594,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv4_retry_regen;
 	}
 
-	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'from' interface heirarchy list\n", ci);
 	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
@@ -604,7 +604,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
-	DEBUG_TRACE("%p: Update the 'from NAT' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'from NAT' interface heirarchy list\n", ci);
 	from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb);
 	if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
@@ -614,7 +614,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 	ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 
-	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'to' interface heirarchy list\n", ci);
 	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
@@ -624,7 +624,7 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
-	DEBUG_TRACE("%p: Update the 'to NAT' interface heirarchy list\n", ci);
+	DEBUG_TRACE("%px: Update the 'to NAT' interface heirarchy list\n", ci);
 	to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, efeici.to_nat_dev, efeici.to_nat_other_dev, ip_src_addr, efeici.to_nat_mac_lookup_ip_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr, skb);
 	if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
@@ -648,9 +648,9 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	 */
 	reclassify_allowed = true;
 	for (i = 0; i < assignment_count; ++i) {
-		DEBUG_TRACE("%p: Calling to reclassify: %p, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+		DEBUG_TRACE("%px: Calling to reclassify: %px, type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
 		if (!assignments[i]->reclassify_allowed(assignments[i])) {
-			DEBUG_TRACE("%p: reclassify denied: %p, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
+			DEBUG_TRACE("%px: reclassify denied: %px, by type: %d\n", ci, assignments[i], assignments[i]->type_get(assignments[i]));
 			reclassify_allowed = false;
 			break;
 		}
@@ -663,22 +663,22 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		/*
 		 * Regeneration came to a successful conclusion even though reclassification was denied
 		 */
-		DEBUG_WARN("%p: re-classify denied\n", ci);
+		DEBUG_WARN("%px: re-classify denied\n", ci);
 		goto ecm_ipv4_regen_done;
 	}
 
 	/*
 	 * Reclassify
 	 */
-	DEBUG_INFO("%p: reclassify\n", ci);
+	DEBUG_INFO("%px: reclassify\n", ci);
 	if (!ecm_classifier_reclassify(ci, assignment_count, assignments)) {
 		/*
 		 * We could not set up the classifiers to reclassify, it is safer to fail out and try again next time
 		 */
-		DEBUG_WARN("%p: Regeneration: reclassify failed\n", ci);
+		DEBUG_WARN("%px: Regeneration: reclassify failed\n", ci);
 		goto ecm_ipv4_regen_done;
 	}
-	DEBUG_INFO("%p: reclassify success\n", ci);
+	DEBUG_INFO("%px: reclassify success\n", ci);
 
 ecm_ipv4_regen_done:
 
@@ -727,12 +727,12 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * Obtain the IP header from the skb
 	 */
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
-		DEBUG_WARN("Invalid ip header in skb %p\n", skb);
+		DEBUG_WARN("Invalid ip header in skb %px\n", skb);
 		return NF_ACCEPT;
 	}
 
 	if (ip_hdr.fragmented) {
-		DEBUG_TRACE("skb %p is fragmented\n", skb);
+		DEBUG_TRACE("skb %px is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -752,7 +752,7 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 	 */
         ct = nf_ct_get(skb, &ctinfo);
 	if (unlikely(!ct)) {
-		DEBUG_TRACE("%p: no ct\n", skb);
+		DEBUG_TRACE("%px: no ct\n", skb);
 		ECM_IP_ADDR_TO_NIN4_ADDR(orig_tuple.src.u3.ip, ip_hdr.src_addr);
 		ECM_IP_ADDR_TO_NIN4_ADDR(orig_tuple.dst.u3.ip, ip_hdr.dest_addr);
 		orig_tuple.dst.protonum = ip_hdr.protocol;
@@ -771,7 +771,7 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 #else
 		if (unlikely(ctinfo == IP_CT_UNTRACKED)) {
 #endif
-			DEBUG_TRACE("%p: ct: untracked\n", skb);
+			DEBUG_TRACE("%px: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}
 		/*
@@ -779,14 +779,14 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 		 * then acceleration is denied (connection needs assistance from HLOS to function)
 		 */
 		if (nfct_help(ct)) {
-			DEBUG_TRACE("%p: Connection has helper\n", ct);
+			DEBUG_TRACE("%px: Connection has helper\n", ct);
 			can_accel = false;
 		}
 
 		/*
 		 * Extract conntrack connection information
 		 */
-		DEBUG_TRACE("%p: ct: %p, ctinfo: %x\n", skb, ct, ctinfo);
+		DEBUG_TRACE("%px: ct: %px, ctinfo: %x\n", skb, ct, ctinfo);
 		orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 		reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
 		if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
@@ -805,7 +805,7 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 			 * We cannot use the protocol information from the ct (typically the packet at hand is ICMP error that is related to the ct we have here).
 			 */
 			orig_tuple.dst.protonum = ip_hdr.protocol;
-			DEBUG_TRACE("%p: related ct, actual protocol: %u\n", skb, orig_tuple.dst.protonum);
+			DEBUG_TRACE("%px: related ct, actual protocol: %u\n", skb, orig_tuple.dst.protonum);
 		}
 	}
 
@@ -815,7 +815,7 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 	 */
 	ECM_NIN4_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.ip);
 	if (ecm_ip_addr_is_multicast(ip_dest_addr)) {
-		DEBUG_TRACE("Multicast, Processing: %p\n", skb);
+		DEBUG_TRACE("Multicast, Processing: %px\n", skb);
 		return ecm_sfe_multicast_ipv4_connection_process(out_dev,
 				in_dev,
 				src_node_addr,
@@ -1106,11 +1106,11 @@ static unsigned int ecm_sfe_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * NOTE: Only need to check the non-nat src/dest addresses here.
 	 */
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_dest_addr))) {
-		DEBUG_TRACE("skb %p non-unicast daddr " ECM_IP_ADDR_DOT_FMT "\n", skb, ECM_IP_ADDR_TO_DOT(ip_dest_addr));
+		DEBUG_TRACE("skb %px non-unicast daddr " ECM_IP_ADDR_DOT_FMT "\n", skb, ECM_IP_ADDR_TO_DOT(ip_dest_addr));
 		return NF_ACCEPT;
 	}
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_src_addr))) {
-		DEBUG_TRACE("skb %p non-unicast saddr " ECM_IP_ADDR_DOT_FMT "\n", skb, ECM_IP_ADDR_TO_DOT(ip_src_addr));
+		DEBUG_TRACE("skb %px non-unicast saddr " ECM_IP_ADDR_DOT_FMT "\n", skb, ECM_IP_ADDR_TO_DOT(ip_src_addr));
 		return NF_ACCEPT;
 	}
 
@@ -1157,7 +1157,7 @@ static unsigned int ecm_sfe_ipv4_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result;
 
-	DEBUG_TRACE("%p: Routing: %s\n", out, out->name);
+	DEBUG_TRACE("%px: Routing: %s\n", out, out->name);
 
 	if (ecm_front_end_acceleration_rejected(skb)) {
 		DEBUG_TRACE("Acceleration rejected\n");
@@ -1179,13 +1179,13 @@ static unsigned int ecm_sfe_ipv4_post_routing_hook(void *priv,
 	 * Don't process broadcast or multicast
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
-		DEBUG_TRACE("Broadcast, ignoring: %p\n", skb);
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
 		return NF_ACCEPT;
 	}
 
 #ifndef ECM_MULTICAST_ENABLE
 	if (skb->pkt_type == PACKET_MULTICAST) {
-		DEBUG_TRACE("Multicast, ignoring: %p\n", skb);
+		DEBUG_TRACE("Multicast, ignoring: %px\n", skb);
 		return NF_ACCEPT;
 	}
 #endif
@@ -1208,7 +1208,7 @@ static unsigned int ecm_sfe_ipv4_post_routing_hook(void *priv,
 		return NF_ACCEPT;
 	}
 
-	DEBUG_TRACE("Post routing process skb %p, out: %p (%s), in: %p (%s)\n", skb, out, out->name, in, in->name);
+	DEBUG_TRACE("Post routing process skb %px, out: %px (%s), in: %px (%s)\n", skb, out, out->name, in, in->name);
 	result = ecm_sfe_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
 							can_accel, true, false, skb);
 	dev_put(in);
@@ -1243,7 +1243,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	 * Only respond to sync messages
 	 */
 	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
-		DEBUG_TRACE("Ignoring nim: %p - not sync: %d", nim, nim->cm.type);
+		DEBUG_TRACE("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
 		return;
 	}
 	sync = &nim->msg.conn_stats;
@@ -1253,7 +1253,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	 * Note that we use _xlate versions for destination - for egressing connections this would be the wan IP address,
 	 * but for ingressing this would be the LAN side (non-nat'ed) address and is what we need for lookup of our connection.
 	 */
-	DEBUG_INFO("%p: SFE Sync, lookup connection using\n"
+	DEBUG_INFO("%px: SFE Sync, lookup connection using\n"
 			"Protocol: %d\n" \
 			"src_addr: %pI4n:%d\n" \
 			"dest_addr: %pI4n:%d\n",
@@ -1279,10 +1279,10 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, (int)ntohs(sync->flow_ident), (int)ntohs(sync->return_ident_xlate));
 #endif
 	if (!ci) {
-		DEBUG_TRACE("%p: SFE Sync: no connection\n", sync);
+		DEBUG_TRACE("%px: SFE Sync: no connection\n", sync);
 		goto sync_conntrack;
 	}
-	DEBUG_TRACE("%p: Sync conn %p\n", sync, ci);
+	DEBUG_TRACE("%px: Sync conn %px\n", sync, ci);
 
 	/*
 	 * Keep connection alive and updated
@@ -1298,9 +1298,9 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 	if (sync->flow_tx_packet_count || sync->return_tx_packet_count) {
-		DEBUG_TRACE("%p: flow_rx_packet_count: %u, flow_rx_byte_count: %u, return_rx_packet_count: %u, return_rx_byte_count: %u\n",
+		DEBUG_TRACE("%px: flow_rx_packet_count: %u, flow_rx_byte_count: %u, return_rx_packet_count: %u, return_rx_byte_count: %u\n",
 				ci, sync->flow_rx_packet_count, sync->flow_rx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
-		DEBUG_TRACE("%p: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
+		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
 #ifdef ECM_MULTICAST_ENABLE
 		if (ecm_ip_addr_is_multicast(return_ip)) {
@@ -1379,7 +1379,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
 		struct ecm_classifier_instance *aci;
 		aci = assignments[aci_index];
-		DEBUG_TRACE("%p: sync to: %p, type: %d\n", feci, aci, aci->type_get(aci));
+		DEBUG_TRACE("%px: sync to: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_to_v4(aci, &class_sync);
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
@@ -1391,7 +1391,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 		 * terminated by the ecm.
 		 * NOTE: We take no action here since that is performed by the destroy message ack.
 		 */
-		DEBUG_INFO("%p: ECM initiated final sync seen: %d\n", ci, sync->reason);
+		DEBUG_INFO("%px: ECM initiated final sync seen: %d\n", ci, sync->reason);
 
 		/*
 		 * If there is no tx/rx packets to update the other linux subsystems, we shouldn't continue
@@ -1410,7 +1410,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 		/*
 		 * SFE has ended acceleration without instruction from the ECM.
 		 */
-		DEBUG_INFO("%p: SFE Initiated final sync seen: %d cause:%d\n", ci, sync->reason, sync->cause);
+		DEBUG_INFO("%px: SFE Initiated final sync seen: %d cause:%d\n", ci, sync->reason, sync->cause);
 
 		/*
 		 * SFE Decelerated the connection
@@ -1427,7 +1427,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 				DEBUG_WARN("Neighbour entry for %pI4n not found\n", &sync->flow_ip);
 			} else {
 				if (sync->flow_tx_packet_count) {
-					DEBUG_TRACE("Neighbour entry event send for %pI4n: %p\n", &sync->flow_ip, neigh);
+					DEBUG_TRACE("Neighbour entry event send for %pI4n: %px\n", &sync->flow_ip, neigh);
 					neigh_event_send(neigh, NULL);
 				}
 
@@ -1444,7 +1444,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 					DEBUG_WARN("Neighbour entry for %pI4n not found\n", &sync->return_ip);
 				} else {
 					if (sync->return_tx_packet_count) {
-						DEBUG_TRACE("Neighbour entry event send for %pI4n: %p\n", &sync->return_ip, neigh);
+						DEBUG_TRACE("Neighbour entry event send for %pI4n: %px\n", &sync->return_ip, neigh);
 						neigh_event_send(neigh, NULL);
 					}
 
@@ -1460,7 +1460,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 				DEBUG_WARN("Neighbour entry for %pI4n not found\n", &sync->return_ip);
 			} else {
 				if (sync->return_tx_packet_count) {
-					DEBUG_TRACE("Neighbour entry event send for %pI4n: %p\n", &sync->return_ip, neigh);
+					DEBUG_TRACE("Neighbour entry event send for %pI4n: %px\n", &sync->return_ip, neigh);
 					neigh_event_send(neigh, NULL);
 				}
 
@@ -1474,7 +1474,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	 * If connection should be re-generated then we need to force a deceleration
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_peek(ci))) {
-		DEBUG_TRACE("%p: Connection generation changing, terminating acceleration", ci);
+		DEBUG_TRACE("%px: Connection generation changing, terminating acceleration", ci);
 		feci->decelerate(feci);
 	}
 
@@ -1510,7 +1510,7 @@ sync_conntrack:
 	 */
 	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
 	if (!h) {
-		DEBUG_WARN("%p: SFE Sync: no conntrack connection\n", sync);
+		DEBUG_WARN("%px: SFE Sync: no conntrack connection\n", sync);
 		return;
 	}
 
@@ -1518,7 +1518,7 @@ sync_conntrack:
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
 #endif
-	DEBUG_TRACE("%p: SFE Sync: conntrack connection\n", ct);
+	DEBUG_TRACE("%px: SFE Sync: conntrack connection\n", ct);
 
 	ecm_front_end_flow_and_return_directions_get(ct, flow_ip, 4, &flow_dir, &return_dir);
 

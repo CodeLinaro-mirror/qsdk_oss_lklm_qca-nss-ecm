@@ -139,8 +139,8 @@ static struct dentry *ecm_classifier_default_dentry;		/* Debugfs dentry object *
 static void _ecm_classifier_default_ref(struct ecm_classifier_default_internal_instance *cdii)
 {
 	cdii->refs++;
-	DEBUG_TRACE("%p: cdii ref %d\n", cdii, cdii->refs);
-	DEBUG_ASSERT(cdii->refs > 0, "%p: ref wrap\n", cdii);
+	DEBUG_TRACE("%px: cdii ref %d\n", cdii, cdii->refs);
+	DEBUG_ASSERT(cdii->refs > 0, "%px: ref wrap\n", cdii);
 }
 
 /*
@@ -152,7 +152,7 @@ static void ecm_classifier_default_ref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 	spin_lock_bh(&ecm_classifier_default_lock);
 	_ecm_classifier_default_ref(cdii);
 	spin_unlock_bh(&ecm_classifier_default_lock);
@@ -167,11 +167,11 @@ static int ecm_classifier_default_deref(struct ecm_classifier_instance *ci)
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)ci;
 
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 	spin_lock_bh(&ecm_classifier_default_lock);
 	cdii->refs--;
-	DEBUG_ASSERT(cdii->refs >= 0, "%p: refs wrapped\n", cdii);
-	DEBUG_TRACE("%p: Default classifier deref %d\n", cdii, cdii->refs);
+	DEBUG_ASSERT(cdii->refs >= 0, "%px: refs wrapped\n", cdii);
+	DEBUG_TRACE("%px: Default classifier deref %d\n", cdii, cdii->refs);
 	if (cdii->refs) {
 		int refs = cdii->refs;
 		spin_unlock_bh(&ecm_classifier_default_lock);
@@ -182,7 +182,7 @@ static int ecm_classifier_default_deref(struct ecm_classifier_instance *ci)
 	 * Object to be destroyed
 	 */
 	ecm_classifier_default_count--;
-	DEBUG_ASSERT(ecm_classifier_default_count >= 0, "%p: ecm_classifier_default_count wrap\n", cdii);
+	DEBUG_ASSERT(ecm_classifier_default_count >= 0, "%px: ecm_classifier_default_count wrap\n", cdii);
 
 	spin_unlock_bh(&ecm_classifier_default_lock);
 
@@ -194,7 +194,7 @@ static int ecm_classifier_default_deref(struct ecm_classifier_instance *ci)
 	/*
 	 * Final
 	 */
-	DEBUG_INFO("%p: Final default classifier instance\n", cdii);
+	DEBUG_INFO("%px: Final default classifier instance\n", cdii);
 	kfree(cdii);
 
 	return 0;
@@ -218,8 +218,7 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	struct ecm_classifier_default_internal_instance *cdii = (struct ecm_classifier_default_internal_instance *)aci;
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: invalid state magic\n", cdii);
-
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: invalid state magic\n", cdii);
 
 	spin_lock_bh(&ecm_classifier_default_lock);
 
@@ -290,7 +289,7 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct) {
-		DEBUG_TRACE("%p: No Conntrack found for packet, using ECM tracker state\n", cdii);
+		DEBUG_TRACE("%px: No Conntrack found for packet, using ECM tracker state\n", cdii);
 		if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
 			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 			goto return_response;
@@ -304,7 +303,7 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 		spin_lock_bh(&ct->lock);
 		if (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
 			spin_unlock_bh(&ct->lock);
-			DEBUG_TRACE("%p: Connection in termination state %#X\n", ct, ct->proto.tcp.state);
+			DEBUG_TRACE("%px: Connection in termination state %#X\n", ct, ct->proto.tcp.state);
 			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 			goto return_response;
 		}
@@ -330,7 +329,7 @@ static ecm_classifier_type_t ecm_classifier_default_type_get(struct ecm_classifi
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 	return ECM_CLASSIFIER_TYPE_DEFAULT;
 }
 
@@ -343,7 +342,7 @@ static bool ecm_classifier_default_reclassify_allowed(struct ecm_classifier_inst
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
 
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 	return true;
 }
 
@@ -355,7 +354,7 @@ static void ecm_classifier_default_reclassify(struct ecm_classifier_instance *ac
 {
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 }
 
 /*
@@ -367,7 +366,7 @@ static void ecm_classifier_default_last_process_response_get(struct ecm_classifi
 {
 	struct ecm_classifier_default_internal_instance *cdii;
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 
 	spin_lock_bh(&ecm_classifier_default_lock);
 	*process_response = cdii->process_response;
@@ -383,7 +382,7 @@ static void ecm_classifier_default_sync_to_v4(struct ecm_classifier_instance *ac
 	struct ecm_classifier_default_internal_instance *cdii __attribute__((unused));
 
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 }
 
 /*
@@ -395,7 +394,7 @@ static void ecm_classifier_default_sync_from_v4(struct ecm_classifier_instance *
 	struct ecm_classifier_default_internal_instance *cdii __attribute__((unused));
 
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 }
 
 /*
@@ -407,7 +406,7 @@ static void ecm_classifier_default_sync_to_v6(struct ecm_classifier_instance *ac
 	struct ecm_classifier_default_internal_instance *cdii __attribute__((unused));
 
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 }
 
 /*
@@ -419,7 +418,7 @@ static void ecm_classifier_default_sync_from_v6(struct ecm_classifier_instance *
 	struct ecm_classifier_default_internal_instance *cdii __attribute__((unused));
 
 	cdii = (struct ecm_classifier_default_internal_instance *)aci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 }
 
 /*
@@ -432,7 +431,7 @@ static struct ecm_tracker_instance *ecm_classifier_tracker_get_and_ref(struct ec
 	struct ecm_tracker_instance *ti;
 
 	cdii = (struct ecm_classifier_default_internal_instance *)dci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 
 	ti = cdii->ti;
 	ti->ref(ti);
@@ -454,7 +453,7 @@ static int ecm_classifier_default_state_get(struct ecm_classifier_instance *ci, 
 	ecm_tracker_sender_type_t egress_sender;
 
 	cdii = (struct ecm_classifier_default_internal_instance *)ci;
-	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%p: magic failed", cdii);
+	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: magic failed", cdii);
 
 	if ((result = ecm_state_prefix_add(sfi, "default"))) {
 		return result;
@@ -525,28 +524,28 @@ struct ecm_classifier_default_instance *ecm_classifier_default_instance_alloc(st
 	 * Allocate a tracker for state etc.
 	 */
 	if (protocol == IPPROTO_TCP) {
-		DEBUG_TRACE("%p: Alloc tracker for TCP connection: %p\n", cdii, ci);
+		DEBUG_TRACE("%px: Alloc tracker for TCP connection: %px\n", cdii, ci);
 		cdii->ti = (struct ecm_tracker_instance *)ecm_tracker_tcp_alloc();
 		if (!cdii->ti) {
-			DEBUG_WARN("%p: Failed to alloc tracker\n", cdii);
+			DEBUG_WARN("%px: Failed to alloc tracker\n", cdii);
 			kfree(cdii);
 			return NULL;
 		}
 		ecm_tracker_tcp_init((struct ecm_tracker_tcp_instance *)cdii->ti, ECM_TRACKER_CONNECTION_TRACKING_LIMIT_DEFAULT, 1500, 1500);
 	} else if (protocol == IPPROTO_UDP) {
-		DEBUG_TRACE("%p: Alloc tracker for UDP connection: %p\n", cdii, ci);
+		DEBUG_TRACE("%px: Alloc tracker for UDP connection: %px\n", cdii, ci);
 		cdii->ti = (struct ecm_tracker_instance *)ecm_tracker_udp_alloc();
 		if (!cdii->ti) {
-			DEBUG_WARN("%p: Failed to alloc tracker\n", cdii);
+			DEBUG_WARN("%px: Failed to alloc tracker\n", cdii);
 			kfree(cdii);
 			return NULL;
 		}
 		ecm_tracker_udp_init((struct ecm_tracker_udp_instance *)cdii->ti, ECM_TRACKER_CONNECTION_TRACKING_LIMIT_DEFAULT, from_port, to_port);
 	} else {
-		DEBUG_TRACE("%p: Alloc tracker for non-ported connection: %p\n", cdii, ci);
+		DEBUG_TRACE("%px: Alloc tracker for non-ported connection: %px\n", cdii, ci);
 		cdii->ti = (struct ecm_tracker_instance *)ecm_tracker_datagram_alloc();
 		if (!cdii->ti) {
-			DEBUG_WARN("%p: Failed to alloc tracker\n", cdii);
+			DEBUG_WARN("%px: Failed to alloc tracker\n", cdii);
 			kfree(cdii);
 			return NULL;
 		}
@@ -573,7 +572,7 @@ struct ecm_classifier_default_instance *ecm_classifier_default_instance_alloc(st
 		cdii->egress_sender = ECM_TRACKER_SENDER_TYPE_SRC;
 		cdii->ingress_sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
-	DEBUG_TRACE("%p: Ingress sender = %d egress sender = %d\n", cdii, cdii->ingress_sender, cdii->egress_sender);
+	DEBUG_TRACE("%px: Ingress sender = %d egress sender = %d\n", cdii, cdii->ingress_sender, cdii->egress_sender);
 
 	/*
 	 * Methods specific to the default classifier
@@ -606,7 +605,7 @@ struct ecm_classifier_default_instance *ecm_classifier_default_instance_alloc(st
 	 */
 	if (ecm_classifier_default_terminate_pending) {
 		spin_unlock_bh(&ecm_classifier_default_lock);
-		DEBUG_INFO("%p: Terminating\n", ci);
+		DEBUG_INFO("%px: Terminating\n", ci);
 		cdii->ti->deref(cdii->ti);
 		kfree(cdii);
 		return NULL;
@@ -616,10 +615,10 @@ struct ecm_classifier_default_instance *ecm_classifier_default_instance_alloc(st
 	 * Increment stats
 	 */
 	ecm_classifier_default_count++;
-	DEBUG_ASSERT(ecm_classifier_default_count > 0, "%p: ecm_classifier_default_count wrap\n", cdii);
+	DEBUG_ASSERT(ecm_classifier_default_count > 0, "%px: ecm_classifier_default_count wrap\n", cdii);
 	spin_unlock_bh(&ecm_classifier_default_lock);
 
-	DEBUG_INFO("Default classifier instance alloc: %p\n", cdii);
+	DEBUG_INFO("Default classifier instance alloc: %px\n", cdii);
 	return cdi;
 }
 EXPORT_SYMBOL(ecm_classifier_default_instance_alloc);
