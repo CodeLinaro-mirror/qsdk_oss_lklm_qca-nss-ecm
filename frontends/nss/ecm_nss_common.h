@@ -163,9 +163,12 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		/*
 		 * If device is not GRETAP then return NONE.
 		 */
-		if (!(dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP))) {
+		if (!(dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP))) {
 			break;
 		}
+#if __has_attribute(__fallthrough__)
+		__attribute__((__fallthrough__));
+#endif
 #endif
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	case ARPHRD_IPGRE:
@@ -193,7 +196,7 @@ static inline int32_t ecm_nss_common_get_interface_type(struct ecm_front_end_con
 		break;
 	case ARPHRD_PPP:
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-		if (dev->priv_flags & IFF_PPP_PPTP) {
+		if (dev->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			if (feci->protocol == IPPROTO_GRE) {
 				return NSS_DYNAMIC_INTERFACE_TYPE_PPTP_OUTER;
 			}
@@ -227,7 +230,7 @@ static inline int32_t ecm_nss_common_ipsec_get_ifnum(int32_t ifnum)
 }
 #endif
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * ecm_nss_common_igs_acceleration_is_allowed()
  *	Return true, if flow acceleration is allowed for an IGS interface.
@@ -304,7 +307,6 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 #endif
 
 #ifdef ECM_XFRM_ENABLE
-
 /*
  * ecm_nss_common_is_xfrm_flow()
  *	Skip xfrm flows
@@ -363,5 +365,4 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 
 	return false;
 }
-
 #endif

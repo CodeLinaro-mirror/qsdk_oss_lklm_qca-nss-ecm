@@ -47,7 +47,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
@@ -473,6 +472,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
 	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * Set up ingress shaper qostag values.
 	 */
@@ -481,6 +481,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		nircm->igs_rule.igs_return_qos_tag = (uint16_t)pr->igs_return_qos_tag;
 		nircm->valid_flags |= NSS_IPV6_RULE_CREATE_IGS_VALID;
 	}
+#endif
 #endif
 
 	/*
@@ -586,7 +587,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
-				if (dev->priv_flags & IFF_GRE_V6_TAP) {
+				if (dev->priv_flags_ext & IFF_EXT_GRE_V6_TAP) {
 					/*
 					 * Clear QOS_VALID to prevent outer rule from overwriting
 					 * inner flow's QoS classification.
@@ -685,7 +686,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 */
 			vlan_in_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_in_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_in_dev, pr->return_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_in_dev, pr->return_qos_tag);
 				dev_put(vlan_in_dev);
 				vlan_in_dev = NULL;
 			}
@@ -893,7 +894,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 */
 			vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_out_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_out_dev, pr->flow_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 				dev_put(vlan_out_dev);
 				vlan_out_dev = NULL;
 			}
@@ -2071,7 +2072,7 @@ done:
 		;
 	}
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	/*
 	 * Check if IGS feature is enabled or not.
 	 */
@@ -2210,6 +2211,7 @@ done:
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
 		 */
@@ -2220,7 +2222,7 @@ done:
 			prevalent_pr.igs_return_qos_tag = aci_pr.igs_return_qos_tag;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
 		}
-
+#endif
 		/*
 		 * If any classifier denied DSCP remarking then that overrides every classifier
 		 */

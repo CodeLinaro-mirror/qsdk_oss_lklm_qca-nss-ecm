@@ -15,7 +15,7 @@
  */
 
 extern int ecm_interface_src_check;	/* Source interface check flag */
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 extern int ecm_interface_igs_enabled;	/* IGS enabled check flag */
 #endif
 

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2019-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -17,6 +17,19 @@
 #define ECM_TYPES_H_
 
 #include <linux/printk.h>
+
+/*
+ * Common ECM macro to handle the kernel macro name change from kernel version 4.9 and above.
+ * GRE_VERSION_1701 and GRE_VERSION_PPTP macros in kernel version <  4.9 needs to be converted
+ * to big endian since GRE_VERSION with which it compares is in big endian
+ */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+#define ECM_GRE_VERSION_0   __cpu_to_be16(GRE_VERSION_1701)
+#define ECM_GRE_VERSION_1   __cpu_to_be16(GRE_VERSION_PPTP)
+#else
+#define ECM_GRE_VERSION_0   GRE_VERSION_0
+#define ECM_GRE_VERSION_1   GRE_VERSION_1
+#endif
 
 /*
  * Flow/Return direction types.
@@ -225,17 +238,10 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
  * ecm_mac_addr_equal()
  *	Compares two MAC addresses.
  */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-static inline unsigned ecm_mac_addr_equal(const u8 *addr1, const u8 *addr2)
-{
-	return compare_ether_addr(addr1, addr2);
-}
-#else
 static inline bool ecm_mac_addr_equal(const u8 *addr1, const u8 *addr2)
 {
 	return !ether_addr_equal(addr1, addr2);
 }
-#endif
 
 /*
  * ecm_ip_addr_is_non_unicast()

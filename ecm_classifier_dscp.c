@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, 2019, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2019-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -41,7 +41,6 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
@@ -411,6 +410,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	cdscpi->process_response.flow_qos_tag = flow_qos_tag;
 	cdscpi->process_response.return_qos_tag = return_qos_tag;
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * IGS qostag values in conntrack are stored as per the direction of the flow.
 	 * But ECM always create an acceleration connection rule treating packet's source
@@ -430,7 +430,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 		cdscpi->process_response.igs_return_qos_tag = dscpcte->igs_flow_qos_tag;
 		cdscpi->process_response.igs_flow_qos_tag = dscpcte->igs_reply_qos_tag;
 	}
-
+#endif
 	/*
 	 * Check if we need to set DSCP
 	 */

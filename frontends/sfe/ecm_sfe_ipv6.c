@@ -51,12 +51,7 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 2, 0))
-#include <net/netfilter/nf_conntrack_zones.h>
-#else
 #include <linux/netfilter/nf_conntrack_zones_common.h>
-#endif
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/nf_conntrack_timeout.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
@@ -733,7 +728,17 @@ static unsigned int ecm_sfe_ipv6_ip_process(struct net_device *out_dev, struct n
 		ECM_IP_ADDR_TO_NIN6_ADDR(reply_tuple.dst.u3.in6, ip_hdr.src_addr);
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
+		/*
+		 * Fake untracked conntrack objects were removed on 4.12 kernel version
+		 * and onwards.
+		 * So, for the newer kernels, instead of comparing the ct with the percpu
+		 * fake conntrack, we can check the ct status.
+		 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
 		if (unlikely(ct == nf_ct_untracked_get())) {
+#else
+		if (unlikely(ctinfo == IP_CT_UNTRACKED)) {
+#endif
 			DEBUG_TRACE("%p: ct: untracked\n", skb);
 			return NF_ACCEPT;
 		}
@@ -882,27 +887,11 @@ static unsigned int ecm_sfe_ipv6_ip_process(struct net_device *out_dev, struct n
  * ecm_sfe_ipv6_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
 static unsigned int ecm_sfe_ipv6_post_routing_hook(void *priv,
 				struct sk_buff *skb,
 				const struct nf_hook_state *nhs)
 {
 	struct net_device *out = nhs->out;
-#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-static unsigned int ecm_sfe_ipv6_post_routing_hook(unsigned int hooknum,
-				struct sk_buff *skb,
-				const struct net_device *in_unused,
-				const struct net_device *out,
-				int (*okfn)(struct sk_buff *))
-{
-#else
-static unsigned int ecm_sfe_ipv6_post_routing_hook(const struct nf_hook_ops *ops,
-				struct sk_buff *skb,
-				const struct net_device *in_unused,
-				const struct net_device *out,
-				int (*okfn)(struct sk_buff *))
-{
-#endif
 	struct net_device *in;
 	bool can_accel = true;
 	unsigned int result;
@@ -1244,18 +1233,16 @@ sync_conntrack:
 	/*
 	 * Look up conntrack connection
 	 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 2, 0))
-	h = nf_conntrack_find_get(&init_net, NF_CT_DEFAULT_ZONE, &tuple);
-#else
 	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
-#endif
 	if (!h) {
 		DEBUG_WARN("%p: SFE Sync: no conntrack connection\n", sync);
 		return;
 	}
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
+#endif
 	DEBUG_TRACE("%p: SFE Sync: conntrack connection\n", ct);
 
 	ecm_front_end_flow_and_return_directions_get(ct, flow_ip, 6, &flow_dir, &return_dir);
@@ -1275,14 +1262,14 @@ sync_conntrack:
 		delta_jiffies = ((sync->inc_ticks * HZ) + (MSEC_PER_SEC / 2)) / MSEC_PER_SEC;
 
 		spin_lock_bh(&ct->lock);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 		ct->timeout.expires += delta_jiffies;
+#else
+		ct->timeout += delta_jiffies;
+#endif
 		spin_unlock_bh(&ct->lock);
 	}
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	acct = nf_conn_acct_find(ct);
-#else
 	acct = nf_conn_acct_find(ct)->counter;
-#endif
 	if (acct) {
 		spin_lock_bh(&ct->lock);
 		atomic64_add(sync->flow_rx_packet_count, &acct[flow_dir].packets);
@@ -1332,18 +1319,28 @@ sync_conntrack:
 			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
 
 			if (reply_pkts != 0) {
-				struct nf_conntrack_l4proto *l4proto;
+				struct nf_conntrack_l4proto *l4proto __maybe_unused;
 				unsigned int *timeouts;
 
 				set_bit(IPS_SEEN_REPLY_BIT, &ct->status);
 				set_bit(IPS_ASSURED_BIT, &ct->status);
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 				l4proto = __nf_ct_l4proto_find(AF_INET6, IPPROTO_UDP);
 				timeouts = nf_ct_timeout_lookup(&init_net, ct, l4proto);
 
 				spin_lock_bh(&ct->lock);
 				ct->timeout.expires = jiffies + timeouts[UDP_CT_REPLIED];
 				spin_unlock_bh(&ct->lock);
+#else
+				timeouts = nf_ct_timeout_lookup(ct);
+				if (!timeouts) {
+					timeouts = udp_get_timeouts(nf_ct_net(ct));
+				}
+
+				spin_lock_bh(&ct->lock);
+				ct->timeout = jiffies + timeouts[UDP_CT_REPLIED];
+				spin_unlock_bh(&ct->lock);
+#endif
 			}
 		}
 		break;
@@ -1365,9 +1362,6 @@ static struct nf_hook_ops ecm_sfe_ipv6_netfilter_hooks[] __read_mostly = {
 	 */
 	{
 		.hook           = ecm_sfe_ipv6_post_routing_hook,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-		.owner          = THIS_MODULE,
-#endif
 		.pf             = PF_INET6,
 		.hooknum        = NF_INET_POST_ROUTING,
 		.priority       = NF_IP6_PRI_NAT_SRC + 1,
@@ -1624,7 +1618,11 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 	/*
 	 * Register netfilter hooks
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 	result = nf_register_hooks(ecm_sfe_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
+#else
+	result = nf_register_net_hooks(&init_net, ecm_sfe_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
+#endif
 	if (result < 0) {
 		DEBUG_ERROR("Can't register netfilter hooks.\n");
 		sfe_drv_ipv6_notify_unregister();
@@ -1656,8 +1654,13 @@ void ecm_sfe_ipv6_exit(void)
 	/*
 	 * Stop the network stack hooks
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 	nf_unregister_hooks(ecm_sfe_ipv6_netfilter_hooks,
 			    ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, ecm_sfe_ipv6_netfilter_hooks,
+			    ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
+#endif
 
 	/*
 	 * Unregister from the Linux SFE Network driver

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2020, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -41,12 +41,7 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 2, 0))
-#include <net/netfilter/nf_conntrack_zones.h>
-#else
 #include <linux/netfilter/nf_conntrack_zones_common.h>
-#endif
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
@@ -191,7 +186,7 @@ ecm_classifier_nl_send_genl_msg(enum ECM_CL_NL_GENL_CMD cmd,
 	 */
 	total_len = nlmsg_total_size(buf_len);
 	skb = genlmsg_new(total_len, GFP_ATOMIC);
-	if (skb == NULL) {
+	if (!skb) {
 		DEBUG_WARN("failed to alloc nlmsg\n");
 		return -ENOMEM;
 	}
@@ -202,7 +197,7 @@ ecm_classifier_nl_send_genl_msg(enum ECM_CL_NL_GENL_CMD cmd,
 			       &ecm_cl_nl_genl_family,
 			       0, /* flags */
 			       cmd);
-	if (msg_head == NULL) {
+	if (!msg_head) {
 		DEBUG_WARN("failed to add genl headers\n");
 		nlmsg_free(skb);
 		return -ENOMEM;
@@ -223,15 +218,11 @@ ecm_classifier_nl_send_genl_msg(enum ECM_CL_NL_GENL_CMD cmd,
 	}
 
 	/* genlmsg_multicast frees the skb in both success and error cases */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 	ret = genlmsg_multicast(&ecm_cl_nl_genl_family,
 				skb,
 				0,
 				0,
 				GFP_ATOMIC);
-#else
-	ret = genlmsg_multicast(skb, 0, ecm_cl_nl_genl_mcgrp[0].id, GFP_ATOMIC);
-#endif
 	if (ret != 0) {
 		DEBUG_WARN("genl multicast failed: %d\n", ret);
 		return ret;
@@ -969,12 +960,8 @@ ip_check_done:
 	tuple.src.u.all = htons(src_port);
 	tuple.dst.u.all = htons(dst_port);
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 2, 0))
-	h = nf_conntrack_find_get(&init_net, NF_CT_DEFAULT_ZONE, &tuple);
-#else
 	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
-#endif
-	if (NULL == h) {
+	if (!h) {
 		return NULL;
 	}
 
@@ -997,7 +984,7 @@ static void ecm_classifier_nl_connection_added(void *arg, struct ecm_db_connecti
 	 * Only handle events if there is an NL classifier attached
 	 */
 	classi = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
-	if (NULL == classi) {
+	if (!classi) {
 		DEBUG_TRACE("%p: Connection added ignored - no NL classifier\n", ci);
 		return;
 	}
@@ -1006,7 +993,7 @@ static void ecm_classifier_nl_connection_added(void *arg, struct ecm_db_connecti
 		    serial, classi);
 
 	ct = ecm_classifier_nl_ct_get_and_ref(ci);
-	if (NULL == ct) {
+	if (!ct) {
 		DEBUG_TRACE("%p: Connection add skipped - no associated CT entry.\n", ci);
 		goto classi;
 	}
@@ -1416,54 +1403,14 @@ static struct genl_ops ecm_cl_nl_genl_ops[] = {
 
 static int ecm_classifier_nl_register_genl(void)
 {
-	int result;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
-	result = genl_register_family_with_ops_groups(&ecm_cl_nl_genl_family,
+	return genl_register_family_with_ops_groups(&ecm_cl_nl_genl_family,
 						      ecm_cl_nl_genl_ops,
 						      ecm_cl_nl_genl_mcgrp);
-	if (result != 0) {
-		DEBUG_ERROR("failed to register genl ops: %d\n", result);
-		return result;
-	}
-#else
-	result = genl_register_family(&ecm_cl_nl_genl_family);
-	if (result != 0) {
-		DEBUG_ERROR("failed to register genl family: %d\n", result);
-		goto err1;
-	}
-
-	result = genl_register_ops(&ecm_cl_nl_genl_family,
-				   ecm_cl_nl_genl_ops);
-	if (result != 0) {
-		DEBUG_ERROR("failed to register genl ops: %d\n", result);
-		goto err2;
-	}
-
-	result = genl_register_mc_group(&ecm_cl_nl_genl_family,
-					ecm_cl_nl_genl_mcgrp);
-	if (result != 0) {
-		DEBUG_ERROR("failed to register genl multicast group: %d\n",
-			    result);
-		goto err3;
-	}
-
-	return 0;
-
-err3:
-	genl_unregister_ops(&ecm_cl_nl_genl_family, ecm_cl_nl_genl_ops);
-err2:
-	genl_unregister_family(&ecm_cl_nl_genl_family);
-err1:
-#endif
-	return result;
 }
 
 static void ecm_classifier_nl_unregister_genl(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-	genl_unregister_ops(&ecm_cl_nl_genl_family, ecm_cl_nl_genl_ops);
-#endif
 	genl_unregister_family(&ecm_cl_nl_genl_family);
 }
 

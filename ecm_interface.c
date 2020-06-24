@@ -50,11 +50,7 @@
 #endif
 #include <linux/inetdevice.h>
 #if defined(ECM_INTERFACE_TUNIPIP6_ENABLE) || defined(ECM_INTERFACE_SIT_ENABLE)
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 9, 0))
-#include <net/ipip.h>
-#else
 #include <net/ip_tunnels.h>
-#endif
 #endif
 #include <net/ip6_tunnel.h>
 #include <net/addrconf.h>
@@ -67,7 +63,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
@@ -164,7 +159,7 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
  */
 int ecm_interface_src_check;
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * IGS enabled flag.
  *	If it is enabled, the acceleration engine will deny the acceleration for the new
@@ -265,7 +260,6 @@ struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 		return master;
 	}
 #endif
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,6,0))
 	rcu_read_lock();
 	master = netdev_master_upper_dev_get_rcu(dev);
 	if (!master) {
@@ -274,13 +268,7 @@ struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 	}
 	dev_hold(master);
 	rcu_read_unlock();
-#else
-	master = dev->master;
-	if (!master) {
-		return NULL;
-	}
-	dev_hold(master);
-#endif
+
 	return master;
 }
 EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
@@ -291,11 +279,7 @@ EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
  */
 static inline struct net_device *ecm_interface_vlan_real_dev(struct net_device *vlan_dev)
 {
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 6, 0))
 	return vlan_dev_next_dev(vlan_dev);
-#else
-	return vlan_dev_real_dev(vlan_dev);
-#endif
 }
 
 /*
@@ -441,14 +425,8 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 
 	rcu_read_lock();
 	dst = ecm_rt.dst;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = dst_get_neighbour_noref(dst);
-	if (neigh) {
-		neigh_hold(neigh);
-	}
-#else
+
 	neigh = dst_neigh_lookup(dst, &daddr);
-#endif
 	if (!neigh) {
 		neigh = neigh_lookup(&nd_tbl, &daddr, dst->dev);
 	}
@@ -549,16 +527,15 @@ static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
 	 * Is this destination reachable via a gateway?
 	 */
 	rt = ecm_rt.rt.rtv4;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-	if (!(rt->rt_dst != rt->rt_gateway) && !(rt->rt_flags & RTF_GATEWAY)) {
-#else
 	if (!rt->rt_uses_gateway && !(rt->rt_flags & RTF_GATEWAY)) {
-#endif
 		ecm_interface_route_release(&ecm_rt);
 		return false;
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
 	ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
+#else
+	ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gw4)
+#endif
 	ecm_interface_route_release(&ecm_rt);
 	return true;
 }
@@ -611,13 +588,13 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 * Is this destination on link or off-link via a gateway?
 	 */
 	rt = ecm_rt.rt.rtv4;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	if ((rt->rt_dst != rt->rt_gateway) || (rt->rt_flags & RTF_GATEWAY)) {
-#else
 	if (rt->rt_uses_gateway || (rt->rt_flags & RTF_GATEWAY)) {
-#endif
 		*on_link = false;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0))
 		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gateway)
+#else
+		ECM_NIN4_ADDR_TO_IP_ADDR(gw_addr, rt->rt_gw4)
+#endif
 	} else {
 		*on_link = true;
 	}
@@ -627,14 +604,8 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 */
 	rcu_read_lock();
 	dst = ecm_rt.dst;
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = dst_get_neighbour_noref(dst);
-	if (neigh) {
-		neigh_hold(neigh);
-	}
-#else
+
 	neigh = dst_neigh_lookup(dst, &ipv4_addr);
-#endif
 	if (!neigh) {
 		neigh = neigh_lookup(&arp_tbl, &ipv4_addr, dst->dev);
 	}
@@ -1116,6 +1087,15 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_int
 }
 
 #ifdef ECM_IPV6_ENABLE
+struct rt6_info *ecm_interface_ipv6_route_lookup(struct net *netf, struct in6_addr *addr)
+{
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0))
+	return rt6_lookup(netf, addr, NULL, 0, 0);
+#else
+	return rt6_lookup(netf, addr, NULL, 0, NULL, 0);
+#endif
+}
+
 /*
  * ecm_interface_addr_find_route_by_addr_ipv6()
  *	Return the route for the given IP address.  Returns NULL on failure.
@@ -1130,7 +1110,7 @@ static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t addr, struct ecm_int
 	 * Get a route to the given IP address, this will allow us to also find the interface
 	 * it is using to communicate with that IP address.
 	 */
-	ecm_rt->rt.rtv6 = rt6_lookup(&init_net, &naddr, NULL, 0, 0);
+	ecm_rt->rt.rtv6 = ecm_interface_ipv6_route_lookup(&init_net, &naddr);
 	if (!ecm_rt->rt.rtv6) {
 		DEBUG_TRACE("No output route to: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		return NULL;
@@ -1204,7 +1184,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	/*
 	 * Find the route entry
 	 */
-	rt6i = rt6_lookup(netf, &dst_addr, NULL, 0, 0);
+	rt6i = ecm_interface_ipv6_route_lookup(netf, &dst_addr);
 	if (!rt6i) {
 		DEBUG_TRACE("IPv6 Route lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		return;
@@ -1213,11 +1193,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	/*
 	 * Find the neighbor entry
 	 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3,6,0))
-	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, &dst_addr);
-#else
 	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, NULL, &dst_addr);
-#endif
 	if (IS_ERR(neigh)) {
 		DEBUG_TRACE("Neighbour lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		dst_release(&rt6i->dst);
@@ -1228,10 +1204,10 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	 * Issue a Neighbour soliciation request
 	 */
 	DEBUG_TRACE("Issue Neighbour solicitation request\n");
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-	ndisc_send_ns(dev, neigh, &dst_addr, &mc_dst_addr, &src_addr);
-#else
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0))
 	ndisc_send_ns(dev, &dst_addr, &mc_dst_addr, &src_addr);
+#else
+	ndisc_send_ns(dev, &dst_addr, &mc_dst_addr, &src_addr, 0);
 #endif
 	neigh_release(neigh);
 	dst_release(&rt6i->dst);
@@ -1321,7 +1297,8 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
 	struct in6_addr ipv6_addr;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(ipv6_addr, addr);
-	rt = rt6_lookup(&init_net, &ipv6_addr, NULL, 0, 0);
+
+	rt = ecm_interface_ipv6_route_lookup(&init_net, &ipv6_addr);
 	if (!rt) {
 		return NULL;
 	}
@@ -1341,13 +1318,15 @@ struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
  */
 bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 {
+/* TODO: Remove the check when PPTP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
 	if (out->type == ARPHRD_PPP) {
-		if (out->priv_flags & IFF_PPP_PPTP) {
+		if (out->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			return true;
 		}
 	}
@@ -1358,7 +1337,7 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 	}
 
 	if (in->type == ARPHRD_PPP) {
-		if (in->priv_flags & IFF_PPP_PPTP) {
+		if (in->priv_flags_ext & IFF_EXT_PPP_PPTP) {
 			dev_put(in);
 			return true;
 		}
@@ -1366,6 +1345,9 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 }
 
 /*
@@ -1377,15 +1359,17 @@ bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out)
  */
 bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver)
 {
+/* TODO: Remove the check when L2TP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	uint32_t flag = 0;
 	struct net_device *in;
 
 	switch (ver) {
 	case 2:
-		flag = IFF_PPP_L2TPV2;
+		flag = IFF_EXT_PPP_L2TPV2;
 		break;
 	case 3:
-		flag = IFF_PPP_L2TPV3;
+		flag = IFF_EXT_PPP_L2TPV3;
 		break;
 	default:
 		break;
@@ -1394,7 +1378,7 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->priv_flags & flag) {
+	if (out->priv_flags_ext & flag) {
 		return true;
 	}
 
@@ -1403,13 +1387,16 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
 		return true;
 	}
 
-	if (in->priv_flags & flag) {
+	if (in->priv_flags_ext & flag) {
 		dev_put(in);
 		return true;
 	}
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 }
 
 /*
@@ -1421,13 +1408,15 @@ bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct n
  */
 bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out)
 {
+/* TODO: Remove the check when PPTP/L2TP support is added */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
 	struct net_device *in;
 
 	/*
 	 * skip first pass of l2tp/pptp tunnel encapsulated traffic
 	 */
-	if (out->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-			       IFF_PPP_PPTP)) {
+	if (out->priv_flags_ext & (IFF_EXT_PPP_L2TPV2 | IFF_EXT_PPP_L2TPV3 |
+			       IFF_EXT_PPP_PPTP)) {
 		return true;
 	}
 
@@ -1436,14 +1425,17 @@ bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *ou
 		return true;
 	}
 
-	if (in->priv_flags & (IFF_PPP_L2TPV2 | IFF_PPP_L2TPV3 |
-			      IFF_PPP_PPTP)) {
+	if (in->priv_flags_ext & (IFF_EXT_PPP_L2TPV2 | IFF_EXT_PPP_L2TPV3 |
+			      IFF_EXT_PPP_PPTP)) {
 		dev_put(in);
 		return true;
 	}
 
 	dev_put(in);
 	return false;
+#else
+	return false;
+#endif
 
 }
 
@@ -2765,11 +2757,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 */
 			ether_addr_copy(type_info.vlan.address, dev->dev_addr);
 			type_info.vlan.vlan_tag = vlan_dev_vlan_id(dev);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 15, 0))
-			type_info.vlan.vlan_tpid = ETH_P_8021Q;
-#else
 			type_info.vlan.vlan_tpid = ntohs(vlan_dev_vlan_proto(dev));
-#endif
 			DEBUG_TRACE("%p: Net device: %p is VLAN, mac: %pM, vlan_id: %x vlan_tpid: %x\n",
 					feci, dev, type_info.vlan.address, type_info.vlan.vlan_tag, type_info.vlan.vlan_tpid);
 
@@ -2894,7 +2882,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		/*
 		 * GRE TAP?
 		 */
-		if (dev->priv_flags & (IFF_GRE_V4_TAP | IFF_GRE_V6_TAP)) {
+		if (dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
 			interface_type = feci->ae_interface_type_get(feci, dev);
 			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 
@@ -3158,7 +3146,7 @@ identifier_update:
 	/*
 	 * OVPN Tunnel?
 	 */
-	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags & IFF_TUN_TAP)) {
+	if ((dev_type == ARPHRD_NONE) && (dev->priv_flags_ext & IFF_EXT_TUN_TAP)) {
 		struct net_device *tun_dev = NULL;
 		ip_addr_t saddr, daddr;
 
@@ -3224,7 +3212,7 @@ identifier_update:
 	 * ppp_is_multilink() and ppp_hold_channels() which acquire same lock
 	 */
 
-	if ((dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
+	if ((dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
 		if (skb && (skb->skb_iif == dev->ifindex)) {
 			struct pppol2tp_common_addr info;
 
@@ -3282,7 +3270,7 @@ identifier_update:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags & IFF_PPP_PPTP)) {
+	if ((protocol == IPPROTO_GRE) && skb && v4_hdr && (dev->priv_flags_ext & IFF_EXT_PPP_PPTP)) {
 		struct gre_hdr_pptp *gre_hdr;
 		uint16_t proto;
 		int ret;
@@ -3893,9 +3881,17 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 
 	/*
 	 * Check if the source net_dev is a bridge slave.
+	 *
+	 * TODO: We are already considering ingress bridge device and
+	 * adding it to dst_dev in ecm_nss_multicast_ipv4_connection_process().
+	 * Check if this can be removed.
 	 */
 	if (in_dev && !mfc_update) {
-		if (ecm_front_end_is_bridge_port(in_dev)) {
+		if (ecm_front_end_is_bridge_port(in_dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				|| ecm_interface_is_ovs_bridge_port(in_dev)
+#endif
+		   ) {
 			br_dev_src = ecm_interface_get_and_hold_dev_master(in_dev);
 			DEBUG_ASSERT(br_dev_src, "Expected a master\n");
 
@@ -3915,7 +3911,6 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				 */
 				max_if++;
 			}
-
 		}
 	}
 
@@ -4351,9 +4346,11 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 		return true;
 	}
 
-	if (dev->type == ARPHRD_NONE && dev->priv_flags & IFF_TUN_TAP) {
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+	if (dev->type == ARPHRD_NONE && dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
 		return true;
 	}
+#endif
 
 	return false;
 }
@@ -4485,7 +4482,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	/*
 	 * if the address is a local address and indev=l2tp.
 	 */
-	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -4499,7 +4496,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	/*
 	 * if the address is a local address and indev=PPTP.
 	 */
-	if (protocol == IPPROTO_GRE && given_dest_dev && (given_dest_dev->priv_flags & IFF_PPP_PPTP)){
+	if (protocol == IPPROTO_GRE && given_dest_dev && (given_dest_dev->priv_flags_ext & IFF_EXT_PPP_PPTP)){
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -5064,7 +5061,7 @@ lag_success:
 			/*
 			 * OVPN ?
 			 */
-			if ((dest_dev_type == ARPHRD_NONE) && (dest_dev->priv_flags & IFF_TUN_TAP)) {
+			if ((dest_dev_type == ARPHRD_NONE) && (dest_dev->priv_flags_ext & IFF_EXT_TUN_TAP)) {
 				DEBUG_TRACE("Net device: %p is OVPN, device name: %s\n", dest_dev, dest_dev->name);
 				break;
 			}
@@ -5083,7 +5080,7 @@ lag_success:
 			DEBUG_TRACE("%p: Net device: %p is PPP\n", feci, dest_dev);
 
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
-			if ((given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+			if ((given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 				if (skb->skb_iif == dest_dev->ifindex) {
 					DEBUG_TRACE("%p: Net device: %p PPP channel is PPPoL2TPV2\n", feci, dest_dev);
 					break;
@@ -5092,7 +5089,7 @@ lag_success:
 #endif
 
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-			if (protocol == IPPROTO_GRE && dest_dev && (dest_dev->priv_flags & IFF_PPP_PPTP)) {
+			if (protocol == IPPROTO_GRE && dest_dev && (dest_dev->priv_flags_ext & IFF_EXT_PPP_PPTP)) {
 				DEBUG_TRACE("%p: Net device: %p PPP channel is PPTP\n", feci, dest_dev);
 				break;
 			}
@@ -5360,7 +5357,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	/*
 	 * if the address is a local address and indev=l2tp.
 	 */
-	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
 		if (dest_dev) {
@@ -5866,7 +5863,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 			DEBUG_TRACE("Net device: %p is PPP\n", dest_dev);
 
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
-			if ((given_src_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
+			if ((given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
 				if (skb->skb_iif == dest_dev->ifindex) {
 					DEBUG_TRACE("Net device: %p PPP channel is PPPoL2TPV2\n", dest_dev);
 					break;
@@ -6482,11 +6479,7 @@ static void ecm_interface_mtu_change(struct net_device *dev)
  */
 static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, unsigned long event, void *ptr)
 {
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 10, 0))
-	struct net_device *dev __attribute__ ((unused)) = (struct net_device *)ptr;
-#else
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-#endif
 	struct net_device *master = NULL;
 
 	DEBUG_INFO("Net device notifier for: %p, name: %s, event: %lx\n", dev, dev->name, event);
@@ -6741,8 +6734,11 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
 			 * If the update was received from MFC, do not consider entries in the
 			 * interface list that are part of a bridge/ovs_bridge. The bridge/ovs_bridge entries will be
 			 * taken care by the Bridge Snooper Callback
+			 *
+			 * TODO: Check if an assert is needed for the flag
+			 * ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG to be set, if is_br_snooper is false.
 			 */
-			if (!is_br_snooper && !(flags & ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG)) {
+			if (!is_br_snooper && (flags & ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG)) {
 				continue;
 			}
 
@@ -7142,15 +7138,14 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0))
-	msg.msg_iov   = &iov;
-	msg.msg_iovlen = 1;
-#else
 	iov_iter_init(&msg.msg_iter, READ, &iov, 1, 1);
-#endif
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
 	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
+#else
+	size = sock_recvmsg(sock, &msg, msg.msg_flags);
+#endif
 	set_fs(oldfs);
 
 	return size;
@@ -7167,7 +7162,7 @@ static void ecm_interface_wifi_event_thread(void)
 	unsigned char buf[512];
 	int len = sizeof(buf);
 
-	allow_signal(SIGKILL|SIGSTOP);
+	kernel_sigaction(SIGKILL, SIG_DFL);
 	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &__ewn.sock);
 	if (err < 0) {
 		DEBUG_ERROR("failed to create sock\n");
@@ -7239,14 +7234,15 @@ int ecm_interface_wifi_event_stop(void)
 	}
 
 	DEBUG_INFO("kill ecm_interface_wifi_event thread\n");
-	force_sig(SIGKILL, __ewn.thread);
+
+	send_sig(SIGKILL, __ewn.thread, 1);
 	err = kthread_stop(__ewn.thread);
 	__ewn.thread = NULL;
 
 	return err;
 }
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * ecm_interface_igs_enabled_handler()
  * 	IGS enabled check sysctl node handler.
@@ -7328,7 +7324,7 @@ static struct ctl_table ecm_interface_table[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_src_check_handler,
 	},
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	{
 		.procname		= "igs_enabled",
 		.data			= &ecm_interface_igs_enabled,

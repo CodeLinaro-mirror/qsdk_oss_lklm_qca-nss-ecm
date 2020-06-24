@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -168,6 +168,8 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		to = out_dev;
 		to_other = out_dev;
 	} else {
+		__be32 rt_gw4;
+
 		if (!rt) {
 			DEBUG_WARN("rtable is NULL\n");
 			return false;
@@ -177,45 +179,31 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		 * If the flow is routed, extract the route information from the skb.
 		 * Print the extracted information for debug purpose.
 		 */
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-		rt_iif_dev = dev_get_by_index(&init_net, rt->rt_iif);
-#else
 		rt_iif_dev = dev_get_by_index(&init_net, skb->skb_iif);
-#endif
 		if (!rt_iif_dev) {
 			DEBUG_WARN("No rt_iif dev\n");
 			return false;
 		}
-
-		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-		DEBUG_TRACE("%p: rt_key_dst: %pI4\n", rt, &rt->rt_key_dst);
-		DEBUG_TRACE("%p: rt_key_src: %pI4\n", rt, &rt->rt_key_src);
-		DEBUG_TRACE("%p: rt_key_tos: %d\n", rt, rt->rt_key_tos);
-		DEBUG_TRACE("%p: rt_dst: %pI4\n", rt, &rt->rt_dst);
-		DEBUG_TRACE("%p: rt_src: %pI4\n", rt, &rt->rt_src);
-		DEBUG_TRACE("%p: rt_spec_dst: %pI4\n", rt, &rt->rt_spec_dst);
-		DEBUG_TRACE("%p: rt_route_iif: %d\n", rt, rt->rt_route_iif);
-		DEBUG_TRACE("%p: rt_iif: %d (%s)\n", rt, rt->rt_iif, rt_iif_dev->name);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 2, 0))
+		rt_gw4 = rt->rt_gateway;
+#else
+		rt_gw4 = rt->rt_gw4;
 #endif
-		DEBUG_TRACE("%p: rt_gateway: %pI4\n", rt, &rt->rt_gateway);
+		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
+		DEBUG_TRACE("%p: rt gateway: %pI4\n", rt, &rt_gw4);
 
 		DEBUG_INFO("ip_src_addr" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr));
 		DEBUG_INFO("ip_src_addr_nat" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr_nat));
 		DEBUG_INFO("ip_dest_addr" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_dest_addr));
 		DEBUG_INFO("ip_dest_addr_nat" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat));
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-		if ((rt->rt_dst != rt->rt_gateway) || (rt->rt_flags & RTF_GATEWAY)) {
-#else
 		if (rt->rt_uses_gateway || (rt->rt_flags & RTF_GATEWAY)) {
-#endif
 			/*
 			 * Overwrite the rt_dst_addr with the gateway IP address. The destination host is
 			 * behind a gateway.
 			 */
 			DEBUG_TRACE("Gateway address will be looked up overwrite the rt_dst_addr\n");
-			ECM_NIN4_ADDR_TO_IP_ADDR(rt_dst_addr, rt->rt_gateway)
+			ECM_NIN4_ADDR_TO_IP_ADDR(rt_dst_addr, rt_gw4)
 			gateway = true;
 		}
 

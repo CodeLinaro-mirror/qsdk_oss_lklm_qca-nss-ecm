@@ -47,7 +47,6 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <net/netfilter/nf_conntrack_helper.h>
 #include <net/netfilter/nf_conntrack_l4proto.h>
-#include <net/netfilter/nf_conntrack_l3proto.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
@@ -625,7 +624,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			vlan_in_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_in_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_in_dev, pr->return_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_in_dev, pr->return_qos_tag);
 				dev_put(vlan_in_dev);
 				vlan_in_dev = NULL;
 			}
@@ -867,7 +866,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (vlan_out_dev) {
-				vlan_value |= vlan_dev_get_egress_prio(vlan_out_dev, pr->flow_qos_tag);
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 				dev_put(vlan_out_dev);
 				vlan_out_dev = NULL;
 			}
@@ -970,6 +969,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
 	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * Set up ingress shaper qostag values.
 	 */
@@ -978,7 +978,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->igs_rule.igs_return_qos_tag = (uint16_t)pr->igs_return_qos_tag;
 		nircm->valid_flags |= NSS_IPV6_RULE_CREATE_IGS_VALID;
 	}
-
+#endif
 	/*
 	 * DSCP information?
 	 */
@@ -993,18 +993,10 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
 	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
 		int vlan_present = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-		vlan_present = vlan_tx_tag_present(skb);
-#else
 		vlan_present = skb_vlan_tag_present(skb);
-#endif
 		if (vlan_present) {
 			uint32_t vlan_value;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0))
-			vlan_value = (ETH_P_8021Q << 16) | vlan_tx_tag_get(skb);
-#else
 			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
-#endif
 			nircm->vlan_primary_rule.ingress_vlan_tag = vlan_value;
 			nircm->vlan_primary_rule.egress_vlan_tag = vlan_value;
 			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_VLAN_VALID;
@@ -1993,14 +1985,15 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 
 		layer4hdr = (__be16*)udp_hdr;
 
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
 		/*
 		 * Deny acceleration for L2TP-over-UDP tunnel
 		 */
-		if ((in_dev->priv_flags & IFF_PPP_L2TPV2) && ppp_is_xmit_locked(in_dev)) {
+		if ((in_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(in_dev)) {
 			DEBUG_TRACE("Skip packets for L2TP tunnel in skb %p\n", skb);
 			can_accel = false;
 		}
-
+#endif
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
 		 */
@@ -2300,7 +2293,7 @@ done:
 		;
 	}
 
-#ifdef CONFIG_NET_CLS_ACT
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	/*
 	 * Check if IGS feature is enabled or not.
 	 */
@@ -2457,6 +2450,7 @@ done:
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
 		 */
@@ -2467,7 +2461,7 @@ done:
 			prevalent_pr.igs_return_qos_tag = aci_pr.igs_return_qos_tag;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG;
 		}
-
+#endif
 		/*
 		 * If any classifier denied DSCP remarking then that overrides every classifier
 		 */

@@ -97,19 +97,18 @@ static inline bool ecm_front_end_acceleration_rejected(struct sk_buff *skb)
 		 */
 		return false;
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 12, 0))
 	if (unlikely(nf_ct_is_untracked(ct))) {
+#else
+	if (unlikely(ctinfo == IP_CT_UNTRACKED)) {
+#endif
 		/*
 		 * Untracked traffic certainly can't be accelerated.
 		 */
 		return true;
 	}
 
-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(3, 6, 0))
-	acct = nf_conn_acct_find(ct);
-#else
 	acct = nf_conn_acct_find(ct)->counter;
-#endif
 	if (acct) {
 		long long packets = atomic64_read(&acct[CTINFO2DIR(ctinfo)].packets);
 		if ((packets > 0xff) && (packets & 0xff)) {
@@ -288,6 +287,7 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
+
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct net_device *outdev,
 						      struct sk_buff *skb,
