@@ -4,6 +4,10 @@
 
 obj-m += ecm.o
 
+ifeq ($(EXAMPLES_BUILD_OVS),y)
+obj-m += examples/ecm_ovs.o
+endif
+
 ecm-y := \
 	 ecm_tracker_udp.o \
 	 ecm_tracker_tcp.o \
@@ -102,6 +106,11 @@ ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
+# #############################################################################
+ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
 # #############################################################################
 ECM_INTERFACE_VLAN_ENABLE=y
@@ -127,6 +136,12 @@ ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ported_ipv6.o
 endif
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
+
+# #############################################################################
+# Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
+ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
@@ -220,6 +235,7 @@ ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 # By turning off debugs you gain maximum ECM performance.
 # #############################################################################
 ccflags-y += -DECM_CLASSIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_OVS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_MARK_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1

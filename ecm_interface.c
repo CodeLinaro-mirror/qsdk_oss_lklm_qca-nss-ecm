@@ -1479,8 +1479,8 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 #if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MULTICAST_ENABLE)
 /*
  * ecm_interface_multicast_ovs_to_interface_get_and_ref()
- * 	Populate ov_ ports/bridge device from multicast 'to' list.
- * 	Returns the number of ovs port count.
+ *	Populate ov_ ports/bridge device from multicast 'to' list.
+ *	Returns the number of ovs port count.
  */
 int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connection_instance *ci, struct net_device **to_ovs_port,
 							struct net_device **to_ovs_brdev)
