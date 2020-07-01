@@ -56,6 +56,9 @@
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 #include "ecm_classifier_ovs.h"
 #endif
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+#include "ecm_classifier_emesh.h"
+#endif
 
 /*
  * Default slow path packets allowed before the acceleration
@@ -115,6 +118,20 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 		DEBUG_TRACE("%px: Created Netlink classifier: %px\n", ci, cnli);
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cnli);
 		return (struct ecm_classifier_instance *)cnli;
+	}
+#endif
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	case ECM_CLASSIFIER_TYPE_EMESH: {
+		struct ecm_classifier_emesh_instance *cemi;
+
+		cemi = ecm_classifier_emesh_instance_alloc(ci);
+		if (!cemi) {
+			DEBUG_TRACE("%px: Failed to create emesh classifier\n", ci);
+			return NULL;
+		}
+		DEBUG_TRACE("%px: Created emesh classifier: %px\n", ci, cemi);
+		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)cemi);
+		return (struct ecm_classifier_instance *)cemi;
 	}
 #endif
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE

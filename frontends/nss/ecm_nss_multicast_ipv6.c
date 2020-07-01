@@ -1257,13 +1257,15 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	create->if_count = valid_vif_idx;
 	create->src_interface_num = from_nss_iface_id;
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*
 	 * Set up the flow qos tags
 	 */
-	create->qos_tag = (uint32_t)pr->flow_qos_tag;
-	create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_QOS_VALID;
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+		create->qos_tag = (uint32_t)pr->flow_qos_tag;
+		create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_QOS_VALID;
+	}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * Set up ingress shaper flow qos tags.
@@ -1279,6 +1281,15 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
 			create->egress_dscp = pr->flow_dscp;
 			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_DSCP_MARKING_VALID;
+	}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	/*
+	 * Mark the rule as E-MESH Service Prioritization valid.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
+		create->rule_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_MC_EMESH_SP;
 	}
 #endif
 
@@ -3399,7 +3410,6 @@ process_packet:
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
@@ -3408,8 +3418,10 @@ process_packet:
 					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag);
 			prevalent_pr.flow_qos_tag = aci_pr.flow_qos_tag;
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
@@ -3443,6 +3455,17 @@ process_packet:
 				prevalent_pr.flow_dscp = aci_pr.flow_dscp;
 				prevalent_pr.return_dscp = aci_pr.return_dscp;
 			}
+		}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		/*
+		 * E-Mesh Service Prioritization is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh Service Prioritization is valid\n",
+					ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
 #endif
 

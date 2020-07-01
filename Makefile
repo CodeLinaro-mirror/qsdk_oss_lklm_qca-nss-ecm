@@ -280,6 +280,12 @@ ecm-$(ECM_CLASSIFIER_PCC_ENABLE) += ecm_classifier_pcc.o
 ccflags-$(ECM_CLASSIFIER_PCC_ENABLE) += -DECM_CLASSIFIER_PCC_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_EMESH_ENABLE=y in order to enable E-Mesh classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_EMESH_ENABLE) += ecm_classifier_emesh.o
+ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
+
+# #############################################################################
 # Define ECM_NON_PORTED_SUPPORT_ENABLE=y in order to enable non-ported protocol.
 # #############################################################################
 ECM_NON_PORTED_SUPPORT_ENABLE=y
@@ -353,6 +359,7 @@ ccflags-y += -DECM_CLASSIFIER_DSCP_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_NL_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_EMESH_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DEFAULT_DEBUG_LEVEL=1
 ccflags-y += -DECM_DB_DEBUG_LEVEL=1
 ccflags-y += -DECM_INIT_DEBUG_LEVEL=3

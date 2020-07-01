@@ -97,6 +97,11 @@ extern int ecm_classifier_pcc_init(struct dentry *dentry);
 extern void ecm_classifier_pcc_exit(void);
 #endif
 
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+extern int ecm_classifier_emesh_init(struct dentry *dentry);
+extern void ecm_classifier_emesh_exit(void);
+#endif
+
 /*
  * ecm_init()
  */
@@ -163,6 +168,13 @@ static int __init ecm_init(void)
 	}
 #endif
 
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	ret = ecm_classifier_emesh_init(ecm_dentry);
+	if (0 != ret) {
+		goto err_cls_emesh;
+	}
+#endif
+
 	ret = ecm_interface_init();
 	if (0 != ret) {
 		goto err_iface;
@@ -219,6 +231,10 @@ err_bond:
 #endif
 	ecm_interface_exit();
 err_iface:
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	ecm_classifier_emesh_exit();
+err_cls_emesh:
+#endif
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	ecm_classifier_ovs_exit();
 err_cls_ovs:
@@ -319,6 +335,10 @@ static void __exit ecm_exit(void)
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	DEBUG_INFO("exit ovs classifier\n");
 	ecm_classifier_ovs_exit();
+#endif
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	DEBUG_INFO("exit emesh classifier\n");
+	ecm_classifier_emesh_exit();
 #endif
 	DEBUG_INFO("exit default classifier\n");
 	ecm_classifier_default_exit();

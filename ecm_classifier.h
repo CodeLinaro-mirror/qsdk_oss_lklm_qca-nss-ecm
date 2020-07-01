@@ -33,6 +33,9 @@ enum ecm_classifier_types {
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	ECM_CLASSIFIER_TYPE_DSCP,		/* Provides DSCP and DSCP remarking support */
 #endif
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	ECM_CLASSIFIER_TYPE_EMESH,		/* E-Mesh classifier */
+#endif
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 	ECM_CLASSIFIER_TYPE_NL,			/* Provides netlink interface */
 #endif
@@ -92,6 +95,10 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG 0x00000080	/* Contains OVS VLAN tags */
 #define ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG 0x00000100	/* Contains OVS QinQ VLAN tags */
 #define ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL 0x00000200		/* Multicast OVS flow */
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW 0x00000400	/* Mark the E-MESH Service Prioritization flow */
 #endif
 
 /*
@@ -355,7 +362,6 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 	}
 #endif
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		if ((result = ecm_state_write(sfi, "flow_qos_tag", "%u", pr->flow_qos_tag))) {
 			return result;
@@ -364,6 +370,7 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			return result;
 		}
 	}
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
 		if ((result = ecm_state_write(sfi, "igs_flow_qos_tag", "%u", pr->igs_flow_qos_tag))) {
