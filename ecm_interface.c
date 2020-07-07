@@ -1491,7 +1491,7 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 }
 #endif
 
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+#if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MULTICAST_ENABLE)
 /*
  * ecm_interface_multicast_ovs_to_interface_get_and_ref()
  * 	Populate ov_ ports/bridge device from multicast 'to' list.
@@ -1571,7 +1571,9 @@ int ecm_interface_multicast_ovs_to_interface_get_and_ref(struct ecm_db_connectio
 	ecm_db_multicast_connection_to_interfaces_deref_all(to_mc_ifaces, to_mc_ifaces_first);
 	return ovs_port_cnt;
 }
+#endif
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
  * ecm_interface_is_ovs_bridge_port()
  *	Returns true if dev is OpenVswitch (OVS) bridge port.
