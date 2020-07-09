@@ -28,8 +28,13 @@ enum ecm_classifier_ovs_results {
 typedef enum ecm_classifier_ovs_results ecm_classifier_ovs_result_t;
 
 struct ecm_classifier_ovs_process_response {
+	uint32_t dscp;			/* Used by the routed connections */
+	uint32_t flow_dscp;		/* Bridge connection's flow DSCP value */
+	uint32_t return_dscp;		/* Bridge connection's return DSCP value */
 	struct vlan_hdr ingress_vlan[2];
+					/* Ingress VLAN header */
 	struct vlan_hdr egress_vlan[2];
+					/* Egress VLAN header */
 };
 
 
