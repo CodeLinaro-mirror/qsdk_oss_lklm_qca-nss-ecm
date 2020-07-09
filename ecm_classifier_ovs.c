@@ -35,6 +35,7 @@
 #include <linux/inet.h>
 #include <linux/in.h>
 #include <linux/etherdevice.h>
+#include <linux/netfilter/xt_dscp.h>
 
 /*
  * Debug output levels
@@ -557,13 +558,6 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 	flow.tuple.ip_version = ecm_db_connection_ip_version_get(ci);
 	flow.tuple.protocol = ecm_db_connection_protocol_get(ci);
 
-	spin_lock_bh(&ecm_classifier_ovs_lock);
-	ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	spin_unlock_bh(&ecm_classifier_ovs_lock);
-
 	/*
 	 * For routed flows both from and to side can be OVS bridge port, if there
 	 * is a routed flow between two OVS bridges. (e.g: ovs-br1 and ovs-br2)
@@ -636,6 +630,11 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 
 		memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 
+		/*
+		 * Initialize the dscp with the default value.
+		 */
+		resp.dscp = OVSMGR_INVALID_DSCP;
+
 		DEBUG_TRACE("%px: Route Flow Process (from): src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
 				&flow, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
 				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
@@ -645,6 +644,18 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		result = cb(&flow, skb, &resp);
 
 		dev_put(br_dev);
+
+		if (resp.dscp != OVSMGR_INVALID_DSCP) {
+			/*
+			 * Copy DSCP value to the classifier's process response's flow_dscp field,
+			 * because this is the from_dev and the direction of the flow is flow direction.
+			 */
+			spin_lock_bh(&ecm_classifier_ovs_lock);
+			ecvi->process_response.flow_dscp = resp.dscp >> XT_DSCP_SHIFT;
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
+			spin_unlock_bh(&ecm_classifier_ovs_lock);
+			DEBUG_TRACE("FLOW DSCP : 0x%x\n", ecvi->process_response.flow_dscp);
+		}
 
 		/*
 		 * Handle the result
@@ -663,7 +674,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 				DEBUG_TRACE("Ingress vlan tag[0] set : %x\n", ecvi->process_response.ingress_vlan_tag[0]);
 			}
 
-			ecvi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
 
 			if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
 				if (resp.egress_vlan[1].h_vlan_TCI) {
@@ -740,6 +751,11 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 
 		memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 
+		/*
+		 * Initialize the dscp with the default value.
+		 */
+		resp.dscp = OVSMGR_INVALID_DSCP;
+
 		DEBUG_TRACE("%px: Route Flow Process (to): src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
 				&flow, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
 				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
@@ -749,6 +765,18 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		result = cb(&flow, skb, &resp);
 
 		dev_put(br_dev);
+
+		if (resp.dscp != OVSMGR_INVALID_DSCP) {
+			/*
+			 * Copy DSCP value to the classifier's process response's return_dscp field,
+			 * because this is the to_dev and the direction of the flow is reply direction.
+			 */
+			spin_lock_bh(&ecm_classifier_ovs_lock);
+			ecvi->process_response.return_dscp = resp.dscp >> XT_DSCP_SHIFT;
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
+			spin_unlock_bh(&ecm_classifier_ovs_lock);
+			DEBUG_TRACE("RETURN DSCP : 0x%x\n", ecvi->process_response.return_dscp);
+		}
 
 		/*
 		 * Handle the result
@@ -767,7 +795,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 				DEBUG_TRACE("Egress vlan tag[0] set : %x\n", ecvi->process_response.egress_vlan_tag[0]);
 			}
 
-			ecvi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
 
 			if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
 				if (resp.egress_vlan[1].h_vlan_TCI) {
@@ -1015,6 +1043,14 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 
 	/*
+	 * Set default values for flow and return DSCP.
+	 * External module will call the DSCP query twice to
+	 * find both directions' values.
+	 */
+	resp.flow_dscp = OVSMGR_INVALID_DSCP;
+	resp.return_dscp = OVSMGR_INVALID_DSCP;
+
+	/*
 	 * Call the external callback and get the result.
 	 */
 	result = cb(&flow, skb, &resp);
@@ -1045,7 +1081,7 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		/*
 		 * Primary VLAN tag is always present even it is QinQ.
 		 */
-		ecvi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
 
 		/*
 		 * If the sender type is source, which means the packet is coming from the originator,
@@ -1110,7 +1146,8 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 				ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
 			}
 		}
-		goto allow_accel;
+
+		break;
 
 	case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL:
 		/*
@@ -1127,10 +1164,37 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		 */
 		DEBUG_WARN("%p: External callback didn't find any VLAN relation\n", aci);
 		spin_lock_bh(&ecm_classifier_ovs_lock);
-		goto allow_accel;
+		break;
 
 	default:
 		DEBUG_ASSERT(false, "Unhandled result: %d\n", result);
+	}
+
+	/*
+	 * If external module set any of the flow or return DSCP,
+	 * we copy them to the classifier's process response based
+	 * on the direction of the traffic. The external module
+	 * should always set first the flow and then the return values.
+	 */
+	if ((resp.flow_dscp != OVSMGR_INVALID_DSCP) || (resp.return_dscp != OVSMGR_INVALID_DSCP)) {
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			/*
+			 * Copy DSCP values
+			 */
+			ecvi->process_response.flow_dscp = (resp.flow_dscp != OVSMGR_INVALID_DSCP) ? resp.flow_dscp >> XT_DSCP_SHIFT : 0;
+			ecvi->process_response.return_dscp = (resp.return_dscp != OVSMGR_INVALID_DSCP) ? resp.return_dscp >> XT_DSCP_SHIFT : ecvi->process_response.flow_dscp;
+			DEBUG_TRACE("FLOW DSCP: 0x%x RETURN DSCP: 0x%x\n",
+					ecvi->process_response.flow_dscp, ecvi->process_response.return_dscp);
+		} else {
+			/*
+			 * Copy DSCP values
+			 */
+			ecvi->process_response.flow_dscp = (resp.return_dscp != OVSMGR_INVALID_DSCP) ? resp.return_dscp >> XT_DSCP_SHIFT : 0;
+			ecvi->process_response.return_dscp = (resp.flow_dscp != OVSMGR_INVALID_DSCP) ? resp.flow_dscp >> XT_DSCP_SHIFT : ecvi->process_response.flow_dscp;
+			DEBUG_TRACE("FLOW DSCP: 0x%x RETURN DSCP: 0x%x\n",
+					ecvi->process_response.flow_dscp, ecvi->process_response.return_dscp);
+		}
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
 	}
 
 allow_accel:
@@ -1140,6 +1204,7 @@ allow_accel:
 	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
 	ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+
 	*process_response = ecvi->process_response;
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 	ecm_db_connection_deref(ci);
@@ -1903,8 +1968,11 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 
 	ecvi->process_response.process_actions = 0;
 	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;
+	ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 	ecvi->process_response.egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+	ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+
 #ifdef ECM_MULTICAST_ENABLE
 	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
 		ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
