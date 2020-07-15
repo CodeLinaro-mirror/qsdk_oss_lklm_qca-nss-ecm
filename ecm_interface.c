@@ -7380,21 +7380,6 @@ static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *fl
 	struct ecm_db_node_instance *ni;
 
 	/*
-	 * check if smac/dmac is local mac
-	 *
-	 * if smac is local, direction is from ovs_br -> eth2 (ovs bridge port)
-	 * if dmac is local, direction is from eth2 (ovs bridge port)-> ovs_br
-	 *
-	 * Routing:
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
-	 *
-	 * In ovs_br, there are two flow rules:
-	 * 	a. rule (IPv4)from PC1_MAC to ovs_br_MAC
-	 * 	b. rule (IPv4)from ovs_br_MAC to PC1_MAC
-	 * 	c. rule (IPv6)from PC1_MAC to ovs_br_MAC
-	 * 	d. rule (IPv6)from ovs_br_MAC to PC1_MAC
-	 *
 	 * Bridging:
 	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC2] <--- IPv4/IPv6
 	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC3] <--- IPv4/IPv6
@@ -7415,34 +7400,6 @@ static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *fl
 	 * 		- CI is not deleted
 	 * 	ii. b/d is deleted - smac is ovs_br_MAC, dmac is PC1_MAC
 	 * 		- CI is deleted
-	 */
-
-	/*
-	 * Check if OVS bridge interface mac is smac.
-	 */
-	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
-		/*
-		 * smac is address of OVS bridge interface.
-		 * Delete the connections matching dmac.
-		 */
-		ecm_interface_node_connections_defunct(flow->dmac, flow->tuple.ip_version);
-		return;
-	}
-
-	/*
-	 * Check if dmac is local dev.
-	 */
-	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
-		/*
-		 * dmac is address of OVS bridge interface.
-		 * Delete the connections matching smac.
-		 */
-		ecm_interface_node_connections_defunct(flow->smac, flow->tuple.ip_version);
-		return;
-	}
-
-	/*
-	 * Delete OVS bridge flows.
 	 */
 
 	/*
@@ -7556,6 +7513,25 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 			ti = ti_next;
 		}
 #endif
+		return;
+	}
+
+	/*
+	 * Route flows are created through POSTROUTE hook, CI entries will be
+	 * deleted through nfct timeout.
+	 *
+	 * If indev/outdev is ovs bridge interface then return.
+	 *
+	 * Check if smac is local dev and OVS bridge interface.
+	 */
+	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
+		return;
+	}
+
+	/*
+	 * Check if dmac is local dev and OVS bridge interface.
+	 */
+	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
 		return;
 	}
 
