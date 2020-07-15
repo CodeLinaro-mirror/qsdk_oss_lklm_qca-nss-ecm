@@ -650,7 +650,7 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_ACCEL:
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL:
 			/*
-			 * Allow accel after setting the external module response.
+			 * Allow acceleration after setting the external module response.
 			 */
 			DEBUG_WARN("%p: External callback process succeeded\n", ecvi);
 
@@ -1331,8 +1331,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		 * Sync the flow direction.
 		 * eth1 to eth2
 		 */
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
@@ -1413,8 +1413,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
@@ -1452,8 +1452,8 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ether_addr_copy(smac, to_ovs_brdev[i]->dev_addr);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
@@ -1560,8 +1560,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
@@ -1622,8 +1622,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ether_addr_copy(dmac, br_dev->dev_addr);
 
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
@@ -1666,8 +1666,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		ether_addr_copy(smac, br_dev->dev_addr);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
-		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
-		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
