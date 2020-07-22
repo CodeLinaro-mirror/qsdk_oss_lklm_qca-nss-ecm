@@ -27,6 +27,8 @@
 #include <net/ip.h>
 #include <linux/inet.h>
 
+#include <sp_api.h>
+
 /*
  * Debug output levels
  * 0 = OFF
@@ -614,6 +616,31 @@ struct ecm_classifier_emesh_instance *ecm_classifier_emesh_instance_alloc(struct
 EXPORT_SYMBOL(ecm_classifier_emesh_instance_alloc);
 
 /*
+ * ecm_classifier_emesh_rule_update_cb()
+ *	Callback for service prioritization notification update.
+ */
+static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md, uint8_t newprec,
+		 uint8_t oldprec, bool field_update, struct sp_rule *r)
+{
+	/*
+	 * Return if E-Mesh functionality is not enabled.
+	 */
+	if (!ecm_classifier_emesh_enabled) {
+		return;
+	}
+
+	DEBUG_TRACE("SP update notification received\n");
+
+	/*
+	 * Destroy all the connections.
+	 * The usage of the incoming parameters in this service prioritization
+	 * callback will be done in future to perform more refined flush of
+	 * connections.
+	 */
+	ecm_db_connection_defunct_all();
+}
+
+/*
  * ecm_classifier_emesh_get_enabled()
  */
 static int ecm_classifier_emesh_get_enabled(void *data, u64 *val)
@@ -650,6 +677,8 @@ DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_emesh_enabled_fops, ecm_classifier_emesh_
  */
 int ecm_classifier_emesh_init(struct dentry *dentry)
 {
+	int ret;
+
 	DEBUG_INFO("EMESH classifier Module init\n");
 
 	ecm_classifier_emesh_dentry = debugfs_create_dir("ecm_classifier_emesh", dentry);
@@ -662,6 +691,16 @@ int ecm_classifier_emesh_init(struct dentry *dentry)
 				 ecm_classifier_emesh_dentry, NULL,
 				 &ecm_classifier_emesh_enabled_fops)) {
 		DEBUG_ERROR("Failed to create emesh enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_dentry);
+		return -1;
+	}
+
+	/*
+	 * Register for service prioritization notification update.
+	 */
+	ret = sp_mapdb_rule_update_register_notify(ecm_classifier_emesh_rule_update_cb);
+	if (ret) {
+		DEBUG_ERROR("SP update registration failed: %d\n", ret);
 		debugfs_remove_recursive(ecm_classifier_emesh_dentry);
 		return -1;
 	}
@@ -687,5 +726,10 @@ void ecm_classifier_emesh_exit(void)
 	if (ecm_classifier_emesh_dentry) {
 		debugfs_remove_recursive(ecm_classifier_emesh_dentry);
 	}
+
+	/*
+	 * De-register service prioritization notification update.
+	 */
+	sp_mapdb_rule_update_unregister_notify();
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_exit);
