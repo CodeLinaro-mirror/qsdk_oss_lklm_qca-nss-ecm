@@ -90,6 +90,10 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni);
 void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version);
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+void ecm_db_node_ovs_routed_connections_defunct(uint8_t *node_mac,
+						struct net_device *ovs_br,
+						int ip_version,
+						ecm_db_obj_dir_t dir);
 void ecm_db_traverse_snode_dnode_connection_list_and_defunct(
 	struct ecm_db_node_instance *sni, uint8_t *dmac, int ip_version, ecm_db_obj_dir_t dir);
 #endif
