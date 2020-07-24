@@ -7420,6 +7420,40 @@ static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *fl
 #ifdef ECM_IPV6_ENABLE
 	ecm_front_end_ipv6_stop(1);
 #endif
+
+	/*
+	 * 1.i,  Route flow where outdev is the OVS bridge.
+	 *
+	 * Check if dmac is local dev and OVS bridge interface.
+	 *
+	 * 	  client_node -------------> ovs_br
+	 *	flow->smac	  	  flow->outdev
+	 *	     connections FROM the client_node
+	 */
+	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
+		DEBUG_TRACE("%px: Defunct the connections FROM the %pM to the %s OVS bridge\n", flow, flow->smac, flow->outdev->name);
+		ecm_db_node_ovs_routed_connections_defunct(flow->smac, flow->outdev, flow->tuple.ip_version, ECM_DB_OBJ_DIR_FROM);
+		goto enable_front_end;
+	}
+
+	/*
+	 * 2.i, Route flow where indev is the OVS bridge.
+	 *
+	 * Check if smac is local dev and OVS bridge interface.
+	 *
+	 * 	 client_node <------------- ovs_br
+	 *	flow->dmac	  	  flow->indev
+	 *	     connections TO the client_node
+	 */
+	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
+		DEBUG_TRACE("%px: Defunct the connections TO the %pM from the %s OVS bridge\n", flow, flow->dmac, flow->indev->name);
+		ecm_db_node_ovs_routed_connections_defunct(flow->dmac, flow->indev, flow->tuple.ip_version, ECM_DB_OBJ_DIR_TO);
+		goto enable_front_end;
+	}
+
+	/*
+	 * Destroy bridge flows.
+	 */
 	ni = ecm_db_node_chain_get_and_ref_first(flow->smac);
 	while (ni) {
 		struct ecm_db_node_instance *nin;
@@ -7444,6 +7478,7 @@ static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *fl
 		ni = nin;
 	}
 
+enable_front_end:
 	/*
 	 * Re-enable frontend processing.
 	 */

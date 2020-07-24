@@ -857,6 +857,57 @@ keep_node_conn:
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
+ * ecm_db_node_ovs_routed_connections_defunct()
+ *	Destroy the routed connections created on the node in the given
+ *	direction which is related to the ovs_br interface.
+ */
+void ecm_db_node_ovs_routed_connections_defunct(uint8_t *node_mac, struct net_device *ovs_br, int ip_version, ecm_db_obj_dir_t dir)
+{
+	struct ecm_db_iface_instance *ii;
+	struct ecm_db_node_instance *ni;
+	struct ecm_db_connection_instance *ci;
+
+	ii =  ecm_db_iface_find_and_ref_by_interface_identifier(ovs_br->ifindex);
+	if (!ii) {
+		DEBUG_WARN("%px: Unable to find OVS bridge iface instance\n", ovs_br);
+		return;
+	}
+
+	/*
+	 * Find the node instance which has the node_mac and related to the ovs_br.
+	 * Nodes are stored in the database with their related interface instances.
+	 */
+	ni = ecm_db_node_find_and_ref(node_mac, ii);
+	if(!ni) {
+		DEBUG_WARN("%px: Unable to find node instance related to %pM and %s\n", ovs_br, node_mac, ovs_br->name);
+		ecm_db_iface_deref(ii);
+		return;
+	}
+
+	/*
+	 * Iterate all routed connections on this node in the dir direction.
+	 */
+	ci = ecm_db_node_connections_get_and_ref_first(ni, dir);
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+
+		if (ecm_db_connection_is_routed_get(ci) && (ecm_db_connection_ip_version_get(ci) == ip_version)) {
+			DEBUG_TRACE("%px: Defuncting connection %p\n", ovs_br, ci);
+			ecm_db_connection_make_defunct(ci);
+		}
+
+		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+
+	ecm_db_node_deref(ni);
+	ecm_db_iface_deref(ii);
+
+	DEBUG_TRACE("%px: Completed OVS routed connection defunct\n", ovs_br);
+}
+
+/*
  * ecm_db_traverse_snode_dnode_connection_list_and_defunct()
  *	Defunct connections between node1 (sni) and node2 (which has dmac address)
  */
