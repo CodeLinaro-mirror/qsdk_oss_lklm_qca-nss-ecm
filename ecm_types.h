@@ -26,9 +26,11 @@
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 #define ECM_GRE_VERSION_0   __cpu_to_be16(GRE_VERSION_1701)
 #define ECM_GRE_VERSION_1   __cpu_to_be16(GRE_VERSION_PPTP)
+typedef struct gre_hdr_pptp ecm_gre_hdr_pptp;
 #else
 #define ECM_GRE_VERSION_0   GRE_VERSION_0
 #define ECM_GRE_VERSION_1   GRE_VERSION_1
+typedef struct pptp_gre_header ecm_gre_hdr_pptp;
 #endif
 
 /*

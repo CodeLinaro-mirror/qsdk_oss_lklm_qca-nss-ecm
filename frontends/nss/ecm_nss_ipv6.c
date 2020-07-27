@@ -384,6 +384,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 
 			dev_put(local_dev);
 			done = true;
+			break;
 #else
 			DEBUG_TRACE("PPTP interface unsupported\n");
 			return NULL;
