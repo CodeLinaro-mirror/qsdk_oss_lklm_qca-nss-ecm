@@ -2292,6 +2292,20 @@ done:
 		;
 	}
 
+	/*
+	 * Bridged traffic goes through the IP post routing hook as well after it
+	 * finishes the bridge post routing hook. In that case, ecm_dir will become
+	 * as Non-Nat since the is_routed flag is true. But the is_routed flag of the connection
+	 * was set as false while the packet was going throught the bridge post routing
+	 * hook. So, we need to check if the is_routed flag and ecm_dir matches the routed
+	 * flow condition. If it doesn't, do not process the flow.
+	 */
+	if (!ecm_db_connection_is_routed_get(ci) && (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
+		DEBUG_TRACE("%px: ignore route hook path for bridged packet\n", ci);
+		ecm_db_connection_deref(ci);
+		return NF_ACCEPT;
+	}
+
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	/*
 	 * Check if IGS feature is enabled or not.
