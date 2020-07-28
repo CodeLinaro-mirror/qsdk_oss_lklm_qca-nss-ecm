@@ -309,3 +309,8 @@ extern bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 						     struct ecm_tracker_ip_header *iph,
 						     struct sk_buff *skb,
 						     ecm_tracker_sender_type_t sender);
+void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
+					ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat,
+					ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
+					int src_port, int src_port_nat,
+					int dest_port, int dest_port_nat, ecm_db_direction_t ecm_dir);

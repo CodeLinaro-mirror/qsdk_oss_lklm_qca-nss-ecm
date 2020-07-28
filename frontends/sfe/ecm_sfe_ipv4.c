@@ -599,8 +599,8 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv4_retry_regen;
 	}
 
-	DEBUG_TRACE("%p: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
+	DEBUG_TRACE("%px: Update the 'from' interface heirarchy list\n", ci);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb, NULL);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv4_retry_regen;
@@ -609,8 +609,8 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
-	DEBUG_TRACE("%p: Update the 'from NAT' interface heirarchy list\n", ci);
-	from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb);
+	DEBUG_TRACE("%px: Update the 'from NAT' interface heirarchy list\n", ci);
+	from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb, NULL);
 	if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv4_retry_regen;
@@ -619,8 +619,8 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 	ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 
-	DEBUG_TRACE("%p: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb);
+	DEBUG_TRACE("%px: Update the 'to' interface heirarchy list\n", ci);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb, NULL);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv4_retry_regen;
@@ -629,8 +629,8 @@ void ecm_sfe_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
-	DEBUG_TRACE("%p: Update the 'to NAT' interface heirarchy list\n", ci);
-	to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, efeici.to_nat_dev, efeici.to_nat_other_dev, ip_src_addr, efeici.to_nat_mac_lookup_ip_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr, skb);
+	DEBUG_TRACE("%px: Update the 'to NAT' interface heirarchy list\n", ci);
+	to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, efeici.to_nat_dev, efeici.to_nat_other_dev, ip_src_addr, efeici.to_nat_mac_lookup_ip_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, layer4hdr, skb, NULL);
 	if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv4_retry_regen;

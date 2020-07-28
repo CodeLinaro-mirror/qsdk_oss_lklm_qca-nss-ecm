@@ -196,6 +196,13 @@ struct ecm_front_end_interface_construct_instance {
 	ip_addr_t to_nat_mac_lookup_ip_addr;
 };
 
+struct ecm_front_end_ovs_params {
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+	int src_port;
+	int dest_port;
+};
+
 extern void ecm_front_end_ipv6_interface_construct_netdev_put(struct ecm_front_end_interface_construct_instance *efeici);
 extern void ecm_front_end_ipv6_interface_construct_netdev_hold(struct ecm_front_end_interface_construct_instance *efeici);
 extern bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir, bool is_routed,
@@ -210,6 +217,8 @@ extern bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *
 							ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat,
 							ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
 							struct ecm_front_end_interface_construct_instance *efeici);
+void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[], ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat, ip_addr_t ip_dest_addr,
+					ip_addr_t ip_dest_addr_nat, int src_port, int src_port_nat, int dest_port, int dest_port_nat);
 
 /*
  * Detect which front end to run
