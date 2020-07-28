@@ -2929,16 +2929,6 @@ unsigned int ecm_nss_multicast_ipv4_connection_process(struct net_device *out_de
 
 process_packet:
 	/*
-	 * In pure bridge flow, do not process further if TTL is less than two.
-	 */
-	if (!is_routed) {
-		if (iph->ttl < 2) {
-			DEBUG_TRACE("%px: Ignoring, Multicast IPv4 Header has TTL one\n", skb);
-			goto done;
-		}
-	}
-
-	/*
 	 * Work out if this packet involves NAT or not.
 	 * If it does involve NAT then work out if this is an ingressing or egressing packet.
 	 */
