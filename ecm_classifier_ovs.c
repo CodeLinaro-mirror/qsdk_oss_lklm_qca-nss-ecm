@@ -636,6 +636,9 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 
 		memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 
+		DEBUG_TRACE("%px: Route Flow Process (from): src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+				&flow, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
+				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
 		/*
 		 * Call the external callback and get the result.
 		 */
@@ -737,6 +740,9 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 
 		memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 
+		DEBUG_TRACE("%px: Route Flow Process (to): src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+				&flow, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
+				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
 		/*
 		 * Call the external callback and get the result.
 		 */
@@ -1259,15 +1265,17 @@ static inline void ecm_classifier_ovs_stats_sync(struct ovsmgr_dp_flow *flow,
 	if (flow->tuple.ip_version == 4) {
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow->tuple.ipv4.src, sip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow->tuple.ipv4.dst, dip);
-		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM TCI: %x, TPID: %x\n",
 				flow, flow->smac, flow->indev->name, &flow->tuple.ipv4.src, flow->tuple.src_port, flow->tuple.protocol,
-				&flow->tuple.ipv4.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac);
+				&flow->tuple.ipv4.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac,
+				flow->ingress_vlan.h_vlan_TCI, flow->ingress_vlan.h_vlan_encapsulated_proto);
 	} else {
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow->tuple.ipv6.src, sip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow->tuple.ipv6.dst, dip);
-		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI6:%d proto: %d dest: %pI6:%d dest_dev: %s dest MAC: %pM\n",
+		DEBUG_TRACE("%px: STATS: src MAC: %pM src_dev: %s src: %pI6:%d proto: %d dest: %pI6:%d dest_dev: %s dest MAC: %pM, TCI: %x, TPID: %x\n",
 				flow, flow->smac, flow->indev->name, &flow->tuple.ipv6.src, flow->tuple.src_port, flow->tuple.protocol,
-				&flow->tuple.ipv6.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac);
+				&flow->tuple.ipv6.dst, flow->tuple.dst_port, flow->outdev->name, flow->dmac,
+				flow->ingress_vlan.h_vlan_TCI, flow->ingress_vlan.h_vlan_encapsulated_proto);
 	}
 
 	/*
@@ -1605,12 +1613,33 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 	 * For routed flows both from and to side can be OVS bridge port, if there
 	 * is a routed flow between two OVS bridges. (e.g: ovs-br1 and ovs-br2)
 	 *
-	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2----->PC2
+	 * These are the netdevice places and the IP address values based on the
+	 * 4 different NAT cases.
+	 *
+	 * SNAT:
+	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2 -----> PC2
+	 *		(from_dev)	(to_dev)
+	 * src_ip			src_ip_nat	dest_ip/dest_ip_nat
+	 *
+	 * DNAT
+	 * PC1 <----- eth1-ovs-br1<---ovs-br2-eth2 <----- PC2
+	 *		(to_dev)	(from_dev)
+	 * dest_ip			dest_ip_nat	src_ip/src_ip_nat
+	 *
+	 * Non-NAT - Egress
+	 * PC1 -----> eth1-ovs-br1--->ovs-br2-eth2 -----> PC2
+	 *		(from_dev)	(to_dev)
+	 * src_ip/src_ip_nat				dest_ip/dest_ip_nat
+	 *
+	 * Non-NAT - Ingress
+	 * PC1 <----- eth1-ovs-br1<---ovs-br2-eth2 <----- PC2
+	 *		(to_dev)	(from_dev)
+	 * dest_ip/dest_ip_nat				src_ip/src_ip_nat
 	 */
 	if (from_dev) {
 		/*
-		 * from_dev = eth1
-		 * br_dev = ovs-br1
+		 * from_dev = eth1/eth2  (can be tagged)
+		 * br_dev = ovs-br1/ovs_br2 (untagged)
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
@@ -1618,17 +1647,22 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 					aci, from_dev->name);
 			goto done;
 		}
+
 		/*
-		 * Sync the flow direction (eth1 to ovs-br1)
+		 * Sync the flow direction (eth1/eth2 to ovs-br1/ovs_br2) based on the NAT case.
 		 */
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ether_addr_copy(dmac, br_dev->dev_addr);
 
+		/*
+		 * If from_dev is a bridge port, dest_ip_nat and dest_port_nat satisfies all the NAT cases.
+		 * So, we need to get the ECM_DB_OBJ_DIR_TO_NAT direction's IP and port number from the connection.
+		 */
 		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
-		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
+		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
 				  sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
@@ -1638,7 +1672,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 				  sport, dport, tci, tpid);
 
 		/*
-		 * Sync the return direction (ovs-br1 to eth1)
+		 * Sync the return direction (ovs-br1/ovs_br2 to eth1/eth2) based on the NAT case.
 		 * All the flow parameters are reversed.
 		 */
 		ecm_classifier_ovs_stats_sync(&flow,
@@ -1646,14 +1680,14 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 				  br_dev, from_dev,
 				  dmac, smac,
 				  dst_ip, src_ip,
-				  dport, sport, tci, tpid);
+				  dport, sport, 0, 0);
 		dev_put(br_dev);
 	}
 
 	if (to_dev) {
 		/*
-		 * to_dev = eth2
-		 * br_dev = ovs-br2
+		 * to_dev = eth2/eth1 (can be tagged)
+		 * br_dev = ovs-br2/ovs-br1 (untagged)
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_TO, false);
 		if (!br_dev) {
@@ -1663,15 +1697,29 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		}
 
 		/*
-		 * Sync the flow direction (ovs-br2 to eth2)
+		 * Reset the tci and tpid values and get the egress side of the flow.
+		 */
+		tci = tpid = 0;
+		if (ecvi->process_response.egress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			tci = ecvi->process_response.egress_vlan_tag[0] & 0xffff;
+			tpid = (ecvi->process_response.egress_vlan_tag[0] >> 16) & 0xffff;
+			DEBUG_TRACE("%px: Egress VLAN : %x:%x\n", aci, tci, tpid);
+		}
+
+		/*
+		 * Sync the flow direction (ovs-br2/ovs_br1 to eth2/eth1) based on the NAT case.
 		 */
 		ether_addr_copy(smac, br_dev->dev_addr);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
-		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+		/*
+		 * If to_dev is a bridge port, src_ip_nat and src_port_nat satisfies all the NAT cases.
+		 * So, we need to get the ECM_DB_OBJ_DIR_FROM_NAT direction's IP and port number from the connection.
+		 */
+		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM_NAT));
 		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM_NAT, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 		ecm_classifier_ovs_stats_sync(&flow,
@@ -1679,9 +1727,9 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 				  br_dev, to_dev,
 				  smac, dmac,
 				  src_ip, dst_ip,
-				  sport, dport, tci, tpid);
+				  sport, dport, 0, 0);
 		/*
-		 * Sync the return direction (eth2 to ovs-br2)
+		 * Sync the return direction (eth2/eth1 to ovs-br2/ovs-br1) based on the NAT case.
 		 * All the flow parameters are reversed.
 		 */
 		ecm_classifier_ovs_stats_sync(&flow,

@@ -2541,15 +2541,21 @@ done:
 static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct sk_buff *skb, struct net_device *br_dev,
 								ip_addr_t src_ip, ip_addr_t dst_ip, int ip_version,
 								int protocol, bool is_routed, uint8_t *smac,
-								uint8_t *dmac, __be16 *layer4hdr)
+								uint8_t *dmac, __be16 *layer4hdr,
+								struct ecm_front_end_ovs_params *op)
 {
 	struct ovsmgr_dp_flow flow;
 	struct net_device *dev;
 
-	DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (smac:%pM, dmac:%pM)\n",
-				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip), ip_version, protocol, smac, dmac);
-
 	memset(&flow, 0, sizeof(flow));
+
+	flow.indev = br_dev;
+	flow.outdev = NULL;
+	flow.tuple.ip_version = ip_version;
+	flow.tuple.protocol = protocol;
+	flow.is_routed = is_routed;
+
+	ether_addr_copy(flow.dmac, dmac);
 
 	/*
 	 * Consider a routing flow
@@ -2572,39 +2578,68 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 		ether_addr_copy(flow.smac, skb_eth_hdr->h_dest);
 	}
 
-	flow.indev = br_dev;
-	flow.outdev = NULL;
+	/*
+	 * OVS parameters are not passed explicitly for the following cases:
+	 * 1. IPv6 flows
+	 * 2. IPv4/IPv6 non-ported flows
+	 * 3. Multicast flows.
+	 * 4. SFE flows
+	 */
+	if (!op) {
+		if (protocol == IPPROTO_TCP) {
+			struct tcphdr *tcp_hdr = (struct tcphdr *)layer4hdr;
 
-	flow.tuple.ip_version = ip_version;
-	flow.tuple.protocol = protocol;
+			flow.tuple.src_port = tcp_hdr->source;
+			flow.tuple.dst_port = tcp_hdr->dest;
+		} else if (protocol == IPPROTO_UDP) {
+			struct udphdr *udp_hdr = (struct udphdr *)layer4hdr;
 
-	if (protocol == IPPROTO_TCP) {
-		struct tcphdr *tcp_hdr = (struct tcphdr *)layer4hdr;
+			flow.tuple.src_port = udp_hdr->source;
+			flow.tuple.dst_port = udp_hdr->dest;
+		} else {
+			DEBUG_WARN("%px: Protocol is not udp/tcp\n", skb);
+			return NULL;
+		}
 
-		flow.tuple.src_port = tcp_hdr->source;
-		flow.tuple.dst_port = tcp_hdr->dest;
-	} else if (protocol == IPPROTO_UDP) {
-		struct udphdr *udp_hdr = (struct udphdr *)layer4hdr;
+		if (ip_version == 4) {
+			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
+			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+		} else {
+			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
+			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+		}
 
-		flow.tuple.src_port = udp_hdr->source;
-		flow.tuple.dst_port = udp_hdr->dest;
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT  " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip),
+				ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, smac, dmac);
+
+		goto port_find;
+	}
+
+	/*
+	 * We use OVS params for IPv4 NSS unicast flows.
+	 */
+	if ((protocol == IPPROTO_TCP) || (protocol == IPPROTO_UDP)) {
+		flow.tuple.src_port = htons(op->src_port);
+		flow.tuple.dst_port = htons(op->dest_port);
 	} else {
 		DEBUG_WARN("%px: Protocol is not udp/tcp\n", skb);
 		return NULL;
 	}
 
-	flow.is_routed = is_routed;
-
-	ether_addr_copy(flow.dmac, dmac);
-
 	if (ip_version == 4) {
-		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
-		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, op->src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, op->dest_ip);
 	} else {
-		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
-		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, op->src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, op->dest_ip);
 	}
 
+	DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+			skb, br_dev->name, ECM_IP_ADDR_TO_DOT(op->src_ip), ECM_IP_ADDR_TO_DOT(op->dest_ip),
+			ip_version, protocol, op->src_port, op->dest_port, smac, dmac);
+
+port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
 	if (dev) {
 		dev_hold(dev);
@@ -4380,7 +4415,8 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						struct net_device *given_dest_dev,
 						bool is_routed, struct net_device *given_src_dev,
 						uint8_t *dest_node_addr, uint8_t *src_node_addr,
-						__be16 *layer4hdr, struct sk_buff *skb)
+						__be16 *layer4hdr, struct sk_buff *skb,
+						struct ecm_front_end_ovs_params *op)
 {
 	int protocol;
 	ip_addr_t src_addr;
@@ -4818,7 +4854,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					}
 
 					next_dev = ecm_interface_ovs_bridge_port_dev_get_and_ref(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
-											 is_routed, src_node_addr, mac_addr, layer4hdr);
+											 is_routed, src_node_addr, mac_addr, layer4hdr, op);
 					if (!next_dev) {
 						DEBUG_WARN("%px: Unable to obtain OVS output port for: %pM\n", feci, mac_addr);
 						goto done;
@@ -5647,7 +5683,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					}
 					next_dev = ecm_interface_ovs_bridge_port_dev_get_and_ref(skb, dest_dev, src_addr, dest_addr, ip_version, protocol,
-											 is_routed, src_node_addr, mac_addr, layer4hdr);
+											 is_routed, src_node_addr, mac_addr, layer4hdr, NULL);
 					if (!next_dev) {
 						DEBUG_WARN("Unable to obtain output port for: %pM\n", mac_addr);
 						dev_put(src_dev);
