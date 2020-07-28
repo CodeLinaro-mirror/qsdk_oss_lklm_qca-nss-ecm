@@ -278,3 +278,116 @@ bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
 
 	return true;
 }
+
+/*
+ * ecm_front_end_fill_ovs_params()
+ *	Set the OVS flow lookup parameters.
+ *
+ */
+void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
+					ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat,
+					ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
+					int src_port, int src_port_nat,
+					int dest_port, int dest_port_nat, ecm_db_direction_t ecm_dir)
+{
+	DEBUG_INFO("ip_src_addr " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr));
+	DEBUG_INFO("ip_src_addr_nat " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr_nat));
+	DEBUG_INFO("ip_dest_addr " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_dest_addr));
+	DEBUG_INFO("ip_dest_addr_nat " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat));
+	DEBUG_INFO("src_port: %d, src_port_nat: %d, dest_port:%d, dest_port_nat:%d\n", src_port, src_port_nat, dest_port, dest_port_nat);
+
+	/*
+	 * A routed flow can go through ECM in 4 different NAT cases.
+	 *
+	 * 1. SNAT:
+	 * PC1 -------------> eth1-ovs-br1--->ovs-br2-eth2 -------------> PC2
+	 *			FROM		TO
+	 *					TO_NAT
+	 *					FROM_NAT
+	 *
+	 * ip_src_addr				ip_src_addr_nat		ip_dest_addr/ip_dest_addr_nat
+	 *
+	 *
+	 * 2. DNAT:
+	 * PC1 <------------- eth1-ovs-br1<---ovs-br2-eth2 <------------- PC2
+	 *			TO		FROM
+	 *					FROM_NAT
+	 *					TO_NAT
+	 *
+	 * ip_dest_addr				ip_dest_addr_nat	ip_src_addr/ip_src_addr_nat
+	 *
+	 *
+	 * 3. Non-NAT - Egress:
+	 * PC1 -------------> eth1-ovs-br1--->ovs-br2-eth2 -------------> PC2
+	 *			FROM		TO
+	 *			FROM_NAT	TO_NAT
+	 *
+	 * ip_src_addr/ip_src_addr_nat					ip_dest_addr/ip_dest_addr_nat
+	 *
+	 *
+	 * 4. Non-NAT - Ingress:
+	 * PC1 <------------- eth1-ovs-br1<---ovs-br2-eth2 <------------- PC2
+	 *			TO		FROM
+	 *			TO_NAT		FROM_NAT
+	 *
+	 * ip_dest_addr/ip_dest_addr_nat				ip_src_addr/ip_src_addr_nat
+	 */
+
+	/*
+	 * To look-up the FROM and TO ports, in all NAT cases we use the same IP/port combinations.
+	 */
+	ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM].src_ip, ip_dest_addr_nat);
+	ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM].dest_ip, ip_src_addr);
+	ovs_params[ECM_DB_OBJ_DIR_FROM].src_port = dest_port_nat;
+	ovs_params[ECM_DB_OBJ_DIR_FROM].dest_port = src_port;
+
+	ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO].src_ip, ip_src_addr_nat);
+	ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO].dest_ip, ip_dest_addr);
+	ovs_params[ECM_DB_OBJ_DIR_TO].src_port = src_port_nat;
+	ovs_params[ECM_DB_OBJ_DIR_TO].dest_port = dest_port;
+
+	if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
+		/*
+		 * For SNAT case (EGRESS_NAT), we use specific IP/port combinations to look-up
+		 * the FROM_NAT and TO_NAT ports.
+		 */
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_ip, ip_src_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_ip, ip_dest_addr_nat);
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_port = src_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_port = dest_port_nat;
+
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_ip, ip_src_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_ip, ip_dest_addr_nat);
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_port = src_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_port = dest_port_nat;
+	} else if (ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) {
+		/*
+		 * For DNAT case (INGRESS_NAT), we use specific IP/port combinations to look-up
+		 * the FROM_NAT and TO_NAT ports.
+		 */
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_ip, ip_dest_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_ip, ip_src_addr_nat);
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_port = dest_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_port = src_port_nat;
+
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_ip, ip_dest_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_ip, ip_src_addr_nat);
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_port = dest_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_port = src_port_nat;
+	} else {
+		/*
+		 * For Non-NAT case, we use the same IP/port combinations of FROM and TO to look-up
+		 * the FROM_NAT and TO_NAT ports.
+		 */
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_ip, ip_dest_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_ip, ip_src_addr);
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].src_port = dest_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_FROM_NAT].dest_port = src_port;
+
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_ip, ip_src_addr_nat);
+		ECM_IP_ADDR_COPY(ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_ip, ip_dest_addr);
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].src_port = src_port_nat;
+		ovs_params[ECM_DB_OBJ_DIR_TO_NAT].dest_port = dest_port;
+	}
+}
+

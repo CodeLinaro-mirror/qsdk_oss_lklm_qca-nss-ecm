@@ -110,7 +110,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						struct net_device *given_dest_dev,
 						bool is_routed, struct net_device *given_src_dev,
 						uint8_t *dest_node_addr, uint8_t *src_node_addr,
-						__be16 *layer4hdr, struct sk_buff *skb);
+						__be16 *layer4hdr, struct sk_buff *skb, struct ecm_front_end_ovs_params *op);
 void ecm_interface_stats_update(struct ecm_db_connection_instance *ci, uint32_t from_tx_packets, uint32_t from_tx_bytes, uint32_t from_rx_packets, uint32_t from_rx_bytes, uint32_t to_tx_packets, uint32_t to_tx_bytes, uint32_t to_rx_packets, uint32_t to_rx_bytes);
 struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr);
 
