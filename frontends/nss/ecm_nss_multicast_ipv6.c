@@ -2818,16 +2818,6 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 	}
 
 process_packet:
-	/*
-	 * In pure bridge flow, do not process further if Hop Limit is less than two.
-	 */
-	if (!is_routed) {
-		if (iph->ttl < 2) {
-			DEBUG_TRACE("%px: Ignoring, Multicast IPv6 Header has Hop Limit one\n", skb);
-			goto done;
-		}
-	}
-
 	DEBUG_TRACE("UDP src: " ECM_IP_ADDR_OCTAL_FMT ":%d, dest: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
 			ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port);
 
