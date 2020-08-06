@@ -2604,15 +2604,18 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 		if (ip_version == 4) {
 			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
 			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+
+			DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT  " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip),
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, smac, dmac);
 		} else {
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+
+			DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_OCTAL_FMT  " dest_addr: " ECM_IP_ADDR_OCTAL_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, ECM_IP_ADDR_TO_OCTAL(src_ip), ECM_IP_ADDR_TO_OCTAL(dst_ip),
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, smac, dmac);
 		}
-
-		DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT  " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
-				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip),
-				ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, smac, dmac);
-
 		goto port_find;
 	}
 
@@ -2630,14 +2633,18 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 	if (ip_version == 4) {
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, op->src_ip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, op->dest_ip);
+
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(op->src_ip), ECM_IP_ADDR_TO_DOT(op->dest_ip),
+				ip_version, protocol, op->src_port, op->dest_port, smac, dmac);
 	} else {
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, op->src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, op->dest_ip);
-	}
 
-	DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
-			skb, br_dev->name, ECM_IP_ADDR_TO_DOT(op->src_ip), ECM_IP_ADDR_TO_DOT(op->dest_ip),
-			ip_version, protocol, op->src_port, op->dest_port, smac, dmac);
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_OCTAL_FMT " dest_addr: " ECM_IP_ADDR_OCTAL_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, ECM_IP_ADDR_TO_OCTAL(op->src_ip), ECM_IP_ADDR_TO_OCTAL(op->dest_ip),
+				ip_version, protocol, op->src_port, op->dest_port, smac, dmac);
+	}
 
 port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
