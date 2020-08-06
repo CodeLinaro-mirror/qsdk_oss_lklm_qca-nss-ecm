@@ -865,7 +865,9 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_front_end_interface_construct_instance efeici;
-	 ecm_db_direction_t ecm_dir;
+	ecm_db_direction_t ecm_dir;
+	struct ecm_front_end_ovs_params *from_ovs_params = NULL;
+	struct ecm_front_end_ovs_params *to_ovs_params = NULL;
 
 	DEBUG_INFO("%px: re-gen needed\n", ci);
 
@@ -917,8 +919,30 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 		goto ecm_ipv6_retry_regen;
 	}
 
+	if ((protocol == IPPROTO_TCP) || (protocol == IPPROTO_UDP)) {
+		int src_port, dest_port;
+		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
+
+		src_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+		dest_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+		/*
+		 * For IPv6 there is no NAT address or port numbers,
+		 * so we use the same IP address and port numbers from the
+		 * from and to host for those fields.
+		 */
+		ecm_front_end_fill_ovs_params(ovs_params,
+				      ip_src_addr, ip_src_addr,
+				      ip_dest_addr, ip_dest_addr,
+				      src_port, src_port,
+				      dest_port, dest_port, ecm_dir);
+
+		from_ovs_params = &ovs_params[ECM_DB_OBJ_DIR_FROM];
+		to_ovs_params = &ovs_params[ECM_DB_OBJ_DIR_TO];
+	}
+
 	DEBUG_TRACE("%px: Update the 'from' interface heirarchy list\n", ci);
-	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb, NULL);
+	from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb, from_ovs_params);
 	if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv6_retry_regen;
@@ -928,7 +952,7 @@ void ecm_nss_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, e
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
 	DEBUG_TRACE("%px: Update the 'to' interface heirarchy list\n", ci);
-	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb, NULL);
+	to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb, to_ovs_params);
 	if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 		goto ecm_ipv6_retry_regen;

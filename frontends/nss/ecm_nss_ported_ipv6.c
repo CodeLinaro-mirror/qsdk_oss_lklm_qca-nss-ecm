@@ -2067,6 +2067,7 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 		int32_t from_list_first;
 		struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
 		struct ecm_front_end_interface_construct_instance efeici;
+		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
 
 		DEBUG_INFO("New Ported connection from " ECM_IP_ADDR_OCTAL_FMT ":%u to " ECM_IP_ADDR_OCTAL_FMT ":%u\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port);
@@ -2131,13 +2132,24 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 		}
 
 		/*
+		 * For IPv6 there is no NAT address or port numbers,
+		 * so we use the same IP address and port numbers from the
+		 * from and to host for those fields.
+		 */
+		ecm_front_end_fill_ovs_params(ovs_params,
+					      ip_src_addr, ip_src_addr,
+					      ip_dest_addr, ip_dest_addr,
+					      src_port, src_port,
+					      dest_port, dest_port, ecm_dir);
+
+		/*
 		 * Get the src and destination mappings
 		 * For this we also need the interface lists which we also set upon the new connection while we are at it.
 		 * GGG TODO rework terms of "src/dest" - these need to be named consistently as from/to as per database terms.
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%px: Create the 'from' interface heirarchy list\n", nci);
-		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb, NULL);
+		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 6, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_FROM]);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
 			goto fail_3;
@@ -2162,7 +2174,7 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 		mi[ECM_DB_OBJ_DIR_FROM_NAT] = mi[ECM_DB_OBJ_DIR_FROM];
 
 		DEBUG_TRACE("%px: Create the 'to' interface heirarchy list\n", nci);
-		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb, NULL);
+		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 6, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_TO]);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
 			goto fail_5;
