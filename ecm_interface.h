@@ -56,13 +56,11 @@ bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link
 bool ecm_interface_find_route_by_addr(ip_addr_t addr, struct ecm_interface_route *ecm_rt);
 void ecm_interface_route_release(struct ecm_interface_route *rt);
 #ifdef ECM_IPV6_ENABLE
+struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr);
 void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t addr);
 #endif
 void ecm_interface_send_arp_request(struct net_device *dest_dev, ip_addr_t dest_addr, bool on_link, ip_addr_t gw_addr);
 struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr);
-#ifdef ECM_IPV6_ENABLE
-struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr);
-#endif
 bool ecm_interface_is_pptp(struct sk_buff *skb, const struct net_device *out);
 bool ecm_interface_is_l2tp_packet_by_version(struct sk_buff *skb, const struct net_device *out, int ver);
 bool ecm_interface_is_l2tp_pptp(struct sk_buff *skb, const struct net_device *out);
