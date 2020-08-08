@@ -193,10 +193,6 @@ struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_fron
 	struct net_device *in;
 #endif
 
-#ifdef ECM_INTERFACE_OVPN_ENABLE
-	struct net_device *out_dev;
-#endif
-
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	struct ip_tunnel *gre4_tunnel;
 	struct ip6_tnl *gre6_tunnel;
@@ -521,21 +517,6 @@ done:
 #endif
 		case ECM_DB_IFACE_TYPE_OVPN:
 #ifdef ECM_INTERFACE_OVPN_ENABLE
-			out_dev = skb_dst(skb)->dev;
-
-			/*
-			 * There is no MAC address for TUN/TAP device.
-			 * Return if skb->dst is TUN/TAP device.
-			 */
-			if (!out_dev || out_dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
-				DEBUG_WARN("failed to update node_addr dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_DOT_FMT "\n",
-						dev->name, out_dev->name, ECM_IP_ADDR_TO_DOT(addr));
-				return NULL;
-			}
-			memcpy(node_addr, out_dev->dev_addr, ETH_ALEN);
-
-			DEBUG_TRACE("dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_DOT_FMT ", node_addr: %pM\n",
-					dev->name, out_dev->name, ECM_IP_ADDR_TO_DOT(addr), node_addr);
 			done = true;
 			break;
 #else
