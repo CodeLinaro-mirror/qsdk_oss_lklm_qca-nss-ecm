@@ -6286,8 +6286,10 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
 	struct ecm_db_connection_instance *ci[ECM_DB_OBJ_DIR_MAX];
 	struct ecm_db_connection_instance *ci_mcast __attribute__ ((unused));
 #endif
+	char name[IFNAMSIZ];
 
-	DEBUG_TRACE("Regenerate connections using interface: %px\n", ii);
+	ecm_db_iface_interface_name_get(ii, name);
+	DEBUG_TRACE("Regenerate connections using interface: %px (%s)\n", ii, name);
 
 #ifndef ECM_DB_XREF_ENABLE
 	/*
@@ -6388,8 +6390,10 @@ static void ecm_interface_defunct_connections(struct ecm_db_iface_instance *ii)
 	int dir;
 	struct ecm_db_connection_instance *ci[ECM_DB_OBJ_DIR_MAX];
 	struct ecm_db_connection_instance *ci_mcast __attribute__ ((unused));
+	char name[IFNAMSIZ];
 
-	DEBUG_TRACE("defunct connections using interface: %px\n", ii);
+	ecm_db_iface_interface_name_get(ii, name);
+	DEBUG_TRACE("defunct connections using interface: %px (%s)\n", ii, name);
 
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
 		ci[dir] = ecm_db_iface_connections_get_and_ref_first(ii, dir);
@@ -6471,31 +6475,41 @@ static void ecm_interface_mtu_change(struct net_device *dev)
 	DEBUG_INFO("%px (%s): MTU Change to: %d\n", dev, dev->name, mtu);
 
 	/*
-	 * Find the interface for the given device.
+	 * Filter interface instances matching dev and regenerate connections
 	 */
-	ii = ecm_db_iface_find_and_ref_by_interface_identifier(dev->ifindex);
-	if (!ii) {
-		DEBUG_WARN("%px: No interface instance could be established for this dev\n", dev);
-		return;
-	}
+	ii = ecm_db_interfaces_get_and_ref_first();
+	while (ii) {
+		struct ecm_db_iface_instance *iin;
 
-	/*
-	 * Change the mtu
-	 */
-	ecm_db_iface_mtu_reset(ii, mtu);
-	DEBUG_TRACE("%px (%s): MTU Changed to: %d\n", dev, dev->name, mtu);
-	if (netif_is_bond_slave(dev)) {
-		struct net_device *master = NULL;
-		master = ecm_interface_get_and_hold_dev_master(dev);
-		DEBUG_ASSERT(master, "Expected a master\n");
-		ecm_interface_dev_regenerate_connections(master);
-		dev_put(master);
-	} else {
-		ecm_interface_regenerate_connections(ii);
-	}
+		/*
+		 * Defunct connections if ii is representing dev, otherwise
+		 * skip to the next ii.
+		 */
+		if (dev->ifindex != ecm_db_iface_interface_identifier_get(ii)) {
+			goto next;
+		}
 
-	DEBUG_TRACE("%px: Regenerate for %px: COMPLETE\n", dev, ii);
-	ecm_db_iface_deref(ii);
+		/*
+		 * Change the mtu
+		 */
+		ecm_db_iface_mtu_reset(ii, mtu);
+
+		if (!netif_is_bond_slave(dev)) {
+			ecm_interface_regenerate_connections(ii);
+		} else {
+			struct net_device *master = NULL;
+			master = ecm_interface_get_and_hold_dev_master(dev);
+			DEBUG_ASSERT(master, "Expected a master\n");
+			ecm_interface_dev_regenerate_connections(master);
+			dev_put(master);
+		}
+
+		DEBUG_TRACE("%px: Regenerate for (%s) belong to iface %px COMPLETE\n", dev, dev->name, ii);
+next:
+		iin = ecm_db_interface_get_and_ref_next(ii);
+		ecm_db_iface_deref(ii);
+		ii = iin;
+	}
 }
 
 /*
