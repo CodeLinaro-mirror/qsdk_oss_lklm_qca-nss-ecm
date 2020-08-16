@@ -33,6 +33,9 @@ enum ecm_classifier_types {
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	ECM_CLASSIFIER_TYPE_DSCP,		/* Provides DSCP and DSCP remarking support */
 #endif
+#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+	ECM_CLASSIFIER_TYPE_MSCS,		/* Mirrored Stream Classification Signalling(MSCS) classifier */
+#endif
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 	ECM_CLASSIFIER_TYPE_EMESH,		/* E-Mesh classifier */
 #endif
@@ -392,6 +395,7 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 		}
 	}
 #endif
+
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP) {
 		if ((result = ecm_state_write(sfi, "timer_group", "%d", pr->timer_group))) {
 			return result;
