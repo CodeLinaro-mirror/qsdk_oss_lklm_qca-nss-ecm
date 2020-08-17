@@ -3203,7 +3203,7 @@ process_packet:
 		mi[ECM_DB_OBJ_DIR_TO_NAT] = mi[ECM_DB_OBJ_DIR_TO];
 
 		DEBUG_TRACE("%px: Create the 'from NAT' interface heirarchy list\n", nci);
-		from_nat_list_first = ecm_interface_multicast_from_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr, dest_node_addr, (__be16 *)&udp_hdr, skb);
+		from_nat_list_first = ecm_interface_multicast_from_heirarchy_construct(feci, from_nat_list, ip_dest_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr, dest_node_addr, layer4hdr, skb);
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);

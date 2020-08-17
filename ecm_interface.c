@@ -2569,18 +2569,44 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 	 * 1. ingress port:eth1, egress_port:ovsbr1
 	 * 2. ingress_port:ovsbr2, egress_port:eth2
 	 *
-	 * Copy the multicast mac address, in case of
-	 * smac is NULL and src_ip is multicast.
+	 * Copy the multicast mac address, if src_ip is multicast.
 	 * During multicast 'from' hierarchy creation, the ECM
 	 * copies the source MAC as multicast MAC as the
 	 * reverse direction rule is not present in the ovs
 	 * data path rule set.
 	 */
-	if (ecm_ip_addr_is_multicast(src_ip) && !smac) {
+	if (ecm_ip_addr_is_multicast(src_ip)) {
 		struct ethhdr *skb_eth_hdr;
 
 		skb_eth_hdr = eth_hdr(skb);
-		ether_addr_copy(flow.smac, skb_eth_hdr->h_dest);
+		ether_addr_copy(flow.smac, dmac);
+		ether_addr_copy(flow.dmac, skb_eth_hdr->h_dest);
+
+		if (protocol == IPPROTO_UDP) {
+			struct udphdr *udp_hdr = (struct udphdr *)layer4hdr;
+
+			flow.tuple.src_port = udp_hdr->source;
+			flow.tuple.dst_port = udp_hdr->dest;
+		} else {
+			DEBUG_WARN("%px: Protocol is not UDP\n", skb);
+			return NULL;
+		}
+
+		if (ip_version == 4) {
+			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, dst_ip);
+			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, src_ip);
+			DEBUG_TRACE("%px: br_dev: %s, src_addr: %pI4, dest_addr: %pI4, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, &flow.tuple.ipv4.src, &flow.tuple.ipv4.dst,
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
+		} else {
+			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, dst_ip);
+			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, src_ip);
+			DEBUG_TRACE("%px: br_dev: %s, src_addr: %pI6, dest_addr: %pI6, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, &flow.tuple.ipv6.src, &flow.tuple.ipv6.dst,
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
+		}
+
+		goto port_find;
 	}
 
 	/*
@@ -2651,6 +2677,7 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
 	if (dev) {
+		DEBUG_TRACE("OVS egress port dev: %s\n", dev->name);
 		dev_hold(dev);
 		return dev;
 	}
