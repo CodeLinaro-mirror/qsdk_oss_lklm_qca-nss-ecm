@@ -2533,6 +2533,7 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 								struct ecm_front_end_ovs_params *op)
 {
 	struct ovsmgr_dp_flow flow;
+	struct ovsmgr_dp_flow return_flow;
 	struct net_device *dev;
 
 	memset(&flow, 0, sizeof(flow));
@@ -2542,6 +2543,10 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 	flow.tuple.ip_version = ip_version;
 	flow.tuple.protocol = protocol;
 	flow.is_routed = is_routed;
+
+	if (!smac) {
+		ether_addr_copy(flow.smac, br_dev->dev_addr);
+	}
 
 	ether_addr_copy(flow.dmac, dmac);
 
@@ -2592,14 +2597,16 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 		if (ip_version == 4) {
 			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
 			ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, dst_ip);
+			DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI4, dest_addr: %pI4, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, &flow.tuple.ipv4.src, &flow.tuple.ipv4.dst,
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
 		} else {
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, src_ip);
 			ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, dst_ip);
+			DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI6, dest_addr: %pI6, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+					skb, br_dev->name, &flow.tuple.ipv6.src, &flow.tuple.ipv6.dst,
+					ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
 		}
-
-		DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT  " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
-				skb, br_dev->name, ECM_IP_ADDR_TO_DOT(src_ip), ECM_IP_ADDR_TO_DOT(dst_ip),
-				ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, smac, dmac);
 
 		goto port_find;
 	}
@@ -2618,21 +2625,67 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 	if (ip_version == 4) {
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, op->src_ip);
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.dst, op->dest_ip);
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI4, dest_addr: %pI4, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, &flow.tuple.ipv4.src, &flow.tuple.ipv4.dst,
+				ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
 	} else {
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.src, op->src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(flow.tuple.ipv6.dst, op->dest_ip);
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI6, dest_addr: %pI6, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, &flow.tuple.ipv6.src, &flow.tuple.ipv6.dst,
+				ip_version, protocol, flow.tuple.src_port, flow.tuple.dst_port, flow.smac, flow.dmac);
 	}
-
-	DEBUG_TRACE("%px: br_dev = %s, src_addr: " ECM_IP_ADDR_DOT_FMT " dest_addr: " ECM_IP_ADDR_DOT_FMT ", ip_version: %d, protocol: %d (sp:%d, dp:%d)(smac:%pM, dmac:%pM)\n",
-			skb, br_dev->name, ECM_IP_ADDR_TO_DOT(op->src_ip), ECM_IP_ADDR_TO_DOT(op->dest_ip),
-			ip_version, protocol, op->src_port, op->dest_port, smac, dmac);
 
 port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
 	if (dev) {
 		dev_hold(dev);
+		return dev;
 	}
 
+	if (ecm_ip_addr_is_multicast(src_ip)) {
+		DEBUG_WARN("%px: Couldn't find OVS bridge port for Multicast flow\n", skb);
+		return NULL;
+	}
+
+	/*
+	 * Find by MAC addresses using return flow
+	 */
+	return_flow.indev = NULL;
+	return_flow.outdev = br_dev;
+	return_flow.tuple.ip_version = flow.tuple.ip_version;
+	return_flow.tuple.protocol = flow.tuple.protocol;
+	return_flow.is_routed = flow.is_routed;
+
+	ether_addr_copy(return_flow.smac, flow.dmac);
+	ether_addr_copy(return_flow.dmac, flow.smac);
+	return_flow.tuple.src_port = flow.tuple.dst_port;
+	return_flow.tuple.dst_port = flow.tuple.src_port;
+	if (ip_version == 4) {
+		return_flow.tuple.ipv4.src = flow.tuple.ipv4.dst;
+		return_flow.tuple.ipv4.dst = flow.tuple.ipv4.src;
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI4, dest_addr: %pI4, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, &return_flow.tuple.ipv4.src,
+				&return_flow.tuple.ipv4.dst, return_flow.tuple.ip_version,
+				return_flow.tuple.protocol, return_flow.tuple.src_port, return_flow.tuple.dst_port,
+				return_flow.smac, return_flow.dmac);
+	} else {
+		memcpy(&return_flow.tuple.ipv6.src, &flow.tuple.ipv6.dst, sizeof(return_flow.tuple.ipv6.src));
+		memcpy(&return_flow.tuple.ipv6.dst, &flow.tuple.ipv6.src, sizeof(return_flow.tuple.ipv6.dst));
+		DEBUG_TRACE("%px: br_dev = %s, src_addr: %pI6, dest_addr: %pI6, ip_version: %d, protocol: %d (sp:%d, dp:%d) (smac:%pM, dmac:%pM)\n",
+				skb, br_dev->name, &return_flow.tuple.ipv4.src,
+				&return_flow.tuple.ipv4.dst, return_flow.tuple.ip_version,
+				return_flow.tuple.protocol, return_flow.tuple.src_port, return_flow.tuple.dst_port,
+				return_flow.smac, return_flow.dmac);
+	}
+
+	dev = ovsmgr_port_find_by_mac(skb, br_dev, &return_flow);
+	if (!dev) {
+		DEBUG_WARN("%px: Couldn't find OVS bridge port\n", skb);
+		return NULL;
+	}
+
+	dev_hold(dev);
 	return dev;
 }
 #endif
@@ -7560,25 +7613,6 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 			ti = ti_next;
 		}
 #endif
-		return;
-	}
-
-	/*
-	 * Route flows are created through POSTROUTE hook, CI entries will be
-	 * deleted through nfct timeout.
-	 *
-	 * If indev/outdev is ovs bridge interface then return.
-	 *
-	 * Check if smac is local dev and OVS bridge interface.
-	 */
-	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
-		return;
-	}
-
-	/*
-	 * Check if dmac is local dev and OVS bridge interface.
-	 */
-	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
 		return;
 	}
 
