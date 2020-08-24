@@ -2682,9 +2682,18 @@ port_find:
 		return dev;
 	}
 
+	/*
+	 * Handle Multicast flows separately.
+	 */
 	if (ecm_ip_addr_is_multicast(src_ip)) {
-		DEBUG_WARN("%px: Couldn't find OVS bridge port for Multicast flow\n", skb);
-		return NULL;
+		dev = ovsmgr_port_find_by_mac(skb, br_dev, &flow);
+		if (!dev) {
+			DEBUG_WARN("%px: Couldn't find OVS bridge port for Multicast flow.\n", skb);
+			return NULL;
+		}
+
+		dev_hold(dev);
+		return dev;
 	}
 
 	/*

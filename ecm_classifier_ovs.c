@@ -264,14 +264,28 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	ip_addr_t dst_ip;
 	int32_t *to_mc_ifaces_first;
 	int if_cnt, i;
-	bool valid_ovs_ports = false, drop = false, deny_accel = false;
+	bool valid_ovs_ports = false;
 
-	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
+	/*
+	 * Classifier is always relevant for multicast
+	 * if we have enabled OVS support in ECM.
+	 */
+	spin_lock_bh(&ecm_classifier_ovs_lock);
+	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
+	spin_unlock_bh(&ecm_classifier_ovs_lock);
+
+	/*
+	 * No multicast port found, drop the connection.
+	 */
 	if_cnt = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(ci, &to_mc_ifaces, &to_mc_ifaces_first);
-	if (!if_cnt) {
+	if (unlikely(!if_cnt)) {
+		spin_lock_bh(&ecm_classifier_ovs_lock);
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DROP;
+		ecvi->process_response.drop = true;
+		*process_response = ecvi->process_response;
+		spin_unlock_bh(&ecm_classifier_ovs_lock);
 		DEBUG_WARN("%px: No multicast 'to' interface found\n", ci);
-		drop = true;
-		goto done1;
+		goto done;
 	}
 
 	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
@@ -288,16 +302,12 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 
 		for (j = to_mc_ifaces_first[i]; j < ECM_DB_IFACE_HEIRARCHY_MAX; j++) {
 			struct ecm_db_iface_instance **ifaces;
-			struct ecm_db_iface_instance *to_iface;
-			struct ecm_db_iface_instance *ii_temp, *ii_single;
+			struct ecm_db_iface_instance *ii_temp;
 			struct net_device *to_dev_temp;
 
 			ii_temp = ecm_db_multicast_if_heirarchy_get(to_mc_ifaces, i);
-			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, j);
-			ifaces = (struct ecm_db_iface_instance **)ii_single;
-			to_iface = *ifaces;
-
-			to_dev_temp = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(to_iface));
+			ifaces = (struct ecm_db_iface_instance **)ecm_db_multicast_if_instance_get_at_index(ii_temp, j);
+			to_dev_temp = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(*ifaces));
 			if (unlikely(!to_dev_temp)) {
 				continue;
 			}
@@ -316,10 +326,33 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 	}
 	ecm_db_multicast_connection_to_interfaces_deref_all(to_mc_ifaces, to_mc_ifaces_first);
 
+	from_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, true);
 	if (!from_dev && !valid_ovs_ports) {
+		spin_lock_bh(&ecm_classifier_ovs_lock);
+		*process_response = ecvi->process_response;
+		spin_unlock_bh(&ecm_classifier_ovs_lock);
 		DEBUG_WARN("%px: None of the from/to interfaces are OVS bridge port\n", ci);
-		goto done2;
+		goto done;
 	}
+
+	/*
+	 * Below are the possible multicast flows.
+	 *
+	 * 1. L2 Multicast (Bridge)
+	 * 	ovsbr (eth0, eth1,eth2)
+	 * 	a. sender: eth0, receiver: eth1, eth2
+	 *
+	 * 2. L3 Multicast (Route)
+	 * 	Upstream: br-wan (eth0)
+	 * 	Downstream: br-home (eth1, eth2)
+	 * 	a. Downstream flow => sender: eth0, receiver: eth1, eth2
+	 * 	b. Upstream flow => sender: eth1, receiver: eth0
+	 *
+	 * 3. L2 + L3 Multicast (Bridge + Route)
+	 * 	Upstream: br-wan (eth0)
+	 * 	Downstream: br-home (eth1, eth2)
+	 * 	a. sender: eth1, receiver: eth0, eth2
+	 */
 
 	/*
 	 * Is there an external callback to get the ovs value from the packet?
@@ -333,45 +366,28 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 		 */
 		spin_unlock_bh(&ecm_classifier_ovs_lock);
 		DEBUG_WARN("%px: No external process callback set\n", ci);
-		goto done1;
+		goto allow_accel;
 	}
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 
 	memset(&flow, 0, sizeof(struct ovsmgr_dp_flow));
 
-	/*
-	 * During multicast update path, skb is passed as NULL.
-	 * We need to fill the ingress_vlan with the same vlan
-	 * information that we have stored during connection instance
-	 * creation. OVS manager needs this information to provide the
-	 * right response.
-	 */
-	if (!skb) {
-		flow.ingress_vlan = ecm_db_multicast_tuple_get_ovs_ingress_vlan(ci->ti);
-	}
-
-	/*
-	 * If the flow is a routed flow, set the is_routed flag of the flow.
-	 */
-	if (ecm_db_connection_is_routed_get(ci)) {
-		flow.is_routed = true;
-	}
-
 	if (from_dev) {
 		flow.indev = from_dev;
 		indev_master = ovsmgr_dev_get_master(flow.indev);
-		DEBUG_ASSERT(indev_master, "Expected a master\n");
+		DEBUG_ASSERT(indev_master, "%px: Expected a master\n", ci);
 	}
 
+	flow.is_routed = ecm_db_connection_is_routed_get(ci);
 	flow.tuple.ip_version = ecm_db_connection_ip_version_get(ci);
 	flow.tuple.protocol = ecm_db_connection_protocol_get(ci);
 	flow.tuple.src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
 	flow.tuple.dst_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
-	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
-	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, flow.smac);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, flow.dmac);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
 	if (flow.tuple.ip_version == 4) {
 		ECM_IP_ADDR_TO_NIN4_ADDR(flow.tuple.ipv4.src, src_ip);
@@ -383,17 +399,109 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 		DEBUG_ASSERT(NULL, "%px: unexpected ip_version: %d", ci, flow.tuple.ip_version );
 	}
 
-	memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
+	/*
+	 * Check if the connection is a "bridge + route"
+	 * flow.
+	 */
+	if (flow.is_routed) {
+		/*
+		 * Get the ingress VLAN information from ovs-mgr
+		 */
+		if (from_dev) {
+			struct net_device *br_dev;
+			ecm_classifier_ovs_result_t result;
 
-	ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+			/*
+			 * from_dev = eth1
+			 * br_dev = ovs-br1
+			 */
+			br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
+			DEBUG_TRACE("%px: processing route flow from_dev = %s, br_dev = %s", ecvi, from_dev->name, br_dev->name);
 
-	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
-		ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-		ecvi->process_response.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-		ecvi->process_response.egress_netdev_index[i] = -1;
+			/*
+			 * We always take the flow from bridge to port, so indev is port device and outdev is bridge device.
+			 */
+			flow.indev = from_dev;
+			flow.outdev = br_dev;
+
+			DEBUG_TRACE("%px: Route Flow Process (from): src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+					&flow, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
+					&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
+
+			memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
+
+			/*
+			 * Call the external callback and get the result.
+			 */
+			result = cb(&flow, skb, &resp);
+
+			dev_put(br_dev);
+
+			/*
+			 * Handle the result
+			 */
+			switch (result) {
+			case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_ACCEL:
+			case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL:
+				/*
+				 * Allow accel after setting the external module response.
+				 */
+				DEBUG_WARN("%px: External callback process succeeded\n", ecvi);
+				spin_lock_bh(&ecm_classifier_ovs_lock);
+				ecvi->process_response.ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+				ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+				if (resp.egress_vlan[0].h_vlan_TCI) {
+					ecvi->process_response.ingress_vlan_tag[0] = resp.egress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[0].h_vlan_TCI;
+				}
+
+				ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+				if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
+					if (resp.egress_vlan[1].h_vlan_TCI) {
+						ecvi->process_response.ingress_vlan_tag[1] = resp.egress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[1].h_vlan_TCI;
+					}
+
+					ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
+				}
+				spin_unlock_bh(&ecm_classifier_ovs_lock);
+				DEBUG_TRACE("%px: Multicast ingress vlan tag[0]: %x tag[1]: %x\n", ecvi, ecvi->process_response.ingress_vlan_tag[0],
+						ecvi->process_response.ingress_vlan_tag[1]);
+				break;
+
+			case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL:
+				/*
+				 * External callback failed to process VLAN process. So, let's deny the acceleration
+				 * and try more with the subsequent packets.
+				 */
+				DEBUG_WARN("%px: External callback failed to process VLAN tags\n", ecvi);
+				spin_lock_bh(&ecm_classifier_ovs_lock);
+				ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL;
+				ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				*process_response = ecvi->process_response;
+				spin_unlock_bh(&ecm_classifier_ovs_lock);
+				goto done;
+
+			case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
+				/*
+				 * There is no VLAN tag in the flow. Just allow the acceleration.
+				 */
+				DEBUG_WARN("%px: External callback didn't find any VLAN relation\n", ecvi);
+				break;
+
+			default:
+				DEBUG_ASSERT(false, "%px: Unhandled result: %d\n", ci, result);
+			}
+		}
+	}
+
+	/*
+	 * During multicast update path, skb is passed as NULL.
+	 * We need to fill the ingress_vlan with the same vlan
+	 * information that we have stored during connection instance
+	 * creation. OVS manager needs this information to provide the
+	 * right response.
+	 */
+	if (!skb) {
+		flow.ingress_vlan = ecm_db_multicast_tuple_get_ovs_ingress_vlan(ci->ti);
 	}
 
 	/*
@@ -422,7 +530,7 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			 * Otherwise, set the indev to master of the egress port.
 			 */
 			outdev_master = ovsmgr_dev_get_master(flow.outdev);
-			DEBUG_ASSERT(outdev_master, "Expected a master\n");
+			DEBUG_ASSERT(outdev_master, "%px: Expected a master\n", ci);
 			if (indev_master && (indev_master->ifindex == outdev_master->ifindex)) {
 				flow.indev = from_dev;
 				ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, flow.smac);
@@ -432,16 +540,19 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			}
 		}
 
-		DEBUG_TRACE("src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
-				flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
+		DEBUG_TRACE("%px: src MAC: %pM src_dev: %s src: %pI4:%d proto: %d dest: %pI4:%d dest_dev: %s dest MAC: %pM\n",
+				ci, flow.smac, flow.indev->name, &flow.tuple.ipv4.src, flow.tuple.src_port, flow.tuple.protocol,
 				&flow.tuple.ipv4.dst, flow.tuple.dst_port, flow.outdev->name, flow.dmac);
 
+		memset(&resp, 0, sizeof(struct ecm_classifier_ovs_process_response));
 		result = cb(&flow, skb, &resp);
+
 		switch(result) {
 		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL_EGRESS:
 			DEBUG_TRACE("%px: %s is not a valid OVS port\n", ci, to_dev[i]->name);
 			ecm_db_multicast_connection_to_interfaces_clear_at_index(ci, i);
 			break;
+
 		case ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL:
 			/*
 			 * If we receive "ECM_CLASSIFIER_OVS_RESULT_DENY_ACCEL"
@@ -449,11 +560,17 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			 * deleted.
 			 */
 			DEBUG_TRACE("%px: flow does not exist for the OVS port: %s\n", ci, to_dev[i]->name);
-			deny_accel = true;
-			goto done1;
+			spin_lock_bh(&ecm_classifier_ovs_lock);
+			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL;
+			ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			*process_response = ecvi->process_response;
+			spin_unlock_bh(&ecm_classifier_ovs_lock);
+			goto done;
+
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_ACCEL:
 			DEBUG_TRACE("%px: Acceleration allowed for multicast OVS port: %s\n", ci, to_dev[i]->name);
 			break;
+
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_ACCEL:
 		case ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL:
 			/*
@@ -461,55 +578,85 @@ static void ecm_classifier_ovs_process_multicast(struct ecm_db_connection_instan
 			 * Primary VLAN tag is always present even it is QinQ.
 			 */
 			DEBUG_WARN("%px: External callback process succeeded\n", ci);
+
+			/*
+			 * Initialize the VLAN entries since the ports can join/leave
+			 * in-between and that will change the position of an existing port
+			 * in the "egress_mc_vlan_tag" array.
+			 */
+			spin_lock_bh(&ecm_classifier_ovs_lock);
+			ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
+			ecvi->process_response.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 			ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
 			ecvi->process_response.egress_netdev_index[i] = flow.outdev->ifindex;
 
+			/*
+			 * If we have a valid TCI for ingress VLAN then we assume
+			 * the flow is bridged. Because for routed flows, ingress VLAN
+			 * will not be available.
+			 */
 			if (resp.ingress_vlan[0].h_vlan_TCI) {
 				ecvi->process_response.ingress_vlan_tag[0] = resp.ingress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[0].h_vlan_TCI;
-				DEBUG_TRACE("%px: Ingress vlan tag[0] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[0]);
 			}
 
 			if (resp.egress_vlan[0].h_vlan_TCI) {
 				ecvi->process_response.egress_mc_vlan_tag[i][0] = resp.egress_vlan[0].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[0].h_vlan_TCI;
-				DEBUG_TRACE("%px: Multicast egress vlan tag[%d][0] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][0]);
 			}
 
 			if (result == ECM_CLASSIFIER_OVS_RESULT_ALLOW_VLAN_QINQ_ACCEL) {
 				if (resp.ingress_vlan[1].h_vlan_TCI) {
 					ecvi->process_response.ingress_vlan_tag[1] = resp.ingress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.ingress_vlan[1].h_vlan_TCI;
-					DEBUG_TRACE("%px: Ingress vlan tag[1] set : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[1]);
 				}
 
 				if (resp.egress_vlan[1].h_vlan_TCI) {
 					ecvi->process_response.egress_mc_vlan_tag[i][1] = resp.egress_vlan[1].h_vlan_encapsulated_proto << 16 | resp.egress_vlan[1].h_vlan_TCI;
-					DEBUG_TRACE("%px: Multicast egress vlan tag[%d][1] set : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][1]);
 				}
-			}
-			break;
-		default:
-			DEBUG_TRACE("%px: Invalid response: %d\n", ci, result);
-		}
 
-		if (deny_accel) {
-			goto done1;
+				ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
+			}
+
+			spin_unlock_bh(&ecm_classifier_ovs_lock);
+			DEBUG_TRACE("%px: Multicast ingress vlan tag[0] : 0x%x tag[1] : 0x%x\n", ci, ecvi->process_response.ingress_vlan_tag[0],
+					ecvi->process_response.ingress_vlan_tag[1]);
+			DEBUG_TRACE("%px: Multicast egress vlan tag[%d][0] : 0x%x tag[%d][1] : 0x%x\n", ci, i, ecvi->process_response.egress_mc_vlan_tag[i][0],
+					i, ecvi->process_response.egress_mc_vlan_tag[i][1]);
+			break;
+
+		default:
+			DEBUG_ASSERT(false, "Unhandled result: %d\n", result);
 		}
 	}
 
 	/*
 	 * It is possible that after verifying each egress port with ovs manager,
-	 * no egress ovs ports are not allowed for acceleration.
+	 * no egress ovs ports are allowed for acceleration.
 	 *
 	 * Deny the multicast connection as there are no active 'to' interface.
 	 */
 	if (!ecm_db_multicast_connection_to_interfaces_get_count(ci)) {
 		DEBUG_TRACE("%px: No valid multicast 'to' interfaces found\n", ci);
-		deny_accel = true;
+		spin_lock_bh(&ecm_classifier_ovs_lock);
+		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL;
+		ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+		*process_response = ecvi->process_response;
+		spin_unlock_bh(&ecm_classifier_ovs_lock);
+		goto done;
 	}
 
-done1:
+allow_accel:
+	spin_lock_bh(&ecm_classifier_ovs_lock);
+	ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+	ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+	*process_response = ecvi->process_response;
+	spin_unlock_bh(&ecm_classifier_ovs_lock);
+
+done:
 	if (from_dev)
 		dev_put(from_dev);
 
+	/*
+	 * Deref the ovs net devices
+	 */
 	if (valid_ovs_ports) {
 		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
 			if (to_dev[i]) {
@@ -518,21 +665,6 @@ done1:
 		}
 	}
 
-done2:
-	spin_lock_bh(&ecm_classifier_ovs_lock);
-	if (drop) {
-		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DROP;
-		ecvi->process_response.drop = true;
-	} else if (deny_accel) {
-		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_MCAST_DENY_ACCEL;
-		ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-	} else {
-		ecvi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-		ecvi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
-	}
-	ecvi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
-	*process_response = ecvi->process_response;
-	spin_unlock_bh(&ecm_classifier_ovs_lock);
 	return;
 }
 #endif
@@ -1391,12 +1523,6 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 	 */
 	flow.tuple.ip_version = ecm_db_connection_ip_version_get(ci);
 	flow.tuple.protocol = ecm_db_connection_protocol_get(ci);
-	if (ecvi->process_response.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-		tci = ecvi->process_response.ingress_vlan_tag[0] & 0xffff;
-		tpid = (ecvi->process_response.ingress_vlan_tag[0] >> 16) & 0xffff;
-		DEBUG_TRACE("Ingress VLAN : %x:%x\n", tci, tpid);
-	}
-
 	flow.is_routed = ecm_db_connection_is_routed_get(ci);
 	if (!flow.is_routed) {
 		/* For multicast bridge flows, ovs creates a single rule with multiple
@@ -1413,6 +1539,12 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+
+		if (ecvi->process_response.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			tci = ecvi->process_response.ingress_vlan_tag[0] & 0xffff;
+			tpid = (ecvi->process_response.ingress_vlan_tag[0] >> 16) & 0xffff;
+			DEBUG_TRACE("%px: Ingress VLAN : %x:%x\n", ci, tci, tpid);
+		}
 
 		ecm_classifier_ovs_stats_sync(&flow,
 				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
@@ -1493,6 +1625,12 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 
+		if (ecvi->process_response.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			tci = ecvi->process_response.ingress_vlan_tag[0] & 0xffff;
+			tpid = (ecvi->process_response.ingress_vlan_tag[0] >> 16) & 0xffff;
+			DEBUG_TRACE("%px: Ingress VLAN : %x:%x\n", ci, tci, tpid);
+		}
+
 		ecm_classifier_ovs_stats_sync(&flow,
 				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],
 				from_dev, br_dev,
@@ -1522,15 +1660,20 @@ static void ecm_classifier_ovs_multicast_sync_to_stats(struct ecm_classifier_ovs
 	 * ovs-br3 to eth3
 	 *
 	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 	for (i = 0; i < valid_ifcnt; i++) {
 		ether_addr_copy(smac, to_ovs_brdev[i]->dev_addr);
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
 		sport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
 		dport = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
 
 		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+
+		/*
+		 * tci and tpid is 0 for pkts received from ovs bridge
+		 */
+		tci = tpid = 0;
 
 		ecm_classifier_ovs_stats_sync(&flow,
 				sync->rx_packet_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW],

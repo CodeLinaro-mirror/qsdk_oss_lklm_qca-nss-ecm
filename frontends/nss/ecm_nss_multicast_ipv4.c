@@ -3675,25 +3675,41 @@ process_packet:
 			int i;
 
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG;
+
+			/*
+			 * Set primary ingress VLAN tag
+			 */
 			prevalent_pr.ingress_vlan_tag[0] = aci_pr.ingress_vlan_tag[0];
-			prevalent_pr.ingress_vlan_tag[1] = aci_pr.ingress_vlan_tag[1];
 
 			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
 				prevalent_pr.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 				prevalent_pr.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
 				/*
-				 * Set primary VLAN tag
+				 * Set primary egress VLAN tag
 				 */
 				if (aci_pr.egress_mc_vlan_tag[i][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 					prevalent_pr.egress_mc_vlan_tag[i][0] = aci_pr.egress_mc_vlan_tag[i][0];
+				}
+			}
+		}
 
-					/*
-					 * Set secondary VLAN tag
-					 */
-					if (aci_pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-						prevalent_pr.egress_mc_vlan_tag[i][1] = aci_pr.egress_mc_vlan_tag[i][1];
-					}
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			int i;
+
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG;
+
+			/*
+			 * Set secondary ingress VLAN tag
+			 */
+			prevalent_pr.ingress_vlan_tag[1] = aci_pr.ingress_vlan_tag[1];
+
+			for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+				/*
+				 * Set secondary egress VLAN tag
+				 */
+				if (aci_pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+					prevalent_pr.egress_mc_vlan_tag[i][1] = aci_pr.egress_mc_vlan_tag[i][1];
 				}
 			}
 		}

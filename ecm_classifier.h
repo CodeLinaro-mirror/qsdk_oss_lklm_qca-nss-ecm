@@ -292,7 +292,6 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 #ifdef ECM_MULTICAST_ENABLE
 		int i;
 #endif
-
 		/*
 		 * TODO: Clean up the function later to print classifier
 		 * specific data in each classifier’s state_get function.
@@ -303,41 +302,14 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 			}
 		}
 
-		if (pr->egress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-			if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
-				return result;
-			}
-		}
-
-#ifdef ECM_MULTICAST_ENABLE
-		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
-
-			if (pr->egress_mc_vlan_tag[i][0] == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-				continue;
-			}
-
-			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
-				return result;
-			}
-
-			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[0]", "0x%x", pr->egress_mc_vlan_tag[i][0]))) {
-				return result;
-			}
-		}
-#endif
-	}
-
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
-#ifdef ECM_MULTICAST_ENABLE
-		int i;
-#endif
-
-		/*
-		 * TODO: Clean up the function later to print classifier
-		 * specific data in each classifier’s state_get function.
-		 */
 		if (pr->ingress_vlan_tag[1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr->ingress_vlan_tag[1]))) {
+				return result;
+			}
+		}
+
+		if (pr->egress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr->egress_vlan_tag[0]))) {
 				return result;
 			}
 		}
@@ -350,17 +322,29 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 
 #ifdef ECM_MULTICAST_ENABLE
 		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+			struct net_device *dev;
 
-			if (pr->egress_mc_vlan_tag[i][1] == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if (pr->egress_mc_vlan_tag[i][0] == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 				continue;
 			}
 
-			if ((result = ecm_state_write(sfi, "port_interface_index", "%d", pr->egress_netdev_index[i]))) {
+			dev = dev_get_by_index(&init_net, pr->egress_netdev_index[i]);
+			if (dev) {
+				if ((result = ecm_state_write(sfi, "port_egress", "%s", dev->name))) {
+					dev_put(dev);
+					return result;
+				}
+				dev_put(dev);
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[0]", "0x%x", pr->egress_mc_vlan_tag[i][0]))) {
 				return result;
 			}
 
-			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[1]", "0x%x", pr->egress_mc_vlan_tag[i][1]))) {
-				return result;
+			if (pr->egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+				if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[1]", "0x%x", pr->egress_mc_vlan_tag[i][1]))) {
+					return result;
+				}
 			}
 		}
 #endif
