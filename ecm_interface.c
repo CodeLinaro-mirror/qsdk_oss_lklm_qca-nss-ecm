@@ -7621,7 +7621,7 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 	 * {smac/dmac and indev/outdev}
 	 */
 	if ((flow->tuple.protocol == IPPROTO_TCP || flow->tuple.protocol == IPPROTO_UDP) &&
-			!flow->tuple.src_port && !flow->tuple.dst_port &&
+			flow->tuple.src_port && flow->tuple.dst_port &&
 			!ECM_IP_ADDR_IS_NULL(src_ip) && !ECM_IP_ADDR_IS_NULL(dest_ip)) {
 		struct ecm_db_connection_instance *ci;
 
