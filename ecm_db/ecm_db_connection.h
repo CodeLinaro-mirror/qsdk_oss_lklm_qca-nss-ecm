@@ -64,6 +64,7 @@ struct ecm_db_connection_instance {
 	int protocol;						/* RO: Protocol of the connection */
 	ecm_db_direction_t direction;				/* RO: 'Direction' of connection establishment. */
 	bool is_routed;						/* RO: True when connection is routed, false when not */
+	bool timer_no_touch;					/* RO: Do no update timer when this flag is set */
 	uint16_t l2_encap_proto;				/* L2 encap protocol of the flow of this connection */
 	uint32_t mark;						/* The result value of mark classifier on this connection */
 
@@ -229,6 +230,8 @@ struct ecm_front_end_connection_instance *ecm_db_connection_front_end_get_and_re
 int ecm_db_connection_elapsed_defunct_timer(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_defunct_timer_reset(struct ecm_db_connection_instance *ci, ecm_db_timer_group_t tg);
 bool ecm_db_connection_defunct_timer_touch(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_defunct_timer_no_touch_set(struct ecm_db_connection_instance *ci);
+bool ecm_db_connection_defunct_timer_no_touch_get(struct ecm_db_connection_instance *ci);
 ecm_db_timer_group_t ecm_db_connection_timer_group_get(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_defunct_timer_remove_and_set(struct ecm_db_connection_instance *ci, ecm_db_timer_group_t tg);
 void ecm_db_connection_make_defunct(struct ecm_db_connection_instance *ci);

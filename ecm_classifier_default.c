@@ -290,6 +290,11 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct) {
 		DEBUG_TRACE("%px: No Conntrack found for packet, using ECM tracker state\n", cdii);
+
+		if ((prevailing_state == ECM_TRACKER_CONNECTION_STATE_FAULT) || (prevailing_state == ECM_TRACKER_CONNECTION_STATE_CLOSED)) {
+			cdii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH;
+		}
+
 		if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
 			cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 			goto return_response;
