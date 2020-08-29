@@ -2318,6 +2318,21 @@ done:
 #endif
 
 	/*
+	 * Return if timer no touch is set
+	 */
+	if (ecm_db_connection_defunct_timer_no_touch_get(ci)) {
+		DEBUG_TRACE("%px: No touch timer is set for this ci\n", ci);
+		if (protocol == IPPROTO_TCP) {
+			if (tcp_hdr->syn) {
+				DEBUG_TRACE("%px: TCP SYN Flag is seen in No Touch timer state, defunct connection\n", ci);
+				ecm_db_connection_make_defunct(ci);
+			}
+		}
+		ecm_db_connection_deref(ci);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * Keep connection alive as we have seen activity
 	 */
 	if (!ecm_db_connection_defunct_timer_touch(ci)) {
@@ -2428,6 +2443,16 @@ done:
 			prevalent_pr.timer_group = aci_pr.timer_group;
 		}
 
+		/*
+		 * Timer group no touch action is set when classifier identified
+		 * that the connection should be defunct when timer group
+		 * expires, do not update timer group when the packets matching
+		 * this connection are received later.
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH) {
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH;
+		}
+
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
 			DEBUG_TRACE("%p: aci: %p, type: %d, ingress vlan tags 0: %u, egress vlan tags 0: %u\n",
@@ -2493,6 +2518,13 @@ done:
 #endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
+	 * Set timer no touch
+	 */
+	if (prevalent_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH) {
+		ecm_db_connection_defunct_timer_no_touch_set(ci);
+	}
 
 	/*
 	 * Change timer group?
