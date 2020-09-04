@@ -109,6 +109,26 @@ ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
 ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 
 # #############################################################################
+# Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
+# #############################################################################
+ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
+#
+# TODO: This is a workaround for external builds in which the qca-mcs source
+# code is not available. This will be fixed later by breaking the dependency from ECM
+# to qca-mcs
+#
+MCS_CONFIG:=$(shell  grep "CONFIG_PACKAGE_kmod-qca-mcs=y" $(TOPDIR)/.config)
+MCS_ENABLED:=CONFIG_PACKAGE_kmod-qca-mcs=y
+ifeq ($(MCS_CONFIG),$(MCS_ENABLED))
+ECM_MULTICAST_ENABLE=y
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
+ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
+ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
+endif
+endif
+
+# #############################################################################
 # Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
 # #############################################################################
 ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -254,6 +274,7 @@ ccflags-y += -DECM_NSS_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_NON_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_MULTICAST_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_NSS_MULTICAST_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL=1
