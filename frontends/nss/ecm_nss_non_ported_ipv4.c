@@ -175,7 +175,7 @@ static void ecm_nss_non_ported_ipv4_sit_set_peer(struct ecm_nss_non_ported_ipv4_
 			sizeof(struct nss_tun6rd_set_peer_msg), NULL, NULL);
 
 	tun6rdpeer = &tun6rdmsg.msg.peer;
-	ECM_IP_ADDR_TO_NIN4_ADDR(tun6rdpeer->dest, addr);
+	ECM_IP_ADDR_TO_HIN4_ADDR(tun6rdpeer->dest, addr);
 	iph6 = (struct ipv6hdr *)skb_inner_network_header(skb);
 	memcpy(tun6rdpeer->ipv6_address, &iph6->daddr, sizeof(struct in6_addr));
 
