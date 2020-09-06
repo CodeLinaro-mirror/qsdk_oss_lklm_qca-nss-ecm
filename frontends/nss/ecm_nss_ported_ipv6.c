@@ -961,14 +961,16 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
 	}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*
 	 * Set up the flow and return qos tags
 	 */
-	nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
-	nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
-	nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		nircm->valid_flags |= NSS_IPV6_RULE_CREATE_QOS_VALID;
+	}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
 	 * Set up ingress shaper qostag values.
@@ -989,6 +991,16 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= NSS_IPV6_RULE_CREATE_DSCP_MARKING_VALID;
 	}
 #endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	/*
+	 * Mark the rule as E-MESH Service Prioritization valid.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
+		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_EMESH_SP;
+	}
+#endif
+
 	if (ecm_nss_ipv6_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
 	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
 	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
@@ -2478,7 +2490,6 @@ done:
 		}
 #endif
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 		/*
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
@@ -2487,8 +2498,10 @@ done:
 					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag);
 			prevalent_pr.flow_qos_tag = aci_pr.flow_qos_tag;
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
@@ -2522,6 +2535,17 @@ done:
 				prevalent_pr.flow_dscp = aci_pr.flow_dscp;
 				prevalent_pr.return_dscp = aci_pr.return_dscp;
 			}
+		}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		/*
+		 * E-Mesh Service Prioritization is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh Service Prioritization is valid\n",
+					ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
 #endif
 	}
