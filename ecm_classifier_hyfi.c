@@ -614,7 +614,7 @@ static void ecm_classifier_hyfi_sync_to_v4(struct ecm_classifier_instance *aci, 
 	ecm_db_connection_deref(ci);
 
 	if (ret_fwd < 0 || ret_rev < 0) {
-		DEBUG_ERROR("%px: Error updating stats", aci);
+		DEBUG_ERROR_RATELIMITED("%px: Error updating stats", aci);
 		return;
 	}
 
