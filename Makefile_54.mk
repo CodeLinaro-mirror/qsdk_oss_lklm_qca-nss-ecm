@@ -100,6 +100,12 @@ ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_RAWIP_ENABLE=y in order
+# to enable support for RAWIP interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_VXLAN_ENABLE=y in order
 # to enable support for VXLAN interface.
 # #############################################################################
