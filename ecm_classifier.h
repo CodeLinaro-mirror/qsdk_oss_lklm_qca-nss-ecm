@@ -101,6 +101,8 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW 0x00000400	/* Mark the E-MESH Service Prioritization flow */
 #endif
 
+#define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00000400	/* Do not update CI time */
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call

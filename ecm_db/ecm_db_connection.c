@@ -357,6 +357,26 @@ bool ecm_db_connection_defunct_timer_touch(struct ecm_db_connection_instance *ci
 EXPORT_SYMBOL(ecm_db_connection_defunct_timer_touch);
 
 /*
+ * ecm_db_connection_defunct_timer_no_touch_set()
+ *	Set no touch flag in CI
+ */
+void ecm_db_connection_defunct_timer_no_touch_set(struct ecm_db_connection_instance *ci)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	ci->timer_no_touch = true;
+}
+
+/*
+ * ecm_db_connection_defunct_timer_no_touch_get()
+ *	Get no touch flag in CI
+ */
+bool ecm_db_connection_defunct_timer_no_touch_get(struct ecm_db_connection_instance *ci)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%p: magic failed", ci);
+	return ci->timer_no_touch;
+}
+
+/*
  * ecm_db_connection_timer_group_get()
  *	Return the timer group id
  */
