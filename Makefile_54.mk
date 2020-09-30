@@ -35,12 +35,9 @@ ecm-y := \
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
 # nss as ECM's front end.
 # #############################################################################
-ifeq ($(SoC),$(filter $(SoC),ipq806x ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
-ECM_FRONT_END_NSS_ENABLE=y
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
-endif
 
 # #############################################################################
 # Define ECM_INTERFACE_PPPOE_ENABLE=y in order
@@ -179,10 +176,6 @@ ECM_NON_PORTED_SUPPORT_ENABLE=y
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv4.o
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv6.o
-endif
-ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
-ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv4.o
-ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv6.o
 endif
 ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
 

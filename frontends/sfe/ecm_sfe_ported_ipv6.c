@@ -135,7 +135,7 @@ extern int nf_ct_tcp_be_liberal;
 static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
 	struct sfe_ipv6_rule_create_msg *nircm = &nim->msg.rule_create;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_sfe_ported_ipv6_connection_instance *npci;
@@ -380,7 +380,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_create_msg),
 			ecm_sfe_ported_ipv6_connection_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nircm = &nim.msg.rule_create;
 	nircm->valid_flags = 0;
@@ -1148,7 +1148,7 @@ ported_accel_bad_rule:
 static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
 	struct sfe_ipv6_rule_destroy_msg *nirdm = &nim->msg.rule_destroy;
-	uint32_t serial = (uint32_t)app_data;
+	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_sfe_ported_ipv6_connection_instance *npci;
@@ -1288,7 +1288,7 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_destroy_msg),
 			ecm_sfe_ported_ipv6_connection_destroy_callback,
-			(void *)ecm_db_connection_serial_get(feci->ci));
+			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim.msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
