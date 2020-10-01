@@ -94,6 +94,9 @@ struct ecm_db_iface_instance {
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan;			/* type == ECM_DB_IFACE_TYPE_VLAN */
 #endif
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+		struct ecm_db_interface_info_macvlan macvlan;		/* type == ECM_DB_IFACE_TYPE_MACVLAN */
+#endif
 #ifdef ECM_INTERFACE_BOND_ENABLE
 		struct ecm_db_interface_info_lag lag;			/* type == ECM_DB_IFACE_TYPE_LAG */
 #endif
@@ -215,6 +218,10 @@ void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii,
 #endif
 
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address, int32_t if_num);
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_macvlan(uint8_t *address);
+void ecm_db_iface_macvlan_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
+#endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address);
 #endif
@@ -338,6 +345,11 @@ void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii,
 				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
 				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+void ecm_db_iface_add_macvlan(struct ecm_db_iface_instance *ii,
+				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
+				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
+#endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 void ecm_db_iface_add_ovs_bridge(struct ecm_db_iface_instance *ii,
 				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,

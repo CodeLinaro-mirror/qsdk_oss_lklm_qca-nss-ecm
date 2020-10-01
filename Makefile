@@ -193,6 +193,11 @@ ECM_INTERFACE_VLAN_ENABLE=y
 ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_MACVLAN_ENABLE=y in order to enable support for MACVLAN
+# #############################################################################
+ccflags-$(ECM_INTERFACE_MACVLAN_ENABLE) += -DECM_INTERFACE_MACVLAN_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_IPSEC_ENABLE=y in order to enable support for IPSEC
 # #############################################################################
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
