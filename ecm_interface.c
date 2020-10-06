@@ -2802,9 +2802,6 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	int channel_count;
 	struct ppp_channel *ppp_chan[1];
 	int channel_protocol;
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-	struct pppoe_opt addressing;
-#endif
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 	int protocol = IPPROTO_IP;
 	struct pptp_opt opt;
@@ -3503,6 +3500,8 @@ identifier_update:
 #endif
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 	if (channel_protocol == PX_PROTO_OE) {
+		struct pppoe_opt addressing;
+
 		/*
 		 * PPPoE channel
 		 */
@@ -3511,7 +3510,12 @@ identifier_update:
 		/*
 		 * Get PPPoE session information and the underlying device it is using.
 		 */
-		pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+		if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+			DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
+			ppp_release_channels(ppp_chan, 1);
+			return NULL;
+		}
+
 		type_info.pppoe.pppoe_session_id = (uint16_t)ntohs((uint16_t)addressing.pa.sid);
 		memcpy(type_info.pppoe.remote_mac, addressing.pa.remote, ETH_ALEN);
 		dev_put(addressing.dev);
@@ -3875,7 +3879,12 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 			/*
 			 * Get PPPoE session information and the underlying device it is using.
 			 */
-			pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+			if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+				DEBUG_WARN("%px: failed to get PPPoE addressing info\n", dest_dev);
+				ppp_release_channels(ppp_chan, 1);
+				break;
+			}
+
 
 			/*
 			 * Copy the dev hold into this, we will release the hold later
@@ -5250,7 +5259,11 @@ lag_success:
 				/*
 				 * Get PPPoE session information and the underlying device it is using.
 				 */
-				pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+				if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+					DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
+					ppp_release_channels(ppp_chan, 1);
+					break;
+				}
 
 				/*
 				 * Copy the dev hold into this, we will release the hold later
@@ -6033,7 +6046,11 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 				/*
 				 * Get PPPoE session information and the underlying device it is using.
 				 */
-				pppoe_channel_addressing_get(ppp_chan[0], &addressing);
+				if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+					DEBUG_WARN("%px: failed to get PPPoE addressing info\n", dest_dev);
+					ppp_release_channels(ppp_chan, 1);
+					break;
+				}
 
 				/*
 				 * Copy the dev hold into this, we will release the hold later

@@ -218,7 +218,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #endif
 #endif
 
-	DEBUG_INFO("Establish node for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+	DEBUG_INFO("%px: Establish node for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 
 	/*
 	 * The node is the datalink address, typically a MAC address.
@@ -235,7 +235,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	if (given_node_addr) {
 		memcpy(node_addr, given_node_addr, ETH_ALEN);
 		done = true;
-		DEBUG_TRACE("Using given node address: %pM\n", node_addr);
+		DEBUG_TRACE("%px: Using given node address: %pM\n", feci, node_addr);
 	}
 	for (i = ECM_DB_IFACE_HEIRARCHY_MAX - 1; (!done) && (i >= interface_list_first); i--) {
 		ecm_db_iface_type_t type;
@@ -249,7 +249,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 		struct ecm_db_interface_info_pptp pptp_info;
 #endif
 		type = ecm_db_iface_type_get(interface_list[i]);
-		DEBUG_INFO("Lookup node address, interface @ %d is type: %d\n", i, type);
+		DEBUG_INFO("%px: Lookup node address, interface @ %d is type: %d\n", feci, i, type);
 
 		switch (type) {
 
@@ -263,7 +263,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("PPPoE interface unsupported\n");
+			DEBUG_TRACE("%px: PPPoE interface unsupported\n", feci);
 			return NULL;
 #endif
 
@@ -278,40 +278,46 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			ECM_HIN4_ADDR_TO_IP_ADDR(local_ip, pppol2tpv2_info.ip.saddr);
 			ECM_HIN4_ADDR_TO_IP_ADDR(remote_ip, pppol2tpv2_info.ip.daddr);
 
-			DEBUG_TRACE("local=" ECM_IP_ADDR_OCTAL_FMT " remote=" ECM_IP_ADDR_OCTAL_FMT " addr=" ECM_IP_ADDR_OCTAL_FMT "\n",
+			DEBUG_TRACE("%px: local=" ECM_IP_ADDR_OCTAL_FMT " remote=" ECM_IP_ADDR_OCTAL_FMT " addr=" ECM_IP_ADDR_OCTAL_FMT "\n", feci,
 			       ECM_IP_ADDR_TO_OCTAL(local_ip), ECM_IP_ADDR_TO_OCTAL(remote_ip), ECM_IP_ADDR_TO_OCTAL(addr));
 
 			local_dev = ecm_interface_dev_find_by_local_addr(local_ip);
 
 			if (!local_dev) {
-				DEBUG_WARN("Failed to find local netdevice of l2tp tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(local_ip));
+				DEBUG_WARN("%px: Failed to find local netdevice of l2tp tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(local_ip));
 				return NULL;
 			}
 
-			DEBUG_TRACE("local_dev found is %s\n", local_dev->name);
+			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
 
 			if (local_dev->type == ARPHRD_PPP) {
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
-				DEBUG_TRACE("l2tpv2 over pppoe unsupported\n");
+				DEBUG_TRACE("%px: l2tpv2 over pppoe unsupported\n", feci);
 				dev_put(local_dev);
 				return NULL;
 #else
 				if (ppp_hold_channels(local_dev, ppp_chan, 1) != 1) {
-					DEBUG_TRACE("l2tpv2 over netdevice %s unsupported; could not hold ppp channels\n", local_dev->name);
+					DEBUG_WARN("%px: l2tpv2 over netdevice %s unsupported; could not hold ppp channels\n", feci, local_dev->name);
 					dev_put(local_dev);
 					return NULL;
 				}
 
 				px_proto = ppp_channel_get_protocol(ppp_chan[0]);
 				if (px_proto != PX_PROTO_OE) {
-					DEBUG_WARN("l2tpv2 over PPP protocol %d unsupported\n", px_proto);
+					DEBUG_WARN("%px: l2tpv2 over PPP protocol %d unsupported\n", feci, px_proto);
 					ppp_release_channels(ppp_chan, 1);
 					dev_put(local_dev);
 					return NULL;
 				}
 
-				pppoe_channel_addressing_get(ppp_chan[0], &addressing);
-				DEBUG_TRACE("Obtained mac address for %s remote address " ECM_IP_ADDR_OCTAL_FMT "\n", addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
+				if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+					DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
+					ppp_release_channels(ppp_chan, 1);
+					dev_put(local_dev);
+					return NULL;
+				}
+
+				DEBUG_TRACE("%px: Obtained mac address for %s remote address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
 				memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
 				dev_put(addressing.dev);
 				ppp_release_channels(ppp_chan, 1);
@@ -322,7 +328,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			}
 
 			if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, remote_ip, node_addr))) {
-				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+				DEBUG_WARN("%px: Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 				dev_put(local_dev);
 				return NULL;
 			}
@@ -331,7 +337,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("PPPoL2TPV2 interface unsupported\n");
+			DEBUG_TRACE("%px: PPPoL2TPV2 interface unsupported\n", feci);
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_PPTP:
@@ -339,21 +345,21 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			ecm_db_iface_pptp_session_info_get(interface_list[i], &pptp_info);
 			ECM_HIN4_ADDR_TO_IP_ADDR(local_ip, pptp_info.src_ip);
 			ECM_HIN4_ADDR_TO_IP_ADDR(remote_ip, pptp_info.dst_ip);
-			DEBUG_TRACE("local=" ECM_IP_ADDR_DOT_FMT " remote=" ECM_IP_ADDR_DOT_FMT " addr=" ECM_IP_ADDR_DOT_FMT "\n",
+			DEBUG_TRACE("%px: local=" ECM_IP_ADDR_DOT_FMT " remote=" ECM_IP_ADDR_DOT_FMT " addr=" ECM_IP_ADDR_DOT_FMT "\n", feci,
 			       ECM_IP_ADDR_TO_DOT(local_ip), ECM_IP_ADDR_TO_DOT(remote_ip), ECM_IP_ADDR_TO_DOT(addr));
 
 			local_dev = ecm_interface_dev_find_by_local_addr(local_ip);
 
 			if (!local_dev) {
-				DEBUG_WARN("Failed to find local netdevice of pptp tunnel for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
+				DEBUG_WARN("%px: Failed to find local netdevice of pptp tunnel for " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(local_ip));
 				return NULL;
 			}
 
-			DEBUG_TRACE("local_dev found is %s\n", local_dev->name);
+			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
 
 			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
-					DEBUG_TRACE("failed to obtain node address for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_ip));
+					DEBUG_WARN("%px: failed to obtain node address for " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(local_ip));
 					dev_put(local_dev);
 					return NULL;
 				}
@@ -363,19 +369,19 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
 					if (!ecm_interface_find_gateway(remote_ip, gw_addr)) {
-						DEBUG_TRACE("failed to obtain Gateway address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(remote_ip));
+						DEBUG_WARN("%px: failed to obtain Gateway address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
 						dev_put(local_dev);
 						return NULL;
 					}
 
 					if (ECM_IP_ADDR_MATCH(gw_addr, remote_ip)) {
-						DEBUG_TRACE("host ip address match with gw address " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(remote_ip));
+						DEBUG_TRACE("%px: host ip address match with gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
 						dev_put(local_dev);
 						return NULL;
 					}
 
 					if (!ecm_interface_mac_addr_get_no_route(local_dev, gw_addr, node_addr)) {
-						DEBUG_TRACE("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(gw_addr));
+						DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
 						dev_put(local_dev);
 						return NULL;
 					}
@@ -386,42 +392,47 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("PPTP interface unsupported\n");
+			DEBUG_TRACE("%px: PPTP interface unsupported\n", feci);
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_MAP_T:
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 			ip6_inetdev = ip6_dst_idev(skb_dst(skb));
 			if (!ip6_inetdev) {
-				DEBUG_WARN("Failed to obtain mac address for MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+				DEBUG_WARN("%px: Failed to obtain mac address for MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
 
 			if (ip6_inetdev->dev->type != ARPHRD_PPP) {
-				DEBUG_TRACE("obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", ip6_inetdev->dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
+				DEBUG_TRACE("%px: obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ip6_inetdev->dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
 				memcpy(node_addr, ip6_inetdev->dev->dev_addr, ETH_ALEN);
 				done = true;
 				break;
 			}
 
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
-			DEBUG_TRACE("MAP-T over netdevice %s unsupported\n", ip6_inetdev->dev->name);
+			DEBUG_TRACE("%px: MAP-T over netdevice %s unsupported\n", feci, ip6_inetdev->dev->name);
 			return NULL;
 #else
 			if (ppp_hold_channels(ip6_inetdev->dev, ppp_chan, 1) != 1) {
-				DEBUG_WARN("MAP-T over netdevice %s unsupported; could not hold ppp channels\n", ip6_inetdev->dev->name);
+				DEBUG_WARN("%px: MAP-T over netdevice %s unsupported; could not hold ppp channels\n", feci, ip6_inetdev->dev->name);
 				return NULL;
 			}
 
 			px_proto = ppp_channel_get_protocol(ppp_chan[0]);
 			if (px_proto != PX_PROTO_OE) {
-				DEBUG_WARN("MAP-T over PPP protocol %d unsupported\n", px_proto);
+				DEBUG_WARN("%px: MAP-T over PPP protocol %d unsupported\n", feci, px_proto);
 				ppp_release_channels(ppp_chan, 1);
 				return NULL;
 			}
 
-			pppoe_channel_addressing_get(ppp_chan[0], &addressing);
-			DEBUG_TRACE("Obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
+			if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+				DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
+				ppp_release_channels(ppp_chan, 1);
+				return NULL;
+			}
+
+			DEBUG_TRACE("%px: Obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
 			memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
 			dev_put(addressing.dev);
 			ppp_release_channels(ppp_chan, 1);
@@ -430,7 +441,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #endif
 
 #else
-			DEBUG_TRACE("MAP-T interface unsupported\n");
+			DEBUG_TRACE("%px: MAP-T interface unsupported\n", feci);
 			return NULL;
 #endif
 
@@ -438,7 +449,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 			in = dev_get_by_index(&init_net, skb->skb_iif);
 			if (!in) {
-				DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
+				DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
 				return NULL;
 			}
 
@@ -447,14 +458,14 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 				gre4_tunnel = netdev_priv(in);
 				if (!gre4_tunnel) {
 					dev_put(in);
-					DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not initialized\n");
+					DEBUG_WARN("%px: failed to obtain node address for host. GREv4 tunnel not initialized\n", feci);
 					return NULL;
 				}
 				ECM_NIN4_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre4_tunnel->parms.iph.saddr);
 				dev_put(in);
 				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
 				if (!in) {
-					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(local_gre_tun_ip));
+					DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(local_gre_tun_ip));
 					return NULL;
 				}
 				break;
@@ -463,27 +474,27 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 				gre6_tunnel = netdev_priv(in);
 				if (!gre6_tunnel) {
 					dev_put(in);
-					DEBUG_WARN("failed to obtain node address for host. GREv4 tunnel not initialized\n");
+					DEBUG_WARN("%px: failed to obtain node address for host. GREv4 tunnel not initialized\n", feci);
 					return NULL;
 				}
 				ECM_NIN6_ADDR_TO_IP_ADDR(local_gre_tun_ip, gre6_tunnel->parms.laddr);
 				dev_put(in);
 				in = ecm_interface_dev_find_by_local_addr(local_gre_tun_ip);
 				if (!in) {
-					DEBUG_WARN("failed to obtain node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(local_gre_tun_ip));
+					DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(local_gre_tun_ip));
 					return NULL;
 				}
 				break;
 
 			default:
-				DEBUG_TRACE("establish node with physical netdev: %s\n", in->name);
+				DEBUG_TRACE("%px: establish node with physical netdev: %s\n", feci, in->name);
 			}
 			memcpy(node_addr, in->dev_addr, ETH_ALEN);
 			dev_put(in);
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("GRE interface unsupported\n");
+			DEBUG_TRACE("%px: GRE interface unsupported\n", feci);
 			return NULL;
 #endif
 
@@ -493,7 +504,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			 * VLAN handled same along with bridge etc.
 			 */
 #else
-			DEBUG_TRACE("VLAN interface unsupported\n");
+			DEBUG_TRACE("%px: VLAN interface unsupported\n", feci);
 			return NULL;
 #endif
 
@@ -511,7 +522,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 				 * Try one more time with gateway ip address if it exists.
 				 */
 				if (!ecm_interface_find_gateway(addr, gw_addr)) {
-					DEBUG_WARN("Node establish failed, there is no gateway address for 2nd mac lookup try\n");
+					DEBUG_WARN("%px: Node establish failed, there is no gateway address for 2nd mac lookup try\n", feci);
 					return NULL;
 				}
 
@@ -520,34 +531,34 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 				 * so in this case use the host address.
 				 */
 				if (ECM_IP_ADDR_IS_NULL(gw_addr)) {
-					DEBUG_TRACE("GW address is found as zeros, so use host IP\n");
+					DEBUG_TRACE("%px: GW address is found as zeros, so use host IP\n", feci);
 					ECM_IP_ADDR_COPY(gw_addr, addr);
 				} else {
-					DEBUG_TRACE("Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(gw_addr));
+					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(gw_addr));
 				}
 
 				if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
-					DEBUG_TRACE("Found the mac address for gateway\n");
+					DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
 					goto done;
 				}
 
 				if (ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
-					DEBUG_ASSERT(master, "Expected a master\n");
+					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
 					ecm_interface_send_neighbour_solicitation(master, gw_addr);
 					dev_put(master);
 				} else {
 					ecm_interface_send_neighbour_solicitation(dev, gw_addr);
 				}
 
-				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT " gw: " ECM_IP_ADDR_OCTAL_FMT "\n",
+				DEBUG_WARN("%px: Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT " gw: " ECM_IP_ADDR_OCTAL_FMT "\n", feci,
 					    ECM_IP_ADDR_TO_OCTAL(addr), ECM_IP_ADDR_TO_OCTAL(gw_addr));
 				return NULL;
 			}
 done:
 			if (is_multicast_ether_addr(node_addr)) {
-				DEBUG_TRACE("multicast node address for host " ECM_IP_ADDR_OCTAL_FMT ", node_addr: %pM\n", ECM_IP_ADDR_TO_OCTAL(addr), node_addr);
+				DEBUG_TRACE("%px: multicast node address for host " ECM_IP_ADDR_OCTAL_FMT ", node_addr: %pM\n", feci, ECM_IP_ADDR_TO_OCTAL(addr), node_addr);
 				return NULL;
 			}
 
@@ -570,18 +581,18 @@ done:
 			 * Return if skb->dst is TUN/TAP device.
 			 */
 			if (!out_dev || out_dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
-				DEBUG_WARN("failed to update node_addr dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT "\n",
+				DEBUG_WARN("%px: failed to update node_addr dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", feci,
 						dev->name, out_dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
 			memcpy(node_addr, out_dev->dev_addr, ETH_ALEN);
 
-			DEBUG_TRACE("dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT ", node_addr: %pM\n",
+			DEBUG_TRACE("%px: dev = %s, out_dev = %s, node address for host " ECM_IP_ADDR_OCTAL_FMT ", node_addr: %pM\n", feci,
 				dev->name, out_dev->name, ECM_IP_ADDR_TO_OCTAL(addr), node_addr);
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("OVPN interface unsupported\n");
+			DEBUG_TRACE("%px: OVPN interface unsupported\n", feci);
 			return NULL;
 #endif
 		case ECM_DB_IFACE_TYPE_VXLAN:
@@ -603,7 +614,7 @@ done:
 			done = true;
 			break;
 #else
-			DEBUG_TRACE("VXLAN interface unsupported\n");
+			DEBUG_TRACE("%px: VXLAN interface unsupported\n", feci);
 			return NULL;
 #endif
 		default:
@@ -617,7 +628,7 @@ done:
 		}
 	}
 	if (!done) {
-		DEBUG_INFO("Failed to establish node for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+		DEBUG_WARN("%px: Failed to establish node for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 		return NULL;
 	}
 
@@ -626,7 +637,7 @@ done:
 	 */
 	ii = ecm_interface_establish_and_ref(feci, dev, skb);
 	if (!ii) {
-		DEBUG_WARN("Failed to establish iface\n");
+		DEBUG_WARN("%px: Failed to establish iface\n", feci);
 		return NULL;
 	}
 
@@ -635,7 +646,7 @@ done:
 	 */
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		DEBUG_TRACE("%px: node established\n", ni);
+		DEBUG_TRACE("%px: node established %px\n", feci, ni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
@@ -645,7 +656,7 @@ done:
 	 */
 	nni = ecm_db_node_alloc();
 	if (!nni) {
-		DEBUG_WARN("Failed to establish node\n");
+		DEBUG_WARN("%px: Failed to establish node\n", feci);
 		ecm_db_iface_deref(ii);
 		return NULL;
 	}
@@ -670,7 +681,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%px: node established\n", nni);
+	DEBUG_TRACE("%px: node %px established\n", feci, nni);
 	return nni;
 }
 
