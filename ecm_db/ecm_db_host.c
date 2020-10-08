@@ -373,6 +373,146 @@ EXPORT_SYMBOL(ecm_db_host_find_and_ref);
 
 #ifdef ECM_DB_XREF_ENABLE
 /*
+ * ecm_db_host_mappings_get_and_ref_first()
+ *	Return a reference to the first mapping of this host
+ */
+static struct ecm_db_mapping_instance *ecm_db_host_mappings_get_and_ref_first(struct ecm_db_host_instance *hi)
+{
+	struct ecm_db_mapping_instance *mi = NULL;
+
+	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%p: magic failed", hi);
+
+	spin_lock_bh(&ecm_db_lock);
+	mi = hi->mappings;
+	if (mi) {
+		_ecm_db_mapping_ref(mi);
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	return mi;
+}
+
+/*
+ * ecm_db_host_mapping_get_and_ref_next()
+ *	Return the next host mapping in the list given a mapping
+ */
+static struct ecm_db_mapping_instance *ecm_db_host_mapping_get_and_ref_next(struct ecm_db_mapping_instance *mi)
+{
+	struct ecm_db_mapping_instance *nmi = NULL;
+
+	DEBUG_CHECK_MAGIC(mi, ECM_DB_MAPPING_INSTANCE_MAGIC, "%p: magic failed", mi);
+
+	spin_lock_bh(&ecm_db_lock);
+	nmi = mi->mapping_next;
+	if (nmi) {
+		_ecm_db_mapping_ref(nmi);
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	return nmi;
+}
+
+/*
+ * ecm_db_host_connections_defunct_by_dir()
+ *	Defunct the connections associated with the IP address in the given direction.
+ */
+void ecm_db_host_connections_defunct_by_dir(ip_addr_t addr, ecm_db_obj_dir_t dir)
+{
+	struct ecm_db_host_instance *hi;
+	struct ecm_db_mapping_instance *mi;
+
+	hi = ecm_db_host_find_and_ref(addr);
+	if (!hi) {
+		DEBUG_WARN("Unable to find host instance\n");
+		return;
+	}
+
+	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%px: magic failed\n", hi);
+
+	mi = ecm_db_host_mappings_get_and_ref_first(hi);
+	while (mi) {
+		struct ecm_db_connection_instance *ci;
+		struct ecm_db_mapping_instance *min;
+
+		ci = ecm_db_mapping_connections_get_and_ref_first(mi, dir);
+		while (ci) {
+			struct ecm_db_connection_instance *cin;
+			DEBUG_TRACE("%px: defunct %d\n", ci, ci->serial);
+			ecm_db_connection_make_defunct(ci);
+
+			cin = ecm_db_connection_mapping_get_and_ref_next(ci, dir);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+
+		min = ecm_db_host_mapping_get_and_ref_next(mi);
+		ecm_db_mapping_deref(mi);
+		mi = min;
+	}
+
+	if (ECM_IP_ADDR_IS_V4(addr)) {
+		DEBUG_INFO("%px: Defuncting connections %s " ECM_IP_ADDR_DOT_FMT "\n",
+			   hi, ecm_db_obj_dir_strings[dir], ECM_IP_ADDR_TO_DOT(addr));
+	} else {
+		DEBUG_INFO("%px: Defuncting connections %s " ECM_IP_ADDR_OCTAL_FMT "\n",
+			   hi, ecm_db_obj_dir_strings[dir], ECM_IP_ADDR_TO_OCTAL(addr));
+	}
+}
+
+/*
+ * ecm_db_host_connections_defunct_by_src_and_dest()
+ *	Defunct the connections with the given source and destination IP addresses.
+ */
+void ecm_db_host_connections_defunct_by_src_and_dest(ip_addr_t src_addr, ip_addr_t dest_addr)
+{
+	struct ecm_db_host_instance *src_hi;
+	struct ecm_db_mapping_instance *src_mi;
+
+	src_hi = ecm_db_host_find_and_ref(src_addr);
+	if (!src_hi) {
+		DEBUG_WARN("Unable to find host instance\n");
+		return;
+	}
+
+	DEBUG_CHECK_MAGIC(src_hi, ECM_DB_HOST_INSTANCE_MAGIC, "%px: magic failed\n", src_hi);
+
+	src_mi = ecm_db_host_mappings_get_and_ref_first(src_hi);
+	while (src_mi) {
+		struct ecm_db_connection_instance *ci;
+		struct ecm_db_mapping_instance *src_min;
+
+		ci = ecm_db_mapping_connections_get_and_ref_first(src_mi, ECM_DB_OBJ_DIR_FROM);
+		while (ci) {
+			struct ecm_db_connection_instance *cin;
+			ip_addr_t dst_ip;
+
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+
+			if (ECM_IP_ADDR_MATCH(dest_addr, dst_ip)) {
+				DEBUG_TRACE("%px: defunct %d\n", ci, ci->serial);
+				ecm_db_connection_make_defunct(ci);
+			}
+
+			cin = ecm_db_connection_mapping_get_and_ref_next(ci, ECM_DB_OBJ_DIR_FROM);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+
+		src_min = ecm_db_host_mapping_get_and_ref_next(src_mi);
+		ecm_db_mapping_deref(src_mi);
+		src_mi = src_min;
+	}
+
+	if (ECM_IP_ADDR_IS_V4(src_addr)) {
+		DEBUG_INFO("%px: Defuncting connections from " ECM_IP_ADDR_DOT_FMT "to " ECM_IP_ADDR_DOT_FMT "\n",
+			   src_hi, ECM_IP_ADDR_TO_DOT(src_addr), ECM_IP_ADDR_TO_DOT(dest_addr));
+	} else {
+		DEBUG_INFO("%px: Defuncting connections from " ECM_IP_ADDR_OCTAL_FMT "to " ECM_IP_ADDR_OCTAL_FMT "\n",
+			   src_hi, ECM_IP_ADDR_TO_OCTAL(src_addr), ECM_IP_ADDR_TO_OCTAL(dest_addr));
+	}
+}
+
+/*
  * ecm_db_host_mapping_count_get()
  *	Return the number of mappings to this host
  */
