@@ -231,6 +231,12 @@ ecm-$(ECM_CLASSIFIER_MARK_ENABLE) += ecm_classifier_mark.o
 ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_MSCS_ENABLE=y in order to enable mscs flow classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
+ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
+
+# #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
 # #############################################################################
 ifeq ($(findstring 4.4., $(KERNELVERSION)),)
@@ -354,6 +360,7 @@ ccflags-y += -DECM_CLASSIFIER_HYFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_PCC_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_NL_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_EMESH_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_MSCS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_DEFAULT_DEBUG_LEVEL=1
 ccflags-y += -DECM_DB_DEBUG_LEVEL=1
 ccflags-y += -DECM_INIT_DEBUG_LEVEL=3

@@ -59,6 +59,9 @@
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 #include "ecm_classifier_emesh.h"
 #endif
+#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+#include "ecm_classifier_mscs.h"
+#endif
 
 /*
  * Default slow path packets allowed before the acceleration
@@ -172,6 +175,20 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 			return NULL;
 		}
 		DEBUG_TRACE("%px: Created mark classifier: %px\n", ci, ecmi);
+		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)ecmi);
+		return (struct ecm_classifier_instance *)ecmi;
+	}
+#endif
+#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+	case ECM_CLASSIFIER_TYPE_MSCS: {
+		struct ecm_classifier_mscs_instance *ecmi;
+
+		ecmi = ecm_classifier_mscs_instance_alloc(ci);
+		if (!ecmi) {
+			DEBUG_TRACE("%px: Failed to create mscs classifier\n", ci);
+			return NULL;
+		}
+		DEBUG_TRACE("%px: Created mscs classifier: %px\n", ci, ecmi);
 		ecm_db_connection_classifier_assign(ci, (struct ecm_classifier_instance *)ecmi);
 		return (struct ecm_classifier_instance *)ecmi;
 	}
