@@ -7646,8 +7646,8 @@ enable_front_end:
  */
 static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *flow)
 {
-	ip_addr_t src_ip;
-	ip_addr_t dest_ip;
+	ip_addr_t src_ip = ECM_IP_ADDR_NULL;
+	ip_addr_t dest_ip = ECM_IP_ADDR_NULL;
 
 	/*
 	 * Delete by flow rule.
@@ -7658,8 +7658,14 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 			   &flow->tuple.ipv4.src, flow->tuple.src_port,
 			   flow->tuple.protocol,
 			   &flow->tuple.ipv4.dst, flow->tuple.dst_port);
-		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv4.src);
-		ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, flow->tuple.ipv4.dst);
+
+		if (flow->tuple.ipv4.src) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv4.src);
+		}
+
+		if (flow->tuple.ipv4.dst) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, flow->tuple.ipv4.dst);
+		}
 	} else if (flow->tuple.ip_version == 6) {
 		DEBUG_TRACE("IPv6: Src: %pI6:%d protocol: %d Dst: %pI6:%d\n",
 			   &flow->tuple.ipv6.src, flow->tuple.src_port,
@@ -7723,6 +7729,14 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 		struct ecm_db_connection_instance *ci;
 
 		/*
+		 * Delete the flows by using 5 tuple
+		 */
+		DEBUG_TRACE("%px: Delete flow by 5 tuple: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+					"proto=%d, sport=%d, dport=%d\n",
+					flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
+					flow->tuple.protocol, flow->tuple.src_port, flow->tuple.dst_port);
+
+		/*
 		 * Delete the flows by using 5-tuple parameters.
 		 */
 		ci = ecm_db_connection_from_ovs_flow_get_and_ref(flow);
@@ -7737,14 +7751,41 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 		 */
 		ecm_db_connection_make_defunct(ci);
 		ecm_db_connection_deref(ci);
-	} else {
-		DEBUG_TRACE("%px: Delete flow by: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
-			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
-		/*
-		 * Delete the flows by using {smac, dmac}
-		 */
-		ecm_interface_ovs_node_defunct_connections(flow);
+		return;
 	}
+
+	/*
+	 * Delete the flows by using {smac, dmac}
+	 */
+	if (!is_zero_ether_addr(flow->smac) && !is_zero_ether_addr(flow->dmac)) {
+
+		DEBUG_TRACE("%px: Delete flow by smac and dest mac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
+			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
+		return ecm_interface_ovs_node_defunct_connections(flow);
+	}
+
+	/*
+	 * Delete the flows by using smac
+	 */
+	if (!is_zero_ether_addr(flow->smac)) {
+		DEBUG_TRACE("%px: defunct node by smac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
+			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
+		return ecm_interface_node_connections_defunct(flow->smac, flow->tuple.ip_version);
+	}
+
+	/*
+	 * Delete the flows by using dmac
+	 */
+	if (!is_zero_ether_addr(flow->dmac)) {
+		DEBUG_TRACE("%px: defunct node by dmac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
+			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
+		return ecm_interface_node_connections_defunct(flow->dmac, flow->tuple.ip_version);
+	}
+
+	DEBUG_WARN("%px: Delete flow failed for tuple: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+		    "proto=%d, sport=%d, dport=%d\n",
+		    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
+		    flow->tuple.protocol, flow->tuple.src_port, flow->tuple.dst_port);
 }
 
 #ifdef ECM_MULTICAST_ENABLE
