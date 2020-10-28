@@ -5047,6 +5047,14 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 									DEBUG_WARN("%px: Unable to obtain any MAC address for " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(dest_addr));
 								}
 #ifdef ECM_IPV6_ENABLE
+								/*
+								 * If there is a gw on the link, send the neighbor solicitation
+								 * message to that address.
+								 */
+								if (!ECM_IP_ADDR_IS_NULL(gw_addr)) {
+									ECM_IP_ADDR_COPY(dest_addr, gw_addr);
+								}
+
 								if (ip_version == 6) {
 									ecm_interface_send_neighbour_solicitation(master_dev, dest_addr);
 
@@ -5875,6 +5883,14 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 									ecm_interface_send_arp_request(dest_dev, dest_addr, dest_on_link, dest_gw_addr);
 								}
 #ifdef ECM_IPV6_ENABLE
+								/*
+								 * If there is a gw on the link, send the neighbor solicitation
+								 * message to that address.
+								 */
+								if (!ECM_IP_ADDR_IS_NULL(dest_gw_addr)) {
+									ECM_IP_ADDR_COPY(dest_addr, dest_gw_addr);
+								}
+
 								if (ip_version == 6) {
 									DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(dest_addr));
 									ecm_interface_send_neighbour_solicitation(master_dev, dest_addr);
