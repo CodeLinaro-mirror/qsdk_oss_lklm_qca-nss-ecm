@@ -1636,6 +1636,17 @@ unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device 
         struct net_device *in;
 
 	/*
+	 * If operations have stopped then do not process packets
+	 */
+	spin_lock_bh(&ecm_nss_ipv6_lock);
+	if (unlikely(ecm_front_end_ipv6_stopped)) {
+		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		DEBUG_TRACE("Front end stopped\n");
+		return 1;
+	}
+	spin_unlock_bh(&ecm_nss_ipv6_lock);
+
+	/*
 	 * Don't process broadcast.
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
