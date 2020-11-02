@@ -1711,7 +1711,11 @@ unsigned int ecm_sfe_non_ported_ipv6_process(struct net_device *out_dev,
 		/*
 		 * Packet has been decrypted by ipsec, mark it in connection.
 		 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0))
 		if (unlikely(skb->sp)) {
+#else
+		if (unlikely(secpath_exists(skb))) {
+#endif
 			((struct ecm_sfe_non_ported_ipv6_connection_instance *)feci)->flow_ipsec_state = ECM_SFE_IPSEC_STATE_WAS_DECRYPTED;
 			((struct ecm_sfe_non_ported_ipv6_connection_instance *)feci)->return_ipsec_state = ECM_SFE_IPSEC_STATE_TO_ENCRYPT;
 		}

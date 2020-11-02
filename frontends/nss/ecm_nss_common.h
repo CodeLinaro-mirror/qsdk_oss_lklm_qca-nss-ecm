@@ -331,7 +331,11 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 		/*
 		 * skb's sp is set for decapsulated packet
 		 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0))
 		if (skb->sp) {
+#else
+		if (secpath_exists(skb)) {
+#endif
 			DEBUG_TRACE("%px: Skipping wan-to-lan packet proto(%d)\n", skb, ip_hdr->protocol);
 			return true;
 		}

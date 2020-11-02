@@ -40,6 +40,14 @@ ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_SFE_ENABLE=y in order to select
+# sfe as ECM's front end.
+# #############################################################################
+ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
+ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
+ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_PPPOE_ENABLE=y in order
 # to enable support for PPPoE acceleration.
 # #############################################################################
@@ -164,6 +172,10 @@ ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/nss/ecm_nss_ported_ipv6.o
 endif
+ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
+ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ipv6.o
+ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv6.o
+endif
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
@@ -202,6 +214,10 @@ ECM_NON_PORTED_SUPPORT_ENABLE=y
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv4.o
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv6.o
+endif
+ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
+ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv4.o
+ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv6.o
 endif
 ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
 
@@ -284,6 +300,12 @@ ccflags-y += -DECM_NSS_MULTICAST_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_NON_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_NON_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_CONNTRACK_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_TRACKER_DEBUG_LEVEL=1
 ccflags-y += -DECM_TRACKER_DATAGRAM_DEBUG_LEVEL=1
