@@ -377,5 +377,8 @@ uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance 
 void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
 uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
+void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uint16_t src_port, ip_addr_t dest_addr,
+						uint16_t dest_port, int proto, bool is_routed, ecm_classifier_type_t ca_type);
+
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);

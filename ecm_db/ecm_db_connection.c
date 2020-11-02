@@ -1509,6 +1509,166 @@ void ecm_db_connection_defunct_all(void)
 EXPORT_SYMBOL(ecm_db_connection_defunct_all);
 
 /*
+ * ecm_db_connection_defunct_by_classifier()
+ *	Make defunct based on masked fields
+ */
+void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr_mask, uint16_t src_port_mask,
+					     ip_addr_t dest_addr_mask, uint16_t dest_port_mask,
+					     int proto_mask, bool is_routed, ecm_classifier_type_t ca_type)
+{
+	struct ecm_db_connection_instance *ci;
+	int cnt = 0;
+	char *direction = NULL;
+
+	/*
+	 * Iterate all connections
+	 */
+	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ca_type);
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		ip_addr_t sip;
+		ip_addr_t dip;
+		uint16_t sport, dport;
+		int proto;
+
+		DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+		/*
+		 *  Ignore connection with wrong version
+		 */
+		if (ip_ver != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_ver)) {
+			goto next_ci;
+		}
+
+		/*
+		 * Skip routed connection for bridge flow
+		 * Skip bridge connection for routed flow
+		 */
+		if (is_routed != ecm_db_connection_is_routed_get(ci)) {
+			goto next_ci;
+		}
+
+		/*
+		 * Check protocol if specified
+		 */
+		proto = ecm_db_connection_protocol_get(ci);
+		if (!ECM_PROTO_MASK_MATCH(proto, proto_mask)) {
+			goto next_ci;
+		}
+
+		/*
+		 * A : PCI < ------- br-home ----------bridging----------------br-wan ---->PC2
+		 *
+		 * B : PCI < ------- br-home ----------Routing----------------br-wan ---->PC2
+		 *
+		 *							DNAT
+		 * C : PCI < ------- br-home ----------Routing----------------br-wan ----> PC2
+		 *							SNAT
+		 * D : PCI < ------- br-home ----------Routing----------------br-wan ----> PC2
+		 */
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, sip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dip);
+		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+
+		/*
+		 * 1. For topology A, B, C, D  if drop rule is added in br-home or br-wan
+		 * 2. For topoloy  A, B  if drop rule is added in br-wan
+		 * Match in flow direction
+		 */
+		if (ECM_IP_ADDR_MASK_MATCH(sip, src_addr_mask) &&
+		    ECM_IP_ADDR_MASK_MATCH(dip, dest_addr_mask) &&
+		    ECM_PORT_MASK_MATCH(sport, src_port_mask) &&
+		    ECM_PORT_MASK_MATCH(dport, dest_port_mask)) {
+			direction = "flow";
+			goto defunct_conn;
+		}
+
+		/*
+		 * 1. For topology A, B, C, D  if drop rule is added in br-home or br-wan
+		 * 2. For topoloy  A, B  if drop rule is added in br-wan
+		 * Match in reverse direction
+		 */
+		if (ECM_IP_ADDR_MASK_MATCH(dip, src_addr_mask) &&
+		    ECM_IP_ADDR_MASK_MATCH(sip, dest_addr_mask) &&
+		    ECM_PORT_MASK_MATCH(dport, src_port_mask) &&
+		    ECM_PORT_MASK_MATCH(sport, dest_port_mask)) {
+			direction = "reverse";
+			goto defunct_conn;
+		}
+
+		/*
+		 * There is no NATing in case of bridging
+		 */
+		if (!is_routed) {
+			goto next_ci;
+		}
+
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM_NAT, sip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dip);
+		sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM_NAT);
+		dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT);
+
+		/*
+		 * 1. For topoloy  C, D  if drop rule is added in br-wan
+		 * Match in flow direction
+		 */
+		if (ECM_IP_ADDR_MASK_MATCH(sip, src_addr_mask) &&
+		    ECM_IP_ADDR_MASK_MATCH(dip, dest_addr_mask) &&
+		    ECM_PORT_MASK_MATCH(sport, src_port_mask) &&
+		    ECM_PORT_MASK_MATCH(dport, dest_port_mask)) {
+			direction = "flow (nat)";
+			goto defunct_conn;
+		}
+
+		/*
+		 * 1. For topoloy  C, D  if drop rule is added in br-wan
+		 * Match in reverse direction
+		 */
+		if (ECM_IP_ADDR_MASK_MATCH(dip, src_addr_mask) &&
+		    ECM_IP_ADDR_MASK_MATCH(sip, dest_addr_mask) &&
+		    ECM_PORT_MASK_MATCH(dport, src_port_mask) &&
+		    ECM_PORT_MASK_MATCH(sport, dest_port_mask)) {
+			direction = "reverse (nat)";
+			goto defunct_conn;
+		}
+
+		goto next_ci;
+
+defunct_conn:
+		cnt++;
+		if (ECM_IP_ADDR_IS_V4(src_addr_mask)) {
+			DEBUG_TRACE("%px: Defunct CI masked 5 tuple match(%s) src=" ECM_IP_ADDR_DOT_FMT " sport=%d dest="
+					ECM_IP_ADDR_DOT_FMT ", dport=%d, proto=%d cnt=%d\n", ci, direction,
+					ECM_IP_ADDR_TO_DOT(sip), sport, ECM_IP_ADDR_TO_DOT(dip), dport, proto, cnt);
+		} else {
+			DEBUG_TRACE("%px: Defunct CI masked 5 tuple match(%s) src=" ECM_IP_ADDR_OCTAL_FMT " sport=%d dest="
+					ECM_IP_ADDR_OCTAL_FMT ", dport=%d, proto=%d, cnt=%d\n", ci, direction,
+					ECM_IP_ADDR_TO_OCTAL(sip), sport, ECM_IP_ADDR_TO_OCTAL(dip), dport, proto, cnt);
+		}
+
+		ecm_db_connection_make_defunct(ci);
+
+next_ci:
+		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ca_type);
+		ecm_db_connection_by_classifier_type_assignment_deref(ci, ca_type);
+		ci = cin;
+	}
+
+	if (ECM_IP_ADDR_IS_V4(src_addr_mask)) {
+		DEBUG_TRACE("%px: Defunct request by masked 5 tuple src_mask=" ECM_IP_ADDR_DOT_FMT " sport_mask=%d, dest_mask="
+				ECM_IP_ADDR_DOT_FMT " dport_mask=%d, proto_mask=%d, cnt=%d\n", ci,
+				ECM_IP_ADDR_TO_DOT(src_addr_mask), src_port_mask, ECM_IP_ADDR_TO_DOT(dest_addr_mask),
+				dest_port_mask, proto_mask, cnt);
+	} else {
+		DEBUG_TRACE("%px: Defunct request by masked 5 tuple src_mask=" ECM_IP_ADDR_OCTAL_FMT " sport_mask=%d dest_mask="
+				ECM_IP_ADDR_OCTAL_FMT " dport_mask=%d, proto_mask=%d cnt=%d\n", ci,
+				ECM_IP_ADDR_TO_OCTAL(src_addr_mask), src_port_mask,
+				ECM_IP_ADDR_TO_OCTAL(dest_addr_mask), dest_port_mask, proto_mask, cnt);
+	}
+}
+
+/*
  * ecm_db_connection_defunct_ip_version()
  *	Make defunct based on the IP version (IPv4 or IPv6).
  */
