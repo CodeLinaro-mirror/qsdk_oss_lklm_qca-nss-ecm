@@ -1891,9 +1891,20 @@ skip_ipv4_bridge_flow:
  */
 unsigned int ecm_nss_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device *out)
 {
-        struct ethhdr *skb_eth_hdr;
-        bool can_accel = true;
-        struct net_device *in;
+	struct ethhdr *skb_eth_hdr;
+	bool can_accel = true;
+	struct net_device *in;
+
+	/*
+	 * If operations have stopped then do not process packets
+	 */
+	spin_lock_bh(&ecm_nss_ipv4_lock);
+	if (unlikely(ecm_front_end_ipv4_stopped)) {
+		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		DEBUG_TRACE("Front end stopped\n");
+		return 1;
+	}
+	spin_unlock_bh(&ecm_nss_ipv4_lock);
 
 	/*
 	 * Don't process broadcast.

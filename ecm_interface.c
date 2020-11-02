@@ -7421,125 +7421,178 @@ EXPORT_SYMBOL(ecm_interface_ipsec_unregister_callbacks);
 #endif
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+
 /*
- * ecm_interface_ovs_node_defunct_connections()
- *	Defunct the connections using mac addresses and IP version.
+ * ecm_interface_ovs_defunct_masked_tuple()
+ *	Make defunct based on masked fields
  */
-static void ecm_interface_ovs_node_defunct_connections(struct ovsmgr_dp_flow *flow)
+static void ecm_interface_ovs_defunct_masked_tuple(struct ovsmgr_dp_flow *flow)
 {
-	struct ecm_db_node_instance *ni;
+	ip_addr_t src_addr;
+	ip_addr_t dest_addr;
+	bool is_routed = false;
 
-	/*
-	 * check if smac/dmac is local mac
-	 *
-	 * if smac is local, direction is from ovs_br -> eth2 (ovs bridge port)
-	 * if dmac is local, direction is from eth2 (ovs bridge port)-> ovs_br
-	 *
-	 * Routing:
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth0]---[PC2] <--- IPv4/IPv6
-	 *
-	 * In ovs_br, there are two flow rules:
-	 * 	a. rule (IPv4)from PC1_MAC to ovs_br_MAC
-	 * 	b. rule (IPv4)from ovs_br_MAC to PC1_MAC
-	 * 	c. rule (IPv6)from PC1_MAC to ovs_br_MAC
-	 * 	d. rule (IPv6)from ovs_br_MAC to PC1_MAC
-	 *
-	 * Bridging:
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC2] <--- IPv4/IPv6
-	 * 	[PC1]--[eth2]----[ovs_br]------[eth3]---[PC3] <--- IPv4/IPv6
-	 *
-	 * In ovs_br, there are two flow rules:
-	 * 	a. rule (IPv4)from PC1_MAC to PC2_MAC
-	 * 	b. rule (IPv4)from PC2_MAC to PC1_MAC
-	 * 	c. rule (IPv6)from PC1_MAC to PC2_MAC
-	 * 	d. rule (IPv6)from PC2_MAC to PC1_MAC
-	 *
-	 * 1. CI from node is PC1 <--- IPv4/IPv6
-	 * 	i.  a/c is deleted - smac is PC1_MAC, dmac is ovs_br_MAC
-	 * 		- CI is deleted
-	 * 	ii. b/d is deleted - smac is ovs_br_MAC, dmac is PC1_MAC
-	 * 		- CI is not deleted
-	 * 2. CI to node is PC1 <--- IPv4/IPv6
-	 * 	i.  a/c is deleted - smac is PC1_MAC, dmac is ovs_br_MAC
-	 * 		- CI is not deleted
-	 * 	ii. b/d is deleted - smac is ovs_br_MAC, dmac is PC1_MAC
-	 * 		- CI is deleted
-	 */
+	bool smac_valid = !is_zero_ether_addr(flow->smac);
+	bool dmac_valid = !is_zero_ether_addr(flow->dmac);
 
-	/*
-	 * Disable frontend processing until defunct function call is completed.
-	 */
-	ecm_front_end_ipv4_stop(1);
-#ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(1);
-#endif
+	if (flow->tuple.ip_version == 4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_addr, flow->tuple.ipv4.src);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dest_addr, flow->tuple.ipv4.dst);
+	} else {
+		ECM_NIN6_ADDR_TO_IP_ADDR(src_addr, flow->tuple.ipv6.src);
+		ECM_NIN6_ADDR_TO_IP_ADDR(dest_addr, flow->tuple.ipv6.dst);
+	}
 
-	/*
-	 * 1.i,  Route flow where outdev is the OVS bridge.
-	 *
-	 * Check if dmac is local dev and OVS bridge interface.
-	 *
-	 * 	  client_node -------------> ovs_br
-	 *	flow->smac	  	  flow->outdev
-	 *	     connections FROM the client_node
-	 */
-	if (netif_is_ovs_master(flow->outdev) && ether_addr_equal(flow->outdev->dev_addr, flow->dmac)) {
-		DEBUG_TRACE("%px: Defunct the connections FROM the %pM to the %s OVS bridge\n", flow, flow->smac, flow->outdev->name);
-		ecm_db_node_ovs_routed_connections_defunct(flow->smac, flow->outdev, flow->tuple.ip_version, ECM_DB_OBJ_DIR_FROM);
-		goto enable_front_end;
+	if (netif_is_ovs_master(flow->indev) || netif_is_ovs_master(flow->outdev)) {
+		is_routed = true;
 	}
 
 	/*
-	 * 2.i, Route flow where indev is the OVS bridge.
+	 * This function attempts to defunct connections which match
+	 * given OVS flow.  Some of the parameters in flow are masked so the
+	 * logic used here is to match:
+	 *  if (A & B == A), where B is flow parameter and A is CI parameter.
+	 *  A, B can be MAC, IP, port, protocol.
 	 *
-	 * Check if smac is local dev and OVS bridge interface.
+	 * OVS datapath flow can be routed or bridged flow.  To identify bridge vs routed
+	 * flow->{indev/outdev} is checked if it is OVS bridge interface and smac/dmac is
+	 * matching interface MAC address.  Otherwise flow is considered to be bridge flows.
 	 *
-	 * 	 client_node <------------- ovs_br
-	 *	flow->dmac	  	  flow->indev
-	 *	     connections TO the client_node
+	 * This function and the underlying functions (called functions) implement above logic
+	 * to match parameters.  SMAC/DMAC is expected to be non-zero, if they are 0 (any) then
+	 * rest of the parameters are used to filter out ECM connections using OVS classifier Hash bucket.
+	 * Otherwise node list is used to identify the connections originated from it and they are defunct.
+	 * In this implementation, worst case is SMAC and DMAC are 0 and all OVS connections need to be
+	 * parsed.
+	 *
+	 * Below is the sequence of checks and how ECM connections are filtered:
+	 *
+	 * 1. if SMAC and DMAC are invalid, defunct flows by masked matching (ip_version, sip, sport, protocol, dip, dport)
+	 *
+	 * 2. SMAC is valid (non zero) && outdev is OVS bridge:  defunction connections originated from nodes matching smac.
+	 *		a. Check if outdev is OVS bridge interface and dmac is matching bridge MAC.
+	 *		   If yes then defunct connections by matching {ip_version, sip, dip, protocol, sport, dport},
+	 *		   dmac in CI is ignored (any destination node address).
+	 *
+	 * 3. DMAC is valid (non-zero) && indev is OVS bridge: - defunction connections originated to nodes matching dmac.
+	 *		a. Check if indev is OVS bridge interface and smac is matching bridge MAC.
+	 *		   If yes then defunct connections by matching {ip_version, ip, dip, protocol, sport, dport},
+	 *		   smac in CI is ignored (any destination node address).
+	 *
+	 * 4. if either indev OR outdev is ovs_bridge: Then defunct connections through OVS classifier hash bucket by matching:
+	 *	            {ip_version, sip, dip, protocol, sport, dport}
+	 *
+	 * 5. if SMAC is valid : Then delete bridge flows originating from SMAC by matching:
+	 *		   {ip_version, dmac, sip, dip, protocol, sport, dport}
+	 *
+	 * 6. if DMAC is valid : Then delete bridge flows originating to DMAC by matching:
+	 *		   {ip_version, smac, sip, dip, protocol, sport, dport}
+	 *
+	 * 7. If any of the above conndition is not true:  defunct flows by masked matching (ip_version, sip, sport, protocol, dip, dport)
 	 */
-	if (netif_is_ovs_master(flow->indev) && ether_addr_equal(flow->indev->dev_addr, flow->smac)) {
-		DEBUG_TRACE("%px: Defunct the connections TO the %pM from the %s OVS bridge\n", flow, flow->dmac, flow->indev->name);
-		ecm_db_node_ovs_routed_connections_defunct(flow->dmac, flow->indev, flow->tuple.ip_version, ECM_DB_OBJ_DIR_TO);
-		goto enable_front_end;
+
+	/*
+	 * case 1:  Defunct by classifier if smac and dmac are invalid
+	 */
+	if (!smac_valid && !dmac_valid) {
+		goto classify_defunct;
 	}
 
 	/*
-	 * Destroy bridge flows.
+	 * case 2: If outdev is ovs_br, find all connection FROM smac and MATCH
 	 */
-	ni = ecm_db_node_chain_get_and_ref_first(flow->smac);
-	while (ni) {
-		struct ecm_db_node_instance *nin;
-
-		if (ecm_db_node_is_mac_addr_equal(ni, flow->smac)) {
-			int dir;
-			/*
-			 * FROM and TO directions are enough to destroy all the connections.
-			 * FROM_NAT and TO_NAT are not required for bridge flows.
-			 */
-			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
-				ecm_db_traverse_snode_dnode_connection_list_and_defunct(ni, flow->dmac,
-											flow->tuple.ip_version, dir);
-			}
+	if (smac_valid && netif_is_ovs_master(flow->outdev)) {
+		if (unlikely(dmac_valid && !ECM_MAC_ADDR_MATCH(flow->outdev->dev_addr, flow->dmac))) {
+			DEBUG_WARN("%px: Defunct routed connections FROM %pM to the %s (OVS bridge) Failed\n", flow, flow->smac,
+								flow->outdev->name);
+			return;
 		}
 
-		/*
-		 * Get next node in the chain
-		 */
-		nin = ecm_db_node_chain_get_and_ref_next(ni);
-		ecm_db_node_deref(ni);
-		ni = nin;
+		DEBUG_TRACE("%px: Defunct routed connections by masked 7 tuple FROM %pM to the %s (OVS bridge)\n", flow,
+							flow->smac, flow->outdev->name);
+
+		ecm_db_node_ovs_connections_masked_defunct(flow->tuple.ip_version, flow->smac, true, src_addr,
+							   ntohs(flow->tuple.src_port), flow->dmac, false, dest_addr,
+							   ntohs(flow->tuple.dst_port), flow->tuple.protocol,
+							   ECM_DB_OBJ_DIR_FROM, true);
+		return;
 	}
 
-enable_front_end:
 	/*
-	 * Re-enable frontend processing.
+	 * case 3: If indev is ovs_br, find all connection from TO  dmac and match.
 	 */
-	ecm_front_end_ipv4_stop(0);
-#ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(0);
-#endif
+	if (dmac_valid && netif_is_ovs_master(flow->indev)) {
+		if (unlikely(smac_valid && !ECM_MAC_ADDR_MATCH(flow->indev->dev_addr, flow->smac))) {
+			DEBUG_WARN("%px: Defunct routed connections TO %pM from %s (OVS bridge), Failed\n", flow,
+				   flow->dmac, flow->indev->name);
+			return;
+		}
+
+		DEBUG_TRACE("%px: Defunct routed the connections by masked 7 tuple TO %pM from %s (OVS bridge)\n", flow,
+			    flow->dmac, flow->indev->name);
+
+		ecm_db_node_ovs_connections_masked_defunct(flow->tuple.ip_version, flow->smac, false, src_addr,
+							   ntohs(flow->tuple.src_port), flow->dmac, true, dest_addr,
+							   ntohs(flow->tuple.dst_port), flow->tuple.protocol,
+							   ECM_DB_OBJ_DIR_TO, true);
+
+		return;
+	}
+
+	/*
+	 * case 4: If smac or dmac is not valid and either of indev or outdev is ovs-bridge device, defunct by 5 tuple
+	 */
+	if (is_routed) {
+		goto classify_defunct;
+	}
+
+	/*
+	 * case 5: if smac is valid, match bridged connection FROM SMAC
+	 */
+	if (smac_valid) {
+		DEBUG_TRACE("%px: Defunct Bridged flows by masked  7 tuple (smac valid) indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+								"proto=%d, sport=%d, dport=%d\n",
+					flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
+					flow->tuple.protocol, ntohs(flow->tuple.src_port), ntohs(flow->tuple.dst_port));
+
+		ecm_db_node_ovs_connections_masked_defunct(flow->tuple.ip_version, flow->smac, true, src_addr,
+							   ntohs(flow->tuple.src_port), flow->dmac,
+							   dmac_valid, dest_addr,
+							   ntohs(flow->tuple.dst_port), flow->tuple.protocol,
+							   ECM_DB_OBJ_DIR_FROM, false);
+		return;
+	}
+
+	/*
+	 * case 6: if dmac is valid, match bridged connection TO DMAC
+	 */
+	if (dmac_valid) {
+		DEBUG_TRACE("%px: Defunct Bridged flows by masked 7 tuple (dmac valid) indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+								"proto=%d, sport=%d, dport=%d\n",
+					flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
+					flow->tuple.protocol, ntohs(flow->tuple.src_port), ntohs(flow->tuple.dst_port));
+
+		ecm_db_node_ovs_connections_masked_defunct(flow->tuple.ip_version, flow->smac, false, src_addr,
+							   ntohs(flow->tuple.src_port), flow->dmac, true,  dest_addr,
+							   ntohs(flow->tuple.dst_port), flow->tuple.protocol,
+							   ECM_DB_OBJ_DIR_TO, false);
+
+		return;
+	}
+
+classify_defunct:
+
+	/*
+	 * case 7: If dmac and smac are NULL, defunct connections by matching 5 tuple info
+	 */
+	DEBUG_TRACE("%px: Defunct flows by 5 tuple (smac & dmac invalid) indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+					     "proto=%d, sport=%d, dport=%d is_routed=%d\n",
+				flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
+				flow->tuple.protocol, ntohs(flow->tuple.src_port), ntohs(flow->tuple.dst_port), is_routed);
+
+	ecm_db_connection_defunct_by_classifier(flow->tuple.ip_version, src_addr, ntohs(flow->tuple.src_port), dest_addr,
+						ntohs(flow->tuple.dst_port), flow->tuple.protocol, is_routed, ECM_CLASSIFIER_TYPE_OVS);
+
 }
 
 /*
@@ -7558,9 +7611,9 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 
 	if (flow->tuple.ip_version == 4) {
 		DEBUG_TRACE("IPv4: Src: %pI4:%d protocol: %d Dst: %pI4:%d\n",
-			   &flow->tuple.ipv4.src, flow->tuple.src_port,
+			   &flow->tuple.ipv4.src, ntohs(flow->tuple.src_port),
 			   flow->tuple.protocol,
-			   &flow->tuple.ipv4.dst, flow->tuple.dst_port);
+			   &flow->tuple.ipv4.dst, ntohs(flow->tuple.dst_port));
 
 		if (flow->tuple.ipv4.src) {
 			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv4.src);
@@ -7571,9 +7624,9 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 		}
 	} else if (flow->tuple.ip_version == 6) {
 		DEBUG_TRACE("IPv6: Src: %pI6:%d protocol: %d Dst: %pI6:%d\n",
-			   &flow->tuple.ipv6.src, flow->tuple.src_port,
+			   &flow->tuple.ipv6.src, ntohs(flow->tuple.src_port),
 			   flow->tuple.protocol,
-			   &flow->tuple.ipv6.dst, flow->tuple.dst_port);
+			   &flow->tuple.ipv6.dst, ntohs(flow->tuple.dst_port));
 		ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, flow->tuple.ipv6.src);
 		ECM_NIN6_ADDR_TO_IP_ADDR(dest_ip, flow->tuple.ipv6.dst);
 	} else {
@@ -7637,15 +7690,15 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 		DEBUG_TRACE("%px: Delete flow by 5 tuple: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
 					"proto=%d, sport=%d, dport=%d\n",
 					flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
-					flow->tuple.protocol, flow->tuple.src_port, flow->tuple.dst_port);
+					flow->tuple.protocol, ntohs(flow->tuple.src_port), ntohs(flow->tuple.dst_port));
 
 		/*
 		 * Delete the flows by using 5-tuple parameters.
 		 */
 		ci = ecm_db_connection_from_ovs_flow_get_and_ref(flow);
 		if (!ci) {
-			DEBUG_WARN("%p: OVS flow not found in ECM database\n", flow);
-			return;
+			DEBUG_WARN("%px: OVS flow not found in ECM database, Try to match by mask\n", flow);
+			goto no_ci;
 		}
 		DEBUG_INFO("%p: Connection defunct %p\n", flow, ci);
 
@@ -7658,38 +7711,14 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 		return;
 	}
 
-	/*
-	 * Delete the flows by using {smac, dmac}
-	 */
-	if (!is_zero_ether_addr(flow->smac) && !is_zero_ether_addr(flow->dmac)) {
+no_ci:
 
-		DEBUG_TRACE("%px: Delete flow by smac and dest mac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
-			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
-		return ecm_interface_ovs_node_defunct_connections(flow);
-	}
-
-	/*
-	 * Delete the flows by using smac
-	 */
-	if (!is_zero_ether_addr(flow->smac)) {
-		DEBUG_TRACE("%px: defunct node by smac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
-			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
-		return ecm_interface_node_connections_defunct(flow->smac, flow->tuple.ip_version);
-	}
-
-	/*
-	 * Delete the flows by using dmac
-	 */
-	if (!is_zero_ether_addr(flow->dmac)) {
-		DEBUG_TRACE("%px: defunct node by dmac: indev = %s, outdev = %s, smac:%pM, dmac:%pM\n",
-			    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac);
-		return ecm_interface_node_connections_defunct(flow->dmac, flow->tuple.ip_version);
-	}
-
-	DEBUG_WARN("%px: Delete flow failed for tuple: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
+	DEBUG_TRACE("%px: Delete flow by 5 or 7 tuple masks: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
 		    "proto=%d, sport=%d, dport=%d\n",
 		    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
-		    flow->tuple.protocol, flow->tuple.src_port, flow->tuple.dst_port);
+		    flow->tuple.protocol, ntohs(flow->tuple.src_port), ntohs(flow->tuple.dst_port));
+
+	ecm_interface_ovs_defunct_masked_tuple(flow);
 }
 
 #ifdef ECM_MULTICAST_ENABLE

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2019 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2019-2020 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -53,6 +53,18 @@ typedef uint32_t ecm_ptr_t;
 
 #define ECM_IP_ADDR_MATCH(a, b) \
 	((a[0] == b[0]) && (a[1] == b[1]) && (a[2] == b[2]) && (a[3] == b[3]))
+
+#define ECM_IP_ADDR_MASK_MATCH(addr, mask) \
+	(((addr[0] & mask[0]) == mask[0]) && ((addr[1] & mask[1]) == mask[1]) && \
+	((addr[2] & mask[2]) == mask[2]) && ((addr[3] & mask[3]) == mask[3]))
+
+#define ECM_PORT_MASK_MATCH(port, mask)  ((port & mask) == mask)
+#define ECM_PROTO_MASK_MATCH(proto, mask)  ((proto & mask) == mask)
+
+#define ECM_MAC_ADDR_MATCH(a, b) \
+	((((uint16_t *)a)[0] == (((uint16_t *)b)[0])) && \
+	(((uint16_t *)a)[1] == (((uint16_t *)b)[1])) && \
+	(((uint16_t *)a)[2] == (((uint16_t *)b)[2])))
 
 #define ECM_IP_ADDR_IS_V4(a) \
 	((a[1] == 0x0000ffff) && !a[2] && !a[3])
