@@ -275,7 +275,11 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 		/*
 		 * Check whether ingress qdisc is attached to the egress device or not.
 		 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0))
 		if (likely(!(to_dev->ingress_cl_list))) {
+#else
+		if (likely(!(to_dev->miniq_ingress))) {
+#endif
 			dev_put(to_dev);
 			continue;
 		}

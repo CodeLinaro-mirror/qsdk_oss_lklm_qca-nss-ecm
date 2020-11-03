@@ -202,6 +202,7 @@ ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
 ECM_CLASSIFIER_DSCP_ENABLE=y
 ecm-$(ECM_CLASSIFIER_DSCP_ENABLE) += ecm_classifier_dscp.o
 ccflags-$(ECM_CLASSIFIER_DSCP_ENABLE) += -DECM_CLASSIFIER_DSCP_ENABLE
+ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
 
 # #############################################################################
 # Define ECM_CLASSIFIER_PCC_ENABLE=y in order to enable
