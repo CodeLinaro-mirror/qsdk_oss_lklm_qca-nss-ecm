@@ -1690,7 +1690,7 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vxlan(uint32_t vni, uint
  * ecm_db_iface_find_and_ref_bridge()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address, int32_t if_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1708,7 +1708,10 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address)
 	spin_lock_bh(&ecm_db_lock);
 	ii = ecm_db_iface_table[hash_index];
 	while (ii) {
-		if ((ii->type != ECM_DB_IFACE_TYPE_BRIDGE) || memcmp(ii->type_info.bridge.address, address, ETH_ALEN)) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_BRIDGE)
+			|| memcmp(ii->type_info.bridge.address, address, ETH_ALEN)
+			|| ii->interface_identifier != if_num) {
+
 			ii = ii->hash_next;
 			continue;
 		}

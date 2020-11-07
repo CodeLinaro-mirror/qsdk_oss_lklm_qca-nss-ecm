@@ -1589,7 +1589,7 @@ static struct ecm_db_iface_instance *ecm_interface_bridge_interface_establish(st
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_bridge(type_info->address);
+	ii = ecm_db_iface_find_and_ref_bridge(type_info->address, dev_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%px: iface established\n", ii);
 		return ii;
@@ -1608,7 +1608,7 @@ static struct ecm_db_iface_instance *ecm_interface_bridge_interface_establish(st
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_bridge(type_info->address);
+	ii = ecm_db_iface_find_and_ref_bridge(type_info->address, dev_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);

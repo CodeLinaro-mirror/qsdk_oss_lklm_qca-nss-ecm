@@ -214,7 +214,7 @@ void ecm_db_iface_add_vlan(struct ecm_db_iface_instance *ii,
 			   ecm_db_iface_final_callback_t final, void *arg);
 #endif
 
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_bridge(uint8_t *address, int32_t if_num);
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address);
 #endif
