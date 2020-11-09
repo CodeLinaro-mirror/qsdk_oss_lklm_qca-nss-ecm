@@ -158,6 +158,11 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 # #############################################################################
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
+# #############################################################################
+# Define ECM_XFRM_ENABLE=y in order to enable support for XFRM
+# #############################################################################
+ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
+
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
 ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx ipq50xx_64))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
