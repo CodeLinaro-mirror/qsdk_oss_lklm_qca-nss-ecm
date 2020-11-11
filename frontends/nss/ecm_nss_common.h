@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2018-2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -30,9 +30,7 @@
 #include <net/vxlan.h>
 #endif
 
-#ifdef ECM_XFRM_ENABLE
 #include <net/xfrm.h>
-#endif
 
 /*
  * This macro converts ECM ip_addr_t to NSS IPv6 address
@@ -310,16 +308,15 @@ static inline bool ecm_nss_common_igs_acceleration_is_allowed(struct ecm_front_e
 }
 #endif
 
-#ifdef ECM_XFRM_ENABLE
 /*
  * ecm_nss_common_is_xfrm_flow()
- *	Skip xfrm flows
+ *	Check if the flow is an xfrm flow.
  */
 static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
 {
+#ifdef CONFIG_XFRM
+	struct dst_entry *dst;
 	struct net *net;
-	struct xfrm_state *x;
-	struct ip_esp_hdr *esph;
 
 	net = dev_net(skb->dev);
 	if (likely(!net->xfrm.policy_count[XFRM_POLICY_OUT])) {
@@ -327,50 +324,41 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 	}
 
 	/*
-	 * if it's a xfrm flow, don't accelerate it.
+	 * Packet seen after output transformation. We use the IPCB(skb) to check
+	 * for this condition. No custom code should mangle the IPCB: skb->cb area,
+	 * while the packet is traversing through the INET layer.
 	 */
-	if (ip_hdr->protocol != IPPROTO_ESP) {
-		struct dst_entry *dst;
-
-		/*
-		 * skb's sp is set for decapsulated packet
-		 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0))
-		if (skb->sp) {
-#else
-		if (secpath_exists(skb)) {
-#endif
-			DEBUG_TRACE("%px: Skipping wan-to-lan packet proto(%d)\n", skb, ip_hdr->protocol);
-			return true;
-		}
-
-		/*
-		 * dst->xfrm is valid for lan to wan plain packet
-		 */
-		dst = skb_dst(skb);
-		if (dst && dst->xfrm) {
-			DEBUG_TRACE("%px: Skipping lan-to-wan packet proto(%d)\n", skb, ip_hdr->protocol);
-			return true;
-		}
-
-		return false;
-	}
-
 	if (ip_hdr->is_v4) {
-		esph = (struct ip_esp_hdr *)(skb->data + (ip_hdr->h.v4_hdr.ihl << 2));
-	} else {
-		esph = (struct ip_esp_hdr *)(skb->data + sizeof(struct ipv6hdr));
-	}
-
-	/*
-	 * State look up will fail for non xfrm flows
-	 */
-	x = xfrm_state_lookup_byspi(net, esph->spi, ip_hdr->is_v4 ? AF_INET : AF_INET6);
-	if (x) {
-		DEBUG_TRACE("%px: Skipping lan-to-wan ESP packet\n", skb);
+		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+			DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
+			return true;
+		}
+	} else if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
+		DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
 		return true;
 	}
 
+	if (ip_hdr->protocol == IPPROTO_ESP) {
+		DEBUG_TRACE("%px: ESP Passthrough packet\n", skb);
+		return false;
+	}
+
+	/*
+	 * skb's sp is set for decapsulated packet
+	 */
+	if (secpath_exists(skb)) {
+		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
+		return true;
+	}
+
+	/*
+	 * dst->xfrm is valid for lan to wan plain packet
+	 */
+	dst = skb_dst(skb);
+	if (dst && dst->xfrm) {
+		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
+		return true;
+	}
+#endif
 	return false;
 }
-#endif
