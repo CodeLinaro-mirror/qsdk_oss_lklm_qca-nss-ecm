@@ -85,7 +85,7 @@ struct ecm_classifier_dscp_instance {
 
 	uint32_t ci_serial;					/* RO: Serial of the connection */
 	struct ecm_classifier_process_response process_response;/* Last process response computed */
-
+	bool packet_seen[ECM_CONN_DIR_MAX];			/* Per-direction packet seen flag */
 	int refs;						/* Integer to trap we never go negative */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -188,6 +188,35 @@ static int ecm_classifier_dscp_deref(struct ecm_classifier_instance *ci)
 }
 
 /*
+ * ecm_classifier_dscp_is_bidi_packet_seen()
+ *	Return true if both direction packets are seen.
+ */
+static inline bool ecm_classifier_dscp_is_bidi_packet_seen(struct ecm_classifier_dscp_instance *cdscpi)
+{
+	return ((cdscpi->packet_seen[ECM_CONN_DIR_FLOW] == true) && (cdscpi->packet_seen[ECM_CONN_DIR_RETURN] == true));
+}
+
+/*
+ * ecm_classifier_dscp_fill_info()
+ *	Save the QoS and DSCP values in the classifier instance.
+ */
+static void ecm_classifier_dscp_fill_info(struct ecm_classifier_dscp_instance *cdscpi,
+					 ecm_tracker_sender_type_t sender,
+					 struct ecm_tracker_ip_header *ip_hdr,
+					 struct sk_buff *skb)
+{
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		cdscpi->process_response.flow_qos_tag = skb->priority;
+		cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+		cdscpi->packet_seen[ECM_CONN_DIR_FLOW] = true;
+	} else {
+		cdscpi->process_response.return_qos_tag = skb->priority;
+		cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+		cdscpi->packet_seen[ECM_CONN_DIR_RETURN] = true;
+	}
+}
+
+/*
  * ecm_classifier_dscp_process()
  *	Process new data for connection
  */
@@ -205,11 +234,8 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
 	struct nf_ct_dscpremark_ext *dscpcte;
-	uint32_t flow_qos_tag = 0;
-	uint32_t return_qos_tag = 0;
-	uint8_t flow_dscp = 0;
-	uint8_t return_dscp = 0;
 	bool dscp_marked = false;
+	int slow_pkts;
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
 	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
@@ -224,10 +250,9 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 * Are we relevant?
 	 */
 	if (relevance == ECM_CLASSIFIER_RELEVANCE_NO) {
-		/*
-		 * Lock still held
-		 */
-		goto dscp_classifier_out;
+		*process_response = cdscpi->process_response;
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		return;
 	}
 
 	/*
@@ -241,11 +266,10 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 * Any other condition and we are not and will stop analysing this connection.
 	 */
 	if (!ecm_classifier_dscp_enabled) {
-		/*
-		 * Lock still held
-		 */
 		cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto dscp_classifier_out;
+		*process_response = cdscpi->process_response;
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		return;
 	}
 	spin_unlock_bh(&ecm_classifier_dscp_lock);
 
@@ -262,6 +286,9 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	accel_mode = feci->accel_state_get(feci);
+	spin_lock_bh(&feci->lock);
+	slow_pkts = feci->stats.slow_path_packets;
+	spin_unlock_bh(&feci->lock);
 	feci->deref(feci);
 	protocol = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_deref(ci);
@@ -276,6 +303,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct) {
+		DEBUG_WARN("%px: no conntrack found\n", cdscpi);
 		spin_lock_bh(&ecm_classifier_dscp_lock);
 		cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto dscp_classifier_out;
@@ -288,6 +316,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	dscpcte = nf_ct_dscpremark_ext_find(ct);
 	if (!dscpcte) {
 		spin_unlock_bh(&ct->lock);
+		DEBUG_WARN("%px: no DSCP conntrack extension found\n", cdscpi);
 		spin_lock_bh(&ecm_classifier_dscp_lock);
 		cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto dscp_classifier_out;
@@ -299,101 +328,8 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	if (nf_conntrack_dscpremark_ext_get_dscp_rule_validity(ct)
 				== NF_CT_DSCPREMARK_EXT_RULE_VALID) {
+		DEBUG_TRACE("%px: DSCP remark extension is valid\n", cdscpi);
 		dscp_marked = true;
-	}
-
-	/*
-	 * For TCP flows, we would have the values for both the directions by
-	 * the time the connection is established. For UDP flows, we copy
-	 * over the values from one direction to another if we find the
-	 * values for the other direction not set, which would be due to one
-	 * of the following.
-	 * a. We might not have seen a packet in the opposite direction
-	 * b. There were no explicitly configured priority/DSCP for the opposite
-	 *    direction.
-	 */
-	if (protocol == IPPROTO_TCP) {
-		/*
-		 * TCP is established at this point, priority and DSCP values were already in the extension instance.
-		 * They were extracted from the skb in the frontend file. So, copy them from there.
-		 */
-		if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
-				((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
-			flow_qos_tag = dscpcte->flow_priority;
-			return_qos_tag = dscpcte->reply_priority;
-			flow_dscp = dscpcte->flow_dscp;
-			return_dscp = dscpcte->reply_dscp;
-		} else {
-			/* TCP is in established state and the direction of this packet is opposite to the direction of the ct
-			 * in which the TCP connection was initiated. This can be the case when the ECM rule was originally
-			 * created in the direction of the ct, but defuncted for some reason. And the next packet that is now being
-			 * processed by ECM for this TCP connection is in the opposite direction relative to ct. So, we ensure that
-			 * we retrieve the qos_tag/dscp from the ct based on the direction of the new ECM connection relative to the ct
-			 */
-			return_qos_tag = dscpcte->flow_priority;
-			flow_qos_tag = dscpcte->reply_priority;
-			return_dscp = dscpcte->flow_dscp;
-			flow_dscp = dscpcte->reply_dscp;
-		}
-		DEBUG_TRACE("TCP Flow DSCP: %x Flow priority: %d, Return DSCP: %x Return priority: %d sender: %d ct_dir: %d\n",
-			    flow_dscp, flow_qos_tag, return_dscp, return_qos_tag, sender, CTINFO2DIR(ctinfo));
-
-	} else { /* UDP */
-		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-			/*
-			 * Record latest flow
-			 */
-			flow_qos_tag = skb->priority;
-			dscpcte->flow_priority = flow_qos_tag;
-			flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;	/* NOTE: XT_DSCP_SHIFT is okay for V4 and V6 */
-			dscpcte->flow_dscp = flow_dscp;
-
-			/*
-			 * Copy over the flow direction QoS
-			 * and DSCP if the reply direction
-			 * values are not set.
-			 */
-			if (dscpcte->reply_priority == 0) {
-				return_qos_tag = flow_qos_tag;
-			} else {
-				return_qos_tag = dscpcte->reply_priority;
-			}
-
-			if (dscpcte->reply_dscp == 0) {
-				return_dscp = flow_dscp;
-			} else {
-				return_dscp = dscpcte->reply_dscp;
-			}
-
-		} else {
-			/*
-			 * Record latest return
-			 */
-			return_qos_tag = skb->priority;
-			dscpcte->reply_priority = return_qos_tag;
-			return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;	/* NOTE: XT_DSCP_SHIFT is okay for V4 and V6 */
-			dscpcte->reply_dscp = return_dscp;
-
-			/*
-			 * Copy over the return direction QoS
-			 * and DSCP if the flow direction
-			 * values are not set.
-			 */
-			if (dscpcte->flow_priority == 0) {
-				flow_qos_tag = return_qos_tag;
-			} else {
-				flow_qos_tag = dscpcte->flow_priority;
-			}
-
-			if (dscpcte->flow_dscp == 0) {
-				flow_dscp = return_dscp;
-			} else {
-				flow_dscp = dscpcte->flow_dscp;
-			}
-		}
-		DEBUG_TRACE("UDP Flow DSCP: %x Flow priority: %d, Return DSCP: %x Return priority: %d sender: %d\n",
-			    flow_dscp, flow_qos_tag, return_dscp, return_qos_tag, sender);
-
 	}
 	spin_unlock_bh(&ct->lock);
 
@@ -404,11 +340,116 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 
 	spin_lock_bh(&ecm_classifier_dscp_lock);
 	cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
+	cdscpi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+	cdscpi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	cdscpi->process_response.became_relevant = became_relevant;
 
-	cdscpi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
-	cdscpi->process_response.flow_qos_tag = flow_qos_tag;
-	cdscpi->process_response.return_qos_tag = return_qos_tag;
+	if (protocol == IPPROTO_TCP) {
+		/*
+		 * Stop the processing if both side packets are already seen.
+		 * Above the process response is already set to allow the acceleration.
+		 */
+		if (ecm_classifier_dscp_is_bidi_packet_seen(cdscpi)) {
+			DEBUG_TRACE("%px: TCP bi-di packets seen\n", cdscpi);
+			goto done;
+		}
+
+		/*
+		 * Store the QoS and DSCP info in the classifier instance and deny the
+		 * acceleration if both side info is not yet available.
+		 */
+		ecm_classifier_dscp_fill_info(cdscpi, sender, ip_hdr, skb);
+		if (!ecm_classifier_dscp_is_bidi_packet_seen(cdscpi)) {
+			DEBUG_TRACE("%px: TCP both side info is not yet picked\n", cdscpi);
+			cdscpi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			goto dscp_classifier_out;
+		}
+	} else {
+		/*
+		 * If the acceleration delay option is enabled, we will wait
+		 * until seeing both side traffic.
+		 *
+		 * There are 2 options:
+		 * Option 1: Wait forever until to see the reply direction traffic
+		 * Option 2: Wait for seeing N number of packets. If we still don't see reply,
+		 * set the uni-directional values.
+		 */
+		if (ecm_classifier_accel_delay_pkts) {
+			/*
+			 * Stop the processing if both side packets are already seen.
+			 * Above the process response is already set to allow the
+			 * acceleration.
+			 */
+			if (ecm_classifier_dscp_is_bidi_packet_seen(cdscpi)) {
+				DEBUG_TRACE("%px: UDP bi-di packets seen\n", cdscpi);
+				goto done;
+			}
+
+			/*
+			 * Store the QoS and DSCP info in the classifier instance and allow the
+			 * acceleration if both side info is not yet available.
+			 */
+			ecm_classifier_dscp_fill_info(cdscpi, sender, ip_hdr, skb);
+			if (ecm_classifier_dscp_is_bidi_packet_seen(cdscpi)) {
+				DEBUG_TRACE("%px: UDP both side info is picked\n", cdscpi);
+				goto done;
+			}
+
+			/*
+			 * Deny the acceleration if any of the below options holds true.
+			 * For option 1, we wait forever
+			 * For option 2, we wait until seeing ecm_classifier_accel_delay_pkts.
+			 */
+			if ((ecm_classifier_accel_delay_pkts == 1) || (slow_pkts < ecm_classifier_accel_delay_pkts)) {
+				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %d accel is not allowed yet\n",
+						cdscpi, ecm_classifier_accel_delay_pkts, slow_pkts);
+				cdscpi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				goto dscp_classifier_out;
+			}
+		}
+
+		/*
+		 * If we didn't see both direction traffic during the acceleration
+		 * delay time, we can allow the acceleration by setting the uni-directional
+		 * values to both flow and return QoS and DSCP.
+		 */
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			cdscpi->process_response.flow_qos_tag = skb->priority;
+			cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+
+			/*
+			 * If UDP bi-di traffic is being run, it is possible that other direction's
+			 * QoS and DSCP values are also set by the subsequent packets before we push
+			 * the rule to NSS. So, let's update them, if they are not set.
+			 */
+			if (cdscpi->process_response.return_qos_tag == 0) {
+				cdscpi->process_response.return_qos_tag = skb->priority;
+			}
+
+			if (cdscpi->process_response.return_dscp == 0) {
+				cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+			}
+
+		} else {
+			cdscpi->process_response.return_qos_tag = skb->priority;
+			cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+
+			/*
+			 * If UDP bi-di traffic is being run, it is possible that other direction's
+			 * QoS and DSCP values are also set by the subsequent packets before we push
+			 * the rule to NSS. So, let's update them, if they are not set.
+			 */
+			if (cdscpi->process_response.flow_qos_tag == 0) {
+				cdscpi->process_response.flow_qos_tag = skb->priority;
+			}
+
+			if (cdscpi->process_response.flow_dscp == 0) {
+				cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+			}
+		}
+	}
+done:
+	cdscpi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	/*
@@ -435,8 +476,6 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	 * Check if we need to set DSCP
 	 */
 	if (dscp_marked) {
-		cdscpi->process_response.flow_dscp = flow_dscp;
-		cdscpi->process_response.return_dscp = return_dscp;
 		cdscpi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
 	}
 
