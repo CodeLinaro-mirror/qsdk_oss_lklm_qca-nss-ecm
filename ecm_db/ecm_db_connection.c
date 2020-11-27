@@ -1509,6 +1509,74 @@ void ecm_db_connection_defunct_all(void)
 EXPORT_SYMBOL(ecm_db_connection_defunct_all);
 
 /*
+ * ecm_db_connection_defunct_by_port()
+ *	 Make defunct based on source or destination port.
+ */
+void ecm_db_connection_defunct_by_port(int port, ecm_db_obj_dir_t dir)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_INFO("Defuncting all matching connections by port %d\n", port);
+
+	/*
+	 * Iterate all connections
+	 */
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
+
+		/*
+		 * Flush the connection matching with given port address and flow direction
+		 */
+		if (port == htons(ecm_db_connection_port_get(ci, dir))) {
+			DEBUG_TRACE("%px: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+		}
+
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+	DEBUG_INFO("Port based Defuncting complete\n");
+}
+EXPORT_SYMBOL(ecm_db_connection_defunct_by_port);
+
+/*
+ * ecm_db_connection_defunct_by_protocol()
+ * 	Make defunct based on protocol.
+ */
+void ecm_db_connection_defunct_by_protocol(int protocol)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_INFO("Defuncting all matching connections by protocol %d\n", protocol);
+
+	/*
+	 * Iterate all connections
+	 */
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
+
+		/*
+		 * Flush the connection matching with given protocol
+		 */
+		if (protocol == ecm_db_connection_protocol_get(ci)) {
+			DEBUG_TRACE("%px: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+		}
+
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+	DEBUG_INFO("Protocol based defuncting complete\n");
+}
+EXPORT_SYMBOL(ecm_db_connection_defunct_by_protocol);
+
+/*
  * ecm_db_connection_defunct_ip_version()
  *	Make defunct based on the IP version (IPv4 or IPv6).
  */

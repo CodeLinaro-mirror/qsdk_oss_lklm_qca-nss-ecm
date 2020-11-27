@@ -632,12 +632,12 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md, uint8_t newpr
 	DEBUG_TRACE("SP update notification received\n");
 
 	/*
-	 * Destroy all the connections.
+	 * Destroy all the connections that are currently assigned to Emesh classifier
 	 * The usage of the incoming parameters in this service prioritization
 	 * callback will be done in future to perform more refined flush of
 	 * connections.
 	 */
-	ecm_db_connection_defunct_all();
+	ecm_db_connection_make_defunct_by_assignment_type(ECM_CLASSIFIER_TYPE_EMESH);
 }
 
 /*

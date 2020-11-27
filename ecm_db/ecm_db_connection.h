@@ -283,6 +283,8 @@ struct ecm_db_connection_instance *ecm_db_connections_get_and_ref_first(void);
 struct ecm_db_connection_instance *ecm_db_connection_get_and_ref_next(struct ecm_db_connection_instance *ci);
 
 void ecm_db_connection_defunct_all(void);
+void ecm_db_connection_defunct_by_port(int port, ecm_db_obj_dir_t dir);
+void ecm_db_connection_defunct_by_protocol(int protocol);
 void ecm_db_connection_defunct_ip_version(int ip_version);
 
 struct ecm_db_connection_instance *ecm_db_connection_serial_find_and_ref(uint32_t serial);
