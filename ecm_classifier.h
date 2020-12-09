@@ -162,7 +162,9 @@ struct ecm_classifier_rule_sync {
  * the underlying accelaration engine.
  */
 struct ecm_classifier_rule_create {
-
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	struct sk_buff *skb;
+#endif
 };
 
 /*

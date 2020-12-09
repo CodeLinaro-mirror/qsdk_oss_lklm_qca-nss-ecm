@@ -26,7 +26,6 @@
 #include <linux/netfilter_bridge.h>
 #include <net/ip.h>
 #include <linux/inet.h>
-
 #include <sp_api.h>
 
 /*
@@ -47,11 +46,18 @@
 #include "ecm_classifier.h"
 #include "ecm_db.h"
 #include "ecm_interface.h"
+#include "ecm_classifier_emesh_public.h"
 
 /*
  * Magic numbers
  */
 #define ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC 0xFECA
+
+/*
+ * Latency parameter operation
+ */
+#define ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS 0x1
+#define ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS 0x2
 
 /*
  * struct ecm_classifier_emesh_instance
@@ -78,7 +84,8 @@ struct ecm_classifier_emesh_instance {
 /*
  * Operational control
  */
-static uint32_t ecm_classifier_emesh_enabled = 0;			/* Operational behaviour */
+static uint32_t ecm_classifier_emesh_enabled;			/* Operational behaviour */
+static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency profile enable flag */
 
 /*
  * Management thread control
@@ -101,6 +108,11 @@ static DEFINE_SPINLOCK(ecm_classifier_emesh_lock);			/* Protect SMP access. */
 static struct ecm_classifier_emesh_instance *ecm_classifier_emesh_instances = NULL;
 								/* list of all active instances */
 static int ecm_classifier_emesh_count = 0;			/* Tracks number of instances allocated */
+
+/*
+ * Callback structure to support Mesh latency param config in WLAN driver
+ */
+static struct ecm_classifier_emesh_callbacks ecm_emesh;
 
 /*
  * ecm_classifier_emesh_ref()
@@ -386,6 +398,7 @@ done:
 	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 
+
 	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
 			((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
 		cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
@@ -417,15 +430,100 @@ static void ecm_classifier_emesh_sync_to_v4(struct ecm_classifier_instance *aci,
 }
 
 /*
+ * ecm_classifier_emesh_update_wlan_latency_params()
+ *	Update wifi latency parameters associated with SP rule to wlan host driver
+ */
+static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifier_instance *aci,
+		struct ecm_classifier_rule_create *ecrc)
+{
+	struct ecm_classifier_emesh_instance *cemi;
+	struct ecm_db_connection_instance *ci;
+	uint8_t service_interval;
+	uint32_t burst_size;
+	uint8_t *peer_mac;
+	struct sk_buff *skb;
+
+	/*
+	 * Return if E-Mesh functionality is not enabled.
+	 */
+	if (!ecm_classifier_emesh_enabled) {
+		return;
+	}
+
+	if (!ecm_classifier_emesh_latency_config_enabled) {
+		/*
+		 * Flow based latency parameter updation to WLAN host driver not enabled
+		 */
+		return;
+	}
+
+	skb = ecrc->skb;
+
+	cemi = (struct ecm_classifier_emesh_instance *)aci;
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
+	/*
+	 * Invoke SPM rule lookup API to update skb priority
+	 * When latency config is enabled, fetch latency parameter
+	 * associated with a SPM rule
+	 */
+	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size);
+
+	/*
+	 * If one of the latency parameters are zero, there could be
+	 * 2 possibilities - 1. no rule match 2. sp rule does not have
+	 * latency parameter configured.
+	 */
+	if (!service_interval || !burst_size) {
+		return;
+	}
+
+	/*
+	 * When mesh low latency feature flags is enabled, ECM gets
+	 * latency config parameters associated with a SPM rule and send
+	 * to WLAN host driver invoking callback
+	 */
+	if (!ecm_emesh.update_peer_mesh_latency_params) {
+		return;
+	}
+
+	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+	if (!ci) {
+		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+		return;
+	}
+
+	/*
+	 * Invoke callback registered from NSS client to send latency parameter
+	 * to WLAN host driver. In this case, latency parameters should be added
+	 * in WLAN FW. Get mac address for both direction, let WLAN host driver
+	 * to find if mac address belongs to any wlan peer
+	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
+
+	/*
+	 * Send destination mac address of this connection
+	 */
+	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+			service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
+	/*
+	 * Send source mac address of this connection
+	 */
+	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+			service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+	ecm_db_connection_deref(ci);
+}
+
+/*
  * ecm_classifier_emesh_sync_from_v4()
  *	Front end is retrieving accel engine state from us
  */
 static void ecm_classifier_emesh_sync_from_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
-	struct ecm_classifier_emesh_instance *cemi __attribute__((unused));
+	ecm_classifier_emesh_update_wlan_latency_params(aci, ecrc);
 
-	cemi = (struct ecm_classifier_emesh_instance *)aci;
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
 }
 
 /*
@@ -446,10 +544,7 @@ static void ecm_classifier_emesh_sync_to_v6(struct ecm_classifier_instance *aci,
  */
 static void ecm_classifier_emesh_sync_from_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
-	struct ecm_classifier_emesh_instance *cemi __attribute__((unused));
-
-	cemi = (struct ecm_classifier_emesh_instance *)aci;
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+	ecm_classifier_emesh_update_wlan_latency_params(aci, ecrc);
 }
 
 /*
@@ -617,6 +712,63 @@ struct ecm_classifier_emesh_instance *ecm_classifier_emesh_instance_alloc(struct
 EXPORT_SYMBOL(ecm_classifier_emesh_instance_alloc);
 
 /*
+ * ecm_classifier_emesh_update_mesh_latency()
+ *	Update mesh latency parameters to wlan host driver when sp rule gets deleted
+ */
+void ecm_classifier_emesh_update_mesh_latency_param(uint32_t service_interval, uint32_t burst_size, uint8_t priority)
+{
+	struct ecm_db_connection_instance *ci;
+
+	if (!ecm_emesh.update_peer_mesh_latency_params) {
+		return;
+	}
+
+	/*
+	 * when any of the latency parameter associated with rule is zero
+	 * no need to update to wlan driver
+	 */
+	if (!service_interval || !burst_size) {
+		return;
+	}
+
+	/*
+	 * TODO: Optimize based on rule flag
+	 * currently pass mac address of connections to wlan host and let host driver
+	 * check if mac address belongs to any wlan peer
+	 */
+	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ECM_CLASSIFIER_TYPE_EMESH);
+
+	while (ci) {
+		/*
+		 * Invoke callback registered from NSS client to send latency parameter
+		 * to WLAN host driver. In this case, latency parameters should be substracted
+		 * in WLAN FW, set add_or_sub to 2 which indicates substraction in WLAN FW
+		 */
+		struct ecm_db_connection_instance *cin;
+		uint8_t *peer_mac;
+
+		/*
+		 * Get mac address for destination node
+		 */
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
+		ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+				service_interval, burst_size, priority, ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+		/*
+		 * Get mac address for source node
+		 */
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
+		ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+				service_interval, burst_size, priority, ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+
+		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		ecm_db_connection_by_classifier_type_assignment_deref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		ci = cin;
+	}
+}
+
+/*
  * ecm_classifier_emesh_rule_update_cb()
  *	Callback for service prioritization notification update.
  */
@@ -631,6 +783,19 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md,
 	if (!ecm_classifier_emesh_enabled) {
 		return;
 	}
+
+	/*
+	 * If mesh latency config is enabled and sp rule is getting deleted,
+	 * send service interval and burst size associated with rule to
+	 * WLAN host driver by invoking callback registered from NSS client.
+	 * service interval is minimum latency expectation and used by Wi-Fi FW
+	 * for peer tid queue scheduling
+	 */
+	if (ecm_classifier_emesh_latency_config_enabled
+			&& (add_rm_md == SP_MAPDB_REMOVE_RULE)) {
+		ecm_classifier_emesh_update_mesh_latency_param(r->inner.service_interval, r->inner.burst_size, r->inner.rule_output);
+	}
+
 
 	DEBUG_TRACE("SP rule update notification received\n");
 	/*
@@ -706,36 +871,33 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md,
 }
 
 /*
- * ecm_classifier_emesh_get_enabled()
+ * ecm_classifier_emesh_latency_config_callback_register()
  */
-static int ecm_classifier_emesh_get_enabled(void *data, u64 *val)
+int ecm_classifier_emesh_latency_config_callback_register(struct ecm_classifier_emesh_callbacks *emesh_cb)
 {
-	*val = ecm_classifier_emesh_enabled;
-
-	return 0;
-}
-
-/*
- * ecm_classifier_emesh_set_enabled()
- */
-static int ecm_classifier_emesh_set_enabled(void *data, u64 val)
-{
-	DEBUG_TRACE("ecm_classifier_emesh_enabled = %u\n", (uint32_t)val);
-
-	if ((val != 0) && (val != 1)) {
-		DEBUG_WARN("Invalid value: %u. Valid values are 0 and 1.\n", (uint32_t)val);
-		return -EINVAL;
+	spin_lock_bh(&ecm_classifier_emesh_lock);
+	if (ecm_emesh.update_peer_mesh_latency_params) {
+		spin_unlock_bh(&ecm_classifier_emesh_lock);
+		DEBUG_ERROR("EMESH latency config callbacks are registered\n");
+		return -1;
 	}
 
-	ecm_classifier_emesh_enabled = (uint32_t)val;
-
+	ecm_emesh.update_peer_mesh_latency_params = emesh_cb->update_peer_mesh_latency_params;
+	spin_unlock_bh(&ecm_classifier_emesh_lock);
 	return 0;
 }
+EXPORT_SYMBOL(ecm_classifier_emesh_latency_config_callback_register);
 
 /*
- * Debugfs attribute for Emesh Enabled parameter.
+ * ecm_classifier_emesh_latency_config_callback_unregister()
  */
-DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_emesh_enabled_fops, ecm_classifier_emesh_get_enabled, ecm_classifier_emesh_set_enabled, "%llu\n");
+void ecm_classifier_emesh_latency_config_callback_unregister(void)
+{
+	spin_lock_bh(&ecm_classifier_emesh_lock);
+	ecm_emesh.update_peer_mesh_latency_params = NULL;
+	spin_unlock_bh(&ecm_classifier_emesh_lock);
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_latency_config_callback_unregister);
 
 /*
  * ecm_classifier_emesh_init()
@@ -752,10 +914,16 @@ int ecm_classifier_emesh_init(struct dentry *dentry)
 		return -1;
 	}
 
-	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR,
-				 ecm_classifier_emesh_dentry, NULL,
-				 &ecm_classifier_emesh_enabled_fops)) {
-		DEBUG_ERROR("Failed to create emesh enabled file in debugfs\n");
+	if (!debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_dentry,
+				(u32 *)&ecm_classifier_emesh_enabled)) {
+		DEBUG_ERROR("Failed to create ecm emesh classifier enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_dentry);
+		return -1;
+	}
+
+	if (!debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_dentry,
+				(u32 *)&ecm_classifier_emesh_latency_config_enabled)) {
+		DEBUG_ERROR("Failed to create ecm emesh classifier latency config enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_dentry);
 		return -1;
 	}
