@@ -1871,7 +1871,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	switch(sync->reason) {
-	case NSS_IPV6_SYNC_REASON_DESTROY:
+	case NSS_IPV6_RULE_SYNC_REASON_DESTROY:
 		/*
 		 * This is the final sync from the NSS for a connection whose acceleration was
 		 * terminated by the ecm.
@@ -1879,8 +1879,8 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 		 */
 		DEBUG_INFO("%px: ECM initiated final sync seen: %d\n", ci, sync->reason);
 		break;
-	case NSS_IPV6_SYNC_REASON_FLUSH:
-	case NSS_IPV6_SYNC_REASON_EVICT:
+	case NSS_IPV6_RULE_SYNC_REASON_FLUSH:
+	case NSS_IPV6_RULE_SYNC_REASON_EVICT:
 		/*
 		 * NSS has ended acceleration without instruction from the ECM.
 		 */
