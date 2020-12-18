@@ -300,7 +300,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	if (result != ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
 		spin_lock_bh(&ecm_classifier_mscs_lock);
-		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 		goto mscs_classifier_out;
 	}
 
