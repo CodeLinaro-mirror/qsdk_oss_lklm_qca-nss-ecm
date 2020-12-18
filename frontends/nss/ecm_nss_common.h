@@ -362,3 +362,57 @@ static inline bool ecm_nss_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 #endif
 	return false;
 }
+
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+/*
+ * ecm_nss_common_fill_mirror_info()
+ *	Fill Mirror information.
+ */
+static inline bool ecm_nss_common_fill_mirror_info(struct ecm_classifier_process_response *pr,
+		nss_if_num_t *flow_mirror_ifnum, nss_if_num_t *return_mirror_ifnum)
+{
+	struct net_device *mirror_dev;
+
+	/*
+	 * Initialize both mirror interfaces to invalid.
+	 */
+	*flow_mirror_ifnum = -1;
+	*return_mirror_ifnum = -1;
+
+	if (pr->flow_mirror_ifindex > 0) {
+		mirror_dev = dev_get_by_index(&init_net, pr->flow_mirror_ifindex);
+		if (!mirror_dev) {
+			DEBUG_ERROR("Invalid mirror flow index number: %d\n", pr->flow_mirror_ifindex);
+			return false;
+		}
+
+		*flow_mirror_ifnum = ecm_nss_common_get_interface_number_by_dev_type(mirror_dev,
+				NSS_DYNAMIC_INTERFACE_TYPE_MIRROR);
+		if (*flow_mirror_ifnum < 0) {
+			DEBUG_ERROR("Invalid mirror interface: %s\n", mirror_dev->name);
+			dev_put(mirror_dev);
+			return false;
+		}
+		dev_put(mirror_dev);
+	}
+
+	if (pr->return_mirror_ifindex > 0) {
+		mirror_dev = dev_get_by_index(&init_net, pr->return_mirror_ifindex);
+		if (!mirror_dev) {
+			DEBUG_ERROR("Invalid mirror return index number: %d\n", pr->return_mirror_ifindex);
+			return false;
+		}
+
+		*return_mirror_ifnum = ecm_nss_common_get_interface_number_by_dev_type(mirror_dev,
+				NSS_DYNAMIC_INTERFACE_TYPE_MIRROR);
+		if (*return_mirror_ifnum < 0) {
+			DEBUG_ERROR("Invalid mirror interface: %s\n", mirror_dev->name);
+			dev_put(mirror_dev);
+			return false;
+		}
+		dev_put(mirror_dev);
+	}
+
+	return true;
+}
+#endif

@@ -1062,6 +1062,31 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+	/*
+	 * Set up the interfaces for mirroring.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED) {
+		if (!ecm_nss_common_fill_mirror_info(pr, &nircm->mirror_rule.flow_ifnum,
+					 &nircm->mirror_rule.return_ifnum)) {
+			DEBUG_WARN("Invalid Mirror interface information\n");
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+
+		if (nircm->mirror_rule.flow_ifnum != -1) {
+			nircm->mirror_rule.valid |= NSS_IPV4_MIRROR_FLOW_VALID;
+		}
+
+		if (nircm->mirror_rule.return_ifnum != -1) {
+			nircm->mirror_rule.valid |= NSS_IPV4_MIRROR_RETURN_VALID;
+		}
+
+		nircm->valid_flags |= NSS_IPV4_RULE_CREATE_MIRROR_VALID;
+	}
+#endif
+
 	if (ecm_nss_ipv4_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
 	   (nircm->vlan_primary_rule.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
 	   (nircm->vlan_primary_rule.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
@@ -2818,6 +2843,22 @@ done:
 			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh Service Prioritization is valid\n",
 					ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
+		}
+#endif
+
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+		/*
+		 * Mirror flag
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow_mirror_ifindex: %d"
+					" return_mirror_ifindex: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.flow_mirror_ifindex,
+					aci_pr.return_mirror_ifindex);
+			prevalent_pr.flow_mirror_ifindex = aci_pr.flow_mirror_ifindex;
+			prevalent_pr.return_mirror_ifindex = aci_pr.return_mirror_ifindex;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED;
 		}
 #endif
 	}
