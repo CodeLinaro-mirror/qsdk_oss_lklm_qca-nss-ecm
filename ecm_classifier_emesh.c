@@ -1,6 +1,6 @@
 /*
  ***************************************************************************
- * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -46,6 +46,7 @@
 #include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
 #include "ecm_db.h"
+#include "ecm_interface.h"
 
 /*
  * Magic numbers
@@ -619,9 +620,11 @@ EXPORT_SYMBOL(ecm_classifier_emesh_instance_alloc);
  * ecm_classifier_emesh_rule_update_cb()
  *	Callback for service prioritization notification update.
  */
-static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md, uint8_t newprec,
-		 uint8_t oldprec, bool field_update, struct sp_rule *r)
+static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md,
+		         uint32_t valid_flag, struct sp_rule *r)
 {
+	ip_addr_t ip_addr;
+	struct in6_addr ipv6addr = IN6ADDR_ANY_INIT;
 	/*
 	 * Return if E-Mesh functionality is not enabled.
 	 */
@@ -629,7 +632,69 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md, uint8_t newpr
 		return;
 	}
 
-	DEBUG_TRACE("SP update notification received\n");
+	DEBUG_TRACE("SP rule update notification received\n");
+	/*
+	 * Order of priority of rule fields to match and flush connections:
+	 * Port ---> IP address ---> Mac Address ---> Protocol
+	 * Flush connections for both directions as ECM creates reverse
+	 * direction rule as well
+	 */
+	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_PORT) {
+		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_DST_PORT) {
+		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.src_ipv4_addr);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.dst_ipv4_addr);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV6) {
+		memcpy(ipv6addr.s6_addr32, r->inner.src_ipv6_addr, 4);
+		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV6) {
+		memcpy(ipv6addr.s6_addr32, r->inner.dst_ipv6_addr, 4);
+		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_SOURCE_MAC) {
+		ecm_interface_node_connections_defunct((uint8_t *)r->inner.sa, ECM_DB_IP_VERSION_IGNORE);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_DST_MAC) {
+		ecm_interface_node_connections_defunct((uint8_t *)r->inner.da, ECM_DB_IP_VERSION_IGNORE);
+		return;
+	}
+
+	if (valid_flag & SP_RULE_FLAG_MATCH_PROTOCOL) {
+		ecm_db_connection_defunct_by_protocol(r->inner.protocol_number);
+		return;
+	}
 
 	/*
 	 * Destroy all the connections that are currently assigned to Emesh classifier
