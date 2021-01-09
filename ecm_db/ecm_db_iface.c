@@ -114,7 +114,8 @@ static char *ecm_db_interface_type_names[ECM_DB_IFACE_TYPE_COUNT] = {
 	"RAWIP",
 	"OVPN",
 	"VxLAN",
-	"OVS_BRIDGE"
+	"OVS_BRIDGE",
+	"MACVLAN"
 };
 
 /*
@@ -381,6 +382,39 @@ static int ecm_db_iface_bridge_state_get(struct ecm_db_iface_instance *ii, struc
 	return ecm_state_prefix_remove(sfi);
 }
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+/*
+ * ecm_db_iface_macvlan_state_get()
+ * 	Return interface type specific state
+ */
+static int ecm_db_iface_macvlan_state_get(struct ecm_db_iface_instance *ii, struct ecm_state_file_instance *sfi)
+{
+	int result;
+	uint8_t address[ETH_ALEN];
+
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed\n", ii);
+	spin_lock_bh(&ecm_db_lock);
+	memcpy(address, ii->type_info.macvlan.address, ETH_ALEN);
+	spin_unlock_bh(&ecm_db_lock);
+
+	if ((result = ecm_state_prefix_add(sfi, "macvlan"))) {
+		return result;
+	}
+
+	if ((result = ecm_db_iface_state_get_base(ii, sfi))) {
+		goto done;
+	}
+
+	if ((result = ecm_state_write(sfi, "address", "%pM", address))) {
+		goto done;
+	}
+
+done:
+	ecm_state_prefix_remove(sfi);
+	return result;
+}
+#endif
+
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
  * ecm_db_iface_ovs_bridge_state_get()
@@ -475,7 +509,7 @@ static int ecm_db_iface_pppoe_state_get(struct ecm_db_iface_instance *ii, struct
 		return result;
 	}
 
-	if ((result = ecm_state_write(sfi, "remote_max", "%pM", remote_mac))) {
+	if ((result = ecm_state_write(sfi, "remote_mac", "%pM", remote_mac))) {
 		return result;
 	}
 	if ((result = ecm_state_write(sfi, "session_id", "%u", pppoe_session_id))) {
@@ -1645,6 +1679,58 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vlan(uint8_t *address, u
 EXPORT_SYMBOL(ecm_db_iface_find_and_ref_vlan);
 #endif
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+/*
+ * ecm_db_iface_find_and_ref_macvlan()
+ *	Lookup and return a iface reference if any
+ */
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_macvlan(uint8_t *address)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_TRACE("Lookup macvlan iface with addr %pM\n", address);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+
+	/*
+	 * Iterate the chain looking for a host with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ii = ecm_db_iface_table[hash_index];
+	while (ii) {
+		if ((ii->type != ECM_DB_IFACE_TYPE_MACVLAN) || !ether_addr_equal(ii->type_info.macvlan.address, address)) {
+			ii = ii->hash_next;
+			continue;
+		}
+
+		_ecm_db_iface_ref(ii);
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("iface found %px\n", ii);
+		return ii;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Iface not found\n");
+	return NULL;
+}
+
+/*
+ * ecm_db_iface_macvlan_address_get()
+ *	Obtain the ethernet address for a macvlan interface
+ */
+void ecm_db_iface_macvlan_address_get(struct ecm_db_iface_instance *ii, uint8_t *address)
+{
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed", ii);
+	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_MACVLAN, "%px: Bad type, expected macvlan, actual: %d\n", ii, ii->type);
+	ether_addr_copy(address, ii->type_info.macvlan.address);
+	spin_unlock_bh(&ecm_db_lock);
+}
+#endif
+
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 /*
  * ecm_db_iface_find_and_ref_vxlan()
@@ -2745,6 +2831,57 @@ void ecm_db_iface_add_ovs_bridge(struct ecm_db_iface_instance *ii, uint8_t *addr
 	 */
 	type_info = &ii->type_info.ovsb;
 	memcpy(type_info->address, address, ETH_ALEN);
+
+	/*
+	 * Compute hash chain for insertion
+	 */
+	hash_index = ecm_db_iface_generate_hash_index_ethernet(address);
+
+	ecm_db_iface_add_to_db(ii, hash_index);
+}
+#endif
+
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+/*
+ * ecm_db_iface_add_macvlan()
+ *	Add a iface instance into the database
+ */
+void ecm_db_iface_add_macvlan(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
+					int32_t interface_identifier, int32_t ae_interface_identifier,
+					ecm_db_iface_final_callback_t final, void *arg)
+{
+	ecm_db_iface_hash_t hash_index;
+	struct ecm_db_interface_info_macvlan *type_info;
+
+	spin_lock_bh(&ecm_db_lock);
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed\n", ii);
+	DEBUG_ASSERT(address, "%px: address null\n", ii);
+#ifdef ECM_DB_XREF_ENABLE
+	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%px: nodes not null\n", ii);
+#endif
+	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%px: inserted\n", ii);
+	DEBUG_ASSERT(name, "%px: no name given\n", ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Record general info
+	 */
+	ii->type = ECM_DB_IFACE_TYPE_MACVLAN;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	ii->state_get = ecm_db_iface_macvlan_state_get;
+#endif
+	ii->arg = arg;
+	ii->final = final;
+	strlcpy(ii->name, name, IFNAMSIZ);
+	ii->mtu = mtu;
+	ii->interface_identifier = interface_identifier;
+	ii->ae_interface_identifier = ae_interface_identifier;
+
+	/*
+	 * Type specific info
+	 */
+	type_info = &ii->type_info.macvlan;
+	ether_addr_copy(type_info->address, address);
 
 	/*
 	 * Compute hash chain for insertion

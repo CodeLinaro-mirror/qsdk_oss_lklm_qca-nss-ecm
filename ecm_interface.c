@@ -91,6 +91,9 @@
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #include <ovsmgr.h>
 #endif
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+#include <linux/if_macvlan.h>
+#endif
 
 /*
  * Debug output levels
@@ -1476,6 +1479,58 @@ static struct ecm_db_iface_instance *ecm_interface_vlan_interface_establish(stru
 }
 #endif
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+/*
+ * ecm_interface_macvlan_interface_establish()
+ *	Returns a reference to a iface of the MACVLAN type, possibly creating one if necessary.
+ * Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_macvlan_interface_establish(struct ecm_db_interface_info_macvlan *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish MACVLAN iface: %s with address: %pM, MTU: %d, if num: %d, accel engine if id: %d\n",
+			dev_name, type_info->address, mtu, dev_interface_num, ae_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_macvlan(type_info->address);
+	if (ii) {
+		DEBUG_TRACE("%px: iface established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_macvlan(type_info->address);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+	ecm_db_iface_add_macvlan(nii, type_info->address, dev_name,
+			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%px: MACVLAN iface established\n", nii);
+	return nii;
+}
+#endif
+
 #if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MULTICAST_ENABLE)
 /*
  * ecm_interface_multicast_ovs_to_interface_get_and_ref()
@@ -2738,6 +2793,28 @@ port_find:
 }
 #endif
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+/*
+ * ecm_interface_macvlan_mode_is_valid()
+ * 	Check if the macvlan interface allowed for acceleration.
+ */
+static bool ecm_interface_macvlan_mode_is_valid(struct net_device *dev)
+{
+	enum macvlan_mode mode = macvlan_get_mode(dev);
+
+	/*
+	 * Allow acceleration for only "Private" mode.
+	 */
+	if (mode == MACVLAN_MODE_PRIVATE) {
+		return true;
+	}
+
+	DEBUG_WARN("%px: MACVLAN dev: %s, MACVLAN mode: %d is not supported for acceleration\n", dev,
+			dev->name, mode);
+	return false;
+}
+#endif
+
 /*
  * ecm_interface_establish_and_ref()
  *	Establish an interface instance for the given interface detail.
@@ -2756,6 +2833,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		struct ecm_db_interface_info_ethernet ethernet;		/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan;			/* type == ECM_DB_IFACE_TYPE_VLAN */
+#endif
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+		struct ecm_db_interface_info_macvlan macvlan;		/* type == ECM_DB_IFACE_TYPE_MACVLAN */
 #endif
 #ifdef ECM_INTERFACE_BOND_ENABLE
 		struct ecm_db_interface_info_lag lag;			/* type == ECM_DB_IFACE_TYPE_LAG */
@@ -2874,6 +2954,28 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			 */
 			ii = ecm_interface_vlan_interface_establish(&type_info.vlan, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			goto identifier_update;
+		}
+#endif
+
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+		/*
+		 * MACVLAN?
+		 */
+		if (netif_is_macvlan(dev)) {
+			if (ecm_interface_macvlan_mode_is_valid(dev)) {
+				ether_addr_copy(type_info.macvlan.address, dev->dev_addr);
+				DEBUG_TRACE("%px: Net device: %px is MACVLAN, mac: %pM\n",
+						feci, dev, type_info.macvlan.address);
+
+				/*
+				 * Establish this type of interface
+				 */
+				ii = ecm_interface_macvlan_interface_establish(&type_info.macvlan, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+				goto identifier_update;
+			}
+
+			DEBUG_WARN("%px: Net device %px MACVLAN mode is not supported.\n", feci, dev);
+			return NULL;
 		}
 #endif
 
@@ -3711,6 +3813,21 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 					dev_hold(next_dev);
 					break;
 				}
+
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+				/*
+				 * MAC-VLAN?
+				 */
+				if (netif_is_macvlan(dest_dev)) {
+					if (ecm_interface_macvlan_mode_is_valid(dest_dev)) {
+						next_dev = macvlan_dev_real_dev(dest_dev);
+						dev_hold(next_dev);
+						DEBUG_TRACE("%px: Net device: %px is MAC-VLAN, slave dev: %px (%s)\n",
+								feci, dest_dev, next_dev, next_dev->name);
+						break;
+					}
+				}
+#endif
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 				/*
@@ -4859,6 +4976,35 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				}
 #endif
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+				/*
+				 * MAC-VLAN?
+				 */
+				if (netif_is_macvlan(dest_dev)) {
+					if (ecm_interface_macvlan_mode_is_valid(dest_dev)) {
+						next_dev = macvlan_dev_real_dev(dest_dev);
+						dev_hold(next_dev);
+						DEBUG_TRACE("%px: Net device: %px is MAC-VLAN, slave dev: %px (%s)\n",
+								feci, dest_dev, next_dev, next_dev->name);
+
+						/*
+						 * We need to take the master_dev's MAC address during
+						 * NSS rule push. During VLAN/MACVLAN the master_dev for the
+						 * physical interface will be set to NULL but still we need the
+						 * VLAN/MACVLAN dev's MAC address while pushing the rule. We identify
+						 * the same using top_dev variable.
+						 */
+						if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
+							top_dev = dest_dev;
+						}
+						break;
+					}
+
+					DEBUG_WARN("%px: Net device %px MACVLAN mode is not supported.\n", feci, dest_dev);
+					goto done;
+				}
+#endif
+
 				/*
 				 * BRIDGE?
 				 */
@@ -5720,6 +5866,21 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 				}
 #endif
 
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+				/*
+				 * MAC-VLAN?
+				 */
+				if (netif_is_macvlan(dest_dev)) {
+					if (ecm_interface_macvlan_mode_is_valid(dest_dev)) {
+						next_dev = macvlan_dev_real_dev(dest_dev);
+						dev_hold(next_dev);
+						DEBUG_TRACE("%px: Net device: %px is MAC-VLAN, slave dev: %px (%s)\n",
+								feci, dest_dev, next_dev, next_dev->name);
+						break;
+					}
+				}
+#endif
+
 				/*
 				 * BRIDGE?
 				 */
@@ -6178,10 +6339,13 @@ static void ecm_interface_ovpn_stats_update(struct net_device *dev, ip_addr_t fr
  *	Given an interface list, walk the interfaces and update the stats for certain types.
  */
 static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_iface_instance *iface_list[],
-					uint8_t *mac_addr, bool is_mcast_flow, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets,
+					uint8_t *mac_addr, bool is_mcast_to_if, uint32_t tx_packets, uint32_t tx_bytes, uint32_t rx_packets,
 					uint32_t rx_bytes, bool is_ported, struct ecm_db_connection_instance *ci)
 {
 	int list_index;
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+	bool update_mcast_rx_stats = false;
+#endif
 
 	for (list_index = iface_list_first; (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
 		struct ecm_db_iface_instance *ii;
@@ -6204,7 +6368,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 		}
 		DEBUG_TRACE("found dev: %px (%s)\n", dev, dev->name);
 
-		if (likely(!is_mcast_flow)) {
+		if (likely(!is_mcast_to_if)) {
 			/*
 			 * Refresh the bridge forward table entry if the port is a bridge port.
 			 * Refresh if the ci is a 3-tuple PPPoE bridge flow.
@@ -6262,6 +6426,24 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 				ecm_interface_ovpn_stats_update(dev, from_addr, to_addr);
 			}
 			break;
+#endif
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+			case ECM_DB_IFACE_TYPE_MACVLAN:
+				DEBUG_INFO("MACVLAN\n");
+				stats.rx_packets = rx_packets;
+				stats.rx_bytes = rx_bytes;
+				stats.tx_packets = tx_packets;
+				stats.tx_bytes = tx_bytes;
+#ifdef ECM_MULTICAST_ENABLE
+				/*
+				 * Update multicast rx statistics only for
+				 * 'from' interface.
+				 */
+				update_mcast_rx_stats = (!is_mcast_to_if &&
+							ecm_db_multicast_connection_to_interfaces_set_check(ci));
+#endif
+				macvlan_offload_stats_update(dev, &stats, update_mcast_rx_stats);
+				break;
 #endif
 			default:
 				/*
@@ -6363,7 +6545,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 	DEBUG_INFO("%px: Update from interface stats\n", ci);
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, mac_addr);
-	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, from_tx_packets, from_tx_bytes, from_rx_packets, from_rx_bytes, is_ported, ci);
+	ecm_interface_list_stats_update(from_ifaces_first, from_ifaces, mac_addr, false, 0, 0, from_rx_packets, from_rx_bytes, is_ported, ci);
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
@@ -6387,7 +6569,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 		if (to_ifaces_first[if_index] < ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ii_temp = ecm_db_multicast_if_heirarchy_get(to_ifaces, if_index);
 			ecm_db_multicast_copy_if_heirarchy(to_list_single, ii_temp);
-			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported, ci);
+			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, from_tx_packets, from_tx_bytes, 0, 0, is_ported, ci);
 		}
 	}
 

@@ -277,6 +277,7 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_OVPN,				/* Interface is a OVPN interface */
 	ECM_DB_IFACE_TYPE_VXLAN,			/* Interface is a VxLAN interface */
 	ECM_DB_IFACE_TYPE_OVS_BRIDGE,			/* Interface is a OpenvSwitch bridge interface */
+	ECM_DB_IFACE_TYPE_MACVLAN,			/* Interface is a MACVLAN interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -300,6 +301,12 @@ struct ecm_db_interface_info_vlan {			/* type == ECM_DB_IFACE_TYPE_VLAN */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 	uint16_t vlan_tpid;				/* VLAN tag protocol id */
 	uint16_t vlan_tag;				/* VLAN tag of this interface */
+};
+#endif
+
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+struct ecm_db_interface_info_macvlan {			/* type == ECM_DB_IFACE_TYPE_MACVLAN */
+	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 };
 #endif
 
