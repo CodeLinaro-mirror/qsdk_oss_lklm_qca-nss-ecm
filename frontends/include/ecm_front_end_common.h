@@ -305,10 +305,6 @@ extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct sk_buff *skb,
 						      struct nf_conntrack_tuple *tuple,
 						      int ip_version);
-extern bool ecm_front_end_tcp_check_ct_and_fill_dscp(struct nf_conn *ct,
-						     struct ecm_tracker_ip_header *iph,
-						     struct sk_buff *skb,
-						     ecm_tracker_sender_type_t sender);
 void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 					ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat,
 					ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
