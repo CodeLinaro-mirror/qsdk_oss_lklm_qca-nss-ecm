@@ -60,6 +60,12 @@
 #define ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS 0x2
 
 /*
+ * Flag to enable SPM rule lookup
+ */
+#define ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP 0x1
+#define ECM_CLASSIFIER_EMESH_ENABLE_LATENCY_UPDATE 0x2
+
+/*
  * struct ecm_classifier_emesh_instance
  * 	State to allow tracking of dynamic qos for a connection
  */
@@ -262,6 +268,28 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 	}
 	spin_unlock_bh(&ecm_classifier_emesh_lock);
 
+	if (ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP) {
+		uint8_t dmac[ETH_ALEN];
+		uint8_t smac[ETH_ALEN];
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			DEBUG_TRACE("%px: sender is SRC\n", aci);
+			ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+			ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+		} else {
+			DEBUG_TRACE("%px: sender is DEST\n", aci);
+			ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
+			ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
+		}
+
+		/*
+		 * Invoke SPM rule lookup API for skb priority update
+		 * For bridging traffic, it will be matched with the rule table on SPM prerouting hook
+		 */
+		if (skb->skb_iif != skb->dev->ifindex) {
+			sp_mapdb_apply(skb, smac, dmac);
+		}
+	}
+
 	/*
 	 * Can we accelerate?
 	 */
@@ -440,8 +468,9 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 	struct ecm_db_connection_instance *ci;
 	uint8_t service_interval;
 	uint32_t burst_size;
-	uint8_t peer_mac[ETH_ALEN];
 	struct sk_buff *skb;
+	uint8_t dmac[ETH_ALEN];
+	uint8_t smac[ETH_ALEN];
 
 	/*
 	 * Return if E-Mesh functionality is not enabled.
@@ -450,31 +479,11 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 		return;
 	}
 
-	if (!ecm_classifier_emesh_latency_config_enabled) {
+	if (!(ecm_classifier_emesh_latency_config_enabled
+			& ECM_CLASSIFIER_EMESH_ENABLE_LATENCY_UPDATE)) {
 		/*
 		 * Flow based latency parameter updation to WLAN host driver not enabled
 		 */
-		return;
-	}
-
-	skb = ecrc->skb;
-
-	cemi = (struct ecm_classifier_emesh_instance *)aci;
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
-
-	/*
-	 * Invoke SPM rule lookup API to update skb priority
-	 * When latency config is enabled, fetch latency parameter
-	 * associated with a SPM rule
-	 */
-	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size);
-
-	/*
-	 * If one of the latency parameters are zero, there could be
-	 * 2 possibilities - 1. no rule match 2. sp rule does not have
-	 * latency parameter configured.
-	 */
-	if (!service_interval || !burst_size) {
 		return;
 	}
 
@@ -487,6 +496,11 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 		return;
 	}
 
+	skb = ecrc->skb;
+
+	cemi = (struct ecm_classifier_emesh_instance *)aci;
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
 	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
 	if (!ci) {
 		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
@@ -494,25 +508,43 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 	}
 
 	/*
-	 * Invoke callback registered from NSS client to send latency parameter
-	 * to WLAN host driver. In this case, latency parameters should be added
-	 * in WLAN FW. Get mac address for both direction, let WLAN host driver
-	 * to find if mac address belongs to any wlan peer
+	 * Invoke SPM rule lookup API to update skb priority
+	 * When latency config is enabled, fetch latency parameter
+	 * associated with a SPM rule.Since we do not know direction of
+	 * connection, we get src and destination mac address of both
+	 * connection and let wlan driver find corresponding wlan peer
+	 * connected
 	 */
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size, smac, dmac);
 
 	/*
-	 * Send destination mac address of this connection
+	 * If one of the latency parameters are zero, there could be
+	 * 2 possibilities - 1. no rule match 2. sp rule does not have
+	 * latency parameter configured.
 	 */
-	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+	if (service_interval && burst_size) {
+		/*
+		 * Send destination mac address of this connection
+		 */
+		ecm_emesh.update_peer_mesh_latency_params(dmac,
+				service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+	}
 
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
 	/*
-	 * Send source mac address of this connection
+	 * Get latency parameter for other direction
 	 */
-	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size, dmac, smac);
+
+	if (service_interval && burst_size) {
+		/*
+		 * Send source mac address of this connection
+		 */
+		ecm_emesh.update_peer_mesh_latency_params(smac,
+				service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+	}
+
 	ecm_db_connection_deref(ci);
 }
 
@@ -791,7 +823,7 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md,
 	 * service interval is minimum latency expectation and used by Wi-Fi FW
 	 * for peer tid queue scheduling
 	 */
-	if (ecm_classifier_emesh_latency_config_enabled
+	if ((ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_LATENCY_UPDATE)
 			&& (add_rm_md == SP_MAPDB_REMOVE_RULE)) {
 		ecm_classifier_emesh_update_mesh_latency_param(r->inner.service_interval, r->inner.burst_size, r->inner.rule_output);
 	}
