@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1758,7 +1758,7 @@ unsigned int ecm_sfe_ported_ipv6_process(struct net_device *out_dev,
 	 * So we don't allow acceleration for the unconfirmed connections.
 	 */
 	if (likely(ct) && !nf_ct_is_confirmed(ct)) {
-		DEBUG_WARN("%px: Unconfirmed UDP connection\n", ct);
+		DEBUG_WARN("%px: Unconfirmed connection\n", ct);
 		return NF_ACCEPT;
 	}
 
