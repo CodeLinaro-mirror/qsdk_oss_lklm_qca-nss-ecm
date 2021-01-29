@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -244,6 +244,27 @@ static void ecm_interface_ovpn_update_route(struct net_device *dev, uint32_t *fr
 	spin_unlock_bh(&ecm_interface_lock);
 }
 #endif
+
+/*
+ * ecm_interface_get_and_hold_ipsec_tun_netdev()
+ * 	Returns the nss tunnel interface net_dev
+ */
+struct net_device *ecm_interface_get_and_hold_ipsec_tun_netdev(struct net_device *dev, struct sk_buff *skb, int32_t *interface_type)
+{
+	struct net_device *ipsec_dev = NULL;
+#ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+	spin_lock_bh(&ecm_interface_lock);
+	if (!ecm_interface_ipsec_cb.tunnel_get_and_hold) {
+		spin_unlock_bh(&ecm_interface_lock);
+		DEBUG_WARN("IPSec glue module is not loaded yet\n");
+		return NULL;
+	}
+
+	ipsec_dev = ecm_interface_ipsec_cb.tunnel_get_and_hold(dev, skb, interface_type);
+	spin_unlock_bh(&ecm_interface_lock);
+#endif
+	return ipsec_dev;
+}
 
 /*
  * ecm_interface_get_and_hold_dev_master()
@@ -3156,16 +3177,7 @@ identifier_update:
 
 		DEBUG_TRACE("Net device: %px is IPSec tunnel type: %d\n", dev, dev_type);
 
-		spin_lock_bh(&ecm_interface_lock);
-		if (!ecm_interface_ipsec_cb.tunnel_get_and_hold) {
-			spin_unlock_bh(&ecm_interface_lock);
-			DEBUG_WARN("IPSec glue module is not loaded yet for dev=%s\n", dev->name);
-			return NULL;
-		}
-
-		ipsec_dev = ecm_interface_ipsec_cb.tunnel_get_and_hold(dev, skb, &interface_type);
-		spin_unlock_bh(&ecm_interface_lock);
-
+		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(dev, skb, &interface_type);
 		if (!ipsec_dev) {
 			DEBUG_WARN("Failed to find NSS IPSec dev for: %s and type: %d\n", dev->name, dev_type);
 			return NULL;

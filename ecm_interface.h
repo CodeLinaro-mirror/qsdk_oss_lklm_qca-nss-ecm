@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -119,3 +119,4 @@ bool ecm_interface_find_gateway(ip_addr_t addr, ip_addr_t gw_addr);
 void ecm_interface_dev_defunct_connections(struct net_device *dev);
 void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version);
 bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_iface_type_t type, int32_t *mtu);
+struct net_device *ecm_interface_get_and_hold_ipsec_tun_netdev(struct net_device *dev, struct sk_buff *skb, int32_t *interface_type);

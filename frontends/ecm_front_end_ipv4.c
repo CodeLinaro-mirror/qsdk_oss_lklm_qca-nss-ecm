@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016, 2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2020-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -46,6 +46,7 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_front_end_ipv4.h"
+#include "ecm_interface.h"
 
 /*
  * General operational control
@@ -147,11 +148,13 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	struct net_device *from_nat_other = NULL;
 	struct net_device *to_nat = NULL;
 	struct net_device *to_nat_other = NULL;
+	struct net_device *dst_dev = NULL;
 	ip_addr_t from_mac_lookup;
 	ip_addr_t to_mac_lookup;
 	ip_addr_t from_nat_mac_lookup;
 	ip_addr_t to_nat_mac_lookup;
 	bool gateway = false;
+	bool dst_dev_override = false;
 
 	/*
 	 * Set the rt_dst_addr with the destination IP address by default.
@@ -189,7 +192,29 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 #else
 		rt_gw4 = rt->rt_gw4;
 #endif
-		DEBUG_TRACE("dst->dev: %s\n", dst->dev->name);
+		dst_dev = dst->dev;
+
+#ifdef ECM_XFRM_ENABLE
+		/*
+		 * If the dst is an xfrm dst, then override the dst_dev.
+		*/
+		if (dst_xfrm(dst)) {
+			int32_t if_type;
+			struct net_device *xfrm_dst_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &if_type);
+			/*
+			 * If we reach here and are unable to find the tunnel netdevice,
+			 * then return failure.
+			 */
+			if (!xfrm_dst_dev) {
+				return false;
+			}
+
+			dst_dev = xfrm_dst_dev;
+			dst_dev_override = true;
+		}
+
+#endif
+		DEBUG_TRACE("dst->dev: %s dst_dev: %s\n", dst_dev->name, dst_dev->name);
 		DEBUG_TRACE("%px: rt gateway: %pI4\n", rt, &rt_gw4);
 
 		DEBUG_INFO("ip_src_addr" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr));
@@ -215,8 +240,8 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		 * dst->dev is the interface which the packet goes out from the system.
 		 */
 		from = rt_iif_dev;
-		from_other = dst->dev;
-		to = dst->dev;
+		from_other = dst_dev;
+		to = dst_dev;
 		to_other = rt_iif_dev;
 	}
 
@@ -227,10 +252,13 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	 * TODO: Why ecm_dir comes as non-bridge flow, even though the is_routed flag is bridged?
 	 */
 	if (ecm_dir != ECM_DB_DIRECTION_BRIDGED) {
-		if (!dst || !dst->dev || !rt_iif_dev) {
+		if (!dst || !dst_dev || !rt_iif_dev) {
 			DEBUG_WARN("Traffic is not bridged but the netdevs are not valid\n");
 			if (rt_iif_dev) {
 				dev_put(rt_iif_dev);
+			}
+			if (dst_dev_override) {
+				dev_put(dst_dev);
 			}
 			return false;
 		}
@@ -263,20 +291,20 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
-			from_nat = dst->dev;
+			from_nat = dst_dev;
 			from_nat_other = rt_iif_dev;
-			to_nat = dst->dev;
+			to_nat = dst_dev;
 			to_nat_other = rt_iif_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_NON_NAT) {
 			from_nat = rt_iif_dev;
-			from_nat_other = dst->dev;
-			to_nat = dst->dev;
+			from_nat_other = dst_dev;
+			to_nat = dst_dev;
 			to_nat_other = rt_iif_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) {
 			from_nat = rt_iif_dev;
-			from_nat_other = dst->dev;
+			from_nat_other = dst_dev;
 			to_nat = rt_iif_dev;
-			to_nat_other = dst->dev;
+			to_nat_other = dst_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
 			from_nat = in_dev;
 			from_nat_other = in_dev;
@@ -288,18 +316,18 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	} else {
 		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
 			from_nat = rt_iif_dev;
-			from_nat_other = dst->dev;
+			from_nat_other = dst_dev;
 			to_nat = rt_iif_dev;
-			to_nat_other = dst->dev;
+			to_nat_other = dst_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_NON_NAT) {
 			from_nat = rt_iif_dev;
-			from_nat_other = dst->dev;
-			to_nat = dst->dev;
+			from_nat_other = dst_dev;
+			to_nat = dst_dev;
 			to_nat_other = rt_iif_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) {
-			from_nat = dst->dev;
+			from_nat = dst_dev;
 			from_nat_other = rt_iif_dev;
-			to_nat = dst->dev;
+			to_nat = dst_dev;
 			to_nat_other = rt_iif_dev;
 		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
 			from_nat = in_dev;
@@ -320,6 +348,10 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 
 	ecm_front_end_ipv4_interface_construct_ip_addr_set(efeici, from_mac_lookup, to_mac_lookup,
 								from_nat_mac_lookup, to_nat_mac_lookup);
+
+	if (dst_dev_override) {
+		dev_put(dst_dev);
+	}
 
 	/*
 	 * Release the iff_dev which was hold by the dev_get_by_index() call.

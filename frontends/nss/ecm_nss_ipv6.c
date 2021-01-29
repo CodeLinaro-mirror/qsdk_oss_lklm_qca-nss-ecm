@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -183,6 +183,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	struct ecm_db_node_instance *ni;
 	struct ecm_db_node_instance *nni;
 	struct ecm_db_iface_instance *ii;
+	struct net_device *dst_out_dev = dev;
 	int i;
 	bool done;
 	uint8_t node_addr[ETH_ALEN];
@@ -507,15 +508,29 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 			DEBUG_TRACE("%px: VLAN interface unsupported\n", feci);
 			return NULL;
 #endif
-
+		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
+#ifdef ECM_XFRM_ENABLE
+			/*
+			 * Use the original dst dev
+			 */
+			if (dst_xfrm(skb_dst(skb))) {
+				dst_out_dev = skb_dst(skb)->dev;
+				if (!dst_out_dev) {
+					DEBUG_TRACE("%px: Failed to find the orig dst dev\n", feci);
+					return NULL;
+				}
+			}
+#if __has_attribute(__fallthrough__)
+			__attribute__((__fallthrough__));
+#endif
+#endif
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #endif
-		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
+			if (!ecm_interface_mac_addr_get_no_route(dst_out_dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
 				/*
@@ -537,19 +552,19 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(gw_addr));
 				}
 
-				if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
+				if (ecm_interface_mac_addr_get_no_route(dst_out_dev, gw_addr, node_addr)) {
 					DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
 					goto done;
 				}
 
-				if (ecm_front_end_is_bridge_port(dev)) {
+				if (ecm_front_end_is_bridge_port(dst_out_dev)) {
 					struct net_device *master;
-					master = ecm_interface_get_and_hold_dev_master(dev);
+					master = ecm_interface_get_and_hold_dev_master(dst_out_dev);
 					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
 					ecm_interface_send_neighbour_solicitation(master, gw_addr);
 					dev_put(master);
 				} else {
-					ecm_interface_send_neighbour_solicitation(dev, gw_addr);
+					ecm_interface_send_neighbour_solicitation(dst_out_dev, gw_addr);
 				}
 
 				DEBUG_WARN("%px: Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT " gw: " ECM_IP_ADDR_OCTAL_FMT "\n", feci,
@@ -1090,12 +1105,25 @@ static unsigned int ecm_nss_ipv6_ip_process(struct net_device *out_dev, struct n
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_XFRM_ENABLE
 	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
-		DEBUG_TRACE("%px xfrm flow; skip it\n", skb);
+#ifdef ECM_XFRM_ENABLE
+		struct net_device *ipsec_dev;
+		int32_t interface_type;
+
+		/* Check if the transformation for this flow
+		 * is done by NSS. If yes, then only try to accelerate.
+		 */
+		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
+		if (!ipsec_dev) {
+			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
+			return NF_ACCEPT;
+		}
+		dev_put(ipsec_dev);
+#else
+		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
 		return NF_ACCEPT;
-	}
 #endif
+	}
 
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
