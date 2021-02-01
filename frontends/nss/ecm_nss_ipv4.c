@@ -1066,6 +1066,20 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	uint8_t *dest_node_addr_nat;
 	uint8_t protonum;
 
+#ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
+	/*
+	 * Check if the number of IPv4 DB connection entries need to be limited.
+	 */
+	if (ecm_front_end_conn_limit) {
+		if (ecm_nss_ipv4_accelerated_count == nss_ipv4_max_conn_count()) {
+			DEBUG_INFO("ECM DB connection limit %d reached, \
+					new flows cannot be accelerated.\n",
+					nss_ipv4_max_conn_count());
+			return NF_ACCEPT;
+		}
+	}
+#endif
+
 	/*
 	 * Obtain the IP header from the skb
 	 */

@@ -21,6 +21,7 @@
 #include <linux/inet.h>
 #include <linux/etherdevice.h>
 #include <linux/inetdevice.h>
+#include <linux/sysctl.h>
 #include <net/netfilter/nf_conntrack.h>
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #include <linux/netfilter/xt_dscp.h>
@@ -53,6 +54,18 @@
 #include "ecm_db.h"
 #include "ecm_front_end_common.h"
 #include "ecm_interface.h"
+
+/*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_front_end_ctl_tbl_hdr;
+
+/*
+ * Flag to limit the number of DB connections at any point to the maximum number
+ * that can be accelerated by NSS. This may need to be enabled for low memory
+ * platforms to control memory allocated by ECM databases.
+ */
+unsigned int ecm_front_end_conn_limit = 0;
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
@@ -342,3 +355,92 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 	}
 }
 
+/*
+ * ecm_front_end_db_conn_limit_handler()
+ *	Database connection limit sysctl node handler.
+ */
+int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ecm_front_end_conn_limit;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if ((ecm_front_end_conn_limit != 0) &&
+			(ecm_front_end_conn_limit != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_front_end_conn_limit = current_value;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_front_end_conn_limit_tbl[] = {
+	{
+		.procname	= "front_end_conn_limit",
+		.data		= &ecm_front_end_conn_limit,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_db_conn_limit_handler,
+	},
+	{}
+};
+
+static struct ctl_table ecm_front_end_common_root[] = {
+	{
+		.procname	= "ecm",
+		.mode		= 0555,
+		.child		= ecm_front_end_conn_limit_tbl,
+	},
+	{ }
+};
+
+static struct ctl_table ecm_front_end_common_root_dir[] = {
+	{
+		.procname		= "net",
+		.mode			= 0555,
+		.child			= ecm_front_end_common_root,
+	},
+	{ }
+};
+
+/*
+ * ecm_front_end_common_sysctl_register()
+ *	Function to register sysctl node during front end init
+ */
+void ecm_front_end_common_sysctl_register()
+{
+	/*
+	 * Register sysctl table.
+	 */
+	ecm_front_end_ctl_tbl_hdr = register_sysctl_table(ecm_front_end_common_root_dir);
+}
+
+/*
+ * ecm_front_end_common_sysctl_unregister()
+ *	Function to unregister sysctl node during front end exit
+ */
+void ecm_front_end_common_sysctl_unregister()
+{
+	/*
+	 * Unregister sysctl table.
+	 */
+	if (ecm_front_end_ctl_tbl_hdr) {
+		unregister_sysctl_table(ecm_front_end_ctl_tbl_hdr);
+	}
+}

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016, 2019-2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -17,6 +17,13 @@
 #include <linux/if_pppox.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_acct.h>
+
+/*
+ * Flag to limit the number of DB connections at any point to the maximum number
+ * that can be accelerated by NSS. This may need to be enabled for low memory
+ * platforms to control memory allocated by ECM databases.
+ */
+extern unsigned int ecm_front_end_conn_limit;
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_bond_notifier.h"
@@ -310,3 +317,5 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 					ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
 					int src_port, int src_port_nat,
 					int dest_port, int dest_port_nat, ecm_db_direction_t ecm_dir);
+void ecm_front_end_common_sysctl_register(void);
+void ecm_front_end_common_sysctl_unregister(void);

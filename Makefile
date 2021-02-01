@@ -73,6 +73,12 @@ ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_CONN_LIMIT_ENABLE=y in order to limit accelerated
+# connections for low-memory profiles.
+# #############################################################################
+ccflags-$(ECM_FRONT_END_CONN_LIMIT_ENABLE) += -DECM_FRONT_END_CONN_LIMIT_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_BOND_ENABLE=y in order to enable
 # Bonding / Link Aggregation support.
 # #############################################################################

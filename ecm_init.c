@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, 2018, 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -222,6 +222,8 @@ static int __init ecm_init(void)
 	}
 #endif
 
+	ecm_front_end_common_sysctl_register();
+
 	printk(KERN_INFO "ECM init complete\n");
 	return 0;
 
@@ -368,6 +370,8 @@ static void __exit ecm_exit(void)
 		DEBUG_INFO("remove ecm debugfs\n");
 		debugfs_remove_recursive(ecm_dentry);
 	}
+
+	ecm_front_end_common_sysctl_unregister();
 
 	printk(KERN_INFO "ECM exit complete\n");
 }
