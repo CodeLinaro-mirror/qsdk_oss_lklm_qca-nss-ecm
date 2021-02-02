@@ -440,7 +440,7 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 	struct ecm_db_connection_instance *ci;
 	uint8_t service_interval;
 	uint32_t burst_size;
-	uint8_t *peer_mac;
+	uint8_t peer_mac[ETH_ALEN];
 	struct sk_buff *skb;
 
 	/*
@@ -745,7 +745,7 @@ void ecm_classifier_emesh_update_mesh_latency_param(uint32_t service_interval, u
 		 * in WLAN FW, set add_or_sub to 2 which indicates substraction in WLAN FW
 		 */
 		struct ecm_db_connection_instance *cin;
-		uint8_t *peer_mac;
+		uint8_t peer_mac[ETH_ALEN];
 
 		/*
 		 * Get mac address for destination node
