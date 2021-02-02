@@ -8027,6 +8027,40 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 
 no_ci:
 
+	/*
+	 * if all tuple values are 0, defunct by interface
+	 */
+	if (unlikely(is_zero_ether_addr(flow->smac) && is_zero_ether_addr(flow->dmac))) {
+		bool sip_valid, dip_valid;
+
+		if (flow->tuple.ip_version == 4) {
+			sip_valid = !!flow->tuple.ipv4.src;
+			dip_valid = !!flow->tuple.ipv4.dst;
+		} else {
+			sip_valid = !ipv6_addr_any((const struct in6_addr *)&flow->tuple.ipv6.src);
+			dip_valid = !ipv6_addr_any((const struct in6_addr *)&flow->tuple.ipv6.dst);
+		}
+
+		if (sip_valid || dip_valid || flow->tuple.src_port || flow->tuple.dst_port || flow->tuple.protocol) {
+			goto defunct_by_masked_tuple;
+		}
+
+		if (flow->indev && !netif_is_ovs_master(flow->indev)) {
+			DEBUG_TRACE("%px: Defunct all flows by indev=%s\n", flow, flow->indev->name);
+			ecm_interface_dev_defunct_connections(flow->indev);
+		}
+
+		if (flow->outdev && !netif_is_ovs_master(flow->outdev)) {
+			DEBUG_TRACE("%px: Defunct all flows by outdev=%s\n", flow, flow->outdev->name);
+			ecm_interface_dev_defunct_connections(flow->outdev);
+		}
+
+		DEBUG_TRACE("%px: Delete flow is called with all tuple 0\n", flow);
+		return;
+	}
+
+defunct_by_masked_tuple:
+
 	DEBUG_TRACE("%px: Delete flow by 5 or 7 tuple masks: indev = %s, outdev = %s, smac:%pM, dmac:%pM, "
 		    "proto=%d, sport=%d, dport=%d\n",
 		    flow, flow->indev->name, flow->outdev->name, flow->smac, flow->dmac,
