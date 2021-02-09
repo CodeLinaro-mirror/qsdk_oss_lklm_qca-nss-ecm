@@ -4734,11 +4734,13 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	 * if the address is a local address and indev=l2tp.
 	 */
 	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
-		dev_put(dest_dev);
-		dest_dev = given_dest_dev;
-		if (dest_dev) {
-			dev_hold(dest_dev);
-			DEBUG_TRACE("%px: l2tp packet tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", feci, ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+		if (!dst_xfrm(skb_dst(skb)) || (dest_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE)) {
+			dev_put(dest_dev);
+			dest_dev = given_dest_dev;
+			if (dest_dev) {
+				dev_hold(dest_dev);
+				DEBUG_TRACE("%px: l2tp packet tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", feci, ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+			}
 		}
 	}
 #endif
@@ -5650,11 +5652,13 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	 * if the address is a local address and indev=l2tp.
 	 */
 	if ((given_src_dev->type == ARPHRD_PPP) && (given_src_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(given_src_dev)) {
-		dev_put(dest_dev);
-		dest_dev = given_dest_dev;
-		if (dest_dev) {
-			dev_hold(dest_dev);
-			DEBUG_TRACE("l2tp packet tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+		if (!dst_xfrm(skb_dst(skb)) || (dest_dev->type != ECM_ARPHRD_IPSEC_TUNNEL_TYPE)) {
+			dev_put(dest_dev);
+			dest_dev = given_dest_dev;
+			if (dest_dev) {
+				dev_hold(dest_dev);
+				DEBUG_TRACE("l2tp packet tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
+			}
 		}
 	}
 #endif
