@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2018-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2015, 2018-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -106,6 +106,10 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 
 #define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00000400	/* Do not update CI time */
 
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED 0x00000800	/* Contains mirror dynamic interface number */
+#endif
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call
@@ -137,6 +141,10 @@ struct ecm_classifier_process_response {
 	int32_t egress_netdev_index[ECM_DB_MULTICAST_IF_MAX];	 /* Multicast egress net device interface index */
 	uint32_t egress_mc_vlan_tag[ECM_DB_MULTICAST_IF_MAX][2]; /* Multicast egress VLAN tags */
 #endif
+#endif
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+	int flow_mirror_ifindex;			/* Flow mirror device index value */
+	int return_mirror_ifindex;			/* Return mirror device index value */
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
