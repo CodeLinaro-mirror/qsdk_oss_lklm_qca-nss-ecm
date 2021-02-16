@@ -268,6 +268,20 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 	}
 	spin_unlock_bh(&ecm_classifier_emesh_lock);
 
+	/*
+	 * Can we accelerate?
+	 */
+	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+	if (!ci) {
+		DEBUG_TRACE("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+		spin_lock_bh(&ecm_classifier_emesh_lock);
+		cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		goto emesh_classifier_out;
+	}
+
+	/*
+	 * Check if SPM rule lookup flag is enabled
+	 */
 	if (ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP) {
 		uint8_t dmac[ETH_ALEN];
 		uint8_t smac[ETH_ALEN];
@@ -288,17 +302,6 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 		if (skb->skb_iif != skb->dev->ifindex) {
 			sp_mapdb_apply(skb, smac, dmac);
 		}
-	}
-
-	/*
-	 * Can we accelerate?
-	 */
-	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
-	if (!ci) {
-		DEBUG_TRACE("%px: No ci found for %u\n", cemi, cemi->ci_serial);
-		spin_lock_bh(&ecm_classifier_emesh_lock);
-		cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto emesh_classifier_out;
 	}
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
