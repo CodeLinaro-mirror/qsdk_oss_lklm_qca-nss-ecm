@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, 2018-2020, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018-2021, The Linux Foundation. All rights reserved.
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -16,9 +16,6 @@
 # Makefile for the QCA NSS ECM
 # ###################################################
 
-ifneq ($(findstring 5.4., $(KERNELVERSION)),)
-include $(obj)/Makefile_54.mk
-else
 obj-m += ecm.o
 
 # #####################################################
@@ -244,9 +241,6 @@ ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
 # #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
 # #############################################################################
-ifeq ($(findstring 4.4., $(KERNELVERSION)),)
-ECM_CLASSIFIER_NL_ENABLE=y
-endif
 ecm-$(ECM_CLASSIFIER_NL_ENABLE) += ecm_classifier_nl.o
 ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
 
@@ -401,4 +395,3 @@ ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/front
 ccflags-y += -Werror
 
 obj ?= .
-endif
