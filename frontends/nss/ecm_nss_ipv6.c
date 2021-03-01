@@ -183,7 +183,6 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	struct ecm_db_node_instance *ni;
 	struct ecm_db_node_instance *nni;
 	struct ecm_db_iface_instance *ii;
-	struct net_device *dst_out_dev = dev;
 	int i;
 	bool done;
 	uint8_t node_addr[ETH_ALEN];
@@ -204,8 +203,11 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 	struct net_device *out_dev;
 #endif
 
-#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+#if defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_XFRM_ENABLE)
 	struct net_device *in;
+#endif
+
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 	struct ip_tunnel *gre4_tunnel;
 	struct ip6_tnl *gre6_tunnel;
 	ip_addr_t local_gre_tun_ip;
@@ -510,15 +512,23 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #endif
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_XFRM_ENABLE
-			/*
-			 * Use the original dst dev
-			 */
 			if (dst_xfrm(skb_dst(skb))) {
-				dst_out_dev = skb_dst(skb)->dev;
-				if (!dst_out_dev) {
-					DEBUG_TRACE("%px: Failed to find the orig dst dev\n", feci);
+				ether_addr_copy(node_addr, dev->dev_addr);
+				done = true;
+				break;
+			}
+
+			if (secpath_exists(skb)) {
+				in = dev_get_by_index(&init_net, skb->skb_iif);
+				if (!in) {
+					DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 					return NULL;
 				}
+
+				ether_addr_copy(node_addr, in->dev_addr);
+				dev_put(in);
+				done = true;
+				break;
 			}
 #if __has_attribute(__fallthrough__)
 			__attribute__((__fallthrough__));
@@ -530,7 +540,7 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #endif
-			if (!ecm_interface_mac_addr_get_no_route(dst_out_dev, addr, node_addr)) {
+			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
 				/*
@@ -552,19 +562,19 @@ struct ecm_db_node_instance *ecm_nss_ipv6_node_establish_and_ref(struct ecm_fron
 					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(gw_addr));
 				}
 
-				if (ecm_interface_mac_addr_get_no_route(dst_out_dev, gw_addr, node_addr)) {
+				if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
 					DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
 					goto done;
 				}
 
-				if (ecm_front_end_is_bridge_port(dst_out_dev)) {
+				if (ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
-					master = ecm_interface_get_and_hold_dev_master(dst_out_dev);
+					master = ecm_interface_get_and_hold_dev_master(dev);
 					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
 					ecm_interface_send_neighbour_solicitation(master, gw_addr);
 					dev_put(master);
 				} else {
-					ecm_interface_send_neighbour_solicitation(dst_out_dev, gw_addr);
+					ecm_interface_send_neighbour_solicitation(dev, gw_addr);
 				}
 
 				DEBUG_WARN("%px: Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT " gw: " ECM_IP_ADDR_OCTAL_FMT "\n", feci,

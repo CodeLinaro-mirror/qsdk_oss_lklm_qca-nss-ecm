@@ -214,7 +214,7 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		}
 
 #endif
-		DEBUG_TRACE("dst->dev: %s dst_dev: %s\n", dst_dev->name, dst_dev->name);
+		DEBUG_TRACE("dst->dev: %s dst_dev: %s\n", dst->dev->name, dst_dev->name);
 		DEBUG_TRACE("%px: rt gateway: %pI4\n", rt, &rt_gw4);
 
 		DEBUG_INFO("ip_src_addr" ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(ip_src_addr));
