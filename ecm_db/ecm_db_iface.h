@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -223,7 +223,7 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_macvlan(uint8_t *address
 void ecm_db_iface_macvlan_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address, int32_t if_num);
 #endif
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_unknown(uint32_t os_specific_ident);
 
