@@ -6368,6 +6368,7 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
 		struct net_device *dev;
+		struct rtnl_link_stats64 stats;
 
 		ii = iface_list[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
@@ -6398,8 +6399,8 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			}
 		}
 
+		memset(&stats, 0, sizeof(stats));
 		switch (ii_type) {
-			struct rtnl_link_stats64 stats;
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			case ECM_DB_IFACE_TYPE_VLAN:
 				DEBUG_INFO("VLAN\n");
