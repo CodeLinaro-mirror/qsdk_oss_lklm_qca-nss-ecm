@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2016, 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -224,6 +224,43 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	DEBUG_TRACE("%px: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
 	return true;
 }
+
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+/*
+ * ecm_front_end_tcp_set_dscp_ext()
+ *	Sets the DSCP remark extension.
+ */
+void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
+					      struct ecm_tracker_ip_header *iph,
+					      struct sk_buff *skb,
+					      ecm_tracker_sender_type_t sender)
+{
+	struct nf_ct_dscpremark_ext *dscpcte;
+
+	/*
+	 * Extract the priority and DSCP from skb during the TCP handshake
+	 * and store into ct extension for each direction.
+	 */
+	spin_lock_bh(&ct->lock);
+	dscpcte = nf_ct_dscpremark_ext_find(ct);
+	if (dscpcte && ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			dscpcte->flow_priority = skb->priority;
+			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
+			dscpcte->flow_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
+			DEBUG_TRACE("%px: sender: %d flow priority: %d flow dscp: %d flow_set_flags: 0x%x\n",
+				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp, dscpcte->flow_set_flags);
+		} else {
+			dscpcte->reply_priority =  skb->priority;
+			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
+			dscpcte->return_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
+			DEBUG_TRACE("%px: sender: %d reply priority: %d reply dscp: %d return_set_flags: 0x%x\n",
+				    ct, sender, dscpcte->reply_priority, dscpcte->reply_dscp, dscpcte->return_set_flags);
+		}
+	}
+	spin_unlock_bh(&ct->lock);
+}
+#endif
 
 /*
  * ecm_front_end_fill_ovs_params()

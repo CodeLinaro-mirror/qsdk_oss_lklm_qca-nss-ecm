@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, 2019-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2019-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -346,6 +346,32 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 
 	if (protocol == IPPROTO_TCP) {
 		/*
+		 * If DSCP conntrack extension is filled in the frontend, use those values
+		 * instead of waiting both direction traffic again.
+		 */
+		if ((dscpcte->flow_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP))
+			&& (dscpcte->return_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP))) {
+			/*
+			 * If sender and the conntrack info direction are consistent, fill the response field
+			 * with the flow/return values as it is. Otherwise reverse the assignments.
+			 */
+			if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
+				((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
+				cdscpi->process_response.flow_qos_tag = dscpcte->flow_priority;
+				cdscpi->process_response.return_qos_tag = dscpcte->reply_priority;
+				cdscpi->process_response.flow_dscp = dscpcte->flow_dscp;
+				cdscpi->process_response.return_dscp = dscpcte->reply_dscp;
+			} else {
+				cdscpi->process_response.flow_qos_tag = dscpcte->reply_priority;
+				cdscpi->process_response.return_qos_tag = dscpcte->flow_priority;
+				cdscpi->process_response.flow_dscp = dscpcte->reply_dscp;
+				cdscpi->process_response.return_dscp = dscpcte->flow_dscp;
+			}
+			DEBUG_TRACE("%px: DSCP extension is used to set the QoS values\n", cdscpi);
+			goto done;
+		}
+
+		/*
 		 * Stop the processing if both side packets are already seen.
 		 * Above the process response is already set to allow the acceleration.
 		 */
@@ -357,6 +383,14 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 		/*
 		 * Store the QoS and DSCP info in the classifier instance and deny the
 		 * acceleration if both side info is not yet available.
+		 *
+		 * This setting is a backup setting for the QoS values, in case the DSCP
+		 * conntrack extension is not filled. This situation happens when the conntrack
+		 * table is flushed by the user with the echo f > /proc/net/nf_conntrack command.
+		 * After this flush, the conntarck entry and the ECM connection entry are destroyed,
+		 * but the TCP connection remains established. When the next packet comes to ECM,
+		 * since there is no TCP handshake, the DSCP conntarck extension is not set. So,
+		 * we need to read these values from the packet's IP header.
 		 */
 		ecm_classifier_dscp_fill_info(cdscpi, sender, ip_hdr, skb);
 		if (!ecm_classifier_dscp_is_bidi_packet_seen(cdscpi)) {

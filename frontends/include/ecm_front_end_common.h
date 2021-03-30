@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015-2016, 2019-2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -305,6 +305,12 @@ extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct sk_buff *skb,
 						      struct nf_conntrack_tuple *tuple,
 						      int ip_version);
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
+					      struct ecm_tracker_ip_header *iph,
+					      struct sk_buff *skb,
+					      ecm_tracker_sender_type_t sender);
+#endif
 void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 					ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat,
 					ip_addr_t ip_dest_addr, ip_addr_t ip_dest_addr_nat,
