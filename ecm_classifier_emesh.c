@@ -47,6 +47,8 @@
 #include "ecm_db.h"
 #include "ecm_interface.h"
 #include "ecm_classifier_emesh_public.h"
+#include "ecm_front_end_ipv4.h"
+#include "ecm_front_end_ipv6.h"
 
 /*
  * Magic numbers
@@ -81,6 +83,8 @@ struct ecm_classifier_emesh_instance {
 
 	int refs;						/* Integer to trap we never go negative */
 	uint8_t packet_seen[ECM_CONN_DIR_MAX];				/* Per direction packet seen flag */
+	uint32_t service_interval;		/* Wlan latency parameter: Service interval associated with this connection */
+	uint32_t burst_size;			/* Wlan latency parameter: Burst Size associated with this connection */
 
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -449,22 +453,97 @@ emesh_classifier_out:
 }
 
 /*
+ * ecm_classifier_emesh_update_latency_param_on_conn_decel()
+ *	Update mesh latency parameters to wlan host driver when a connection gets decelerated in ECM
+ */
+void ecm_classifier_emesh_update_latency_param_on_conn_decel(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
+{
+	struct ecm_classifier_emesh_instance *cemi;
+	struct ecm_db_connection_instance *ci;
+	uint8_t peer_mac[ETH_ALEN];
+
+	cemi = (struct ecm_classifier_emesh_instance *)aci;
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
+	/*
+	 * Return if E-Mesh functionality is not enabled.
+	 */
+	if (!ecm_classifier_emesh_enabled) {
+		return;
+	}
+
+	if (!(ecm_classifier_emesh_latency_config_enabled
+				& ECM_CLASSIFIER_EMESH_ENABLE_LATENCY_UPDATE)) {
+		return;
+	}
+
+	if (!ecm_emesh.update_peer_mesh_latency_params) {
+		return;
+	}
+
+	/*
+	 * when any of the latency parameter associated with connection is zero
+	 * no need to update to wlan driver
+	 */
+	spin_lock_bh(&ecm_classifier_emesh_lock);
+	if (!cemi->service_interval || !cemi->burst_size) {
+		spin_unlock_bh(&ecm_classifier_emesh_lock);
+		return;
+	}
+	spin_unlock_bh(&ecm_classifier_emesh_lock);
+
+	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+	if (!ci) {
+		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+		return;
+	}
+
+	/*
+	 * Get mac address for destination node
+	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
+	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+			cemi->service_interval, cemi->burst_size, 0,
+			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+	/*
+	 * Get mac address for source node
+	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
+	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
+			cemi->service_interval, cemi->burst_size, 0,
+			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+	ecm_db_connection_deref(ci);
+}
+
+/*
  * ecm_classifier_emesh_sync_to_v4()
  *	Front end is pushing accel engine state to us
  */
 static void ecm_classifier_emesh_sync_to_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
-	struct ecm_classifier_emesh_instance *cemi __attribute__((unused));
-
+	struct ecm_classifier_emesh_instance *cemi;
 	cemi = (struct ecm_classifier_emesh_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
+	switch(sync->reason) {
+	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_FLUSH:
+	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_EVICT:
+	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY:
+		ecm_classifier_emesh_update_latency_param_on_conn_decel(aci, sync);
+		break;
+	default:
+		break;
+	}
 }
 
 /*
- * ecm_classifier_emesh_update_wlan_latency_params()
+ * ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel()
  *	Update wifi latency parameters associated with SP rule to wlan host driver
+ *	when a connection getting accelerated in ECM
  */
-static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifier_instance *aci,
+static void ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(struct ecm_classifier_instance *aci,
 		struct ecm_classifier_rule_create *ecrc)
 {
 	struct ecm_classifier_emesh_instance *cemi;
@@ -522,6 +601,15 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size, smac, dmac);
 
+	spin_lock_bh(&ecm_classifier_emesh_lock);
+
+	/*
+	 * Update latency parameters to accelerated connection
+	 */
+	cemi->service_interval = service_interval;
+	cemi->burst_size = burst_size;
+	spin_unlock_bh(&ecm_classifier_emesh_lock);
+
 	/*
 	 * If one of the latency parameters are zero, there could be
 	 * 2 possibilities - 1. no rule match 2. sp rule does not have
@@ -557,7 +645,7 @@ static void ecm_classifier_emesh_update_wlan_latency_params(struct ecm_classifie
  */
 static void ecm_classifier_emesh_sync_from_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
-	ecm_classifier_emesh_update_wlan_latency_params(aci, ecrc);
+	ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(aci, ecrc);
 
 }
 
@@ -567,10 +655,19 @@ static void ecm_classifier_emesh_sync_from_v4(struct ecm_classifier_instance *ac
  */
 static void ecm_classifier_emesh_sync_to_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
-	struct ecm_classifier_emesh_instance *cemi __attribute__((unused));
-
+	struct ecm_classifier_emesh_instance *cemi;
 	cemi = (struct ecm_classifier_emesh_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
+	switch(sync->reason) {
+	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_FLUSH:
+	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_EVICT:
+	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY:
+		ecm_classifier_emesh_update_latency_param_on_conn_decel(aci, sync);
+		break;
+	default:
+		break;
+	}
 }
 
 /*
@@ -579,7 +676,7 @@ static void ecm_classifier_emesh_sync_to_v6(struct ecm_classifier_instance *aci,
  */
 static void ecm_classifier_emesh_sync_from_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
-	ecm_classifier_emesh_update_wlan_latency_params(aci, ecrc);
+	ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(aci, ecrc);
 }
 
 /*
@@ -746,62 +843,6 @@ struct ecm_classifier_emesh_instance *ecm_classifier_emesh_instance_alloc(struct
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_instance_alloc);
 
-/*
- * ecm_classifier_emesh_update_mesh_latency()
- *	Update mesh latency parameters to wlan host driver when sp rule gets deleted
- */
-void ecm_classifier_emesh_update_mesh_latency_param(uint32_t service_interval, uint32_t burst_size, uint8_t priority)
-{
-	struct ecm_db_connection_instance *ci;
-
-	if (!ecm_emesh.update_peer_mesh_latency_params) {
-		return;
-	}
-
-	/*
-	 * when any of the latency parameter associated with rule is zero
-	 * no need to update to wlan driver
-	 */
-	if (!service_interval || !burst_size) {
-		return;
-	}
-
-	/*
-	 * TODO: Optimize based on rule flag
-	 * currently pass mac address of connections to wlan host and let host driver
-	 * check if mac address belongs to any wlan peer
-	 */
-	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ECM_CLASSIFIER_TYPE_EMESH);
-
-	while (ci) {
-		/*
-		 * Invoke callback registered from NSS client to send latency parameter
-		 * to WLAN host driver. In this case, latency parameters should be substracted
-		 * in WLAN FW, set add_or_sub to 2 which indicates substraction in WLAN FW
-		 */
-		struct ecm_db_connection_instance *cin;
-		uint8_t peer_mac[ETH_ALEN];
-
-		/*
-		 * Get mac address for destination node
-		 */
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
-		ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-				service_interval, burst_size, priority, ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
-
-		/*
-		 * Get mac address for source node
-		 */
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
-		ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-				service_interval, burst_size, priority, ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
-
-
-		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ECM_CLASSIFIER_TYPE_EMESH);
-		ecm_db_connection_by_classifier_type_assignment_deref(ci, ECM_CLASSIFIER_TYPE_EMESH);
-		ci = cin;
-	}
-}
 
 /*
  * ecm_classifier_emesh_rule_update_cb()
@@ -818,19 +859,6 @@ static void ecm_classifier_emesh_rule_update_cb(uint8_t add_rm_md,
 	if (!ecm_classifier_emesh_enabled) {
 		return;
 	}
-
-	/*
-	 * If mesh latency config is enabled and sp rule is getting deleted,
-	 * send service interval and burst size associated with rule to
-	 * WLAN host driver by invoking callback registered from NSS client.
-	 * service interval is minimum latency expectation and used by Wi-Fi FW
-	 * for peer tid queue scheduling
-	 */
-	if ((ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_LATENCY_UPDATE)
-			&& (add_rm_md == SP_MAPDB_REMOVE_RULE)) {
-		ecm_classifier_emesh_update_mesh_latency_param(r->inner.service_interval, r->inner.burst_size, r->inner.rule_output);
-	}
-
 
 	DEBUG_TRACE("SP rule update notification received\n");
 	/*
