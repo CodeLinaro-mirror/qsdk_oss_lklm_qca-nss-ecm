@@ -1793,6 +1793,32 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 	DEBUG_TRACE("%px: Sync conn %px\n", sync, ci);
 
 	/*
+	 * Copy the sync data to the classifier sync structure to
+	 * update the classifiers' stats.
+	 */
+	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
+	class_sync.reason = sync->reason;
+
+	/*
+	 * Sync assigned classifiers
+	 */
+	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
+	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+		struct ecm_classifier_instance *aci;
+		aci = assignments[aci_index];
+		DEBUG_TRACE("%px: sync to: %px, type: %d\n", ci, aci, aci->type_get(aci));
+		aci->sync_to_v6(aci, &class_sync);
+	}
+	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
 	 * Get the elapsed time since the last sync and add this elapsed time
 	 * to the conntrack's timeout while updating it. If the return value is
 	 * a negative value which means the timer is not in a valid state, just
@@ -1892,32 +1918,6 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 						sync->return_tx_packet_count, sync->return_tx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
 #endif
 	}
-
-	/*
-	 * Copy the sync data to the classifier sync structure to
-	 * update the classifiers' stats.
-	 */
-	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
-	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
-	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
-	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
-	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
-	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
-	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
-	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
-	class_sync.reason = sync->reason;
-
-	/*
-	 * Sync assigned classifiers
-	 */
-	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
-	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		aci = assignments[aci_index];
-		DEBUG_TRACE("%px: sync to: %px, type: %d\n", feci, aci, aci->type_get(aci));
-		aci->sync_to_v6(aci, &class_sync);
-	}
-	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	switch(sync->reason) {
 	case NSS_IPV6_RULE_SYNC_REASON_DESTROY:

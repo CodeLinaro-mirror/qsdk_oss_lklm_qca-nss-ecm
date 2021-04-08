@@ -1289,6 +1289,32 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	DEBUG_TRACE("%px: Sync conn %px\n", sync, ci);
 
 	/*
+	 * Copy the sync data to the classifier sync structure to
+	 * update the classifiers' stats.
+	 */
+	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
+	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
+	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
+	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
+	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
+	class_sync.reason = sync->reason;
+
+	/*
+	 * Sync assigned classifiers
+	 */
+	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
+	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+		struct ecm_classifier_instance *aci;
+		aci = assignments[aci_index];
+		DEBUG_TRACE("%px: sync to: %px, type: %d\n", ci, aci, aci->type_get(aci));
+		aci->sync_to_v4(aci, &class_sync);
+	}
+	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
 	 * Keep connection alive and updated
 	 */
 	if (!ecm_db_connection_defunct_timer_touch(ci)) {
@@ -1361,32 +1387,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 
 #endif
 	}
-
-	/*
-	 * Copy the sync data to the classifier sync structure to
-	 * update the classifiers' stats.
-	 */
-	class_sync.tx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_packet_count;
-	class_sync.tx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_tx_byte_count;
-	class_sync.rx_packet_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_packet_count;
-	class_sync.rx_byte_count[ECM_CONN_DIR_FLOW] = sync->flow_rx_byte_count;
-	class_sync.tx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_tx_packet_count;
-	class_sync.tx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_tx_byte_count;
-	class_sync.rx_packet_count[ECM_CONN_DIR_RETURN] = sync->return_rx_packet_count;
-	class_sync.rx_byte_count[ECM_CONN_DIR_RETURN] = sync->return_rx_byte_count;
-	class_sync.reason = sync->reason;
-
-	/*
-	 * Sync assigned classifiers
-	 */
-	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
-	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		aci = assignments[aci_index];
-		DEBUG_TRACE("%px: sync to: %px, type: %d\n", feci, aci, aci->type_get(aci));
-		aci->sync_to_v4(aci, &class_sync);
-	}
-	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	switch(sync->reason) {
 	case SFE_RULE_SYNC_REASON_DESTROY:
