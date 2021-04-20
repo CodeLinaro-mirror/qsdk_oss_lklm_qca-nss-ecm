@@ -1982,23 +1982,33 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 
-	/*
-	 * Unconfirmed connection may be dropped by Linux at the final step,
-	 * So we don't allow acceleration for the unconfirmed connections.
-	 */
-	if (likely(ct) && !nf_ct_is_confirmed(ct)) {
-		DEBUG_WARN("%px: Unconfirmed connection\n", ct);
-		return NF_ACCEPT;
-	}
-
 	if (protocol == IPPROTO_TCP) {
 
-		/*
-		 * Don't try to manage a non-established connection.
-		 */
-		if (likely(ct) && !test_bit(IPS_ASSURED_BIT, &ct->status)) {
-			DEBUG_WARN("%px: Non-established TCP connection\n", ct);
-			return NF_ACCEPT;
+		if (likely(ct)) {
+#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+			/*
+			 * Set the DSCP conntrack extension. These values will be
+			 * used in the DSCP classifier for setting them quickly in the
+			 * classifier response.
+			 */
+			ecm_front_end_tcp_set_dscp_ext(ct, iph, skb, sender);
+#endif
+			/*
+			 * Unconfirmed connection may be dropped by Linux at the final step,
+			 * So we don't allow acceleration for the unconfirmed connections.
+			 */
+			if (!nf_ct_is_confirmed(ct)) {
+				DEBUG_WARN("%px: Unconfirmed TCP connection\n", ct);
+				return NF_ACCEPT;
+			}
+
+			/*
+			 * Don't try to manage a non-established connection.
+			 */
+			if (!test_bit(IPS_ASSURED_BIT, &ct->status)) {
+				DEBUG_WARN("%px: Non-established TCP connection\n", ct);
+				return NF_ACCEPT;
+			}
 		}
 
 		/*
@@ -2050,6 +2060,14 @@ unsigned int ecm_nss_ported_ipv6_process(struct net_device *out_dev,
 		DEBUG_TRACE("TCP src: " ECM_IP_ADDR_OCTAL_FMT ":%d, dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, dir %d\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port, ecm_dir);
 	} else if (protocol == IPPROTO_UDP) {
+		/*
+		 * Unconfirmed connection may be dropped by Linux at the final step,
+		 * So we don't allow acceleration for the unconfirmed connections.
+		 */
+		if (likely(ct) && !nf_ct_is_confirmed(ct)) {
+			DEBUG_WARN("%px: Unconfirmed UDP connection\n", ct);
+			return NF_ACCEPT;
+		}
 
 		/*
 		 * Extract UDP header to obtain port information
