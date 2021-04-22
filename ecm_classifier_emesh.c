@@ -503,7 +503,7 @@ void ecm_classifier_emesh_update_latency_param_on_conn_decel(struct ecm_classifi
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
 	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval, cemi->burst_size, 0,
+			cemi->service_interval, cemi->burst_size, cemi->pcp[ECM_CONN_DIR_FLOW],
 			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
 
 	/*
@@ -511,7 +511,7 @@ void ecm_classifier_emesh_update_latency_param_on_conn_decel(struct ecm_classifi
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
 	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval, cemi->burst_size, 0,
+			cemi->service_interval, cemi->burst_size, cemi->pcp[ECM_CONN_DIR_RETURN],
 			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
 
 	ecm_db_connection_deref(ci);
