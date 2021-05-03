@@ -84,8 +84,10 @@ struct ecm_classifier_emesh_instance {
 
 	int refs;						/* Integer to trap we never go negative */
 	uint8_t packet_seen[ECM_CONN_DIR_MAX];				/* Per direction packet seen flag */
-	uint32_t service_interval;		/* Wlan latency parameter: Service interval associated with this connection */
-	uint32_t burst_size;			/* Wlan latency parameter: Burst Size associated with this connection */
+	uint32_t service_interval_dl;		/* wlan downlink latency parameter: Service interval associated with this connection */
+	uint32_t burst_size_dl;			/* wlan downlink latency parameter: Burst Size associated with this connection */
+	uint32_t service_interval_ul;		/* wlan uplink latency parameter: Service interval associated with this connection */
+	uint32_t burst_size_ul;			/* wlan uplink latency parameter: Burst Size associated with this connection */
 
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -479,17 +481,6 @@ void ecm_classifier_emesh_update_latency_param_on_conn_decel(struct ecm_classifi
 		return;
 	}
 
-	/*
-	 * when any of the latency parameter associated with connection is zero
-	 * no need to update to wlan driver
-	 */
-	spin_lock_bh(&ecm_classifier_emesh_lock);
-	if (!cemi->service_interval || !cemi->burst_size) {
-		spin_unlock_bh(&ecm_classifier_emesh_lock);
-		return;
-	}
-	spin_unlock_bh(&ecm_classifier_emesh_lock);
-
 	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
 	if (!ci) {
 		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
@@ -501,16 +492,16 @@ void ecm_classifier_emesh_update_latency_param_on_conn_decel(struct ecm_classifi
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
 	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval, cemi->burst_size, cemi->pcp[ECM_CONN_DIR_FLOW],
-			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+			cemi->service_interval_dl, cemi->burst_size_dl, cemi->service_interval_ul, cemi->burst_size_ul,
+			cemi->pcp[ECM_CONN_DIR_FLOW], ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
 
 	/*
 	 * Get mac address for source node
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
 	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval, cemi->burst_size, cemi->pcp[ECM_CONN_DIR_RETURN],
-			ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+			cemi->service_interval_dl, cemi->burst_size_dl, cemi->service_interval_ul, cemi->burst_size_ul,
+			cemi->pcp[ECM_CONN_DIR_FLOW], ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
 
 	ecm_db_connection_deref(ci);
 }
@@ -546,8 +537,10 @@ static void ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(struct
 {
 	struct ecm_classifier_emesh_instance *cemi;
 	struct ecm_db_connection_instance *ci;
-	uint8_t service_interval;
-	uint32_t burst_size;
+	uint8_t service_interval_dl;
+	uint32_t burst_size_dl;
+	uint8_t service_interval_ul;
+	uint32_t burst_size_ul;
 	struct sk_buff *skb;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
@@ -597,15 +590,18 @@ static void ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(struct
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
-	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size, smac, dmac);
+	sp_mapdb_get_wlan_latency_params(skb, &service_interval_dl, &burst_size_dl,
+			&service_interval_ul, &burst_size_ul, smac, dmac);
 
 	spin_lock_bh(&ecm_classifier_emesh_lock);
 
 	/*
 	 * Update latency parameters to accelerated connection
 	 */
-	cemi->service_interval = service_interval;
-	cemi->burst_size = burst_size;
+	cemi->service_interval_dl = service_interval_dl;
+	cemi->burst_size_dl = burst_size_dl;
+	cemi->service_interval_ul = service_interval_ul;
+	cemi->burst_size_ul = burst_size_ul;
 	spin_unlock_bh(&ecm_classifier_emesh_lock);
 
 	/*
@@ -613,25 +609,28 @@ static void ecm_classifier_emesh_update_wlan_latency_params_on_conn_accel(struct
 	 * 2 possibilities - 1. no rule match 2. sp rule does not have
 	 * latency parameter configured.
 	 */
-	if (service_interval && burst_size) {
+	if ((service_interval_ul && burst_size_ul) || (service_interval_dl && burst_size_dl)) {
 		/*
 		 * Send destination mac address of this connection
 		 */
 		ecm_emesh.update_peer_mesh_latency_params(dmac,
-				service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+				service_interval_dl, burst_size_dl, service_interval_ul, burst_size_ul,
+				skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
 	}
 
 	/*
 	 * Get latency parameter for other direction
 	 */
-	sp_mapdb_get_wlan_latency_params(skb, &service_interval, &burst_size, dmac, smac);
+	sp_mapdb_get_wlan_latency_params(skb, &service_interval_dl, &burst_size_dl,
+			&service_interval_ul, &burst_size_ul, dmac, smac);
 
-	if (service_interval && burst_size) {
+	if ((service_interval_ul && burst_size_ul) || (service_interval_dl && burst_size_dl)) {
 		/*
 		 * Send source mac address of this connection
 		 */
 		ecm_emesh.update_peer_mesh_latency_params(smac,
-				service_interval, burst_size, skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+				service_interval_dl, burst_size_dl, service_interval_ul, burst_size_ul,
+				skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
 	}
 
 	ecm_db_connection_deref(ci);

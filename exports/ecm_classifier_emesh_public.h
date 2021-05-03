@@ -21,7 +21,8 @@
  * Mesh latency config update callback function to which MSCS client will register
  */
 typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
-		uint32_t service_interval, uint32_t burst_size,
+		uint32_t service_interval_dl, uint32_t burst_size_dl,
+		uint32_t service_interval_ul, uint32_t burst_size_ul,
 		uint16_t priority, uint8_t add_or_sub);
 
 struct ecm_classifier_emesh_callbacks {
