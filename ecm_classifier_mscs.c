@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2020-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -203,6 +203,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	ecm_classifier_mscs_process_callback_t cb = NULL;
 	ecm_classifier_mscs_result_t result = 0;
 	uint8_t smac[ETH_ALEN];
+	uint8_t dmac[ETH_ALEN];
 	ip_addr_t dst_ip;
 
 	cmscsi = (struct ecm_classifier_mscs_instance *)aci;
@@ -269,9 +270,11 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		DEBUG_TRACE("%px: sender is SRC\n", aci);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 	} else {
 		DEBUG_TRACE("%px: sender is DEST\n", aci);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
 	}
 	ecm_db_connection_deref(ci);
 
@@ -293,12 +296,12 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	/*
 	 * Invoke callback registered to classifier for peer look up
 	 */
-	result = cb(smac, skb);
+	result = cb(smac, dmac, skb);
 
 	/*
 	 * check the result of callback
 	 */
-	if (result != ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
+	if (result == ECM_CLASSIFIER_MSCS_RESULT_DENY_PRIORITY) {
 		spin_lock_bh(&ecm_classifier_mscs_lock);
 		cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 		goto mscs_classifier_out;
@@ -316,8 +319,14 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	cmscsi->process_response.became_relevant = became_relevant;
 
 	cmscsi->process_response.process_actions = ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
-	cmscsi->process_response.flow_qos_tag = skb->priority;
-	cmscsi->process_response.return_qos_tag = skb->priority;
+
+	if (result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
+		cmscsi->process_response.flow_qos_tag = skb->priority;
+		cmscsi->process_response.return_qos_tag = skb->priority;
+	} else if (result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_INVALID_TAG) {
+		cmscsi->process_response.flow_qos_tag = ECM_CLASSIFIER_MSCS_INVALID_QOS_TAG;
+		cmscsi->process_response.return_qos_tag = ECM_CLASSIFIER_MSCS_INVALID_QOS_TAG;
+	}
 
 mscs_classifier_out:
 
