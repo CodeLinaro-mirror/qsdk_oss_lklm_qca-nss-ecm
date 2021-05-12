@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2020-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -16,11 +16,15 @@
 
 #ifndef __ECM_CLASSIFIER_MSCS_PUBLIC_H__
 #define __ECM_CLASSIFIER_MSCS_PUBLIC_H__
+
+#define ECM_CLASSIFIER_MSCS_INVALID_QOS_TAG 0xF
+
 /*
  * MSCS Priority update result vased on WiFi MSCS peer lookup
  */
 enum ecm_classifier_mscs_results {
 	ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY,		/* MSCS priority update allowed */
+	ECM_CLASSIFIER_MSCS_RESULT_UPDATE_INVALID_TAG,
 	ECM_CLASSIFIER_MSCS_RESULT_DENY_PRIORITY,		/* MSCS priority not allowed for flow and return direction */
 };
 typedef enum ecm_classifier_mscs_results ecm_classifier_mscs_result_t;
@@ -28,7 +32,7 @@ typedef enum ecm_classifier_mscs_results ecm_classifier_mscs_result_t;
 /*
  * Callback function to which MSCS client will register
  */
-typedef int (*ecm_classifier_mscs_process_callback_t)(uint8_t src_mac[], struct sk_buff* skb);
+typedef int (*ecm_classifier_mscs_process_callback_t)(uint8_t src_mac[], uint8_t dst_mac[], struct sk_buff* skb);
 
 struct ecm_classifier_mscs_callbacks {
 	ecm_classifier_mscs_process_callback_t get_peer_priority;
