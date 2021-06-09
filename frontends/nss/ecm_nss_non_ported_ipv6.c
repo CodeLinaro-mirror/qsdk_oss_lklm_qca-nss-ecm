@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -1159,11 +1159,9 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
-		 * Reset the slow path counter as well.
 		 */
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
-		feci->stats.slow_path_packets = 0;
 		spin_unlock_bh(&feci->lock);
 		kfree(nim);
 		return;

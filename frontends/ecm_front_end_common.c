@@ -393,6 +393,20 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 }
 
 /*
+ * ecm_front_end_get_slow_packet_count()
+ *	Gets the slow path packet count for the given connection.
+ */
+uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_instance *feci)
+{
+	uint64_t slow_pkts;
+
+	spin_lock_bh(&feci->lock);
+	slow_pkts = feci->stats.slow_path_packets;
+	spin_unlock_bh(&feci->lock);
+	return slow_pkts;
+}
+
+/*
  * ecm_front_end_db_conn_limit_handler()
  *	Database connection limit sysctl node handler.
  */

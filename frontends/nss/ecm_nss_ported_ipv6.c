@@ -1556,11 +1556,9 @@ static bool ecm_nss_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	if (nss_tx_status == NSS_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
-		 * Reset the slow_path_packet counter as well.
 		 */
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
-		feci->stats.slow_path_packets = 0;
 		spin_unlock_bh(&feci->lock);
 		return true;
 	}

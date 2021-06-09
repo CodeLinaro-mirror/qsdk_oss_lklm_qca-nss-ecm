@@ -1158,11 +1158,9 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
-		 * Reset the slow path counter as well.
 		 */
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
-		feci->stats.slow_path_packets = 0;
 		spin_unlock_bh(&feci->lock);
 		return;
 	}
