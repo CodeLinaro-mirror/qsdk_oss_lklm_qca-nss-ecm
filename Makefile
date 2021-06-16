@@ -171,22 +171,12 @@ ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
 # #############################################################################
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
-#
-# TODO: This is a workaround for external builds in which the qca-mcs source
-# code is not available. This will be fixed later by breaking the dependency from ECM
-# to qca-mcs
-#
-MCS_CONFIG:=$(shell  grep "CONFIG_PACKAGE_kmod-qca-mcs=y" $(TOPDIR)/.config)
-MCS_ENABLED:=CONFIG_PACKAGE_kmod-qca-mcs=y
-ifeq ($(MCS_CONFIG),$(MCS_ENABLED))
-ECM_MULTICAST_ENABLE=y
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 endif
 ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
 ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
-endif
 endif
 
 # #############################################################################
@@ -269,16 +259,8 @@ ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
 # with Hy-Fi is completed.
 # #############################################################################
 #
-# TODO: This is a workaround for external builds in which the qca-hyfi-bridge source
-# code is not available. This will be fixed later by breaking the dependency from ECM
-# to qca-hyfi-bridge
-#
-HYFI_BRIDGE_CONFIG:=$(shell  grep "CONFIG_PACKAGE_kmod-qca-hyfi-bridge=y" $(TOPDIR)/.config)
-HYFI_BRIDGE_ENABLED:=CONFIG_PACKAGE_kmod-qca-hyfi-bridge=y
-ifeq ($(HYFI_BRIDGE_CONFIG),$(HYFI_BRIDGE_ENABLED))
 ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
 ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
-endif
 
 # #############################################################################
 # Define ECM_CLASSIFIER_PCC_ENABLE=y in order to enable
