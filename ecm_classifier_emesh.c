@@ -49,6 +49,7 @@
 #include "ecm_classifier_emesh_public.h"
 #include "ecm_front_end_ipv4.h"
 #include "ecm_front_end_ipv6.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic numbers
@@ -233,7 +234,8 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 	uint32_t became_relevant = 0;
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
-	int protocol, slow_pkts;
+	int protocol;
+	uint64_t slow_pkts;
 
 	cemi = (struct ecm_classifier_emesh_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
@@ -310,9 +312,7 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	accel_mode = feci->accel_state_get(feci);
-	spin_lock_bh(&feci->lock);
-	slow_pkts = feci->stats.slow_path_packets;
-	spin_unlock_bh(&feci->lock);
+	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
 	feci->deref(feci);
 	protocol = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_deref(ci);
@@ -406,7 +406,7 @@ static void ecm_classifier_emesh_process(struct ecm_classifier_instance *aci, ec
 			 * For option 2, we wait until seeing ecm_classifier_accel_delay_pkts.
 			 */
 			if ((ecm_classifier_accel_delay_pkts == 1) || (slow_pkts < ecm_classifier_accel_delay_pkts)) {
-				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %d accel is not allowed yet\n",
+				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %llu accel is not allowed yet\n",
 						cemi, ecm_classifier_accel_delay_pkts, slow_pkts);
 				spin_lock_bh(&ecm_classifier_emesh_lock);
 				cemi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
