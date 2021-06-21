@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -92,6 +92,7 @@ struct ecm_db_multicast_tuple_instance {
 	uint32_t flags;		/* Flags for this instance node */
 	uint32_t hash_index;	/* Hash index of this node */
 	int proto;		/* RO: Protocol */
+	struct net_device *l2_br_dev;		/* Bridge device for L2-only flows */
 	int refs;		/* Integer to trap we never go negative */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;		/* Magic value for debug */
@@ -255,6 +256,10 @@ int _ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instanc
 		if (ti->next) {
 			ti->next->prev = ti->prev;
 		}
+	}
+
+	if (ti->l2_br_dev) {
+		dev_put(ti->l2_br_dev);
 	}
 
 	DEBUG_CLEAR_MAGIC(ti);
@@ -461,6 +466,7 @@ struct ecm_db_multicast_tuple_instance *ecm_db_multicast_tuple_instance_alloc(ip
 	ti->refs = 1;
 	ti->next = NULL;
 	ti->prev = NULL;
+	ti->l2_br_dev = NULL;
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ti->ovs_ingress_vlan.h_vlan_TCI = 0;
 	ti->ovs_ingress_vlan.h_vlan_encapsulated_proto = 0;
@@ -694,6 +700,34 @@ void ecm_db_multicast_tuple_instance_flags_clear(struct ecm_db_multicast_tuple_i
 	spin_unlock_bh(&ecm_db_lock);
 }
 EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_flags_clear);
+
+/*
+ * ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev()
+ * 	Save bridge device for multicast flow
+ */
+void ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev(struct ecm_db_multicast_tuple_instance *ti, struct net_device *l2_br_dev)
+{
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%px: magic failed\n", ti);
+
+	DEBUG_ASSERT(l2_br_dev, "Invalid argument received. Expected a l2_br_dev");
+
+	spin_lock_bh(&ecm_db_lock);
+	ti->l2_br_dev = l2_br_dev;
+	dev_hold(ti->l2_br_dev);
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev);
+
+/*
+ * ecm_db_multicast_tuple_instance_get_l2_br_dev()
+ * 	Return bridge device for multicast flow
+ */
+struct net_device *ecm_db_multicast_tuple_instance_get_l2_br_dev(struct ecm_db_multicast_tuple_instance *ti)
+{
+	DEBUG_CHECK_MAGIC(ti, ECM_DB_MULTICAST_INSTANCE_MAGIC, "%px: magic failed\n", ti);
+	return ti->l2_br_dev;
+}
+EXPORT_SYMBOL(ecm_db_multicast_tuple_instance_get_l2_br_dev);
 
 /*
  * ecm_db_multicast_connection_to_interfaces_get_and_ref_all()

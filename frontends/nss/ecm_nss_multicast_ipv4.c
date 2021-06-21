@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -2180,6 +2180,7 @@ static void ecm_nss_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 	uint32_t mc_flags = 0;
 	bool if_update;
 	bool is_routed;
+	struct net_device *l2_br_dev = NULL;
 
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
 	if (!ti) {
@@ -2259,15 +2260,37 @@ static void ecm_nss_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		 * at a later point via the MFC callback. This is because
 		 * there might be a few seconds delay before MFC issues
 		 * the delete callback
+		 *
 		 */
-		if (!if_num && !is_routed) {
+		if (!is_routed) {
 			/*
-			 * Decelerate the flow as there are no active multicast port found.
+			 * L2-only multicast: Update the flow only if the flow's bridge device matches the bridge device passed by MCS.
 			 */
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
-			feci->decelerate(feci);
-			feci->deref(feci);
-			goto find_next_tuple;
+			if (!if_num) {
+				/*
+				 * Decelerate the flow since there is no active ports left
+				 */
+				feci->decelerate(feci);
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
+
+			/*
+			 * Decelerate the flow if the bridge device from the MCS update does not match the bridge with which flow was created.
+			 */
+			l2_br_dev = ecm_db_multicast_tuple_instance_get_l2_br_dev(ti);
+			if (!l2_br_dev) {
+				DEBUG_WARN("Not found a valid l2_br_dev in ti for bridged mc flow");
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
+
+			if (l2_br_dev != brdev) {
+				DEBUG_WARN("L2 bridge device does not match the MCS update. l2_br_dev:%s brdev:%s", l2_br_dev->name, brdev->name);
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
 		}
 
 		/*
@@ -3350,6 +3373,15 @@ process_packet:
 
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ci = nci;
+
+			/*
+			 * Update the outdev_master in tuple_instance
+			 * Dereference: ecm_db_connection_deref()
+			 */
+			if (!is_routed) {
+				ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev(tuple_instance, out_dev_master);
+			}
+
 			DEBUG_INFO("%px: New UDP multicast connection created\n", ci);
 		}
 

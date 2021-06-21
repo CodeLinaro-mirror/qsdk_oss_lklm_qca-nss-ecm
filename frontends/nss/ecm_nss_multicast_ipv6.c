@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -2119,6 +2119,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 	uint32_t mc_dst_dev[ECM_DB_MULTICAST_IF_MAX];
 	bool mc_update;
 	bool is_routed;
+	struct net_device *l2_br_dev = NULL;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(group6, dest_ip);
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
@@ -2202,17 +2203,36 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * the delete callback
 		 */
 		is_routed = ecm_db_connection_is_routed_get(ci);
-		if (!if_num && !is_routed) {
+		if (!is_routed) {
 			/*
-			 * Decelerate the flow as there are no active multicast port found.
+			 * L2-only multicast: Update the flow only if the flow's bridge device matches the bridge device passed by MCS.
 			 */
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
-			feci->decelerate(feci);
-			feci->deref(feci);
-			goto find_next_tuple;
-		}
+			if (!if_num) {
+				/*
+				 * Decelerate the flow since there is no active ports left
+				 */
+				feci->decelerate(feci);
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
 
-		DEBUG_TRACE("MCS-cb: src_ip = 0x%x, dest_ip = 0x%x, Num if = %d\n", src_ip[0], dest_ip[0], if_num);
+			/*
+			 * Decelerate the flow if the bridge device from the MCS update does not match the bridge with which flow was created.
+			 */
+			l2_br_dev = ecm_db_multicast_tuple_instance_get_l2_br_dev(ti);
+			if (!l2_br_dev) {
+				DEBUG_WARN("Not found a valid l2_br_dev in ti for bridged mc flow");
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
+
+			if (l2_br_dev != brdev) {
+				DEBUG_WARN("L2 bridge device does not match the MCS update. l2_br_dev:%s brdev:%s", l2_br_dev->name, brdev->name);
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
+		}
 
 		/*
 		 * Find out changes to the destination interfaces heirarchy
@@ -3152,6 +3172,13 @@ process_packet:
 
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ci = nci;
+			/*
+			 * Update the outdev_master in CI
+			 * Dereference: ecm_db_connection_deref()
+			 */
+			if (!is_routed) {
+				ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev(tuple_instance, out_dev_master);
+			}
 			DEBUG_INFO("%px: New UDP connection created\n", ci);
 		}
 
