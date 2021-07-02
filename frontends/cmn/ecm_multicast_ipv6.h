@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2021 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2021 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,7 +14,7 @@
  **************************************************************************
  */
 
-extern unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_dev,
+extern unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 							struct net_device *in_dev,
 							uint8_t *src_node_addr,
 							uint8_t *dest_node_addr,

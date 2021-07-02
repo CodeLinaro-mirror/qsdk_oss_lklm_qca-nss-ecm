@@ -77,8 +77,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -89,12 +89,13 @@
 #include "ecm_nss_multicast_ipv4.h"
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
+#include "ecm_ipv4.h"
 
 /*
- * ecm_nss_multicast_connection_to_interface_heirarchy_construct()
+ * ecm_multicast_connection_to_interface_heirarchy_construct()
  * 	Create destination interface heirarchy for a routed/bridge multicast connection
  */
-static int32_t ecm_nss_multicast_connection_to_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
+static int32_t ecm_multicast_connection_to_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
 								      struct ecm_db_iface_instance *interfaces, ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr,
 								      struct net_device *in_dev, struct net_device *brdev, uint8_t max_if, uint32_t *dst_dev,
 								      uint32_t *to_list_first, uint8_t *src_node_addr, bool is_routed,
@@ -111,14 +112,14 @@ static int32_t ecm_nss_multicast_connection_to_interface_heirarchy_construct(str
 }
 
 /*
- * ecm_nss_multicast_ipv4_connection_regenerate()
+ * ecm_multicast_ipv4_connection_regenerate()
  *	Re-generate a connection.
  *
  * Re-generating a connection involves re-evaluating the interface lists in case interface heirarchies have changed.
  * It also involves the possible triggering of classifier re-evaluation but only if all currently assigned
  * classifiers permit this operation.
  */
-static void ecm_nss_multicast_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+static void ecm_multicast_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *in_dev, struct net_device *in_dev_nat)
 {
 	int i;
@@ -255,18 +256,18 @@ ecm_multicast_ipv4_retry_regen:
 }
 
 /*
- * ecm_nss_multicast_ipv4_node_establish_and_ref()
+ * ecm_multicast_ipv4_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
  * The given_node_addr will be used if provided.
  *
  * Returns NULL on failure.
  *
- * TODO: This function will be removed later and the one in the ecm_nss_ipv4.c file will be used
+ * TODO: This function will be removed later and the one in the ecm_ipv4.c file will be used
  *	instead of this one when the multicast code is fixed to use the new interface hierarchy
  *	construction model.
  */
-static struct ecm_db_node_instance *ecm_nss_multicast_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
+static struct ecm_db_node_instance *ecm_multicast_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
 							struct net_device *dev, ip_addr_t addr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
 							uint8_t *given_node_addr, struct sk_buff *skb)
@@ -471,17 +472,17 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv4_node_establish_and_re
 	/*
 	 * Add node into the database, atomically to avoid races creating the same thing
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		ecm_db_node_deref(nni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
 
 	ecm_db_node_add(nni, ii, node_addr, NULL, nni);
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't need iface instance now
@@ -493,10 +494,10 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv4_node_establish_and_re
 }
 
 /*
- * ecm_nss_multicast_ipv4_connection_process()
+ * ecm_multicast_ipv4_connection_process()
  *	Process a UDP multicast flow
  */
-unsigned int ecm_nss_multicast_ipv4_connection_process(struct net_device *out_dev,
+unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 							struct net_device *in_dev,
 							uint8_t *src_node_addr,
 							uint8_t *dest_node_addr,
@@ -760,6 +761,8 @@ process_packet:
 		int32_t *to_first;
 		int ret;
 		uint8_t dest_mac_addr[ETH_ALEN];
+		enum ecm_front_end_type fe_type;
+		ecm_db_connection_defunct_callback_t defunct_callback;
 
 		DEBUG_TRACE("New UDP connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u\n", ECM_IP_ADDR_TO_DOT(ip_src_addr), \
 				src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port);
@@ -767,9 +770,9 @@ process_packet:
 		/*
 		 * Before we attempt to create the connection are we being terminated?
 		 */
-		spin_lock_bh(&ecm_nss_ipv4_lock);
-		if (ecm_nss_ipv4_terminate_pending) {
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_lock_bh(&ecm_ipv4_lock);
+		if (ecm_ipv4_terminate_pending) {
+			spin_unlock_bh(&ecm_ipv4_lock);
 			DEBUG_WARN("Terminating\n");
 
 			/*
@@ -777,7 +780,7 @@ process_packet:
 			 */
 			goto done;
 		}
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 
 		/*
 		 * Now allocate the new connection
@@ -791,7 +794,16 @@ process_packet:
 		/*
 		 * Connection must have a front end instance associated with it
 		 */
-		feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(nci, can_accel);
+		fe_type = ecm_front_end_type_get();
+		if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(nci, can_accel);
+			defunct_callback = ecm_nss_multicast_ipv4_connection_defunct_callback;
+		} else {
+			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+			ecm_db_connection_deref(nci);
+			goto done;
+		}
+
 		if (!feci) {
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate front end\n");
@@ -829,7 +841,7 @@ process_packet:
 		ecm_db_connection_interfaces_reset(nci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 
 		DEBUG_TRACE("%px: Establish source node\n", nci);
-		ni[ECM_DB_OBJ_DIR_FROM] = ecm_nss_multicast_ipv4_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_FROM] = ecm_multicast_ipv4_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("%px: Failed to establish source node\n", nci);
@@ -840,7 +852,7 @@ process_packet:
 		}
 
 		DEBUG_TRACE("%px: Create source mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_FROM] = ecm_nss_ipv4_mapping_establish_and_ref(ip_src_addr, src_port);
+		mi[ECM_DB_OBJ_DIR_FROM] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr, src_port);
 		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("%px: Failed to establish src mapping\n", nci);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
@@ -882,7 +894,7 @@ process_packet:
 			*to_first = ECM_DB_IFACE_HEIRARCHY_MAX;
 		}
 
-		interface_idx_cnt = ecm_nss_multicast_connection_to_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, in_dev,
+		interface_idx_cnt = ecm_multicast_connection_to_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, in_dev,
 												  out_dev_master, if_cnt, dst_dev, to_list_first,
 												  src_node_addr, is_routed, layer4hdr, skb);
 		if (interface_idx_cnt == 0) {
@@ -918,7 +930,7 @@ process_packet:
 
 		DEBUG_TRACE("%px: Create destination node\n", nci);
 		ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list);
-		ni[ECM_DB_OBJ_DIR_TO] = ecm_nss_multicast_ipv4_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
+		ni[ECM_DB_OBJ_DIR_TO] = ecm_multicast_ipv4_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
 
 		/*
 		 * De-ref the Multicast destination interface list
@@ -944,7 +956,7 @@ process_packet:
 		ni[ECM_DB_OBJ_DIR_TO_NAT] = ni[ECM_DB_OBJ_DIR_TO];
 
 		DEBUG_TRACE("%px: Create destination mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_TO] = ecm_nss_ipv4_mapping_establish_and_ref(ip_dest_addr, dest_port);
+		mi[ECM_DB_OBJ_DIR_TO] = ecm_ipv4_mapping_establish_and_ref(ip_dest_addr, dest_port);
 		if (!mi[ECM_DB_OBJ_DIR_TO]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
@@ -976,7 +988,7 @@ process_packet:
 		}
 		ecm_db_connection_interfaces_reset(nci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 
-		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_nss_multicast_ipv4_node_establish_and_ref(feci, in_dev_nat, ip_src_addr_nat, from_nat_list, from_nat_list_first, src_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_multicast_ipv4_node_establish_and_ref(feci, in_dev_nat, ip_src_addr_nat, from_nat_list, from_nat_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
@@ -993,7 +1005,7 @@ process_packet:
 		}
 
 		DEBUG_TRACE("%px: Create from NAT mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_nss_ipv4_mapping_establish_and_ref(ip_src_addr_nat, src_port_nat);
+		mi[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr_nat, src_port_nat);
 
 		if (!mi[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
@@ -1066,13 +1078,13 @@ process_packet:
 		 * We *could* end up creating more than one connection instance for the same actual connection.
 		 * To guard against this we now perform a mutex'd lookup of the connection + add once more - another cpu may have created it before us.
 		 */
-		spin_lock_bh(&ecm_nss_ipv4_lock);
+		spin_lock_bh(&ecm_ipv4_lock);
 		ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
 		if (ci) {
 			/*
 			 * Another cpu created the same connection before us - use the one we just found
 			 */
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+			spin_unlock_bh(&ecm_ipv4_lock);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ecm_db_connection_deref(nci);
 		} else {
@@ -1096,14 +1108,14 @@ process_packet:
 			ecm_db_connection_add(nci, mi, ni,
 					4, protocol, ecm_dir,
 					NULL /* final callback */,
-					ecm_nss_multicast_ipv4_connection_defunct_callback,
+					defunct_callback,
 					tg, is_routed, nci);
 
 			/*
 			 * Add the tuple instance and attach it with connection instance
 			 */
 			ecm_db_multicast_tuple_instance_add(tuple_instance, nci);
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+			spin_unlock_bh(&ecm_ipv4_lock);
 
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ci = nci;
@@ -1190,7 +1202,7 @@ process_packet:
 			}
 
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
-			interface_idx_cnt = ecm_nss_multicast_connection_to_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, in_dev,
+			interface_idx_cnt = ecm_multicast_connection_to_interface_heirarchy_construct(feci, to_list, ip_src_addr, ip_dest_addr, in_dev,
 					out_dev_master, if_cnt, dst_dev, to_list_first,
 					src_node_addr, is_routed, (__be16 *)&udp_hdr, skb);
 			feci->deref(feci);
@@ -1283,7 +1295,7 @@ process_packet:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_nss_multicast_ipv4_connection_regenerate(ci, sender, out_dev, in_dev, in_dev_nat);
+		ecm_multicast_ipv4_connection_regenerate(ci, sender, out_dev, in_dev, in_dev_nat);
 	}
 
 	/*
@@ -1521,7 +1533,7 @@ process_packet:
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		struct ecm_front_end_connection_instance *feci;
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ecm_nss_multicast_ipv4_connection_accelerate(feci, &prevalent_pr);
+		feci->accelerate(feci, &prevalent_pr, false, NULL, NULL);
 		feci->deref(feci);
 	}
 	ecm_db_connection_deref(ci);

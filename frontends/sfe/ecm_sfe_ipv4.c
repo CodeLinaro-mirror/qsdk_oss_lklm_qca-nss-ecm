@@ -73,8 +73,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -225,18 +225,7 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	ECM_NIN4_ADDR_TO_IP_ADDR(return_ip_xlate, sync->return_ip_xlate);
 	ECM_NIN4_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
 
-#ifdef ECM_MULTICAST_ENABLE
-	/*
-	 * Check for multicast flow
-	 */
-	if (ecm_ip_addr_is_multicast(return_ip)) {
-		ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, (int)ntohs(sync->flow_ident), (int)ntohs(sync->return_ident));
-	} else {
-		ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, (int)ntohs(sync->flow_ident), (int)ntohs(sync->return_ident_xlate));
-	}
-#else
 	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, (int)ntohs(sync->flow_ident), (int)ntohs(sync->return_ident_xlate));
-#endif
 	if (!ci) {
 		DEBUG_TRACE("%px: SFE Sync: no connection\n", sync);
 		goto sync_conntrack;
@@ -287,44 +276,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 				ci, sync->flow_rx_packet_count, sync->flow_rx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
 		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
-#ifdef ECM_MULTICAST_ENABLE
-		if (ecm_ip_addr_is_multicast(return_ip)) {
-			/*
-			 * The amount of data *sent* by the ECM multicast connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
-			 */
-			ecm_db_multicast_connection_data_totals_update(ci, true, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
-			ecm_db_multicast_connection_data_totals_update(ci, false, sync->return_rx_byte_count, sync->return_rx_packet_count);
-			ecm_db_multicast_connection_interface_heirarchy_stats_update(ci, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
-
-			/*
-			 * As packets have been accelerated we have seen some action.
-			 */
-			feci->action_seen(feci);
-
-			/*
-			 * Update IP multicast routing cache stats
-			 */
-			ipmr_mfc_stats_update(&init_net, htonl(flow_ip[0]), htonl(return_ip[0]), sync->flow_rx_packet_count,
-										 sync->flow_rx_byte_count, sync->flow_rx_packet_count, sync->flow_rx_byte_count);
-		} else {
-			/*
-			 * The amount of data *sent* by the ECM connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
-			 */
-			ecm_db_connection_data_totals_update(ci, true, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
-
-			/*
-			 * The amount of data *sent* by the ECM connection 'to' side is the amount the SFE has *received* in the 'return' direction.
-			 */
-			ecm_db_connection_data_totals_update(ci, false, sync->return_rx_byte_count, sync->return_rx_packet_count);
-
-			/*
-			 * As packets have been accelerated we have seen some action.
-			 */
-			feci->action_seen(feci);
-
-		}
-
-#else
 		/*
 		 * The amount of data *sent* by the ECM connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
 		 */
@@ -339,8 +290,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 		 * As packets have been accelerated we have seen some action.
 		 */
 		feci->action_seen(feci);
-
-#endif
 	}
 
 	switch(sync->reason) {
@@ -393,24 +342,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 				neigh_release(neigh);
 			}
 
-#ifdef ECM_MULTICAST_ENABLE
-			/*
-			 * Update the neighbour entry for destination IP address
-			 */
-			if (!ecm_ip_addr_is_multicast(return_ip)) {
-				neigh = ecm_interface_ipv4_neigh_get(return_ip);
-				if (!neigh) {
-					DEBUG_WARN("Neighbour entry for %pI4n not found\n", &sync->return_ip);
-				} else {
-					if (sync->return_tx_packet_count) {
-						DEBUG_TRACE("Neighbour entry event send for %pI4n: %px\n", &sync->return_ip, neigh);
-						neigh_event_send(neigh, NULL);
-					}
-
-					neigh_release(neigh);
-				}
-			}
-#else
 			/*
 			 * Update the neighbour entry for destination IP address
 			 */
@@ -425,7 +356,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 
 				neigh_release(neigh);
 			}
-#endif
 		}
 	}
 
@@ -737,6 +667,12 @@ static struct file_operations ecm_sfe_ipv4_decel_cmd_avg_millis_fops = {
 int ecm_sfe_ipv4_init(struct dentry *dentry)
 {
 	int result = -1;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+		DEBUG_INFO("SFE IPv4 is disabled\n");
+		return 0;
+	}
 
 	DEBUG_INFO("ECM SFE IPv4 init\n");
 
@@ -813,19 +749,6 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_sfe_non_ported_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
-
-#ifdef ECM_MULTICAST_ENABLE
-	if (!ecm_sfe_multicast_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm multicast files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
 	/*
 	 * Register this module with the simulated sfe driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there
@@ -834,23 +757,6 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	 */
 	ecm_sfe_ipv4_drv_mgr = sfe_drv_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, NULL);
 
-	/*
-	 * Register netfilter hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_sfe_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv4_netfilter_hooks));
-#else
-	result = nf_register_net_hooks(&init_net, ecm_sfe_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv4_netfilter_hooks));
-#endif
-	if (result < 0) {
-		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		sfe_drv_ipv4_notify_unregister();
-		goto task_cleanup;
-	}
-
-#ifdef ECM_MULTICAST_ENABLE
-	ecm_sfe_multicast_ipv4_init();
-#endif
 	return 0;
 
 task_cleanup:
@@ -865,22 +771,14 @@ EXPORT_SYMBOL(ecm_sfe_ipv4_init);
  */
 void ecm_sfe_ipv4_exit(void)
 {
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+		DEBUG_INFO("SFE IPv4 is disabled\n");
+		return;
+	}
+
 	DEBUG_INFO("ECM SFE IPv4 Module exit\n");
-
-	spin_lock_bh(&ecm_sfe_ipv4_lock);
-	ecm_sfe_ipv4_terminate_pending = true;
-	spin_unlock_bh(&ecm_sfe_ipv4_lock);
-
-	/*
-	 * Stop the network stack hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_sfe_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_sfe_ipv4_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_sfe_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_sfe_ipv4_netfilter_hooks));
-#endif
 
 	/*
 	 * Unregister from the simulated sfe driver
@@ -893,9 +791,5 @@ void ecm_sfe_ipv4_exit(void)
 	if (ecm_sfe_ipv4_dentry) {
 		debugfs_remove_recursive(ecm_sfe_ipv4_dentry);
 	}
-
-#ifdef ECM_MULTICAST_ENABLE
-	ecm_sfe_multicast_ipv4_exit();
-#endif
 }
 EXPORT_SYMBOL(ecm_sfe_ipv4_exit);

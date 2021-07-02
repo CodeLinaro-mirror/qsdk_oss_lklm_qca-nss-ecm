@@ -78,8 +78,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -90,12 +90,13 @@
 #include "ecm_nss_multicast_ipv6.h"
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
+#include "ecm_ipv6.h"
 
 /*
- * ecm_nss_multicast_ipv6_interface_heirarchy_construct()
+ * ecm_multicast_ipv6_interface_heirarchy_construct()
  *   Create destination multicast interface heirachy for Route/Bridge connection flow
  */
-static int ecm_nss_multicast_ipv6_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
+static int ecm_multicast_ipv6_interface_heirarchy_construct(struct ecm_front_end_connection_instance *feci,
 								struct ecm_db_iface_instance *interfaces, struct net_device *in_dev,
 								struct net_device *brdev, ip_addr_t packet_src_addr, ip_addr_t packet_dest_addr, uint8_t max_if,
 								uint32_t *dst_dev, int32_t *to_interface_first, uint8_t *src_node_addr, bool is_routed,
@@ -116,14 +117,14 @@ static int ecm_nss_multicast_ipv6_interface_heirarchy_construct(struct ecm_front
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_regenerate()
+ * ecm_multicast_ipv6_connection_regenerate()
  *	Re-generate a connection.
  *
  * Re-generating a connection involves re-evaluating the interface lists in case interface heirarchies have changed.
  * It also involves the possible triggering of classifier re-evaluation but only if all currently assigned
  * classifiers permit this operation.
  */
-static void ecm_nss_multicast_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+static void ecm_multicast_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *in_dev)
 {
 	int i;
@@ -241,18 +242,18 @@ ecm_multicast_ipv6_retry_regen:
 }
 
 /*
- * ecm_nss_multicast_ipv6_node_establish_and_ref()
+ * ecm_multicast_ipv6_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
  * The given_node_addr will be used if provided.
  *
  * Returns NULL on failure.
  *
- * TODO: This function should be removed and the one in the ecm_nss_ipv6.c file should be used
+ * TODO: This function should be removed and the one in the ecm_ipv6.c file should be used
  *	instead of this one when the multicast code is fixed to use the new interface hierarchy
  *	construction model.
  */
-static struct ecm_db_node_instance *ecm_nss_multicast_ipv6_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
+static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
 							struct net_device *dev, ip_addr_t addr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
 							uint8_t *given_node_addr, struct sk_buff *skb)
@@ -425,17 +426,17 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv6_node_establish_and_re
 	/*
 	 * Add node into the database, atomically to avoid races creating the same thing
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_ipv6_lock);
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_unlock_bh(&ecm_ipv6_lock);
 		ecm_db_node_deref(nni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
 
 	ecm_db_node_add(nni, ii, node_addr, NULL, nni);
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_unlock_bh(&ecm_ipv6_lock);
 
 	/*
 	 * Don't need iface instance now
@@ -447,10 +448,10 @@ static struct ecm_db_node_instance *ecm_nss_multicast_ipv6_node_establish_and_re
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_process()
+ * ecm_multicast_ipv6_connection_process()
  *	Process a UDP Multicast packet
  */
-unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_dev,
+unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 							struct net_device *in_dev,
 							uint8_t *src_node_addr,
 							uint8_t *dest_node_addr,
@@ -526,7 +527,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 	layer4hdr = (__be16*)udp_hdr;
 	/*
 	 * Extract transport port information
-	 * Refer to the ecm_nss_ipv6_process() for information on how we extract this information.
+	 * Refer to the ecm_ipv6_process() for information on how we extract this information.
 	 */
 	src_port = ntohs(orig_tuple->src.u.udp.port);
 	dest_port = ntohs(orig_tuple->dst.u.udp.port);
@@ -670,6 +671,8 @@ process_packet:
 		int vif;
 		int ret;
 		char dest_mac_addr[6];
+		enum ecm_front_end_type fe_type;
+		ecm_db_connection_defunct_callback_t defunct_callback;
 
 		DEBUG_TRACE("New UDP connection from " ECM_IP_ADDR_OCTAL_FMT ":%u to " ECM_IP_ADDR_OCTAL_FMT ":%u\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port);
@@ -677,9 +680,9 @@ process_packet:
 		/*
 		 * Before we attempt to create the connection are we being terminated?
 		 */
-		spin_lock_bh(&ecm_nss_ipv6_lock);
-		if (ecm_nss_ipv6_terminate_pending) {
-			spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_lock_bh(&ecm_ipv6_lock);
+		if (ecm_ipv6_terminate_pending) {
+			spin_unlock_bh(&ecm_ipv6_lock);
 			DEBUG_WARN("Terminating\n");
 
 			/*
@@ -687,7 +690,7 @@ process_packet:
 			 */
 			goto done;
 		}
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_unlock_bh(&ecm_ipv6_lock);
 
 		/*
 		 * Now allocate the new connection
@@ -701,7 +704,16 @@ process_packet:
 		/*
 		 * Connection must have a front end instance associated with it
 		 */
-		feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv6_connection_instance_alloc(nci, can_accel);
+		fe_type = ecm_front_end_type_get();
+		if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv6_connection_instance_alloc(nci, can_accel);
+			defunct_callback = ecm_nss_multicast_ipv6_connection_defunct_callback;
+		} else {
+			ecm_db_connection_deref(nci);
+			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+			goto done;
+		}
+
 		if (!feci) {
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate front end\n");
@@ -740,7 +752,7 @@ process_packet:
 		ecm_db_connection_interfaces_reset(nci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 
 		DEBUG_TRACE("%px: Create source node\n", nci);
-		ni[ECM_DB_OBJ_DIR_FROM] = ecm_nss_multicast_ipv6_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_FROM] = ecm_multicast_ipv6_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
 			feci->deref(feci);
@@ -752,7 +764,7 @@ process_packet:
 		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ni[ECM_DB_OBJ_DIR_FROM];
 
 		DEBUG_TRACE("%px: Create source mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_FROM] = ecm_nss_ipv6_mapping_establish_and_ref(ip_src_addr, src_port);
+		mi[ECM_DB_OBJ_DIR_FROM] = ecm_ipv6_mapping_establish_and_ref(ip_src_addr, src_port);
 		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			feci->deref(feci);
@@ -795,7 +807,7 @@ process_packet:
 			*to_first = ECM_DB_IFACE_HEIRARCHY_MAX;
 		}
 
-		interface_idx_cnt = ecm_nss_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master, ip_src_addr,
+		interface_idx_cnt = ecm_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master, ip_src_addr,
 										ip_dest_addr, mc_if_cnt, mc_dest_if, to_list_first, src_node_addr,  is_routed, skb);
 		if (interface_idx_cnt == 0) {
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
@@ -841,7 +853,7 @@ process_packet:
 
 		DEBUG_TRACE("%px: Create dest node\n", nci);
 		ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list);
-		ni[ECM_DB_OBJ_DIR_TO] = ecm_nss_multicast_ipv6_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
+		ni[ECM_DB_OBJ_DIR_TO] = ecm_multicast_ipv6_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
 		if (!ni[ECM_DB_OBJ_DIR_TO]) {
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
@@ -856,7 +868,7 @@ process_packet:
 		ni[ECM_DB_OBJ_DIR_TO_NAT] = ni[ECM_DB_OBJ_DIR_TO];
 
 		DEBUG_TRACE("%px: Create dest mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_TO] = ecm_nss_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
+		mi[ECM_DB_OBJ_DIR_TO] = ecm_ipv6_mapping_establish_and_ref(ip_dest_addr, dest_port);
 		if (!mi[ECM_DB_OBJ_DIR_TO]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
@@ -923,13 +935,13 @@ process_packet:
 		 * We *could* end up creating more than one connection instance for the same actual connection.
 		 * To guard against this we now perform a mutex'd lookup of the connection + add once more - another cpu may have created it before us.
 		 */
-		spin_lock_bh(&ecm_nss_ipv6_lock);
+		spin_lock_bh(&ecm_ipv6_lock);
 		ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, IPPROTO_UDP, src_port, dest_port);
 		if (ci) {
 			/*
 			 * Another cpu created the same connection before us - use the one we just found
 			 */
-			spin_unlock_bh(&ecm_nss_ipv6_lock);
+			spin_unlock_bh(&ecm_ipv6_lock);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ecm_db_connection_deref(nci);
 		} else {
@@ -953,14 +965,14 @@ process_packet:
 			ecm_db_connection_add(nci, mi, ni,
 					6, IPPROTO_UDP, ecm_dir,
 					NULL /* final callback */,
-					ecm_nss_multicast_ipv6_connection_defunct_callback,
+					defunct_callback,
 					tg, is_routed, nci);
 
 			/*
 			 * Add the tuple instance and attach it with connection instance
 			 */
 			ecm_db_multicast_tuple_instance_add(tuple_instance, nci);
-			spin_unlock_bh(&ecm_nss_ipv6_lock);
+			spin_unlock_bh(&ecm_ipv6_lock);
 
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ci = nci;
@@ -1042,7 +1054,7 @@ process_packet:
 			}
 
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
-			interface_idx_cnt = ecm_nss_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master,\
+			interface_idx_cnt = ecm_multicast_ipv6_interface_heirarchy_construct(feci, to_list, in_dev, out_dev_master,\
 					ip_src_addr, ip_dest_addr, mc_if_cnt,\
 					mc_dest_if, to_list_first, src_node_addr,
 					is_routed, skb);
@@ -1136,7 +1148,7 @@ process_packet:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_nss_multicast_ipv6_connection_regenerate(ci, sender, out_dev, in_dev);
+		ecm_multicast_ipv6_connection_regenerate(ci, sender, out_dev, in_dev);
 	}
 
 	/*
@@ -1382,7 +1394,7 @@ process_packet:
 		struct ecm_front_end_connection_instance *feci;
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ecm_nss_multicast_ipv6_connection_accelerate(feci, &prevalent_pr);
+		feci->accelerate(feci, &prevalent_pr, false, NULL, NULL);
 		feci->deref(feci);
 	}
 	ecm_db_connection_deref(ci);

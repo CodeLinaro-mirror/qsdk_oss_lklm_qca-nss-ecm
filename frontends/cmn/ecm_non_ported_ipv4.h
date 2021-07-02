@@ -14,7 +14,7 @@
  **************************************************************************
  */
 
-extern unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, struct net_device *out_dev_nat,
+extern unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_device *out_dev_nat,
 							struct net_device *in_dev, struct net_device *in_dev_nat,
 							uint8_t *src_node_addr, uint8_t *src_node_addr_nat,
 							uint8_t *dest_node_addr, uint8_t *dest_node_addr_nat,

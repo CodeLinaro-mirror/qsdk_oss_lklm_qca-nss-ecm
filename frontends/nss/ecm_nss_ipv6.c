@@ -83,8 +83,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -106,6 +106,7 @@
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #include <ovsmgr.h>
 #endif
+#include "ecm_ipv6.h"
 
 #define ECM_NSS_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_NSS_IPV6_STATS_SYNC_UDELAY 4000	/* Delay for 4ms */
@@ -220,13 +221,13 @@ unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device 
 	/*
 	 * If operations have stopped then do not process packets
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_ipv6_lock);
 	if (unlikely(ecm_front_end_ipv6_stopped)) {
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return 1;
 	}
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_unlock_bh(&ecm_ipv6_lock);
 
 	/*
 	 * Don't process broadcast.
@@ -271,7 +272,7 @@ unsigned int ecm_nss_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device 
 		}
 	}
 
-        ecm_nss_ipv6_ip_process((struct net_device *)out, in,
+        ecm_ipv6_ip_process((struct net_device *)out, in,
                                 skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IPV6);
         dev_put(in);
 
@@ -712,7 +713,7 @@ static void ecm_nss_ipv6_connection_sync_many_callback(void *app_data, struct ns
 	/*
 	 * If ECM is terminating, don't process this last stats
 	 */
-	if (ecm_nss_ipv6_terminate_pending) {
+	if (ecm_ipv6_terminate_pending) {
 		return;
 	}
 
@@ -775,7 +776,7 @@ static void ecm_nss_ipv6_stats_sync_req_work(struct work_struct *work)
 	}
 
 	while (retry) {
-		if (ecm_nss_ipv6_terminate_pending) {
+		if (ecm_ipv6_terminate_pending) {
 			return;
 		}
 		nss_tx_status = nss_ipv6_tx_with_size(ecm_nss_ipv6_nss_ipv6_mgr, ecm_nss_ipv6_sync_req_msg, PAGE_SIZE);
@@ -1050,6 +1051,12 @@ static void ecm_nss_ipv6_sync_queue_exit(void)
 int ecm_nss_ipv6_init(struct dentry *dentry)
 {
 	int result = -1;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_NSS) {
+		DEBUG_INFO("NSS IPv6 is disabled\n");
+		return 0;
+	}
 
 	DEBUG_INFO("ECM NSS IPv6 init\n");
 
@@ -1151,30 +1158,17 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 	 */
 	ecm_nss_ipv6_nss_ipv6_mgr = nss_ipv6_notify_register(ecm_nss_ipv6_net_dev_callback, NULL);
 
-	/*
-	 * Register netfilter hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_nss_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#else
-	result = nf_register_net_hooks(&init_net, ecm_nss_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#endif
-	if (result < 0) {
-		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		goto task_cleanup_1;
-	}
-
 #ifdef ECM_MULTICAST_ENABLE
 	result = ecm_nss_multicast_ipv6_init(ecm_nss_ipv6_dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Failed to init ecm ipv6 multicast frontend\n");
-		goto task_cleanup_2;
+		goto task_cleanup_1;
 	}
 #endif
 
 	if (!ecm_nss_ipv6_sync_queue_init()) {
 		DEBUG_ERROR("Failed to create ecm ipv6 connection sync workqueue\n");
-		goto task_cleanup_3;
+		goto task_cleanup_2;
 	}
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1182,47 +1176,32 @@ int ecm_nss_ipv6_init(struct dentry *dentry)
 #endif
 	return 0;
 
-task_cleanup_3:
-#ifdef ECM_MULTICAST_ENABLE
-		ecm_nss_multicast_ipv6_exit();
 task_cleanup_2:
-#endif
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv6_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv6_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#endif
+#ifdef ECM_MULTICAST_ENABLE
+	ecm_nss_multicast_ipv6_exit();
 task_cleanup_1:
+#endif
 	nss_ipv6_notify_unregister();
 
 task_cleanup:
 	debugfs_remove_recursive(ecm_nss_ipv6_dentry);
 	return result;
 }
-EXPORT_SYMBOL(ecm_nss_ipv6_init);
 
 /*
  * ecm_nss_ipv6_exit()
  */
 void ecm_nss_ipv6_exit(void)
 {
-	DEBUG_INFO("ECM NSS IPv6 Module exit\n");
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_ipv6_terminate_pending = true;
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	/*
-	 * Stop the network stack hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv6_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv6_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv6_netfilter_hooks));
-#endif
+	if (fe_type != ECM_FRONT_END_TYPE_NSS) {
+		DEBUG_INFO("NSS IPv6 is disabled\n");
+		return;
+	}
+
+	DEBUG_INFO("ECM NSS IPv6 Module exit\n");
+
 	/*
 	 * Unregister from the Linux NSS Network driver
 	 */
@@ -1248,4 +1227,3 @@ void ecm_nss_ipv6_exit(void)
 	ovsmgr_dp_hook_unregister(&ecm_nss_ipv6_dp_hooks);
 #endif
 }
-EXPORT_SYMBOL(ecm_nss_ipv6_exit);

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -17,6 +17,7 @@
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <net/netfilter/nf_conntrack.h>
 
 /*
  * Constant used with constructing acceleration rules.
@@ -39,6 +40,16 @@
 #define ecm_front_end_is_lag_slave(dev)	((dev->flags & IFF_SLAVE)	\
 							 && (dev->priv_flags & IFF_BONDING))
 #endif
+
+/*
+ * Front end engine types which the frontend
+ * isntance is created for.
+ */
+enum ecm_front_end_engine {
+	ECM_FRONT_END_ENGINE_NSS,
+	ECM_FRONT_END_ENGINE_SFE,
+	ECM_FRONT_END_ENGINE_MAX
+};
 
 /*
  * ECM kernel module parameter "front_end_selection" is used to determine
@@ -88,6 +99,9 @@ typedef enum ecm_front_end_acceleration_modes ecm_front_end_acceleration_mode_t;
  * Front end methods
  */
 struct ecm_front_end_connection_instance;
+typedef void (*ecm_front_end_connection_accelerate_method_t)(struct ecm_front_end_connection_instance *feci,
+                                                                        struct ecm_classifier_process_response *pr, bool is_l2_encap,
+                                                                        struct nf_conn *ct, struct sk_buff *skb);
 typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef ecm_front_end_acceleration_mode_t (*ecm_front_end_connection_accel_state_get_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_ref_method_t)(struct ecm_front_end_connection_instance *feci);
@@ -141,6 +155,7 @@ struct ecm_front_end_connection_mode_stats {
 struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_ref_method_t ref;				/* Ref the instance */
 	ecm_front_end_connection_deref_callback_t deref;			/* Deref the instance */
+	ecm_front_end_connection_accelerate_method_t accelerate;		/* accelerate a connection */
 	ecm_front_end_connection_decelerate_method_t decelerate;		/* Decelerate a connection */
 	ecm_front_end_connection_accel_state_get_method_t accel_state_get;	/* Get the acceleration state */
 	ecm_front_end_connection_action_seen_method_t action_seen;		/* Acceleration action has occurred */
@@ -157,6 +172,8 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_state_get_callback_t state_get;		/* Obtain state for this object */
 #endif
 	ecm_front_end_connection_multicast_update_method_t multicast_update;	/* Update existing multicast connection */
+
+	enum ecm_front_end_engine accel_engine;	/* Acceleration engine type */
 
 	/*
 	 * Accel/decel mode statistics.

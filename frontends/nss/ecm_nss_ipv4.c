@@ -78,8 +78,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -101,6 +101,7 @@
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #include <ovsmgr.h>
 #endif
+#include "ecm_ipv4.h"
 
 #define ECM_NSS_IPV4_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_NSS_IPV4_STATS_SYNC_UDELAY 4000	/* Delay for 4 ms */
@@ -215,13 +216,13 @@ unsigned int ecm_nss_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device 
 	/*
 	 * If operations have stopped then do not process packets
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	if (unlikely(ecm_front_end_ipv4_stopped)) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return 1;
 	}
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't process broadcast.
@@ -266,7 +267,7 @@ unsigned int ecm_nss_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device 
 		}
 	}
 
-        ecm_nss_ipv4_ip_process((struct net_device *)out, in,
+        ecm_ipv4_ip_process((struct net_device *)out, in,
                                 skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IP);
 
         dev_put(in);
@@ -737,7 +738,7 @@ static void ecm_nss_ipv4_connection_sync_many_callback(void *app_data, struct ns
 	/*
 	 * If ECM is terminating, don't process this final stats
 	 */
-	if (ecm_nss_ipv4_terminate_pending) {
+	if (ecm_ipv4_terminate_pending) {
 		return;
 	}
 
@@ -800,7 +801,7 @@ static void ecm_nss_ipv4_stats_sync_req_work(struct work_struct *work)
 	}
 
 	while (retry) {
-		if (ecm_nss_ipv4_terminate_pending) {
+		if (ecm_ipv4_terminate_pending) {
 			return;
 		}
 		nss_tx_status = nss_ipv4_tx_with_size(ecm_nss_ipv4_nss_ipv4_mgr, ecm_nss_ipv4_sync_req_msg, PAGE_SIZE);
@@ -1074,6 +1075,12 @@ static void ecm_nss_ipv4_sync_queue_exit(void)
 int ecm_nss_ipv4_init(struct dentry *dentry)
 {
 	int result = -1;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_NSS) {
+		DEBUG_INFO("NSS IPv4 is disabled\n");
+		return 0;
+	}
 
 	DEBUG_INFO("ECM NSS IPv4 init\n");
 
@@ -1175,30 +1182,17 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 	 */
 	ecm_nss_ipv4_nss_ipv4_mgr = nss_ipv4_notify_register(ecm_nss_ipv4_net_dev_callback, NULL);
 
-	/*
-	 * Register netfilter hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#else
-	result = nf_register_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#endif
-	if (result < 0) {
-		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		goto task_cleanup_1;
-	}
-
 #ifdef ECM_MULTICAST_ENABLE
 	result = ecm_nss_multicast_ipv4_init(ecm_nss_ipv4_dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Failed to init ecm ipv4 multicast frontend\n");
-		goto task_cleanup_2;
+		goto task_cleanup_1;
 	}
 #endif
 
 	if (!ecm_nss_ipv4_sync_queue_init()) {
 		DEBUG_ERROR("Failed to create ecm ipv4 connection sync workqueue\n");
-		goto task_cleanup_3;
+		goto task_cleanup_2;
 	}
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1206,49 +1200,32 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 #endif
 	return 0;
 
-task_cleanup_3:
-#ifdef ECM_MULTICAST_ENABLE
-		ecm_nss_multicast_ipv4_exit();
 task_cleanup_2:
-#endif
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#endif
+#ifdef ECM_MULTICAST_ENABLE
+	ecm_nss_multicast_ipv4_exit();
 task_cleanup_1:
+#endif
 	nss_ipv4_notify_unregister();
 
 task_cleanup:
-
 	debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	return result;
 }
-EXPORT_SYMBOL(ecm_nss_ipv4_init);
 
 /*
  * ecm_nss_ipv4_exit()
  */
 void ecm_nss_ipv4_exit(void)
 {
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_NSS) {
+		DEBUG_INFO("NSS IPv4 is disabled\n");
+		return;
+	}
+
 	DEBUG_INFO("ECM NSS IPv4 Module exit\n");
 
-	spin_lock_bh(&ecm_nss_ipv4_lock);
-	ecm_nss_ipv4_terminate_pending = true;
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
-
-	/*
-	 * Stop the network stack hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
-#endif
 	/*
 	 * Unregister from the Linux NSS Network driver
 	 */
@@ -1274,4 +1251,3 @@ void ecm_nss_ipv4_exit(void)
 	ovsmgr_dp_hook_unregister(&ecm_nss_ipv4_dp_hooks);
 #endif
 }
-EXPORT_SYMBOL(ecm_nss_ipv4_exit);

@@ -80,8 +80,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -89,15 +89,17 @@
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
 #include "ecm_nss_ported_ipv4.h"
+#include "ecm_sfe_ported_ipv4.h"
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
+#include "ecm_ipv4.h"
 
 /*
- * ecm_nss_ported_ipv4_process()
+ * ecm_ported_ipv4_process()
  *	Process a ported packet
  */
-unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_device *out_dev_nat,
+unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_device *out_dev_nat,
 							struct net_device *in_dev, struct net_device *in_dev_nat,
 							uint8_t *src_node_addr, uint8_t *src_node_addr_nat,
 							uint8_t *dest_node_addr, uint8_t *dest_node_addr_nat,
@@ -179,7 +181,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 
 		/*
 		 * Extract transport port information
-		 * Refer to the ecm_nss_ipv4_process() for information on how we extract this information.
+		 * Refer to the ecm_ipv4_process() for information on how we extract this information.
 		 */
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
@@ -257,7 +259,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 
 		/*
 		 * Extract transport port information
-		 * Refer to the ecm_nss_ipv4_process() for information on how we extract this information.
+		 * Refer to the ecm_ipv4_process() for information on how we extract this information.
 		 */
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
@@ -342,6 +344,8 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		struct ecm_db_iface_instance *from_nat_list[ECM_DB_IFACE_HEIRARCHY_MAX];
 		struct ecm_front_end_interface_construct_instance efeici;
 		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
+		enum ecm_front_end_type fe_type;
+		ecm_db_connection_defunct_callback_t defunct_callback;
 
 		DEBUG_INFO("New ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -349,9 +353,9 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		/*
 		 * Before we attempt to create the connection are we being terminated?
 		 */
-		spin_lock_bh(&ecm_nss_ipv4_lock);
-		if (ecm_nss_ipv4_terminate_pending) {
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_lock_bh(&ecm_ipv4_lock);
+		if (ecm_ipv4_terminate_pending) {
+			spin_unlock_bh(&ecm_ipv4_lock);
 			DEBUG_WARN("Terminating\n");
 
 			/*
@@ -359,7 +363,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 			 */
 			return NF_ACCEPT;
 		}
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 
 		/*
 		 * Does this connection have a conntrack entry?
@@ -391,7 +395,20 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		/*
 		 * Connection must have a front end instance associated with it
 		 */
-		feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+		fe_type = ecm_front_end_type_get();
+		if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+			DEBUG_INFO("front end type is NSS\n");
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+			defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
+		} else if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+			DEBUG_INFO("front end type is SFE\n");
+			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
+		} else {
+			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+			goto fail_1;
+		}
+
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
 			goto fail_1;
@@ -428,7 +445,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_reset(nci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 
 		DEBUG_TRACE("%px: Create source node\n", nci);
-		ni[ECM_DB_OBJ_DIR_FROM] = ecm_nss_ipv4_node_establish_and_ref(feci, efeici.from_dev, efeici.from_mac_lookup_ip_addr, from_list, from_list_first, src_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_FROM] = ecm_ipv4_node_establish_and_ref(feci, efeici.from_dev, efeici.from_mac_lookup_ip_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("Failed to establish source node\n");
@@ -436,7 +453,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%px: Create source mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_FROM] = ecm_nss_ipv4_mapping_establish_and_ref(ip_src_addr, src_port);
+		mi[ECM_DB_OBJ_DIR_FROM] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr, src_port);
 		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("Failed to establish src mapping\n");
 			goto fail_4;
@@ -451,7 +468,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_reset(nci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 
 		DEBUG_TRACE("%px: Create dest node\n", nci);
-		ni[ECM_DB_OBJ_DIR_TO] = ecm_nss_ipv4_node_establish_and_ref(feci, efeici.to_dev, efeici.to_mac_lookup_ip_addr, to_list, to_list_first, dest_node_addr, skb);
+		ni[ECM_DB_OBJ_DIR_TO] = ecm_ipv4_node_establish_and_ref(feci, efeici.to_dev, efeici.to_mac_lookup_ip_addr, to_list, to_list_first, dest_node_addr, skb);
 		ecm_db_connection_interfaces_deref(to_list, to_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_TO]) {
 			DEBUG_WARN("Failed to establish dest node\n");
@@ -459,7 +476,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		}
 
 		DEBUG_TRACE("%px: Create dest mapping\n", nci);
-		mi[ECM_DB_OBJ_DIR_TO] = ecm_nss_ipv4_mapping_establish_and_ref(ip_dest_addr, dest_port);
+		mi[ECM_DB_OBJ_DIR_TO] = ecm_ipv4_mapping_establish_and_ref(ip_dest_addr, dest_port);
 		if (!mi[ECM_DB_OBJ_DIR_TO]) {
 			DEBUG_WARN("Failed to establish dest mapping\n");
 			goto fail_6;
@@ -485,14 +502,14 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_reset(nci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 
 		DEBUG_TRACE("%px: Create source nat node\n", nci);
-		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_nss_ipv4_node_establish_and_ref(feci, efeici.from_nat_dev, efeici.from_nat_mac_lookup_ip_addr, from_nat_list, from_nat_list_first, src_node_addr_nat, skb);
+		ni[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_ipv4_node_establish_and_ref(feci, efeici.from_nat_dev, efeici.from_nat_mac_lookup_ip_addr, from_nat_list, from_nat_list_first, src_node_addr_nat, skb);
 		ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			DEBUG_WARN("Failed to establish source nat node\n");
 			goto fail_7;
 		}
 
-		mi[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_nss_ipv4_mapping_establish_and_ref(ip_src_addr_nat, src_port_nat);
+		mi[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr_nat, src_port_nat);
 		if (!mi[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			DEBUG_WARN("Failed to establish src nat mapping\n");
 			goto fail_8;
@@ -507,7 +524,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_reset(nci, to_nat_list, to_nat_list_first, ECM_DB_OBJ_DIR_TO_NAT);
 
 		DEBUG_TRACE("%px: Create dest nat node\n", nci);
-		ni[ECM_DB_OBJ_DIR_TO_NAT] = ecm_nss_ipv4_node_establish_and_ref(feci, efeici.to_nat_dev, efeici.to_nat_mac_lookup_ip_addr, to_nat_list, to_nat_list_first, dest_node_addr_nat, skb);
+		ni[ECM_DB_OBJ_DIR_TO_NAT] = ecm_ipv4_node_establish_and_ref(feci, efeici.to_nat_dev, efeici.to_nat_mac_lookup_ip_addr, to_nat_list, to_nat_list_first, dest_node_addr_nat, skb);
 
 		ecm_db_connection_interfaces_deref(to_nat_list, to_nat_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_TO_NAT]) {
@@ -515,7 +532,7 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 			goto fail_9;
 		}
 
-		mi[ECM_DB_OBJ_DIR_TO_NAT] = ecm_nss_ipv4_mapping_establish_and_ref(ip_dest_addr_nat, dest_port_nat);
+		mi[ECM_DB_OBJ_DIR_TO_NAT] = ecm_ipv4_mapping_establish_and_ref(ip_dest_addr_nat, dest_port_nat);
 		if (!mi[ECM_DB_OBJ_DIR_TO_NAT]) {
 			DEBUG_WARN("Failed to establish dest mapping\n");
 			goto fail_10;
@@ -556,13 +573,13 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * We *could* end up creating more than one connection instance for the same actual connection.
 		 * To guard against this we now perform a mutex'd lookup of the connection + add once more - another cpu may have created it before us.
 		 */
-		spin_lock_bh(&ecm_nss_ipv4_lock);
+		spin_lock_bh(&ecm_ipv4_lock);
 		ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
 		if (ci) {
 			/*
 			 * Another cpu created the same connection before us - use the one we just found
 			 */
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+			spin_unlock_bh(&ecm_ipv4_lock);
 			ecm_db_connection_deref(nci);
 		} else {
 			ecm_db_timer_group_t tg;
@@ -585,10 +602,10 @@ unsigned int ecm_nss_ported_ipv4_process(struct net_device *out_dev, struct net_
 			ecm_db_connection_add(nci, mi, ni,
 					4, protocol, ecm_dir,
 					NULL /* final callback */,
-					ecm_nss_ported_ipv4_connection_defunct_callback,
+					defunct_callback,
 					tg, is_routed, nci);
 
-			spin_unlock_bh(&ecm_nss_ipv4_lock);
+			spin_unlock_bh(&ecm_ipv4_lock);
 
 			ci = nci;
 			DEBUG_INFO("%px: New ported connection created\n", ci);
@@ -661,12 +678,20 @@ done:
 		bool ret;
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		ret = ecm_nss_common_igs_acceleration_is_allowed(feci, skb);
-		feci->deref(feci);
 		if (!ret) {
 			DEBUG_WARN("%px: Acceleration denied.\n", ci);
+			feci->deref(feci);
 			ecm_db_connection_deref(ci);
 			return NF_ACCEPT;
 		}
+
+		if (feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+			DEBUG_WARN("%px: SFE doesn't support IGS.\n", ci);
+			feci->deref(feci);
+			ecm_db_connection_deref(ci);
+			return NF_ACCEPT;
+		}
+		feci->deref(feci);
 	}
 #endif
 
@@ -739,7 +764,7 @@ done:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_nss_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, layer4hdr, skb);
+		ecm_ipv4_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, layer4hdr, skb);
 	}
 
 	/*
@@ -979,7 +1004,7 @@ done:
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ecm_nss_ported_ipv4_connection_accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
+		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
 		feci->deref(feci);
 	}
 	ecm_db_connection_deref(ci);

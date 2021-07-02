@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2017, 2020-2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2017, 2020-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -40,14 +40,15 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_front_end_ipv6.h"
 #include "ecm_interface.h"
+#include "ecm_ipv6.h"
 
 /*
  * General operational control
@@ -261,15 +262,7 @@ int ecm_front_end_ipv6_init(struct dentry *dentry)
 		return -1;
 	}
 
-	switch (ecm_front_end_type_get()) {
-	case ECM_FRONT_END_TYPE_NSS:
-		return ecm_nss_ipv6_init(dentry);
-	case ECM_FRONT_END_TYPE_SFE:
-		return ecm_sfe_ipv6_init(dentry);
-	default:
-		DEBUG_ERROR("Failed to init ipv6 front end\n");
-		return -1;
-	}
+	return ecm_ipv6_init(dentry);
 }
 
 /*
@@ -277,15 +270,5 @@ int ecm_front_end_ipv6_init(struct dentry *dentry)
  */
 void ecm_front_end_ipv6_exit(void)
 {
-	switch (ecm_front_end_type_get()) {
-	case ECM_FRONT_END_TYPE_NSS:
-		ecm_nss_ipv6_exit();
-		break;
-	case ECM_FRONT_END_TYPE_SFE:
-		ecm_sfe_ipv6_exit();
-		break;
-	default:
-		DEBUG_ERROR("Failed to exit from front end\n");
-		break;
-	}
+	ecm_ipv6_exit();
 }

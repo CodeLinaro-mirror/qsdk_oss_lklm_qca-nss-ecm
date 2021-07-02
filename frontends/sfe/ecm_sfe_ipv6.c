@@ -77,8 +77,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -281,42 +281,7 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 				ci, sync->flow_rx_packet_count, sync->flow_rx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
 		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
-#ifdef ECM_MULTICAST_ENABLE
-		if (ecm_ip_addr_is_multicast(return_ip)) {
-			/*
-			 * The amount of data *sent* by the ECM multicast connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
-			 */
-			ecm_db_multicast_connection_data_totals_update(ci, true, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
-			ecm_db_multicast_connection_data_totals_update(ci, true, sync->return_rx_byte_count, sync->return_rx_packet_count);
-			ecm_db_multicast_connection_interface_heirarchy_stats_update(ci, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
 
-			ECM_IP_ADDR_TO_NIN6_ADDR(origin6, flow_ip);
-			ECM_IP_ADDR_TO_NIN6_ADDR(group6, return_ip);
-
-			/*
-			 * Update IP multicast routing cache stats
-			 */
-			ip6mr_mfc_stats_update(&init_net, &origin6, &group6, sync->flow_rx_packet_count,
-								 sync->flow_rx_byte_count, sync->flow_rx_packet_count, sync->flow_rx_byte_count);
-		} else {
-
-			/*
-			 * The amount of data *sent* by the ECM connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
-			 */
-			ecm_db_connection_data_totals_update(ci, true, sync->flow_rx_byte_count, sync->flow_rx_packet_count);
-
-			/*
-			 * The amount of data *sent* by the ECM connection 'to' side is the amount the SFE has *received* in the 'return' direction.
-			 */
-			ecm_db_connection_data_totals_update(ci, false, sync->return_rx_byte_count, sync->return_rx_packet_count);
-
-		}
-
-		/*
-		 * As packets have been accelerated we have seen some action.
-		 */
-		feci->action_seen(feci);
-#else
 		/*
 		 * The amount of data *sent* by the ECM connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
 		 */
@@ -331,8 +296,6 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 		 * As packets have been accelerated we have seen some action.
 		 */
 		feci->action_seen(feci);
-
-#endif
 	}
 
 	switch(sync->reason) {
@@ -385,24 +348,6 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 				neigh_release(neigh);
 			}
 
-#ifdef ECM_MULTICAST_ENABLE
-			/*
-			 * Update the neighbour entry for destination IP address
-			 */
-			if (!ecm_ip_addr_is_multicast(return_ip)) {
-				neigh = ecm_interface_ipv6_neigh_get(return_ip);
-				if (!neigh) {
-					DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(return_ip));
-				} else {
-					if (sync->return_tx_packet_count) {
-						DEBUG_TRACE("Neighbour entry event send for " ECM_IP_ADDR_OCTAL_FMT ": %px\n", ECM_IP_ADDR_TO_OCTAL(return_ip), neigh);
-						neigh_event_send(neigh, NULL);
-					}
-
-					neigh_release(neigh);
-				}
-			}
-#else
 			/*
 			 * Update the neighbour entry for destination IP address
 			 */
@@ -417,7 +362,6 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 
 				neigh_release(neigh);
 			}
-#endif
 		}
 	}
 
@@ -728,6 +672,12 @@ static struct file_operations ecm_sfe_ipv6_decel_cmd_avg_millis_fops = {
 int ecm_sfe_ipv6_init(struct dentry *dentry)
 {
 	int result = -1;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
+
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+		DEBUG_INFO("SFE IPv6 is disabled\n");
+		return 0;
+	}
 
 	DEBUG_INFO("ECM SFE IPv6 init\n");
 
@@ -804,19 +754,6 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_sfe_non_ported_ipv6_debugfs_init(ecm_sfe_ipv6_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
-
-#ifdef ECM_MULTICAST_ENABLE
-	if (!ecm_sfe_multicast_ipv6_debugfs_init(ecm_sfe_ipv6_dentry)) {
-		DEBUG_ERROR("Failed to create ecm multicast files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
 	/*
 	 * Register this module with the Linux SFE Network driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there
@@ -825,23 +762,6 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 	 */
 	ecm_sfe_ipv6_drv_mgr = sfe_drv_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, NULL);
 
-	/*
-	 * Register netfilter hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_sfe_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
-#else
-	result = nf_register_net_hooks(&init_net, ecm_sfe_ipv6_netfilter_hooks, ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
-#endif
-	if (result < 0) {
-		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		sfe_drv_ipv6_notify_unregister();
-		goto task_cleanup;
-	}
-
-#ifdef ECM_MULTICAST_ENABLE
-	ecm_sfe_multicast_ipv6_init();
-#endif
 	return 0;
 
 task_cleanup:
@@ -856,21 +776,14 @@ EXPORT_SYMBOL(ecm_sfe_ipv6_init);
  */
 void ecm_sfe_ipv6_exit(void)
 {
-	DEBUG_INFO("ECM SFE IPv6 Module exit\n");
-	spin_lock_bh(&ecm_sfe_ipv6_lock);
-	ecm_sfe_ipv6_terminate_pending = true;
-	spin_unlock_bh(&ecm_sfe_ipv6_lock);
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	/*
-	 * Stop the network stack hooks
-	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_sfe_ipv6_netfilter_hooks,
-			    ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_sfe_ipv6_netfilter_hooks,
-			    ARRAY_SIZE(ecm_sfe_ipv6_netfilter_hooks));
-#endif
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+		DEBUG_INFO("SFE IPv6 is disabled\n");
+		return;
+	}
+
+	DEBUG_INFO("ECM SFE IPv6 Module exit\n");
 
 	/*
 	 * Unregister from the Linux SFE Network driver
@@ -883,9 +796,5 @@ void ecm_sfe_ipv6_exit(void)
 	if (ecm_sfe_ipv6_dentry) {
 		debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
 	}
-
-#ifdef ECM_MULTICAST_ENABLE
-	ecm_sfe_multicast_ipv6_exit();
-#endif
 }
 EXPORT_SYMBOL(ecm_sfe_ipv6_exit);

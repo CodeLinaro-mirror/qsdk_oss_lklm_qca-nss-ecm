@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2019-2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -52,8 +52,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -2045,7 +2045,7 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 {
 	int result;
 	struct ecm_classifier_ovs_instance *ecvi;
-	struct ecm_classifier_process_response process_response;
+	struct ecm_classifier_process_response pr;
 
 	ecvi = (struct ecm_classifier_ovs_instance *)ci;
 	DEBUG_CHECK_MAGIC(ecvi, ECM_CLASSIFIER_OVS_INSTANCE_MAGIC, "%px: magic failed", ecvi);
@@ -2055,17 +2055,82 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 	}
 
 	spin_lock_bh(&ecm_classifier_ovs_lock);
-	process_response = ecvi->process_response;
+	pr = ecvi->process_response;
 	spin_unlock_bh(&ecm_classifier_ovs_lock);
 
 	/*
 	 * Output our last process response
 	 */
-	if ((result = ecm_classifier_process_response_state_get(sfi, &process_response))) {
-		return result;
+	if ((result = ecm_classifier_process_response_state_get(sfi, &pr))) {
+		goto done;
 	}
 
-	return ecm_state_prefix_remove(sfi);
+
+	if (pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+#ifdef ECM_MULTICAST_ENABLE
+		int i;
+#endif
+		/*
+		 * TODO: Clean up the function later to print classifier
+		 * specific data in each classifier’s state_get function.
+		 */
+		if (pr.ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[0]", "0x%x", pr.ingress_vlan_tag[0]))) {
+				goto done;
+			}
+		}
+
+		if (pr.ingress_vlan_tag[1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if ((result = ecm_state_write(sfi, "ingress_vlan_tag[1]", "0x%x", pr.ingress_vlan_tag[1]))) {
+				goto done;
+			}
+		}
+
+		if (pr.egress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[0]", "0x%x", pr.egress_vlan_tag[0]))) {
+				goto done;
+			}
+		}
+
+		if (pr.egress_vlan_tag[1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			if ((result = ecm_state_write(sfi, "egress_vlan_tag[1]", "0x%x", pr.egress_vlan_tag[1]))) {
+				goto done;
+			}
+		}
+
+#ifdef ECM_MULTICAST_ENABLE
+		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
+			struct net_device *dev;
+
+			if (pr.egress_mc_vlan_tag[i][0] == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+				continue;
+			}
+
+			dev = dev_get_by_index(&init_net, pr.egress_netdev_index[i]);
+			if (dev) {
+				if ((result = ecm_state_write(sfi, "port_egress", "%s", dev->name))) {
+					dev_put(dev);
+					goto done;
+				}
+				dev_put(dev);
+			}
+
+			if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[0]", "0x%x", pr.egress_mc_vlan_tag[i][0]))) {
+				goto done;
+			}
+
+			if (pr.egress_mc_vlan_tag[i][1] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+				if ((result = ecm_state_write(sfi, "port_egress_vlan_tag[1]", "0x%x", pr.egress_mc_vlan_tag[i][1]))) {
+					goto done;
+				}
+			}
+		}
+#endif
+	}
+
+done:
+	ecm_state_prefix_remove(sfi);
+	return result;
 }
 #endif
 

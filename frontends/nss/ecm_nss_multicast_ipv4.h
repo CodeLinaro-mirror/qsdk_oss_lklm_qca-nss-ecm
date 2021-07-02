@@ -14,6 +14,10 @@
  **************************************************************************
  */
 
+extern struct ecm_nss_multicast_ipv4_connection_instance *ecm_nss_multicast_ipv4_connection_instance_alloc(
+								struct ecm_db_connection_instance *ci,
+								bool can_accel);
+extern bool ecm_nss_multicast_ipv4_connection_defunct_callback(void *arg, int *accel_mode);
 extern bool ecm_nss_multicast_ipv4_debugfs_init(struct dentry *dentry);
 
 extern int ecm_nss_multicast_ipv4_init(struct dentry *dentry);

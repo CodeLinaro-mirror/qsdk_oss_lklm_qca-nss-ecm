@@ -16,3 +16,8 @@
 
 extern bool ecm_sfe_ported_ipv4_debugfs_init(struct dentry *dentry);
 
+extern struct ecm_sfe_ported_ipv4_connection_instance *ecm_sfe_ported_ipv4_connection_instance_alloc(
+								struct ecm_db_connection_instance *ci,
+								int protocol,
+								bool can_accel);
+extern bool ecm_sfe_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode);

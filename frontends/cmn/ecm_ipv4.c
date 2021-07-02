@@ -78,8 +78,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -101,27 +101,30 @@
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #include <ovsmgr.h>
 #endif
+#include "ecm_ported_ipv4.h"
+#include "ecm_non_ported_ipv4.h"
+#include "ecm_multicast_ipv4.h"
 
 /*
  * Locking of the classifier - concurrency control for file global parameters.
  * NOTE: It is safe to take this lock WHILE HOLDING a feci->lock.  The reverse is NOT SAFE.
  */
-DEFINE_SPINLOCK(ecm_nss_ipv4_lock);			/* Protect against SMP access between netfilter, events and private threaded function. */
+DEFINE_SPINLOCK(ecm_ipv4_lock);			/* Protect against SMP access between netfilter, events and private threaded function. */
 
 /*
  * Management thread control
  */
-bool ecm_nss_ipv4_terminate_pending = false;		/* True when the user has signalled we should quit */
+bool ecm_ipv4_terminate_pending = false;		/* True when the user has signalled we should quit */
 
 /*
- * ecm_nss_ipv4_node_establish_and_ref()
+ * ecm_ipv4_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
  * The given_node_addr will be used if provided.
  *
  * Returns NULL on failure.
  */
-struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
+struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
 							struct net_device *dev, ip_addr_t addr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
 							uint8_t *given_node_addr, struct sk_buff *skb)
@@ -573,17 +576,17 @@ done:
 	/*
 	 * Add node into the database, atomically to avoid races creating the same thing
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		ecm_db_node_deref(nni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
 
 	ecm_db_node_add(nni, ii, node_addr, NULL, nni);
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't need iface instance now
@@ -595,12 +598,12 @@ done:
 }
 
 /*
- * ecm_nss_ipv4_host_establish_and_ref()
+ * ecm_ipv4_host_establish_and_ref()
  *	Returns a reference to a host, possibly creating one if necessary.
  *
  * Returns NULL on failure.
  */
-struct ecm_db_host_instance *ecm_nss_ipv4_host_establish_and_ref(ip_addr_t addr)
+struct ecm_db_host_instance *ecm_ipv4_host_establish_and_ref(ip_addr_t addr)
 {
 	struct ecm_db_host_instance *hi;
 	struct ecm_db_host_instance *nhi;
@@ -628,29 +631,29 @@ struct ecm_db_host_instance *ecm_nss_ipv4_host_establish_and_ref(ip_addr_t addr)
 	/*
 	 * Add host into the database, atomically to avoid races creating the same thing
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	hi = ecm_db_host_find_and_ref(addr);
 	if (hi) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		ecm_db_host_deref(nhi);
 		return hi;
 	}
 
 	ecm_db_host_add(nhi, addr, true, NULL, nhi);
 
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	DEBUG_TRACE("%px: host established\n", nhi);
 	return nhi;
 }
 
 /*
- * ecm_nss_ipv4_mapping_establish_and_ref()
+ * ecm_ipv4_mapping_establish_and_ref()
  *	Returns a reference to a mapping, possibly creating one if necessary.
  *
  * Returns NULL on failure.
  */
-struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t addr, int port)
+struct ecm_db_mapping_instance *ecm_ipv4_mapping_establish_and_ref(ip_addr_t addr, int port)
 {
 	struct ecm_db_mapping_instance *mi;
 	struct ecm_db_mapping_instance *nmi;
@@ -670,7 +673,7 @@ struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t
 	/*
 	 * No mapping - establish host existence
 	 */
-	hi = ecm_nss_ipv4_host_establish_and_ref(addr);
+	hi = ecm_ipv4_host_establish_and_ref(addr);
 	if (!hi) {
 		DEBUG_WARN("Failed to establish host\n");
 		return NULL;
@@ -689,10 +692,10 @@ struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t
 	/*
 	 * Add mapping into the database, atomically to avoid races creating the same thing
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	mi = ecm_db_mapping_find_and_ref(addr, port);
 	if (mi) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		ecm_db_mapping_deref(nmi);
 		ecm_db_host_deref(hi);
 		return mi;
@@ -700,7 +703,7 @@ struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t
 
 	ecm_db_mapping_add(nmi, hi, port, NULL, nmi);
 
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't need the host instance now - the mapping maintains a reference to it now.
@@ -715,14 +718,14 @@ struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t
 }
 
 /*
- * ecm_nss_ipv4_connection_regenerate()
+ * ecm_ipv4_connection_regenerate()
  *	Re-generate a connection.
  *
  * Re-generating a connection involves re-evaluating the interface lists in case interface heirarchies have changed.
  * It also involves the possible triggering of classifier re-evaluation but only if all currently assigned
  * classifiers permit this operation.
  */
-void ecm_nss_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+void ecm_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *out_dev_nat,
 							struct net_device *in_dev, struct net_device *in_dev_nat,
 							__be16 *layer4hdr, struct sk_buff *skb)
@@ -949,10 +952,10 @@ ecm_ipv4_retry_regen:
 }
 
 /*
- * ecm_nss_ipv4_ip_process()
+ * ecm_ipv4_ip_process()
  *	Process IP datagram skb
  */
-static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct net_device *in_dev,
+unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *in_dev,
 							uint8_t *src_node_addr, uint8_t *dest_node_addr,
 							bool can_accel, bool is_routed, bool is_l2_encap, struct sk_buff *skb, uint16_t l2_encap_proto)
 {
@@ -972,21 +975,24 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	uint8_t *src_node_addr_nat;
 	uint8_t *dest_node_addr_nat;
 	uint8_t protonum;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-#ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
+
 	/*
 	 * Check if the number of IPv4 DB connection entries need to be limited.
 	 */
-	if (ecm_front_end_conn_limit) {
-		if (ecm_nss_ipv4_accelerated_count == nss_ipv4_max_conn_count()) {
-			DEBUG_INFO("ECM DB connection limit %d reached, \
-					new flows cannot be accelerated.\n",
-					nss_ipv4_max_conn_count());
-			return NF_ACCEPT;
+#ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
+	if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+		if (ecm_front_end_conn_limit) {
+			if (ecm_nss_ipv4_accelerated_count == nss_ipv4_max_conn_count()) {
+				DEBUG_INFO("ECM DB connection limit %d reached, \
+						new flows cannot be accelerated.\n",
+						nss_ipv4_max_conn_count());
+				return NF_ACCEPT;
+			}
 		}
 	}
 #endif
-
 	/*
 	 * Obtain the IP header from the skb
 	 */
@@ -1008,11 +1014,13 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 	 * do not accelerate the packet and let it go through the
 	 * slow path.
 	 */
-	if (ip_hdr.protocol == IPPROTO_UDP) {
-		uint8_t action = nss_ipv4_dscp_action_get(ip_hdr.dscp);
-		if (action == NSS_IPV4_DSCP_MAP_ACTION_DONT_ACCEL) {
-			DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
-			return NF_ACCEPT;
+	if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+		if (ip_hdr.protocol == IPPROTO_UDP) {
+			uint8_t action = nss_ipv4_dscp_action_get(ip_hdr.dscp);
+			if (action == NSS_IPV4_DSCP_MAP_ACTION_DONT_ACCEL) {
+				DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
+				return NF_ACCEPT;
+			}
 		}
 	}
 
@@ -1025,6 +1033,11 @@ static unsigned int ecm_nss_ipv4_ip_process(struct net_device *out_dev, struct n
 #ifdef ECM_XFRM_ENABLE
 		struct net_device *ipsec_dev;
 		int32_t interface_type;
+
+		if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+			DEBUG_TRACE("%px xfrm flow is not supported by SFE only mode\n", skb);
+			return NF_ACCEPT;
+		}
 
 		/* Check if the transformation for this flow
 		 * is done by NSS. If yes, then only try to accelerate.
@@ -1149,14 +1162,18 @@ vxlan_done:
 	ECM_NIN4_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.ip);
 	if (ecm_ip_addr_is_multicast(ip_dest_addr)) {
 #ifdef ECM_MULTICAST_ENABLE
-
 		if (unlikely(ecm_front_end_ipv4_mc_stopped)) {
 			DEBUG_TRACE("%px: Multicast disabled by ecm_front_end_ipv4_mc_stopped = %d\n", skb, ecm_front_end_ipv4_mc_stopped);
 			return NF_ACCEPT;
 		}
 
-		DEBUG_TRACE("%px: Multicast, Processing\n", skb);
-		return ecm_nss_multicast_ipv4_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
+		if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+			DEBUG_TRACE("%px: Multicast ipv4 acceleration is not supported on SFE only mode\n", skb);
+			return NF_ACCEPT;
+		}
+
+		DEBUG_TRACE("%px: CMN Multicast, Processing\n", skb);
+		return ecm_multicast_ipv4_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
 									can_accel, is_routed, skb, &ip_hdr, ct, sender,
 									&orig_tuple, &reply_tuple);
 #else
@@ -1486,7 +1503,7 @@ vxlan_done:
 	 * TCP and UDP are the most likliest protocols.
 	 */
 	if (likely(protonum == IPPROTO_TCP) || likely(protonum == IPPROTO_UDP)) {
-		return ecm_nss_ported_ipv4_process(out_dev, out_dev_nat,
+		return ecm_ported_ipv4_process(out_dev, out_dev_nat,
 				in_dev, in_dev_nat,
 				src_node_addr, src_node_addr_nat,
 				dest_node_addr, dest_node_addr_nat,
@@ -1497,7 +1514,12 @@ vxlan_done:
 				ip_src_addr, ip_dest_addr, ip_src_addr_nat, ip_dest_addr_nat, l2_encap_proto);
 	}
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	return ecm_nss_non_ported_ipv4_process(out_dev, out_dev_nat,
+	if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+		DEBUG_TRACE("%px: Non-ported ipv4 acceleration is not supported on SFE only mode\n", skb);
+		return NF_ACCEPT;
+	}
+
+	return ecm_non_ported_ipv4_process(out_dev, out_dev_nat,
 				in_dev, in_dev_nat,
 				src_node_addr, src_node_addr_nat,
 				dest_node_addr, dest_node_addr_nat,
@@ -1512,10 +1534,10 @@ vxlan_done:
 }
 
 /*
- * ecm_nss_ipv4_post_routing_hook()
+ * ecm_ipv4_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
-static unsigned int ecm_nss_ipv4_post_routing_hook(void *priv,
+static unsigned int ecm_ipv4_post_routing_hook(void *priv,
 				struct sk_buff *skb,
 				const struct nf_hook_state *nhs)
 {
@@ -1524,18 +1546,18 @@ static unsigned int ecm_nss_ipv4_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result;
 
-	DEBUG_TRACE("%px: Routing: %s\n", out, out->name);
+	DEBUG_TRACE("%px: IPv4 CMN Routing: %s\n", out, out->name);
 
 	/*
 	 * If operations have stopped then do not process packets
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	if (unlikely(ecm_front_end_ipv4_stopped)) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return NF_ACCEPT;
 	}
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't process broadcast or multicast
@@ -1591,19 +1613,19 @@ static unsigned int ecm_nss_ipv4_post_routing_hook(void *priv,
 	}
 #endif
 
-	DEBUG_TRACE("Post routing process skb %px, out: %px (%s), in: %px (%s)\n", skb, out, out->name, in, in->name);
-	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
+	DEBUG_TRACE("CMN Post routing process skb %px, out: %px (%s), in: %px (%s)\n", skb, out, out->name, in, in->name);
+	result = ecm_ipv4_ip_process((struct net_device *)out, in, NULL, NULL,
 							can_accel, true, false, skb, 0);
 	dev_put(in);
 	return result;
 }
 
 /*
- * ecm_front_end_ipv4_pppoe_bridge_process()
+ * ecm_ipv4_pppoe_bridge_process()
  *	Called for PPPoE session packets that are going
  *	out to one of the bridge physical interfaces.
  */
-static unsigned int ecm_front_end_ipv4_pppoe_bridge_process(struct net_device *out,
+static unsigned int ecm_ipv4_pppoe_bridge_process(struct net_device *out,
 						     struct net_device *in,
 						     struct ethhdr *skb_eth_hdr,
 						     bool can_accel,
@@ -1637,7 +1659,7 @@ static unsigned int ecm_front_end_ipv4_pppoe_bridge_process(struct net_device *o
 		goto skip_ipv4_process;
 	}
 
-	result = ecm_nss_ipv4_ip_process(out, in, skb_eth_hdr->h_source,
+	result = ecm_ipv4_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
 					 false, true, skb, ETH_P_PPP_SES);
 skip_ipv4_process:
@@ -1648,13 +1670,13 @@ skip_ipv4_process:
 }
 
 /*
- * ecm_nss_ipv4_bridge_post_routing_hook()
+ * ecm_ipv4_bridge_post_routing_hook()
  *	Called for packets that are going out to one of the bridge physical interfaces.
  *
  * These may have come from another bridged interface or from a non-bridged interface.
  * Conntrack information may be available or not if this skb is bridged.
  */
-static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
+static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 					struct sk_buff *skb,
 					const struct nf_hook_state *nhs)
 {
@@ -1666,18 +1688,18 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result = NF_ACCEPT;
 
-	DEBUG_TRACE("%px: Bridge: %s\n", out, out->name);
+	DEBUG_TRACE("%px: IPv4 CMN Bridge: %s\n", out, out->name);
 
 	/*
 	 * If operations have stopped then do not process packets
 	 */
-	spin_lock_bh(&ecm_nss_ipv4_lock);
+	spin_lock_bh(&ecm_ipv4_lock);
 	if (unlikely(ecm_front_end_ipv4_stopped)) {
-		spin_unlock_bh(&ecm_nss_ipv4_lock);
+		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return NF_ACCEPT;
 	}
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
 	 * Don't process broadcast or multicast
@@ -1790,7 +1812,7 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
 			goto skip_ipv4_bridge_flow;
 		}
 	}
-	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
+	DEBUG_TRACE("CMN Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
 	if (unlikely(eth_type != 0x0800)) {
@@ -1802,11 +1824,11 @@ static unsigned int ecm_nss_ipv4_bridge_post_routing_hook(void *priv,
 			goto skip_ipv4_bridge_flow;
 		}
 
-		result = ecm_front_end_ipv4_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
+		result = ecm_ipv4_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		goto skip_ipv4_bridge_flow;
 	}
 
-	result = ecm_nss_ipv4_ip_process((struct net_device *)out, in,
+	result = ecm_ipv4_ip_process((struct net_device *)out, in,
 				skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 skip_ipv4_bridge_flow:
 	dev_put(in);
@@ -1815,26 +1837,32 @@ skip_ipv4_bridge_flow:
 }
 
 /*
- * struct nf_hook_ops ecm_nss_ipv4_netfilter_hooks[]
- *	Hooks into netfilter packet monitoring points.
+ * struct nf_hook_ops ecm_ipv4_netfilter_routing_hooks[]
+ *	Hooks into netfilter routing packet monitoring points.
  */
-static struct nf_hook_ops ecm_nss_ipv4_netfilter_hooks[] __read_mostly = {
+static struct nf_hook_ops ecm_ipv4_netfilter_routing_hooks[] __read_mostly = {
 	/*
 	 * Post routing hook is used to monitor packets going to interfaces that are NOT bridged in some way, e.g. packets to the WAN.
 	 */
 	{
-		.hook           = ecm_nss_ipv4_post_routing_hook,
+		.hook           = ecm_ipv4_post_routing_hook,
 		.pf             = PF_INET,
 		.hooknum        = NF_INET_POST_ROUTING,
 		.priority       = NF_IP_PRI_NAT_SRC + 1,
 	},
+};
 
+/*
+ * struct nf_hook_ops ecm_ipv4_netfilter_bridge_hooks[]
+ *	Hooks into netfilter bridge packet monitoring points.
+ */
+static struct nf_hook_ops ecm_ipv4_netfilter_bridge_hooks[] __read_mostly = {
 	/*
 	 * The bridge post routing hook monitors packets going to interfaces that are part of a bridge arrangement.
 	 * For example Wireles LAN (WLAN) and Wired LAN (LAN).
 	 */
 	{
-		.hook		= ecm_nss_ipv4_bridge_post_routing_hook,
+		.hook		= ecm_ipv4_bridge_post_routing_hook,
 		.pf		= PF_BRIDGE,
 		.hooknum	= NF_BR_POST_ROUTING,
 		.priority	= NF_BR_PRI_FILTER_OTHER,
@@ -1842,209 +1870,103 @@ static struct nf_hook_ops ecm_nss_ipv4_netfilter_hooks[] __read_mostly = {
 };
 
 /*
- * ecm_nss_ipv4_init()
+ * ecm_ipv4_init()
  */
-int ecm_nss_ipv4_init(struct dentry *dentry)
+int ecm_ipv4_init(struct dentry *dentry)
 {
-	int result = -1;
+	int result;
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	DEBUG_INFO("ECM NSS IPv4 init\n");
+	DEBUG_INFO("ECM CMN IPv4 init\n");
 
-	ecm_nss_ipv4_dentry = debugfs_create_dir("ecm_nss_ipv4", dentry);
-	if (!ecm_nss_ipv4_dentry) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 directory in debugfs\n");
+	result = ecm_nss_ipv4_init(dentry);
+	if (result < 0) {
+		DEBUG_ERROR("Can't initialize NSS ipv4\n");
 		return result;
 	}
 
-	if (!debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_no_action_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 no_action_limit_default file in debugfs\n");
-		goto task_cleanup;
+	result = ecm_sfe_ipv4_init(dentry);
+	if (result < 0) {
+		DEBUG_ERROR("Can't initialize SFE ipv4\n");
+		goto sfe_ipv4_failed;
 	}
-
-	if (!debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_driver_fail_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 driver_fail_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_nack_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 nack_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("accelerated_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 accelerated_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_pending_accel_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 pending_accel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_pending_decel_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 pending_decel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_limit_mode", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					NULL, &ecm_nss_ipv4_accel_limit_mode_fops)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 accel_limit_mode file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
-					NULL, &ecm_nss_ipv4_accel_cmd_avg_millis_fops)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 accel_cmd_avg_millis file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
-					NULL, &ecm_nss_ipv4_decel_cmd_avg_millis_fops)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 decel_cmd_avg_millis file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_nss_ported_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm ported files in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_nss_ipv4_dentry,
-					NULL, &ecm_nss_ipv4_stats_request_counter_fops)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 stats request counter file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_vlan_passthrough_enable)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 vlan passthrough file in debugfs\n");
-		goto task_cleanup;
-	}
-
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_nss_non_ported_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
-
-#ifdef ECM_MULTICAST_ENABLE
-	if (!ecm_nss_multicast_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm multicast files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
-	/*
-	 * Register this module with the Linux NSS Network driver.
-	 * Notify manager should be registered before the netfilter hooks. Because there
-	 * is a possibility that the ECM can try to send acceleration messages to the
-	 * acceleration engine without having an acceleration engine manager.
-	 */
-	ecm_nss_ipv4_nss_ipv4_mgr = nss_ipv4_notify_register(ecm_nss_ipv4_net_dev_callback, NULL);
 
 	/*
-	 * Register netfilter hooks
+	 * Register netfilter routing hooks
 	 */
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+	result = nf_register_hooks(ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #else
-	result = nf_register_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks, ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+	result = nf_register_net_hooks(&init_net, ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #endif
 	if (result < 0) {
-		DEBUG_ERROR("Can't register netfilter hooks.\n");
-		goto task_cleanup_1;
+		DEBUG_ERROR("Can't register common netfilter routing hooks.\n");
+		goto nf_register_failed_1;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
-	result = ecm_nss_multicast_ipv4_init(ecm_nss_ipv4_dentry);
-	if (result < 0) {
-		DEBUG_ERROR("Failed to init ecm ipv4 multicast frontend\n");
-		goto task_cleanup_2;
-	}
+	/*
+	 * Register netfilter bridge hooks, if the frontend type is not SFE only mode.
+	 */
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
+		result = nf_register_hooks(ecm_ipv4_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_bridge_hooks));
+#else
+		result = nf_register_net_hooks(&init_net, ecm_ipv4_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_bridge_hooks));
 #endif
-
-	if (!ecm_nss_ipv4_sync_queue_init()) {
-		DEBUG_ERROR("Failed to create ecm ipv4 connection sync workqueue\n");
-		goto task_cleanup_3;
+		if (result < 0) {
+			DEBUG_ERROR("Can't register common netfilter bridge hooks.\n");
+			goto nf_register_failed_2;
+		}
 	}
-
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-	ovsmgr_dp_hook_register(&ecm_nss_ipv4_dp_hooks);
-#endif
 	return 0;
 
-task_cleanup_3:
-#ifdef ECM_MULTICAST_ENABLE
-		ecm_nss_multicast_ipv4_exit();
-task_cleanup_2:
-#endif
+nf_register_failed_2:
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+	nf_unregister_hooks(ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+	nf_unregister_net_hooks(&init_net, ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #endif
-task_cleanup_1:
-	nss_ipv4_notify_unregister();
+nf_register_failed_1:
+	ecm_sfe_ipv4_exit();
 
-task_cleanup:
+sfe_ipv4_failed:
+	ecm_nss_ipv4_exit();
 
-	debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	return result;
 }
-EXPORT_SYMBOL(ecm_nss_ipv4_init);
 
 /*
- * ecm_nss_ipv4_exit()
+ * ecm_ipv4_exit()
  */
-void ecm_nss_ipv4_exit(void)
+void ecm_ipv4_exit(void)
 {
-	DEBUG_INFO("ECM NSS IPv4 Module exit\n");
+	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	spin_lock_bh(&ecm_nss_ipv4_lock);
-	ecm_nss_ipv4_terminate_pending = true;
-	spin_unlock_bh(&ecm_nss_ipv4_lock);
+	DEBUG_INFO("ECM CMN IPv4 Module exit\n");
+
+	spin_lock_bh(&ecm_ipv4_lock);
+	ecm_ipv4_terminate_pending = true;
+	spin_unlock_bh(&ecm_ipv4_lock);
 
 	/*
-	 * Stop the network stack hooks
+	 * Unregister the netfilter bridge hooks, if the frontend type is not SFE only mode.
 	 */
+	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_nss_ipv4_netfilter_hooks,
-			    ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+		nf_unregister_hooks(ecm_ipv4_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_bridge_hooks));
 #else
-	nf_unregister_net_hooks(&init_net, ecm_nss_ipv4_netfilter_hooks,
-				ARRAY_SIZE(ecm_nss_ipv4_netfilter_hooks));
+		nf_unregister_net_hooks(&init_net, ecm_ipv4_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_bridge_hooks));
 #endif
-	/*
-	 * Unregister from the Linux NSS Network driver
-	 */
-	nss_ipv4_notify_unregister();
-
-	/*
-	 * Remove the debugfs files recursively.
-	 */
-	if (ecm_nss_ipv4_dentry) {
-		debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
-	ecm_nss_multicast_ipv4_exit();
-#endif
-
 	/*
-	 * Clean up the stats sync queue/work
+	 * Unregister the netfilter routing hooks.
 	 */
-	ecm_nss_ipv4_sync_queue_exit();
-
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-	ovsmgr_dp_hook_unregister(&ecm_nss_ipv4_dp_hooks);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
+	nf_unregister_hooks(ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
+#else
+	nf_unregister_net_hooks(&init_net, ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #endif
+	ecm_sfe_ipv4_exit();
+	ecm_nss_ipv4_exit();
 }
-EXPORT_SYMBOL(ecm_nss_ipv4_exit);

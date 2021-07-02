@@ -80,8 +80,8 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
-#include "ecm_front_end_types.h"
 #include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_tracker_datagram.h"
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
@@ -1697,7 +1697,7 @@ static bool ecm_nss_ported_ipv4_connection_decelerate(struct ecm_front_end_conne
  * ecm_nss_ported_ipv4_connection_defunct_callback()
  *	Callback to be called when a ported connection has become defunct.
  */
-static bool ecm_nss_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode)
+bool ecm_nss_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode)
 {
 	bool ret;
 	struct ecm_front_end_connection_instance *feci = (struct ecm_front_end_connection_instance *)arg;
@@ -1911,7 +1911,7 @@ static int ecm_nss_ported_ipv4_connection_state_get(struct ecm_front_end_connect
 	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
 	spin_unlock_bh(&feci->lock);
 
-	if ((result = ecm_state_prefix_add(sfi, "front_end_v4.ported"))) {
+	if ((result = ecm_state_prefix_add(sfi, "nss_v4.ported"))) {
 		return result;
 	}
 
@@ -1966,7 +1966,7 @@ static int ecm_nss_ported_ipv4_connection_state_get(struct ecm_front_end_connect
  * ecm_nss_ported_ipv4_connection_instance_alloc()
  *	Create a front end instance specific for ported connection
  */
-static struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_connection_instance_alloc(
+struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_connection_instance_alloc(
 								struct ecm_db_connection_instance *ci,
 								int protocol,
 								bool can_accel)
@@ -1990,6 +1990,7 @@ static struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_conne
 
 	feci->can_accel = can_accel;
 	feci->accel_mode = (can_accel)? ECM_FRONT_END_ACCELERATION_MODE_DECEL : ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
+	feci->accel_engine = ECM_FRONT_END_ENGINE_NSS;
 	spin_lock_bh(&ecm_nss_ipv4_lock);
 	feci->stats.no_action_seen_limit = ecm_nss_ipv4_no_action_limit_default;
 	feci->stats.driver_fail_limit = ecm_nss_ipv4_driver_fail_limit_default;
@@ -2010,6 +2011,7 @@ static struct ecm_nss_ported_ipv4_connection_instance *ecm_nss_ported_ipv4_conne
 	 */
 	feci->ref = ecm_nss_ported_ipv4_connection_ref;
 	feci->deref = ecm_nss_ported_ipv4_connection_deref;
+	feci->accelerate = ecm_nss_ported_ipv4_connection_accelerate;
 	feci->decelerate = ecm_nss_ported_ipv4_connection_decelerate;
 	feci->accel_state_get = ecm_nss_ported_ipv4_connection_accel_state_get;
 	feci->action_seen = ecm_nss_ported_ipv4_connection_action_seen;
