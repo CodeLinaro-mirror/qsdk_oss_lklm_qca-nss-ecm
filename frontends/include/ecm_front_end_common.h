@@ -312,6 +312,7 @@ extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct sk_buff *skb,
 						      struct nf_conntrack_tuple *tuple,
 						      int ip_version);
+extern uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_instance *feci);
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
 					      struct ecm_tracker_ip_header *iph,

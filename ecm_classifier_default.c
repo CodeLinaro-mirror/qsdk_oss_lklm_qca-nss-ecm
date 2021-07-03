@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2016, 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -67,6 +67,7 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic numbers
@@ -93,7 +94,7 @@ struct ecm_classifier_default_internal_instance {
 	ecm_tracker_sender_type_t egress_sender;		/* RO: Which sender is sending egress data */
 
 	struct ecm_tracker_instance *ti;			/* RO: Tracker used for state and timer group checking. Pointer will not change so safe to access outside of lock. */
-
+	bool packet_seen[ECM_CONN_DIR_MAX];                     /* Per-direction packet seen flag */
 	int refs;						/* Integer to trap we never go negative */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -208,66 +209,42 @@ static int ecm_classifier_default_deref(struct ecm_classifier_instance *ci)
  */
 static bool ecm_classifier_default_ready_for_accel(
 			struct ecm_classifier_default_internal_instance *cdii,
-			struct nf_conn *ct, enum ip_conntrack_info ctinfo,
-			ecm_tracker_connection_state_t prevailing_state)
+			ecm_tracker_sender_type_t sender)
 {
-	int slow_pkts;
+	uint64_t slow_pkts;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
+
+	/*
+	 * We delay the acceleration for TCP and UDP protocols only.
+	 * Non-ported protocols mostly the outer connections of the flows.
+	 * Acceleration delay is required to inspect the packets and
+	 * the outer connections are generally do not need inspection.
+	 */
+	if (cdii->protocol != IPPROTO_TCP && cdii->protocol != IPPROTO_UDP) {
+		DEBUG_TRACE("%px: Accel delay is not enabled for protocol: %d\n", cdii, cdii->protocol);
+		return true;
+	}
 
 	/*
 	 * Delay forever until seeing the reply packet.
 	 */
 	if (ecm_classifier_accel_delay_pkts == 1) {
-		if (!ct) {
-			/*
-			 * Conntrack is NULL. We need to check the state of ECM tracker.
-			 */
-			if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
-				/*
-				 * Tracker hasn't been in established state yet.
-				 * Connection is not ready for the acceleration.
-				 */
-				return false;
-			}
+		DEBUG_INFO("%px: Checking both direction traffic\n", cdii);
 
-			/*
-			 * The ECM connection's tracker is in establish state,
-			 * so the connection is ready for the acceleration.
-			 */
-			return true;
+		/*
+		 * Set the flow and return direction packet seen flags.
+		 */
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			cdii->packet_seen[ECM_CONN_DIR_FLOW] = true;
+		} else {
+			cdii->packet_seen[ECM_CONN_DIR_RETURN] = true;
 		}
 
 		/*
-		 * If TCP is in established state, connection is ready for acceleration.
+		 * Check if both direction traffic is seen.
 		 */
-		if (cdii->protocol == IPPROTO_TCP) {
-			uint8_t state;
-			spin_lock_bh(&ct->lock);
-			state = ct->proto.tcp.state;
-			if (state != TCP_CONNTRACK_ESTABLISHED) {
-				spin_unlock_bh(&ct->lock);
-				DEBUG_TRACE("%px: Connection in termination state %#X\n", cdii, state);
-				return false;
-			}
-			spin_unlock_bh(&ct->lock);
-
-			return true;
-		}
-
-		/*
-		 * For non-TCP connections, we check the conntrack establish state.
-		 */
-		if ((ctinfo != IP_CT_ESTABLISHED) && (ctinfo != IP_CT_ESTABLISHED_REPLY)) {
-			DEBUG_INFO("%px: Connection is not established", cdii);
-			return false;
-		}
-
-		/*
-		 * Non-TCP connection's conntarck is in established state.
-		 * The connection is ready for acceleration.
-		 */
-		return true;
+		return cdii->packet_seen[ECM_CONN_DIR_FLOW] && cdii->packet_seen[ECM_CONN_DIR_RETURN];
 	}
 
 	/*
@@ -284,11 +261,7 @@ static bool ecm_classifier_default_ready_for_accel(
 	 * Get the packet count we have seen in the slow path so far.
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-
-	spin_lock_bh(&feci->lock);
-	slow_pkts = feci->stats.slow_path_packets;
-	spin_unlock_bh(&feci->lock);
-
+	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
 	feci->deref(feci);
 	ecm_db_connection_deref(ci);
 
@@ -296,7 +269,7 @@ static bool ecm_classifier_default_ready_for_accel(
 	 * Check if we have seen slow path packets as the predefined count.
 	 */
 	if (slow_pkts < ecm_classifier_accel_delay_pkts) {
-		DEBUG_TRACE("%px: delay the acceleration: slow packets: %d default delay packet count: %d\n",
+		DEBUG_TRACE("%px: delay the acceleration: slow packets: %llu default delay packet count: %d\n",
 			    cdii, slow_pkts, ecm_classifier_accel_delay_pkts);
 
 		/*
@@ -309,14 +282,13 @@ static bool ecm_classifier_default_ready_for_accel(
 	/*
 	 * We waited enough time for the acceleration, we can allow it now.
 	 */
+	DEBUG_INFO("%px: Let the flow accel, waited enough packet\n", cdii);
 	return true;
 }
 
 /*
- * ecm_classifier_default_process_callback()
- *	Process new data updating the priority
- *
- * NOTE: This function would only ever be called if all other classifiers have failed.
+ * ecm_classifier_default_process()
+ *	Process the flow for acceleration decision.
  */
 static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, ecm_tracker_sender_type_t sender,
 					   struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb,
@@ -369,44 +341,32 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 		/*
 		 * Record for future change comparisons
 		 */
+		DEBUG_INFO("%px: timer group changed from %d to %d\n", cdii, cdii->timer_group, tg);
 		cdii->timer_group = tg;
 	}
 
 	/*
-	 * Accel?
+	 * Don't care?
 	 */
-	if (ecm_classifier_default_accel_mode != ECM_CLASSIFIER_ACCELERATION_MODE_DONT_CARE) {
-		cdii->process_response.accel_mode = ecm_classifier_default_accel_mode;
-		cdii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-	} else {
+	if (ecm_classifier_default_accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_DONT_CARE) {
 		cdii->process_response.process_actions &= ~ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+		*process_response = cdii->process_response;
+		spin_unlock_bh(&ecm_classifier_default_lock);
+		return;
 	}
 	spin_unlock_bh(&ecm_classifier_default_lock);
 
-	ct = nf_ct_get(skb, &ctinfo);
-
 	/*
-	 * Should we delay the acceleration?
-	 */
-	if (ecm_classifier_accel_delay_pkts) {
-		bool ret;
-
-		ret = ecm_classifier_default_ready_for_accel(cdii, ct, ctinfo, prevailing_state);
-		if (ret) {
-			goto return_response;
-		}
-		goto accel_no;
-	}
-
-	/*
-	 * Acceleration delay is disabled. So, handle the flows as they are.
 	 * Handle non-TCP case
 	 */
 	if (cdii->protocol != IPPROTO_TCP) {
 		if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
+			DEBUG_INFO("%px: Protocol: %d is non-TCP, prevailing_state: %d\n", cdii, cdii->protocol, prevailing_state);
+			spin_lock_bh(&ecm_classifier_default_lock);
 			goto accel_no;
 		}
-		goto return_response;
+		DEBUG_INFO("%px: Protocol: %d is non-TCP, prevailing_state ESTABLISHED\n", cdii, cdii->protocol);
+		goto check_delay;
 	}
 
 	/*
@@ -414,43 +374,64 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	 * ct valid case was already checked in the ecm_nss{sfe}_ported_ipv4{6}_process functions.
 	 * If we are not established then we deny acceleration.
 	 */
+	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct) {
 		DEBUG_TRACE("%px: No Conntrack found for packet, using ECM tracker state\n", cdii);
 
+		if (unlikely(prevailing_state == ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
+			DEBUG_INFO("%px: TCP prevailing_state ESTABLISHED\n", cdii);
+			goto check_delay;
+		}
+
+		DEBUG_INFO("%px: TCP prevailing_state: %d\n", cdii, prevailing_state);
+
+		spin_lock_bh(&ecm_classifier_default_lock);
 		if ((prevailing_state == ECM_TRACKER_CONNECTION_STATE_FAULT) || (prevailing_state == ECM_TRACKER_CONNECTION_STATE_CLOSED)) {
 			cdii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH;
 		}
-
-		if (unlikely(prevailing_state != ECM_TRACKER_CONNECTION_STATE_ESTABLISHED)) {
-			goto accel_no;
-		}
-	} else {
-		/*
-		* If the connection is shutting down do not manage it.
-		* state can not be SYN_SENT, SYN_RECV because connection is assured
-		* Not managed states: FIN_WAIT, CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSE.
-		*/
-		spin_lock_bh(&ct->lock);
-		if (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
-			spin_unlock_bh(&ct->lock);
-			DEBUG_TRACE("%px: Connection in termination state %#X\n", ct, ct->proto.tcp.state);
-			goto accel_no;
-		}
-		spin_unlock_bh(&ct->lock);
+		goto accel_no;
 	}
 
-return_response:
+	/*
+	* If the connection is shutting down do not manage it.
+	* state can not be SYN_SENT, SYN_RECV because connection is assured
+	* Not managed states: FIN_WAIT, CLOSE_WAIT, LAST_ACK, TIME_WAIT, CLOSE.
+	*/
+	spin_lock_bh(&ct->lock);
+	if (ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
+		spin_unlock_bh(&ct->lock);
+		DEBUG_TRACE("%px: Connection in termination state %#X\n", ct, ct->proto.tcp.state);
+		spin_lock_bh(&ecm_classifier_default_lock);
+		goto accel_no;
+	}
+	spin_unlock_bh(&ct->lock);
+
+check_delay:
+	/*
+	 * Should we delay the acceleration?
+	 */
+	if (ecm_classifier_accel_delay_pkts) {
+		if (!ecm_classifier_default_ready_for_accel(cdii, sender)) {
+			DEBUG_INFO("%px: connection is not ready for accel\n", cdii);
+			spin_lock_bh(&ecm_classifier_default_lock);
+			goto accel_no;
+		}
+		DEBUG_INFO("%px: connection is ready for accel\n", cdii);
+	}
+
 	/*
 	 * Return the process response
 	 */
 	spin_lock_bh(&ecm_classifier_default_lock);
+	cdii->process_response.accel_mode = ecm_classifier_default_accel_mode;
+	cdii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	*process_response = cdii->process_response;
 	spin_unlock_bh(&ecm_classifier_default_lock);
 	return;
 
 accel_no:
-	spin_lock_bh(&ecm_classifier_default_lock);
 	cdii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+	cdii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	*process_response = cdii->process_response;
 	spin_unlock_bh(&ecm_classifier_default_lock);
 }

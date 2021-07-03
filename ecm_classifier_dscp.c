@@ -67,6 +67,7 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_classifier_dscp.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic numbers
@@ -235,7 +236,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	enum ip_conntrack_info ctinfo;
 	struct nf_ct_dscpremark_ext *dscpcte;
 	bool dscp_marked = false;
-	int slow_pkts;
+	uint64_t slow_pkts;
 
 	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
 	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
@@ -286,9 +287,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	accel_mode = feci->accel_state_get(feci);
-	spin_lock_bh(&feci->lock);
-	slow_pkts = feci->stats.slow_path_packets;
-	spin_unlock_bh(&feci->lock);
+	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
 	feci->deref(feci);
 	protocol = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_deref(ci);
@@ -435,7 +434,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			 * For option 2, we wait until seeing ecm_classifier_accel_delay_pkts.
 			 */
 			if ((ecm_classifier_accel_delay_pkts == 1) || (slow_pkts < ecm_classifier_accel_delay_pkts)) {
-				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %d accel is not allowed yet\n",
+				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %llu accel is not allowed yet\n",
 						cdscpi, ecm_classifier_accel_delay_pkts, slow_pkts);
 				cdscpi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 				goto dscp_classifier_out;

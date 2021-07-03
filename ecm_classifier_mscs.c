@@ -204,7 +204,9 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	ecm_classifier_mscs_result_t result = 0;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
+#ifdef ECM_MULTICAST_ENABLE
 	ip_addr_t dst_ip;
+#endif
 
 	cmscsi = (struct ecm_classifier_mscs_instance *)aci;
 	DEBUG_CHECK_MAGIC(cmscsi, ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC, "%px: magic failed\n", cmscsi);

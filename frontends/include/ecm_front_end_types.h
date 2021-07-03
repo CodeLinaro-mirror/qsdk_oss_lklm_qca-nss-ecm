@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -129,7 +129,7 @@ struct ecm_front_end_connection_mode_stats {
 	uint32_t ae_nack_total;		/* Total times accel engine NAK's an accel command */
 	uint32_t ae_nack;			/* Count of consecutive times driver failed to ack */
 	uint32_t ae_nack_limit;		/* Limit on consecutive nacks at which point offload permanently fails out */
-	uint32_t slow_path_packets;		/* The number of slow packets before the acceleration starts */
+	uint64_t slow_path_packets;		/* The number of slow packets before the acceleration starts */
 	unsigned long cmd_time_begun;		/* Time captured when an accel or decel request begun */
 	unsigned long cmd_time_completed;	/* Time captured when request finished */
 };
