@@ -2119,7 +2119,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 	uint32_t mc_dst_dev[ECM_DB_MULTICAST_IF_MAX];
 	bool mc_update;
 	bool is_routed;
-	struct net_device *l2_br_dev = NULL;
+	struct net_device *l2_br_dev, *l3_br_dev;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(group6, dest_ip);
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
@@ -2191,6 +2191,8 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 			}
 		}
 
+		feci = ecm_db_connection_front_end_get_and_ref(ci);
+
 		/*
 		 * All bridge slaves has left the group. If flow is pure bridge, Deacel the connection and return
 		 * If flow is routed, let MFC callback handle this.
@@ -2207,7 +2209,6 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 			/*
 			 * L2-only multicast: Update the flow only if the flow's bridge device matches the bridge device passed by MCS.
 			 */
-			feci = ecm_db_connection_front_end_get_and_ref(ci);
 			if (!if_num) {
 				/*
 				 * Decelerate the flow since there is no active ports left
@@ -2232,8 +2233,65 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 				feci->deref(feci);
 				goto find_next_tuple;
 			}
+		} else {
+			/*
+			 * Check whether the bridge for which we are processing an update,
+			 * is part of the the routed destination interface list for the flow.
+			 * The flow could be one of the below
+			 *
+			 * a. WAN (upstream) <-> br-lan (downstream)
+			 * b. WAN (upstream) <-> br-lan1(downstream), br-lan2 (downstream)
+			 */
+			int i;
+			struct in6_addr ip_src;
+			struct in6_addr ip_grp;
+			uint32_t dst_if_cnt;
+			uint32_t dst_dev[ECM_DB_MULTICAST_IF_MAX];
+
+			/*
+			 * If l3_br_dev is NULL then the we only need to check the ipmr destination list.
+			 */
+			l3_br_dev = ecm_db_multicast_tuple_instance_get_l3_br_dev(ti);
+			if (!l3_br_dev) {
+				goto process_ipmr_entry;
+			}
+
+			/*
+			 * 'brdev' is already part of the multicast interface list, no need to check ipmr entry.
+			 */
+			if (l3_br_dev == brdev) {
+				goto process_packet;
+			}
+
+process_ipmr_entry:
+			memset(dst_dev, 0, sizeof(dst_dev));
+			ECM_IP_ADDR_TO_NIN6_ADDR(ip_src, src_ip);
+			ECM_IP_ADDR_TO_NIN6_ADDR(ip_grp, grp_ip);
+			dst_if_cnt =  ip6mr_find_mfc_entry(&init_net, &ip_src, &ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
+			if (dst_if_cnt < 0) {
+				/*
+				 * Decelerate the flow since there is no active ports left
+				 */
+				DEBUG_WARN("Not found a valid vif count %d\n", dst_if_cnt);
+				feci->decelerate(feci);
+				feci->deref(feci);
+				goto find_next_tuple;
+			}
+
+			/*
+			 * Update should be allowed for the connection only if 'brdev' is part of ipmr destination interface list.
+			 */
+			for (i = 0; i < dst_if_cnt; i++) {
+				if (dst_dev[i] == brdev->ifindex)
+					goto process_packet;
+			}
+
+			DEBUG_WARN("brdev: %s is neither part of mcproxy configuration nor same as ingress bridge port device.\n", brdev->name);
+			feci->deref(feci);
+			goto find_next_tuple;
 		}
 
+process_packet:
 		/*
 		 * Find out changes to the destination interfaces heirarchy
 		 * of the connection. We try to find out the interfaces that
@@ -2692,6 +2750,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 	struct net_device *out_dev_master = NULL;
+	struct net_device *l3_br_dev = NULL;
 
 	if (protocol != IPPROTO_UDP) {
 		DEBUG_WARN("Invalid Protocol %d in skb %px\n", protocol, skb);
@@ -2799,6 +2858,7 @@ unsigned int ecm_nss_multicast_ipv6_connection_process(struct net_device *out_de
 			int32_t mc_if_cnt_bridge;
 			uint32_t dst_dev_bridge[ECM_DB_MULTICAST_IF_MAX];
 
+			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
 			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
 			if (mc_if_cnt_bridge <= 0) {
@@ -3173,12 +3233,15 @@ process_packet:
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			ci = nci;
 			/*
-			 * Update the outdev_master in CI
+			 * Update the outdev_master or indev_master in ti
 			 * Dereference: ecm_db_connection_deref()
 			 */
 			if (!is_routed) {
 				ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev(tuple_instance, out_dev_master);
+			} else if (l3_br_dev) {
+				ecm_db_multicast_tuple_instance_set_and_hold_l3_br_dev(tuple_instance, l3_br_dev);
 			}
+
 			DEBUG_INFO("%px: New UDP connection created\n", ci);
 		}
 

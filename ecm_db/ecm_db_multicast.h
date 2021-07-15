@@ -34,7 +34,9 @@ uint32_t ecm_db_multicast_tuple_instance_flags_get(struct ecm_db_multicast_tuple
 void ecm_db_multicast_tuple_instance_flags_set(struct ecm_db_multicast_tuple_instance *ti, uint32_t flags);
 void ecm_db_multicast_tuple_instance_flags_clear(struct ecm_db_multicast_tuple_instance *ti, uint32_t flags);
 void ecm_db_multicast_tuple_instance_set_and_hold_l2_br_dev(struct ecm_db_multicast_tuple_instance *ti, struct net_device *l2_br_dev);
+void ecm_db_multicast_tuple_instance_set_and_hold_l3_br_dev(struct ecm_db_multicast_tuple_instance *ti, struct net_device *l3_br_dev);
 struct net_device *ecm_db_multicast_tuple_instance_get_l2_br_dev(struct ecm_db_multicast_tuple_instance *ti);
+struct net_device *ecm_db_multicast_tuple_instance_get_l3_br_dev(struct ecm_db_multicast_tuple_instance *ti);
 
 struct ecm_db_connection_instance *ecm_db_multicast_connection_get_from_tuple(struct ecm_db_multicast_tuple_instance *ti);
 void ecm_db_multicast_connection_to_interfaces_deref_all(struct ecm_db_iface_instance *interfaces, int32_t *ifaces_first);
