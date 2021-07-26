@@ -669,7 +669,7 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	int result = -1;
 	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+	if (fe_type != ECM_FRONT_END_TYPE_SFE && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
 		DEBUG_INFO("SFE IPv4 is disabled\n");
 		return 0;
 	}
@@ -773,7 +773,7 @@ void ecm_sfe_ipv4_exit(void)
 {
 	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+	if (fe_type != ECM_FRONT_END_TYPE_SFE && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
 		DEBUG_INFO("SFE IPv4 is disabled\n");
 		return;
 	}

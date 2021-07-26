@@ -89,6 +89,8 @@
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
 #include "ecm_ipv4.h"
+#include "ecm_ae_classifier_public.h"
+#include "ecm_ae_classifier.h"
 
 /*
  * ecm_non_ported_ipv4_is_protocol_supported()
@@ -199,6 +201,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		struct ecm_front_end_interface_construct_instance efeici;
 		enum ecm_front_end_type fe_type;
 		ecm_db_connection_defunct_callback_t defunct_callback;
+		struct ecm_ae_classifier_info ae_info;
 
 		DEBUG_INFO("New non-ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -231,7 +234,46 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * Connection must have a front end instance associated with it
 		 */
 		fe_type = ecm_front_end_type_get();
-		if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+		if (fe_type == ECM_FRONT_END_TYPE_HYBRID) {
+			ecm_ae_classifier_result_t ae_result;
+			ecm_ae_classifier_get_t ae_get;
+
+			DEBUG_INFO("front end type is hybrid\n");
+
+			/*
+			 * Check the return type of the external callback.
+			 * 1. If NSS, allocate NSS ipv4 non-ported connection instance
+			 * 2. If NONE, allocate NSS ipv4 non-ported connection instance with can_accel flag is set to false.
+			 *    By doing this ECM will not ask again and again to the external module. If external module wants to
+			 *    accelerate this flow later, the flow needs to be defuncted first.
+			 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
+			 *    to the external module.
+			 * 4. If any other type is returned, ASSERT.
+			 */
+			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
+							  src_port, dest_port, protocol, 4,
+							  is_routed, false,
+							  &ae_info);
+
+			rcu_read_lock();
+			ae_get = rcu_dereference(ae_ops.ae_get);
+			ae_result = ae_get(&ae_info);
+			rcu_read_unlock();
+
+			DEBUG_TRACE("ae_result is %d\n", ae_result);
+
+			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
+			if (ae_result == ECM_AE_CLASSIFIER_RESULT_NSS) {
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NONE) {
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, false);
+			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NOT_YET) {
+				ecm_db_connection_deref(nci);
+				return NF_ACCEPT;
+			} else {
+				DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
+			}
+		} else if (fe_type == ECM_FRONT_END_TYPE_NSS) {
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
 		} else {

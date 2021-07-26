@@ -19,6 +19,8 @@
 #include <linux/of.h>
 #include <net/netfilter/nf_conntrack.h>
 
+#include "ecm_ae_classifier_public.h"
+
 /*
  * Constant used with constructing acceleration rules.
  */
@@ -60,13 +62,21 @@ enum ecm_front_end_engine {
  * ECM_FRONT_END_TYPE_NSS: select NSS front end if hardware support it,
  *			   otherwise abort initailization.
  * ECM_FRONT_END_TYPE_SFE: select SFE front end.
+ * ECM_FRONT_END_TYPE_HYBRID: Both NSS and SFE can be selected.
  */
 enum ecm_front_end_type {
 	ECM_FRONT_END_TYPE_AUTO,
 	ECM_FRONT_END_TYPE_NSS,
 	ECM_FRONT_END_TYPE_SFE,
+	ECM_FRONT_END_TYPE_HYBRID,
 	ECM_FRONT_END_TYPE_NOT_SUPPORTED
 };
+
+/*
+ * Global variable for the selected front-end type.
+ * It is set once in the module init function.
+ */
+extern enum ecm_front_end_type selected_front_end;
 
 /*
  * enum ecm_front_end_acceleration_modes
@@ -239,7 +249,17 @@ void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_para
 					ip_addr_t ip_dest_addr_nat, int src_port, int src_port_nat, int dest_port, int dest_port_nat);
 
 /*
- * Detect which front end to run
+ * ecm_front_end_type_get()
+ *	Returns the selcted fornt-end type.
+ */
+static inline enum ecm_front_end_type ecm_front_end_type_get(void)
+{
+	return selected_front_end;
+}
+
+/*
+ * ecm_front_end_type_select()
+ * 	Detects and sets which front end to run
  *
  * User can select front end explicitly by passing 1(nss) or 2(sfe)
  * to kernel module parameter "front_end_selection". Or let ECM make
@@ -254,7 +274,7 @@ void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_para
  * Since SFE is a pure software acceleration engine, so all platforms
  * support it.
  */
-static inline enum ecm_front_end_type ecm_front_end_type_get(void)
+static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 {
 #ifdef CONFIG_OF
 	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
@@ -276,6 +296,10 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 	if ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) ||
 	    (front_end_selection == ECM_FRONT_END_TYPE_SFE)) {
 		return ECM_FRONT_END_TYPE_SFE;
+	}
+
+	if (nss_supported && (front_end_selection == ECM_FRONT_END_TYPE_HYBRID)) {
+		return ECM_FRONT_END_TYPE_HYBRID;
 	}
 
 	return ECM_FRONT_END_TYPE_NOT_SUPPORTED;

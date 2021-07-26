@@ -16,6 +16,8 @@
 # Makefile for the QCA NSS ECM
 # ###################################################
 
+obj-m +=examples/ecm_ae_select.o
+
 obj-m += ecm.o
 
 # #####################################################
@@ -33,6 +35,7 @@ obj-m += examples/ecm_ovs.o
 endif
 
 ecm-y := \
+	 frontends/cmn/ecm_ae_classifier.o \
 	 frontends/cmn/ecm_ipv4.o \
 	 frontends/cmn/ecm_ported_ipv4.o \
 	 ecm_tracker_udp.o \
@@ -392,6 +395,7 @@ ccflags-y += -DECM_INTERFACE_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATE_DEBUG_LEVEL=1
 ccflags-y += -DECM_OPENWRT_SUPPORT=1
 ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_AE_CLASSIFIER_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 ccflags-y += -Wall -Werror

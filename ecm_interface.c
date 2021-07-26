@@ -6973,8 +6973,9 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 					       void *data)
 {
 	struct br_fdb_event *fe = (struct br_fdb_event *)data;
+	enum ecm_front_end_type type = ecm_front_end_type_get();
 
-	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
 		return NOTIFY_DONE;
 	}
 
@@ -7011,8 +7012,9 @@ static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
 					       void *data)
 {
 	struct br_fdb_event *fe = (struct br_fdb_event *)data;
+	enum ecm_front_end_type type = ecm_front_end_type_get();
 
-	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
 		return NOTIFY_DONE;
 	}
 
@@ -7627,6 +7629,7 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
 {
 	int ret;
 	int current_value;
+	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	/*
 	 * Take the current value
@@ -7641,7 +7644,7 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
 		return ret;
 	}
 
-	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
 		DEBUG_WARN("IGS enabled check is for NSS only.\n");
 		return -EINVAL;
 	}
@@ -7663,6 +7666,7 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 {
 	int ret;
 	int current_value;
+	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	/*
 	 * Take the current value
@@ -7677,7 +7681,7 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 		return ret;
 	}
 
-	if (ECM_FRONT_END_TYPE_NSS != ecm_front_end_type_get()) {
+	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
 		DEBUG_WARN("Source interface check is for NSS only.\n");
 		return -EINVAL;
 	}

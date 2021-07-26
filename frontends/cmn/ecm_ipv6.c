@@ -994,9 +994,12 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 
 	/*
 	 * Check if the number of IPv6 DB connection entries need to be limited.
+	 *
+	 * TODO: What if SFE is selected in hybrid mode? Does limiting this count to NSS's
+	 * max count still applicable to SFE.
 	 */
 #ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
-	if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+	if (fe_type == ECM_FRONT_END_TYPE_NSS || fe_type == ECM_FRONT_END_TYPE_HYBRID) {
 		if (ecm_front_end_conn_limit) {
 			if (ecm_nss_ipv6_accelerated_count == nss_ipv6_max_conn_count()) {
 				DEBUG_INFO("ECM DB connection limit %d reached, \
@@ -1028,8 +1031,11 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 * If the DSCP value of the packet maps to the NOT accel action type,
 	 * do not accelerate the packet and let it go through the
 	 * slow path.
+	 *
+	 * TODO: What if SFE is selected in hybrid mode? Can we do this check after the accel
+	 * engine decision?
 	 */
-	if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+	if (fe_type == ECM_FRONT_END_TYPE_NSS || fe_type == ECM_FRONT_END_TYPE_HYBRID) {
 		if (ip_hdr.protocol == IPPROTO_UDP) {
 			uint8_t action = nss_ipv6_dscp_action_get(ip_hdr.dscp);
 			if (action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
@@ -1049,13 +1055,17 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		struct net_device *ipsec_dev;
 		int32_t interface_type;
 
-		if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+		if (fe_type != ECM_FRONT_END_TYPE_NSS && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
 			DEBUG_TRACE("%px xfrm flow is not supported by SFE only mode\n", skb);
 			return NF_ACCEPT;
 		}
 
 		/* Check if the transformation for this flow
 		 * is done by NSS. If yes, then only try to accelerate.
+		 *
+		 * TODO: What if SFE is selected in hybrid mode? We are sure SFE will not be selected
+		 * for the non-ported flows in hybrid mode. Is this still needed to be checked after the
+		 * accel engine decision?
 		 */
 		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
 		if (!ipsec_dev) {

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -73,7 +73,9 @@ unsigned int ecm_front_end_conn_limit = 0;
  */
 void ecm_front_end_bond_notifier_stop(int num)
 {
-	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
+	enum ecm_front_end_type type = ecm_front_end_type_get();
+
+	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
 		ecm_nss_bond_notifier_stop(num);
 	}
 }
@@ -83,7 +85,9 @@ void ecm_front_end_bond_notifier_stop(int num)
  */
 int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 {
-	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
+	enum ecm_front_end_type type = ecm_front_end_type_get();
+
+	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
 		return ecm_nss_bond_notifier_init(dentry);
 	}
 
@@ -95,7 +99,9 @@ int ecm_front_end_bond_notifier_init(struct dentry *dentry)
  */
 void ecm_front_end_bond_notifier_exit(void)
 {
-	if (ECM_FRONT_END_TYPE_NSS == ecm_front_end_type_get()) {
+	enum ecm_front_end_type type = ecm_front_end_type_get();
+
+	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
 		ecm_nss_bond_notifier_exit();
 	}
 }

@@ -46,6 +46,8 @@
 #include "ecm_front_end_common.h"
 #include "ecm_conntrack_notifier.h"
 
+enum ecm_front_end_type selected_front_end;
+
 int front_end_selection;
 module_param(front_end_selection, int, 0);
 MODULE_PARM_DESC(front_end_selection, "Select front end for ECM");
@@ -114,6 +116,12 @@ static int __init ecm_init(void)
 	int ret;
 
 	printk(KERN_INFO "ECM init\n");
+
+	selected_front_end = ecm_front_end_type_select();
+	if (selected_front_end == ECM_FRONT_END_TYPE_NOT_SUPPORTED) {
+		DEBUG_ERROR("Front-end couldn't be selected\n");
+		return -1;
+	}
 
 	ecm_dentry = debugfs_create_dir("ecm", NULL);
 	if (!ecm_dentry) {
