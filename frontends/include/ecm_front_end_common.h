@@ -307,6 +307,11 @@ extern void ecm_front_end_bond_notifier_stop(int num);
 extern int ecm_front_end_bond_notifier_init(struct dentry *dentry);
 extern void ecm_front_end_bond_notifier_exit(void);
 
+#ifdef ECM_STATE_OUTPUT_ENABLE
+extern int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_instance *feci,
+						    struct ecm_state_file_instance *sfi,
+						    char *conn_type);
+#endif
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct net_device *outdev,
 						      struct sk_buff *skb,

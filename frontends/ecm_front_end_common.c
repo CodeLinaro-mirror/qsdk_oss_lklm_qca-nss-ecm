@@ -107,6 +107,77 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
+#ifdef ECM_STATE_OUTPUT_ENABLE
+/*
+ * ecm_front_end_common_connection_state_get()
+ *	Return state of the front end instance.
+ */
+int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_instance *feci,
+					     struct ecm_state_file_instance *sfi,
+					     char *conn_type)
+{
+	int result;
+	bool can_accel;
+	ecm_front_end_acceleration_mode_t accel_mode;
+	struct ecm_front_end_connection_mode_stats stats;
+
+	spin_lock_bh(&feci->lock);
+	can_accel = feci->can_accel;
+	accel_mode = feci->accel_mode;
+	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
+	spin_unlock_bh(&feci->lock);
+
+	if ((result = ecm_state_prefix_add(sfi, conn_type))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "can_accel", "%d", can_accel))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "accel_mode", "%d", accel_mode))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "decelerate_pending", "%d", stats.decelerate_pending))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "flush_happened_total", "%d", stats.flush_happened_total))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "no_action_seen_total", "%d", stats.no_action_seen_total))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "no_action_seen", "%d", stats.no_action_seen))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "no_action_seen_limit", "%d", stats.no_action_seen_limit))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "driver_fail_total", "%d", stats.driver_fail_total))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "driver_fail", "%d", stats.driver_fail))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "driver_fail_limit", "%d", stats.driver_fail_limit))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "ae_nack_total", "%d", stats.ae_nack_total))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "ae_nack", "%d", stats.ae_nack))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "ae_nack_limit", "%d", stats.ae_nack_limit))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "slow_path_packets", "%d", stats.slow_path_packets))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
+
 /*
  * ecm_front_end_gre_proto_is_accel_allowed()
  * 	Handle the following GRE cases:
