@@ -990,7 +990,6 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	ip_addr_t ip_src_addr;
 	ip_addr_t ip_dest_addr;
 	uint8_t protonum;
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
 	/*
 	 * Check if the number of IPv6 DB connection entries need to be limited.
@@ -999,14 +998,16 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 * max count still applicable to SFE.
 	 */
 #ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
-	if (fe_type == ECM_FRONT_END_TYPE_NSS || fe_type == ECM_FRONT_END_TYPE_HYBRID) {
-		if (ecm_front_end_conn_limit) {
-			if (ecm_nss_ipv6_accelerated_count == nss_ipv6_max_conn_count()) {
-				DEBUG_INFO("ECM DB connection limit %d reached, \
-						new flows cannot be accelerated.\n",
-						nss_ipv6_max_conn_count());
-				return NF_ACCEPT;
-			}
+	/*
+	 * If the connection limit feature is supported in the selected frontend,
+	 * do the check.
+	 */
+	if (likely(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_CONN_LIMIT)) && ecm_front_end_conn_limit) {
+		if (ecm_nss_ipv6_accelerated_count == nss_ipv6_max_conn_count()) {
+			DEBUG_INFO("ECM DB connection limit %d reached, \
+					new flows cannot be accelerated.\n",
+					nss_ipv6_max_conn_count());
+			return NF_ACCEPT;
 		}
 	}
 #endif
@@ -1035,7 +1036,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 * TODO: What if SFE is selected in hybrid mode? Can we do this check after the accel
 	 * engine decision?
 	 */
-	if (fe_type == ECM_FRONT_END_TYPE_NSS || fe_type == ECM_FRONT_END_TYPE_HYBRID) {
+	if (likely(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_DSCP_ACTION))) {
 		if (ip_hdr.protocol == IPPROTO_UDP) {
 			uint8_t action = nss_ipv6_dscp_action_get(ip_hdr.dscp);
 			if (action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
@@ -1055,7 +1056,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		struct net_device *ipsec_dev;
 		int32_t interface_type;
 
-		if (fe_type != ECM_FRONT_END_TYPE_NSS && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_XFRM)) {
 			DEBUG_TRACE("%px xfrm flow is not supported by SFE only mode\n", skb);
 			return NF_ACCEPT;
 		}
@@ -1193,8 +1194,8 @@ vxlan_done:
 			return NF_ACCEPT;
 		}
 
-		if (fe_type == ECM_FRONT_END_TYPE_SFE) {
-			DEBUG_TRACE("%px: Multicast ipv6 acceleration is not supported on SFE only mode\n", skb);
+		if (unlikely(!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_MULTICAST))) {
+			DEBUG_TRACE("%px: Multicast ipv6 acceleration is not supported on selected frontend\n", skb);
 			return NF_ACCEPT;
 		}
 
@@ -1293,8 +1294,8 @@ vxlan_done:
 				ip_src_addr, ip_dest_addr, l2_encap_proto);
 	}
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (fe_type == ECM_FRONT_END_TYPE_SFE) {
-		DEBUG_TRACE("%px: Non-ported ipv6 acceleration is not supported on SFE only mode\n", skb);
+	if (unlikely(!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NON_PORTED))) {
+		DEBUG_TRACE("%px: Non-ported ipv6 acceleration is not supported on the selected frontend\n", skb);
 		return NF_ACCEPT;
 	}
 
@@ -1653,7 +1654,6 @@ static struct nf_hook_ops ecm_ipv6_netfilter_bridge_hooks[] __read_mostly = {
 int ecm_ipv6_init(struct dentry *dentry)
 {
 	int result;
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
 	DEBUG_INFO("ECM CMN IPv6 init\n");
 
@@ -1683,9 +1683,9 @@ int ecm_ipv6_init(struct dentry *dentry)
 	}
 
 	/*
-	 * Register netfilter bridge hooks, if the frontend type is not SFE only mode.
+	 * Register netfilter bridge hooks, if the frontend type supports it. SFE only mode doesn't support it.
 	 */
-	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 		result = nf_register_hooks(ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
 #else
@@ -1718,8 +1718,6 @@ sfe_ipv6_failed:
  */
 void ecm_ipv6_exit(void)
 {
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
-
 	DEBUG_INFO("ECM CMN IPv6 Module exit\n");
 
 	spin_lock_bh(&ecm_ipv6_lock);
@@ -1727,9 +1725,9 @@ void ecm_ipv6_exit(void)
 	spin_unlock_bh(&ecm_ipv6_lock);
 
 	/*
-	 * Unregister the netfilter bridge hooks, if the frontend type is not SFE only mode.
+	 * Unregister netfilter bridge hooks, if the frontend type supports it. SFE only mode doesn't support it.
 	 */
-	if (fe_type != ECM_FRONT_END_TYPE_SFE) {
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
 		nf_unregister_hooks(ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
 #else

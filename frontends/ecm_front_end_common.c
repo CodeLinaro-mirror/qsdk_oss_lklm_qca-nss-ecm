@@ -67,15 +67,45 @@ static struct ctl_table_header *ecm_front_end_ctl_tbl_hdr;
  */
 unsigned int ecm_front_end_conn_limit = 0;
 
+/*
+ * Predefined frontend and feature support map.
+ */
+uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
+	0, 			/* Auto: This type will never be selected */
+
+	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
+	ECM_FE_FEATURE_SRC_IF_CHECK | ECM_FE_FEATURE_CONN_LIMIT |
+	ECM_FE_FEATURE_DSCP_ACTION | ECM_FE_FEATURE_XFRM,
+				/* NSS type */
+
+	ECM_FE_FEATURE_SFE,	/* SFE type */
+
+	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
+	ECM_FE_FEATURE_SRC_IF_CHECK | ECM_FE_FEATURE_CONN_LIMIT |
+	ECM_FE_FEATURE_DSCP_ACTION | ECM_FE_FEATURE_XFRM,
+				/* Hybrid type */
+};
+
+/*
+ * ecm_front_end_is_feature_supported()
+ *	Checks if the given feature is supported in the selected frontend.
+ */
+bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
+{
+	enum ecm_front_end_type type = ecm_front_end_type_get();
+
+	return !!(ecm_fe_feature_list[type] & feature);
+}
+
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
  * ecm_front_end_bond_notifier_stop()
  */
 void ecm_front_end_bond_notifier_stop(int num)
 {
-	enum ecm_front_end_type type = ecm_front_end_type_get();
-
-	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
 		ecm_nss_bond_notifier_stop(num);
 	}
 }
@@ -85,9 +115,7 @@ void ecm_front_end_bond_notifier_stop(int num)
  */
 int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 {
-	enum ecm_front_end_type type = ecm_front_end_type_get();
-
-	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
 		return ecm_nss_bond_notifier_init(dentry);
 	}
 
@@ -99,9 +127,7 @@ int ecm_front_end_bond_notifier_init(struct dentry *dentry)
  */
 void ecm_front_end_bond_notifier_exit(void)
 {
-	enum ecm_front_end_type type = ecm_front_end_type_get();
-
-	if (type == ECM_FRONT_END_TYPE_NSS || type == ECM_FRONT_END_TYPE_HYBRID) {
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
 		ecm_nss_bond_notifier_exit();
 	}
 }

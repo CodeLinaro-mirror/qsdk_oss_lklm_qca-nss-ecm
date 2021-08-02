@@ -1051,9 +1051,8 @@ static void ecm_nss_ipv6_sync_queue_exit(void)
 int ecm_nss_ipv6_init(struct dentry *dentry)
 {
 	int result = -1;
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	if (fe_type != ECM_FRONT_END_TYPE_NSS && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NSS)) {
 		DEBUG_INFO("NSS IPv6 is disabled\n");
 		return 0;
 	}
@@ -1193,9 +1192,7 @@ task_cleanup:
  */
 void ecm_nss_ipv6_exit(void)
 {
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
-
-	if (fe_type != ECM_FRONT_END_TYPE_NSS && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NSS)) {
 		DEBUG_INFO("NSS IPv6 is disabled\n");
 		return;
 	}

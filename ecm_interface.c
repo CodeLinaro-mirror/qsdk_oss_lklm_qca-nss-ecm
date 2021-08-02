@@ -6973,11 +6973,6 @@ static int ecm_interface_node_br_fdb_notify_event(struct notifier_block *nb,
 					       void *data)
 {
 	struct br_fdb_event *fe = (struct br_fdb_event *)data;
-	enum ecm_front_end_type type = ecm_front_end_type_get();
-
-	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
-		return NOTIFY_DONE;
-	}
 
 	/*
 	 * Check if original and current devs are not NULL.
@@ -7012,11 +7007,6 @@ static int ecm_interface_node_br_fdb_delete_event(struct notifier_block *nb,
 					       void *data)
 {
 	struct br_fdb_event *fe = (struct br_fdb_event *)data;
-	enum ecm_front_end_type type = ecm_front_end_type_get();
-
-	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
-		return NOTIFY_DONE;
-	}
 
 	if ((event != BR_FDB_EVENT_DEL) || fe->is_local) {
 		DEBUG_WARN("%px: local fdb or not deleting event, ignore\n", fe);
@@ -7629,7 +7619,6 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
 {
 	int ret;
 	int current_value;
-	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	/*
 	 * Take the current value
@@ -7644,8 +7633,12 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
 		return ret;
 	}
 
-	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
-		DEBUG_WARN("IGS enabled check is for NSS only.\n");
+	/*
+	 * If the IGS feature is not supported in the selected frontend,
+	 * just return.
+	 */
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_IGS)) {
+		DEBUG_WARN("IGS is not supported by front-end\n");
 		return -EINVAL;
 	}
 
@@ -7666,7 +7659,6 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 {
 	int ret;
 	int current_value;
-	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	/*
 	 * Take the current value
@@ -7681,8 +7673,12 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 		return ret;
 	}
 
-	if ((type != ECM_FRONT_END_TYPE_NSS) && (type != ECM_FRONT_END_TYPE_HYBRID)) {
-		DEBUG_WARN("Source interface check is for NSS only.\n");
+	/*
+	 * If the src iface check feature is not supported in the selected frontend,
+	 * just return.
+	 */
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SRC_IF_CHECK)) {
+		DEBUG_WARN("Source interface check is not supported by front-end\n");
 		return -EINVAL;
 	}
 
@@ -8239,10 +8235,13 @@ int ecm_interface_init(void)
 	}
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 	/*
-	 * register for bridge fdb database modificationevents
+	 * If the bridge feature is supported in the selected frontend,
+	 * register the  FDB event handlers.
 	 */
-	br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
-	br_fdb_register_notify(&ecm_interface_node_br_fdb_delete_nb);
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
+		br_fdb_update_register_notify(&ecm_interface_node_br_fdb_update_nb);
+		br_fdb_register_notify(&ecm_interface_node_br_fdb_delete_nb);
+	}
 #endif
 #ifdef ECM_DB_XREF_ENABLE
 	neigh_mac_update_register_notify(&ecm_interface_neigh_mac_update_nb);
@@ -8274,10 +8273,13 @@ void ecm_interface_exit(void)
 
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 	/*
-	 * unregister for bridge fdb update events
+	 * If the bridge feature is supported in the selected frontend,
+	 * unregister the  FDB event handlers.
 	 */
-        br_fdb_update_unregister_notify(&ecm_interface_node_br_fdb_update_nb);
-	br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
+		br_fdb_update_unregister_notify(&ecm_interface_node_br_fdb_update_nb);
+		br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
+	}
 #endif
 	ecm_interface_wifi_event_stop();
 

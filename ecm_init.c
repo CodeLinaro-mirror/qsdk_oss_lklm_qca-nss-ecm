@@ -118,7 +118,7 @@ static int __init ecm_init(void)
 	printk(KERN_INFO "ECM init\n");
 
 	selected_front_end = ecm_front_end_type_select();
-	if (selected_front_end == ECM_FRONT_END_TYPE_NOT_SUPPORTED) {
+	if (selected_front_end == ECM_FRONT_END_TYPE_MAX) {
 		DEBUG_ERROR("Front-end couldn't be selected\n");
 		return -1;
 	}

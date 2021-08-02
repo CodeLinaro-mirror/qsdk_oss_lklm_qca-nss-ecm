@@ -667,9 +667,8 @@ static struct file_operations ecm_sfe_ipv4_decel_cmd_avg_millis_fops = {
 int ecm_sfe_ipv4_init(struct dentry *dentry)
 {
 	int result = -1;
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
 
-	if (fe_type != ECM_FRONT_END_TYPE_SFE && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE)) {
 		DEBUG_INFO("SFE IPv4 is disabled\n");
 		return 0;
 	}
@@ -771,9 +770,7 @@ EXPORT_SYMBOL(ecm_sfe_ipv4_init);
  */
 void ecm_sfe_ipv4_exit(void)
 {
-	enum ecm_front_end_type fe_type = ecm_front_end_type_get();
-
-	if (fe_type != ECM_FRONT_END_TYPE_SFE && fe_type != ECM_FRONT_END_TYPE_HYBRID) {
+	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE)) {
 		DEBUG_INFO("SFE IPv4 is disabled\n");
 		return;
 	}

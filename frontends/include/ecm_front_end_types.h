@@ -69,7 +69,24 @@ enum ecm_front_end_type {
 	ECM_FRONT_END_TYPE_NSS,
 	ECM_FRONT_END_TYPE_SFE,
 	ECM_FRONT_END_TYPE_HYBRID,
-	ECM_FRONT_END_TYPE_NOT_SUPPORTED
+	ECM_FRONT_END_TYPE_MAX
+};
+
+/*
+ * Features supported in ECM's frontends.
+ */
+enum ecm_fe_feature {
+	ECM_FE_FEATURE_NSS 		= (1 << 0),
+	ECM_FE_FEATURE_SFE 		= (1 << 1),
+	ECM_FE_FEATURE_NON_PORTED 	= (1 << 2),
+	ECM_FE_FEATURE_BRIDGE		= (1 << 3),
+	ECM_FE_FEATURE_MULTICAST	= (1 << 4),
+	ECM_FE_FEATURE_BONDING		= (1 << 5),
+	ECM_FE_FEATURE_IGS		= (1 << 6),
+	ECM_FE_FEATURE_SRC_IF_CHECK	= (1 << 7),
+	ECM_FE_FEATURE_CONN_LIMIT	= (1 << 8),
+	ECM_FE_FEATURE_DSCP_ACTION	= (1 << 9),
+	ECM_FE_FEATURE_XFRM		= (1 << 10),
 };
 
 /*
@@ -248,6 +265,8 @@ extern bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *
 void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[], ip_addr_t ip_src_addr, ip_addr_t ip_src_addr_nat, ip_addr_t ip_dest_addr,
 					ip_addr_t ip_dest_addr_nat, int src_port, int src_port_nat, int dest_port, int dest_port_nat);
 
+bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature);
+
 /*
  * ecm_front_end_type_get()
  *	Returns the selcted fornt-end type.
@@ -302,5 +321,5 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 		return ECM_FRONT_END_TYPE_HYBRID;
 	}
 
-	return ECM_FRONT_END_TYPE_NOT_SUPPORTED;
+	return ECM_FRONT_END_TYPE_MAX;
 }
