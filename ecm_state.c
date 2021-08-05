@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2020-2021, The Linux Foundation.  All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -150,7 +150,6 @@ int ecm_state_write_reset(struct ecm_state_file_instance *sfi, char *prefix)
 	sfi->prefix_levels[sfi->prefix_level] = result;
 	return 0;
 }
-EXPORT_SYMBOL(ecm_state_write_reset);
 
 /*
  * ecm_state_prefix_add()
@@ -178,7 +177,6 @@ int ecm_state_prefix_add(struct ecm_state_file_instance *sfi, char *prefix)
 	sfi->prefix_levels[sfi->prefix_level] = pxsz + result;
 	return 0;
 }
-EXPORT_SYMBOL(ecm_state_prefix_add);
 
 /*
  * ecm_state_prefix_index_add()
@@ -186,7 +184,7 @@ EXPORT_SYMBOL(ecm_state_prefix_add);
  *
  * Returns 0 on success
  */
-int ecm_state_prefix_index_add(struct ecm_state_file_instance *sfi, int index)
+int ecm_state_prefix_index_add(struct ecm_state_file_instance *sfi, uint32_t index)
 {
 	int pxsz;
 	int pxremain;
@@ -196,7 +194,7 @@ int ecm_state_prefix_index_add(struct ecm_state_file_instance *sfi, int index)
 
 	pxsz = sfi->prefix_levels[sfi->prefix_level];
 	pxremain = ECM_STATE_FILE_PREFIX_SIZE - pxsz;
-	result = snprintf(sfi->prefix + pxsz, pxremain, ".%d", index);
+	result = snprintf(sfi->prefix + pxsz, pxremain, ".%u", index);
 	if ((result < 0) || (result >= pxremain)) {
 		return -1;
 	}
@@ -206,7 +204,6 @@ int ecm_state_prefix_index_add(struct ecm_state_file_instance *sfi, int index)
 	sfi->prefix_levels[sfi->prefix_level] = pxsz + result;
 	return 0;
 }
-EXPORT_SYMBOL(ecm_state_prefix_index_add);
 
 /*
  * ecm_state_prefix_remove()
@@ -226,7 +223,6 @@ int ecm_state_prefix_remove(struct ecm_state_file_instance *sfi)
 	sfi->prefix[pxsz] = 0;
 	return 0;
 }
-EXPORT_SYMBOL(ecm_state_prefix_remove);
 
 /*
  * ecm_state_write()
@@ -273,7 +269,6 @@ int ecm_state_write(struct ecm_state_file_instance *sfi, char *name, char *fmt, 
 	sfi->msg_len += result;
 	return 0;
 }
-EXPORT_SYMBOL(ecm_state_write);
 
 /*
  * ecm_state_char_dev_conn_msg_prep()
@@ -929,7 +924,6 @@ init_cleanup:
 	debugfs_remove_recursive(ecm_state_dentry);
 	return result;
 }
-EXPORT_SYMBOL(ecm_state_init);
 
 /*
  * ecm_state_exit()
@@ -947,4 +941,3 @@ void ecm_state_exit(void)
 		debugfs_remove_recursive(ecm_state_dentry);
 	}
 }
-EXPORT_SYMBOL(ecm_state_exit);
