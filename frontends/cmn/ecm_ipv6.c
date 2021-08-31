@@ -74,7 +74,9 @@
  */
 #define DEBUG_LEVEL ECM_NSS_IPV6_DEBUG_LEVEL
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
+#endif
 #ifdef ECM_MULTICAST_ENABLE
 #include <mc_ecm.h>
 #endif
@@ -93,6 +95,7 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_common.h"
 #include "ecm_nss_ported_ipv6.h"
 #ifdef ECM_MULTICAST_ENABLE
@@ -100,6 +103,7 @@
 #endif
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_nss_non_ported_ipv6.h"
+#endif
 #endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
@@ -997,7 +1001,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 * TODO: What if SFE is selected in hybrid mode? Does limiting this count to NSS's
 	 * max count still applicable to SFE.
 	 */
-#ifdef ECM_FRONT_END_CONN_LIMIT_ENABLE
+#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_CONN_LIMIT_ENABLE)
 	/*
 	 * If the connection limit feature is supported in the selected frontend,
 	 * do the check.
@@ -1028,6 +1032,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		return NF_ACCEPT;
 	}
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	/*
 	 * If the DSCP value of the packet maps to the NOT accel action type,
 	 * do not accelerate the packet and let it go through the
@@ -1045,12 +1050,13 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 			}
 		}
 	}
-
+#endif
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %px is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
 #ifdef ECM_XFRM_ENABLE
 		struct net_device *ipsec_dev;
@@ -1079,7 +1085,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		return NF_ACCEPT;
 #endif
 	}
-
+#endif
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
@@ -1252,6 +1258,7 @@ vxlan_done:
 	 * If PPPoE bridged flows are to be handled with 3-tuple rule, set protocol to IPPROTO_RAW.
 	 */
 	protonum = orig_tuple.dst.protonum;
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(!is_routed && (l2_encap_proto == ETH_P_PPP_SES))) {
 		/*
 		 * Check if PPPoE bridge acceleration is 3-tuple based.
@@ -1261,7 +1268,7 @@ vxlan_done:
 			protonum = IPPROTO_RAW;
 		}
 	}
-
+#endif
 	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
 			ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
@@ -1398,6 +1405,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	return result;
 }
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 /*
  * ecm_ipv6_pppoe_bridge_process()
  *	Called for PPPoE session packets that are going
@@ -1446,6 +1454,7 @@ skip_ipv6_process:
 
 	return result;
 }
+#endif
 
 /*
  * ecm_ipv6_bridge_post_routing_hook()
@@ -1594,6 +1603,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(eth_type != 0x86DD)) {
 		/*
 		 * Check if PPPoE bridge acceleration is disabled.
@@ -1606,7 +1616,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		result = ecm_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		goto skip_ipv6_bridge_flow;
 	}
-
+#endif
 	result = ecm_ipv6_ip_process((struct net_device *)out, in,
 							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 skip_ipv6_bridge_flow:
@@ -1657,12 +1667,13 @@ int ecm_ipv6_init(struct dentry *dentry)
 
 	DEBUG_INFO("ECM CMN IPv6 init\n");
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	result = ecm_nss_ipv6_init(dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Can't initialize NSS ipv6\n");
 		return result;
 	}
-
+#endif
 	result = ecm_sfe_ipv6_init(dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Can't initialize SFE ipv6\n");
@@ -1708,8 +1719,9 @@ nf_register_failed_1:
 	ecm_sfe_ipv6_exit();
 
 sfe_ipv6_failed:
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv6_exit();
-
+#endif
 	return result;
 }
 
@@ -1744,5 +1756,7 @@ void ecm_ipv6_exit(void)
 	nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
 #endif
 	ecm_sfe_ipv6_exit();
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv6_exit();
+#endif
 }

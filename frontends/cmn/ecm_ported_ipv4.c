@@ -70,10 +70,11 @@
  */
 #define DEBUG_LEVEL ECM_NSS_PORTED_IPV4_DEBUG_LEVEL
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
-
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 #include "nss_ipsec_cmn.h"
+#endif
 #endif
 
 #include "ecm_types.h"
@@ -88,10 +89,12 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
-#include "ecm_nss_ported_ipv4.h"
 #include "ecm_sfe_ported_ipv4.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
+#include "ecm_nss_ported_ipv4.h"
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_common.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv4.h"
 #include "ecm_ae_classifier_public.h"
@@ -348,7 +351,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
 		enum ecm_front_end_type fe_type;
 		ecm_db_connection_defunct_callback_t defunct_callback;
-		struct ecm_ae_classifier_info ae_info;
 
 		DEBUG_INFO("New ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -399,9 +401,13 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		 * Connection must have a front end instance associated with it
 		 */
 		fe_type = ecm_front_end_type_get();
-		if (fe_type == ECM_FRONT_END_TYPE_HYBRID) {
+		switch (fe_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+		case ECM_FRONT_END_TYPE_HYBRID:
+		{
 			ecm_ae_classifier_result_t ae_result;
 			ecm_ae_classifier_get_t ae_get;
+			struct ecm_ae_classifier_info ae_info;
 
 			DEBUG_INFO("front end type is hybrid\n");
 
@@ -452,15 +458,21 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 			} else {
 				DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
 			}
-		} else if (fe_type == ECM_FRONT_END_TYPE_NSS) {
+			break;
+		}
+		case ECM_FRONT_END_TYPE_NSS:
 			DEBUG_INFO("front end type is NSS\n");
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 			defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
-		} else if (fe_type == ECM_FRONT_END_TYPE_SFE) {
+			break;
+#endif
+		case ECM_FRONT_END_TYPE_SFE:
 			DEBUG_INFO("front end type is SFE\n");
 			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
-		} else {
+			break;
+
+		default:
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
 			goto fail_1;
 		}
@@ -726,7 +738,7 @@ done:
 		return NF_ACCEPT;
 	}
 
-#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS) && defined(ECM_FRONT_END_NSS_ENABLE)
 	/*
 	 * Check if IGS feature is enabled or not.
 	 */
