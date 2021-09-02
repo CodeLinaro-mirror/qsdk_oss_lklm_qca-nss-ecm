@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2015, 2018, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2015, 2018, 2021 The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -24,5 +24,3 @@ extern unsigned int ecm_nss_non_ported_ipv4_process(struct net_device *out_dev, 
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple,
 							ip_addr_t ip_src_addr, ip_addr_t ip_dest_addr, ip_addr_t ip_src_addr_nat, ip_addr_t ip_dest_addr_nat,
 							uint16_t l2_encap_proto);
-extern bool ecm_nss_non_ported_ipv4_debugfs_init(struct dentry *dentry);
-

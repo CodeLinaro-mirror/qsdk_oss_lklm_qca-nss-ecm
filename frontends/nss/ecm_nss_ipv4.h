@@ -47,11 +47,6 @@ extern int ecm_nss_ipv4_vlan_passthrough_enable;
 extern spinlock_t ecm_nss_ipv4_lock;			/* Protect against SMP access between netfilter, events and private threaded function. */
 
 /*
- * Management thread control
- */
-extern bool ecm_nss_ipv4_terminate_pending;		/* True when the user has signalled we should quit */
-
-/*
  * NSS driver linkage
  */
 extern struct nss_ctx_instance *ecm_nss_ipv4_nss_ipv4_mgr;
@@ -169,18 +164,7 @@ static inline bool ecm_nss_ipv4_accel_pending_clear(struct ecm_front_end_connect
 	return decel_pending;
 }
 
-extern int ecm_nss_ipv4_conntrack_event(unsigned long events, struct nf_conn *ct);
 extern void ecm_nss_ipv4_accel_done_time_update(struct ecm_front_end_connection_instance *feci);
 extern void ecm_nss_ipv4_decel_done_time_update(struct ecm_front_end_connection_instance *feci);
-extern void ecm_nss_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
-							struct net_device *out_dev, struct net_device *out_dev_nat,
-							struct net_device *in_dev, struct net_device *in_dev_nat,
-							__be16 *layer4hdr, struct sk_buff *skb);
-extern struct ecm_db_node_instance *ecm_nss_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
-							struct net_device *dev, ip_addr_t addr,
-							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
-							uint8_t *given_node_addr, struct sk_buff *skb);
-extern struct ecm_db_host_instance *ecm_nss_ipv4_host_establish_and_ref(ip_addr_t addr);
-extern struct ecm_db_mapping_instance *ecm_nss_ipv4_mapping_establish_and_ref(ip_addr_t addr, int port);
 extern int ecm_nss_ipv4_init(struct dentry *dentry);
 extern void ecm_nss_ipv4_exit(void);
