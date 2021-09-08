@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -368,7 +368,10 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(struct ovsmgr_dp_flow *flow);
 #endif
-
+bool ecm_db_connection_decel_v4(__be32 src_ip, int src_port,
+				__be32 dest_ip, int dest_port, int protocol);
+bool ecm_db_connection_decel_v6(struct in6_addr *src_ip, int src_port,
+				struct in6_addr *dest_ip, int dest_port, int protocol);
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci,
 					   struct ecm_front_end_connection_instance *feci);
 

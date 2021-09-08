@@ -101,6 +101,28 @@ void ecm_ae_classifier_select_info_fill(ip_addr_t src_ip, ip_addr_t dest_ip,
 }
 
 /*
+ * ecm_ae_classifier_decelerate_v4_connection()
+ *	Decelerates an IPv4 connection
+ */
+bool ecm_ae_classifier_decelerate_v4_connection(__be32 src_ip, int src_port,
+						__be32 dest_ip, int dest_port, int protocol)
+{
+	return ecm_db_connection_decel_v4(src_ip, src_port, dest_ip, dest_port, protocol);
+}
+EXPORT_SYMBOL(ecm_ae_classifier_decelerate_v4_connection);
+
+/*
+ * ecm_ae_classifier_decelerate_v6_connection()
+ *	Decelerates an IPv6 connection
+ */
+bool ecm_ae_classifier_decelerate_v6_connection(struct in6_addr src_ip, int src_port,
+						struct in6_addr dest_ip, int dest_port, int protocol)
+{
+	return ecm_db_connection_decel_v6(&src_ip, src_port, &dest_ip, dest_port, protocol);
+}
+EXPORT_SYMBOL(ecm_ae_classifier_decelerate_v6_connection);
+
+/*
  * ecm_ae_classifier_ops_register
  */
 void ecm_ae_classifier_ops_register(struct ecm_ae_classifier_ops *ops)
