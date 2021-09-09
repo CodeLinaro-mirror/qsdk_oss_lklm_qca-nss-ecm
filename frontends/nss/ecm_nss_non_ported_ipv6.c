@@ -750,6 +750,10 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_TUNIPIP6:
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+			/*
+			 * Clear QOS_VALID to prevent outer rule from overwriting
+			 * inner flow's QoS classification.
+			 */
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
 				if (ecm_nss_common_get_interface_type(feci, dev) == NSS_DYNAMIC_INTERFACE_TYPE_TUNIPIP6_OUTER) {
