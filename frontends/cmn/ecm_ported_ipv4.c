@@ -124,7 +124,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 	int dest_port;
 	int dest_port_nat;
 	struct ecm_db_connection_instance *ci;
-	struct ecm_front_end_connection_instance *feci;
+	struct ecm_front_end_connection_instance *feci = NULL;
 	ip_addr_t match_addr;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -402,7 +402,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		 */
 		fe_type = ecm_front_end_type_get();
 		switch (fe_type) {
-#ifdef ECM_FRONT_END_NSS_ENABLE
+#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
 		case ECM_FRONT_END_TYPE_HYBRID:
 		{
 			ecm_ae_classifier_result_t ae_result;
@@ -460,18 +460,21 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 			}
 			break;
 		}
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_FRONT_END_TYPE_NSS:
 			DEBUG_INFO("front end type is NSS\n");
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 			defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
 			break;
 #endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_FRONT_END_TYPE_SFE:
 			DEBUG_INFO("front end type is SFE\n");
 			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
 			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
 			break;
-
+#endif
 		default:
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
 			goto fail_1;
