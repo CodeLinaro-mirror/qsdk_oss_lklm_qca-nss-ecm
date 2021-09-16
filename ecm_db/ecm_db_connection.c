@@ -3569,6 +3569,115 @@ struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(s
 #endif
 
 /*
+ * ecm_db_connection_decel_v4()
+ *	Decelerate IPv4 connection.
+ *
+ * Big endian parameters apart from protocol
+ */
+bool ecm_db_connection_decel_v4(__be32 src_ip, int src_port,
+				__be32 dest_ip, int dest_port, int protocol)
+{
+	ip_addr_t ecm_src_ip;
+	ip_addr_t ecm_dest_ip;
+	struct ecm_db_connection_instance *ci;
+
+	/*
+	 * Look up ECM connection from the given tuple
+	 */
+	src_port = ntohs(src_port);
+	dest_port = ntohs(dest_port);
+	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_src_ip, src_ip);
+	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_dest_ip, dest_ip);
+
+	ci = ecm_db_connection_find_and_ref(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
+	if (!ci) {
+		DEBUG_WARN("Decel v4 Connection lookup failed."
+				" Received connection tuple information: \n"
+				"Protocol: %d\n"
+				"src: " ECM_IP_ADDR_DOT_FMT ":%d\n"
+				"dest: " ECM_IP_ADDR_DOT_FMT ":%d\n",
+				protocol,
+				ECM_IP_ADDR_TO_DOT(ecm_src_ip), src_port,
+				ECM_IP_ADDR_TO_DOT(ecm_dest_ip), dest_port);
+		return false;
+	}
+
+	DEBUG_TRACE("Decel v4, connection tuple information: \n"
+			"Protocol: %d\n"
+			"src: " ECM_IP_ADDR_DOT_FMT ":%d\n"
+			"dest: " ECM_IP_ADDR_DOT_FMT ":%d\n",
+			protocol,
+			ECM_IP_ADDR_TO_DOT(ecm_src_ip), src_port,
+			ECM_IP_ADDR_TO_DOT(ecm_dest_ip), dest_port);
+
+	/*
+	 * Defunct the connection.
+	 */
+	ecm_db_connection_make_defunct(ci);
+	ecm_db_connection_deref(ci);
+	return true;
+}
+
+/*
+ * ecm_db_connection_decel_v6()
+ *	Decelerate IPv6 connection.
+ *
+ * Big endian parameters apart from protocol
+ *
+ * NOTE: If IPv6 is not supported in ECM this function must still exist as a stub to avoid compilation problems for registrants.
+ */
+bool ecm_db_connection_decel_v6(struct in6_addr *src_ip, int src_port,
+				struct in6_addr *dest_ip, int dest_port, int protocol)
+{
+#ifdef ECM_IPV6_ENABLE
+	struct in6_addr in6;
+	ip_addr_t ecm_src_ip;
+	ip_addr_t ecm_dest_ip;
+	struct ecm_db_connection_instance *ci;
+
+	/*
+	 * Look up ECM connection from the given tuple
+	 */
+	src_port = ntohs(src_port);
+	dest_port = ntohs(dest_port);
+	in6 = *src_ip;
+	ECM_NIN6_ADDR_TO_IP_ADDR(ecm_src_ip, in6);
+	in6 = *dest_ip;
+	ECM_NIN6_ADDR_TO_IP_ADDR(ecm_dest_ip, in6);
+
+	ci = ecm_db_connection_find_and_ref(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
+	if (!ci) {
+		DEBUG_WARN("Decel v6, Connection lookup failed."
+				" Received connection tuple information: \n"
+				"Protocol: %d\n"
+				"src: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+				"dest: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
+				protocol,
+				ECM_IP_ADDR_TO_OCTAL(ecm_src_ip), src_port,
+				ECM_IP_ADDR_TO_OCTAL(ecm_dest_ip), dest_port);
+		return false;
+	}
+
+
+	DEBUG_TRACE("Decel v6, connection tuple information: \n"
+			"Protocol: %d\n"
+			"src: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+			"dest: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
+			protocol,
+			ECM_IP_ADDR_TO_OCTAL(ecm_src_ip), src_port,
+			ECM_IP_ADDR_TO_OCTAL(ecm_dest_ip), dest_port);
+
+	/*
+	 * Defunct the connection.
+	 */
+	ecm_db_connection_make_defunct(ci);
+	ecm_db_connection_deref(ci);
+	return true;
+#endif
+	return false;
+}
+
+/*
  * ecm_db_front_end_instance_ref_and_set()
  *	Refs and sets the front end instance of connection.
  */

@@ -60,6 +60,11 @@ struct ecm_ae_classifier_ops {
 	ecm_ae_classifier_get_t ae_get;
 };
 
+bool ecm_ae_classifier_decelerate_v4_connection(__be32 src_ip, int src_port,
+						__be32 dest_ip, int dest_port, int protocol);
+bool ecm_ae_classifier_decelerate_v6_connection(struct in6_addr src_ip, int src_port,
+						struct in6_addr dest_ip, int dest_port, int protocol);
+
 void ecm_ae_classifier_ops_register(struct ecm_ae_classifier_ops *ops);
 void ecm_ae_classifier_ops_unregister(void);
 #endif /* __ECM_AE_CLASSIFIER_PUBLIC_H__ */
