@@ -196,7 +196,7 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	if ((result = ecm_state_write(sfi, "ae_nack_limit", "%d", stats.ae_nack_limit))) {
 		return result;
 	}
-	if ((result = ecm_state_write(sfi, "slow_path_packets", "%d", stats.slow_path_packets))) {
+	if ((result = ecm_state_write(sfi, "slow_path_packets", "%llu", stats.slow_path_packets))) {
 		return result;
 	}
 
