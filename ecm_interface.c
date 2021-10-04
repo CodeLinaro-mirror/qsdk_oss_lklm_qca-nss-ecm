@@ -6416,75 +6416,97 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 		}
 
 		memset(&stats, 0, sizeof(stats));
-		switch (ii_type) {
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			case ECM_DB_IFACE_TYPE_VLAN:
-				DEBUG_INFO("VLAN\n");
-				stats.rx_packets = rx_packets;
-				stats.rx_bytes = rx_bytes;
-				stats.tx_packets = tx_packets;
-				stats.tx_bytes = tx_bytes;
-				__vlan_dev_update_accel_stats(dev, &stats);
-				break;
-#endif
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
-				DEBUG_INFO("OVS BRIDGE\n");
-				ovsmgr_bridge_interface_stats_update(dev,
-								     rx_packets, rx_bytes,
-								     tx_packets, tx_bytes);
-				break;
-#endif
-			case ECM_DB_IFACE_TYPE_BRIDGE:
-				DEBUG_INFO("BRIDGE\n");
-				stats.rx_packets = rx_packets;
-				stats.rx_bytes = rx_bytes;
-				stats.tx_packets = tx_packets;
-				stats.tx_bytes = tx_bytes;
-				br_dev_update_stats(dev, &stats);
-				break;
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-			case ECM_DB_IFACE_TYPE_PPPOE:
-				DEBUG_INFO("PPPOE\n");
-				ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes, 0, 0, 0, 0);
-				break;
-#endif
-#ifdef ECM_INTERFACE_OVPN_ENABLE
-			case ECM_DB_IFACE_TYPE_OVPN: {
-				ip_addr_t from_addr, to_addr;
 
-				DEBUG_INFO("OVPN\n");
-				ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, from_addr);
-				ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, to_addr);
-				ecm_interface_ovpn_stats_update(dev, from_addr, to_addr);
-			}
-			break;
-#endif
+		/*
+		 * Macvlan stats are updated for both NSS and SFE acceleration engines.
+		 */
+		switch (ii_type) {
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
-			case ECM_DB_IFACE_TYPE_MACVLAN:
-				DEBUG_INFO("MACVLAN\n");
-				stats.rx_packets = rx_packets;
-				stats.rx_bytes = rx_bytes;
-				stats.tx_packets = tx_packets;
-				stats.tx_bytes = tx_bytes;
+		case ECM_DB_IFACE_TYPE_MACVLAN:
+			DEBUG_INFO("MACVLAN\n");
+			stats.rx_packets = rx_packets;
+			stats.rx_bytes = rx_bytes;
+			stats.tx_packets = tx_packets;
+			stats.tx_bytes = tx_bytes;
 #ifdef ECM_MULTICAST_ENABLE
-				/*
-				 * Update multicast rx statistics only for
-				 * 'from' interface.
-				 */
-				update_mcast_rx_stats = (!is_mcast_to_if &&
-							ecm_db_multicast_connection_to_interfaces_set_check(ci));
+			/*
+			 * Update multicast rx statistics only for
+			 * 'from' interface.
+			 */
+			update_mcast_rx_stats = (!is_mcast_to_if &&
+						ecm_db_multicast_connection_to_interfaces_set_check(ci));
 #endif
-				macvlan_offload_stats_update(dev, &stats, update_mcast_rx_stats);
-				break;
+			macvlan_offload_stats_update(dev, &stats, update_mcast_rx_stats);
+
+			/*
+			 * Continue updating stats for other interface.
+			 */
+			dev_put(dev);
+			continue;
 #endif
-			default:
-				/*
-				 * TODO: Extend it accordingly
-				 */
-				break;
+		default:
+			break;
 		}
 
+		/*
+		 * Update stats for the interfaces supported by only the NSS acceleration engine.
+		 */
+		if (ci->feci->accel_engine != ECM_FRONT_END_ENGINE_NSS ) {
+			DEBUG_TRACE("Invalid stats update for iface type=%d\n", ii_type);
+			dev_put(dev);
+			continue;
+		}
+
+		switch (ii_type) {
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		case ECM_DB_IFACE_TYPE_VLAN:
+			DEBUG_INFO("VLAN\n");
+			stats.rx_packets = rx_packets;
+			stats.rx_bytes = rx_bytes;
+			stats.tx_packets = tx_packets;
+			stats.tx_bytes = tx_bytes;
+			__vlan_dev_update_accel_stats(dev, &stats);
+			break;
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+			DEBUG_INFO("OVS BRIDGE\n");
+			ovsmgr_bridge_interface_stats_update(dev,
+							     rx_packets, rx_bytes,
+							     tx_packets, tx_bytes);
+			break;
+#endif
+		case ECM_DB_IFACE_TYPE_BRIDGE:
+			DEBUG_INFO("BRIDGE\n");
+			stats.rx_packets = rx_packets;
+			stats.rx_bytes = rx_bytes;
+			stats.tx_packets = tx_packets;
+			stats.tx_bytes = tx_bytes;
+			br_dev_update_stats(dev, &stats);
+			break;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		case ECM_DB_IFACE_TYPE_PPPOE:
+			DEBUG_INFO("PPPOE\n");
+			ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes, 0, 0, 0, 0);
+			break;
+#endif
+#ifdef ECM_INTERFACE_OVPN_ENABLE
+		case ECM_DB_IFACE_TYPE_OVPN: {
+			ip_addr_t from_addr, to_addr;
+
+			DEBUG_INFO("OVPN\n");
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, from_addr);
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, to_addr);
+			ecm_interface_ovpn_stats_update(dev, from_addr, to_addr);
+		}
+		break;
+#endif
+		default:
+			/*
+			 * TODO: Extend it accordingly
+			 */
+			break;
+		}
 		dev_put(dev);
 	}
 }
