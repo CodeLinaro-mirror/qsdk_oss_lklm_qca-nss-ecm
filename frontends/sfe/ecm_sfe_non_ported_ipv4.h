@@ -16,10 +16,10 @@
  **************************************************************************
  */
 
-extern bool ecm_nss_non_ported_ipv4_debugfs_init(struct dentry *dentry);
+extern bool ecm_sfe_non_ported_ipv4_debugfs_init(struct dentry *dentry);
 
-extern struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ipv4_connection_instance_alloc(
+extern struct ecm_sfe_non_ported_ipv4_connection_instance *ecm_sfe_non_ported_ipv4_connection_instance_alloc(
 								struct ecm_db_connection_instance *ci,
 								int protocol, bool can_accel);
-extern bool ecm_nss_non_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode);
-extern void ecm_nss_non_ported_ipv4_sit_set_peer(struct ecm_nss_non_ported_ipv4_connection_instance *nnpci, struct sk_buff *skb);
+extern bool ecm_sfe_non_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode);
+extern void ecm_sfe_non_ported_ipv4_sit_set_peer(struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci, struct sk_buff *skb);

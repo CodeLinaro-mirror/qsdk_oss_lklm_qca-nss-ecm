@@ -782,7 +782,18 @@ done:
 			&& prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ecm_nss_non_ported_ipv4_sit_set_peer((struct ecm_nss_non_ported_ipv4_connection_instance *)feci, skb);
+#ifdef ECM_FRONT_END_NSS_ENABLE
+		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
+			ecm_nss_non_ported_ipv4_sit_set_peer((struct ecm_nss_non_ported_ipv4_connection_instance *)feci, skb);
+		}
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+		if (feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+			ecm_sfe_non_ported_ipv4_sit_set_peer((struct ecm_sfe_non_ported_ipv4_connection_instance *)feci, skb);
+		}
+#endif
+
 		feci->deref(feci);
 	}
 #endif
