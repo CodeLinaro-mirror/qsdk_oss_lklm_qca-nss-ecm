@@ -1680,15 +1680,34 @@ static int ecm_nss_non_ported_ipv6_connection_state_get(struct ecm_front_end_con
  *	Create a front end instance specific for non-ported connection
  */
 struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_connection_instance_alloc(
-								struct ecm_db_connection_instance *ci,
-								int protocol, bool can_accel)
+									bool can_accel, int protocol,
+								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci;
 	struct ecm_front_end_connection_instance *feci;
+	struct ecm_db_connection_instance *ci;
+
+	if (ecm_nss_ipv6_is_conn_limit_reached()) {
+		DEBUG_TRACE("Reached connection limit\n");
+		return NULL;
+	}
+
+	/*
+	 * Now allocate the new connection
+	 */
+	*nci = ecm_db_connection_alloc();
+	if (!*nci) {
+		DEBUG_WARN("Failed to allocate connection\n");
+		return NULL;
+	}
+
+	ci = *nci;
 
 	nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)kzalloc(sizeof(struct ecm_nss_non_ported_ipv6_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
+
 	if (!nnpci) {
 		DEBUG_WARN("Non-Ported Front end alloc failed\n");
+		ecm_db_connection_deref(ci);
 		return NULL;
 	}
 

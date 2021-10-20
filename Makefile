@@ -77,6 +77,7 @@ endif
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
 # nss as ECM's front end.
 # #############################################################################
+ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_common.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ipv4.o
 ecm-$(ECM_FRONT_END_NSS_ENABLE) += frontends/nss/ecm_nss_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
@@ -85,6 +86,7 @@ ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
 # Define ECM_FRONT_END_SFE_ENABLE=y in order to select
 # sfe as ECM's front end.
 # #############################################################################
+ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_common.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
@@ -377,6 +379,7 @@ ccflags-y += -DECM_INIT_DEBUG_LEVEL=3
 ccflags-y += -DECM_FRONT_END_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_FRONT_END_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_FRONT_END_COMMON_DEBUG_LEVEL=1
+ccflags-y += -DECM_NSS_COMMON_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_NON_PORTED_IPV4_DEBUG_LEVEL=1
@@ -385,6 +388,7 @@ ccflags-y += -DECM_NSS_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_MULTICAST_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_COMMON_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_NON_PORTED_IPV4_DEBUG_LEVEL=1

@@ -222,15 +222,6 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		spin_unlock_bh(&ecm_ipv4_lock);
 
 		/*
-		 * Now allocate the new connection
-		 */
-		nci = ecm_db_connection_alloc();
-		if (!nci) {
-			DEBUG_WARN("Failed to allocate connection\n");
-			return NF_ACCEPT;
-		}
-
-		/*
 		 * Connection must have a front end instance associated with it
 		 */
 		fe_type = ecm_front_end_type_get();
@@ -264,26 +255,25 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 
 			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
 			if (ae_result == ECM_AE_CLASSIFIER_RESULT_NSS) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NONE) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, false);
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
 			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NOT_YET) {
-				ecm_db_connection_deref(nci);
 				return NF_ACCEPT;
 			} else {
 				DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
 			}
 		} else if (fe_type == ECM_FRONT_END_TYPE_NSS) {
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(nci, protocol, can_accel);
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
 		} else {
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			goto fail_1;
+			return NF_ACCEPT;
 		}
 
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
-			goto fail_1;
+			return NF_ACCEPT;
 		}
 
 		if (!ecm_front_end_ipv4_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
@@ -292,7 +282,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 							ip_dest_addr, ip_dest_addr_nat,
 							&efeici)) {
 			DEBUG_WARN("ECM front end ipv4 interface construct set failed for routed traffic\n");
-			goto fail_2;
+			goto fail_1;
 		}
 
 		/*
@@ -305,7 +295,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		from_list_first = ecm_interface_heirarchy_construct(feci, from_list, efeici.from_dev, efeici.from_other_dev, ip_dest_addr, efeici.from_mac_lookup_ip_addr, ip_src_addr, 4, protocol, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, NULL, skb, NULL);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
-			goto fail_3;
+			goto fail_2;
 		}
 		ecm_db_connection_interfaces_reset(nci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 
@@ -314,21 +304,21 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("Failed to establish source node\n");
-			goto fail_3;
+			goto fail_2;
 		}
 
 		DEBUG_TRACE("%px: Create source mapping\n", nci);
 		mi[ECM_DB_OBJ_DIR_FROM] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr, src_port);
 		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
 			DEBUG_WARN("Failed to establish src mapping\n");
-			goto fail_4;
+			goto fail_3;
 		}
 
 		DEBUG_TRACE("%px: Create the 'to' interface heirarchy list\n", nci);
 		to_list_first = ecm_interface_heirarchy_construct(feci, to_list, efeici.to_dev, efeici.to_other_dev, ip_src_addr, efeici.to_mac_lookup_ip_addr, ip_dest_addr, 4, protocol, out_dev, is_routed, in_dev, dest_node_addr, src_node_addr, NULL, skb, NULL);
 		if (to_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
-			goto fail_5;
+			goto fail_4;
 		}
 		ecm_db_connection_interfaces_reset(nci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 
@@ -337,14 +327,14 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_deref(to_list, to_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_TO]) {
 			DEBUG_WARN("Failed to establish dest node\n");
-			goto fail_5;
+			goto fail_4;
 		}
 
 		DEBUG_TRACE("%px: Create dest mapping\n", nci);
 		mi[ECM_DB_OBJ_DIR_TO] = ecm_ipv4_mapping_establish_and_ref(ip_dest_addr, dest_port);
 		if (!mi[ECM_DB_OBJ_DIR_TO]) {
 			DEBUG_WARN("Failed to establish dest mapping\n");
-			goto fail_6;
+			goto fail_5;
 		}
 
 		/*
@@ -366,7 +356,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'from NAT' heirarchy list\n");
-			goto fail_7;
+			goto fail_6;
 		}
 		ecm_db_connection_interfaces_reset(nci, from_nat_list, from_nat_list_first, ECM_DB_OBJ_DIR_FROM_NAT);
 
@@ -375,20 +365,20 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_deref(from_nat_list, from_nat_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			DEBUG_WARN("Failed to establish source nat node\n");
-			goto fail_7;
+			goto fail_6;
 		}
 
 		mi[ECM_DB_OBJ_DIR_FROM_NAT] = ecm_ipv4_mapping_establish_and_ref(ip_src_addr_nat, src_port_nat);
 		if (!mi[ECM_DB_OBJ_DIR_FROM_NAT]) {
 			DEBUG_WARN("Failed to establish src nat mapping\n");
-			goto fail_8;
+			goto fail_7;
 		}
 
 		DEBUG_TRACE("%px: Create the 'to NAT' interface heirarchy list\n", nci);
 		to_nat_list_first = ecm_interface_heirarchy_construct(feci, to_nat_list, efeici.to_nat_dev, efeici.to_nat_other_dev, ip_src_addr, efeici.to_nat_mac_lookup_ip_addr, ip_dest_addr_nat, 4, protocol, out_dev_nat, is_routed, in_dev, dest_node_addr_nat, src_node_addr_nat, NULL, skb, NULL);
 		if (to_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'to NAT' heirarchy list\n");
-			goto fail_9;
+			goto fail_8;
 		}
 		ecm_db_connection_interfaces_reset(nci, to_nat_list, to_nat_list_first, ECM_DB_OBJ_DIR_TO_NAT);
 
@@ -398,13 +388,13 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_db_connection_interfaces_deref(to_nat_list, to_nat_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_TO_NAT]) {
 			DEBUG_WARN("Failed to establish dest nat node\n");
-			goto fail_9;
+			goto fail_8;
 		}
 
 		mi[ECM_DB_OBJ_DIR_TO_NAT] = ecm_ipv4_mapping_establish_and_ref(ip_dest_addr_nat, dest_port_nat);
 		if (!mi[ECM_DB_OBJ_DIR_TO_NAT]) {
 			DEBUG_WARN("Failed to establish dest mapping\n");
-			goto fail_10;
+			goto fail_9;
 		}
 
 		/*
@@ -413,7 +403,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		dci = ecm_classifier_default_instance_alloc(nci, protocol, ecm_dir, src_port, dest_port);
 		if (!dci) {
 			DEBUG_WARN("Failed to allocate default classifier\n");
-			goto fail_11;
+			goto fail_10;
 		}
 		ecm_db_connection_classifier_assign(nci, (struct ecm_classifier_instance *)dci);
 
@@ -427,7 +417,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 				aci->deref(aci);
 			} else {
 				DEBUG_WARN("Failed to allocate classifiers assignments\n");
-				goto fail_12;
+				goto fail_11;
 			}
 		}
 
@@ -500,29 +490,28 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		feci->deref(feci);
 
 		goto done;
-fail_12:
-		dci->base.deref((struct ecm_classifier_instance *)dci);
 fail_11:
-		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO_NAT]);
+		dci->base.deref((struct ecm_classifier_instance *)dci);
 fail_10:
-		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO_NAT]);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO_NAT]);
 fail_9:
-		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM_NAT]);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO_NAT]);
 fail_8:
-		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM_NAT]);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM_NAT]);
 fail_7:
-		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO]);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM_NAT]);
 fail_6:
-		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_TO]);
 fail_5:
-		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 fail_4:
-		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
+		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 fail_3:
-		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
+		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 fail_2:
-		feci->deref(feci);
+		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 fail_1:
+		feci->deref(feci);
 		ecm_db_connection_deref(nci);
 		return NF_ACCEPT;
 done:

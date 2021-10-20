@@ -416,3 +416,6 @@ static inline bool ecm_nss_common_fill_mirror_info(struct ecm_classifier_process
 	return true;
 }
 #endif
+
+bool ecm_nss_ipv6_is_conn_limit_reached(void);
+bool ecm_nss_ipv4_is_conn_limit_reached(void);

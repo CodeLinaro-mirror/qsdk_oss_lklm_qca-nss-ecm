@@ -2307,15 +2307,33 @@ find_next_tuple:
  *	Create a front end instance specific for Mcast connection
  */
 struct ecm_nss_multicast_ipv4_connection_instance *ecm_nss_multicast_ipv4_connection_instance_alloc(
-								struct ecm_db_connection_instance *ci,
-								bool can_accel)
+								bool can_accel,
+								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_nss_multicast_ipv4_connection_instance *nmci;
 	struct ecm_front_end_connection_instance *feci;
+	struct ecm_db_connection_instance *ci;
+
+	if (ecm_nss_ipv4_is_conn_limit_reached()) {
+		DEBUG_TRACE("Reached connection limit\n");
+		return NULL;
+	}
+
+	/*
+	 * Now allocate the new connection
+	 */
+	*nci = ecm_db_connection_alloc();
+	if (!*nci) {
+		DEBUG_WARN("Failed to allocate connection\n");
+		return NULL;
+	}
+
+	ci = *nci;
 
 	nmci = (struct ecm_nss_multicast_ipv4_connection_instance *)kzalloc(sizeof(struct ecm_nss_multicast_ipv4_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nmci) {
 		DEBUG_WARN("Mcast Front end alloc failed\n");
+		ecm_db_connection_deref(ci);
 		return NULL;
 	}
 

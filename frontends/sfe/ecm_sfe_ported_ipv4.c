@@ -1652,16 +1652,34 @@ static int ecm_sfe_ported_ipv4_connection_state_get(struct ecm_front_end_connect
  *	Create a front end instance specific for ported connection
  */
 struct ecm_sfe_ported_ipv4_connection_instance *ecm_sfe_ported_ipv4_connection_instance_alloc(
-								struct ecm_db_connection_instance *ci,
+								bool can_accel,
 								int protocol,
-								bool can_accel)
+								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_sfe_ported_ipv4_connection_instance *npci;
 	struct ecm_front_end_connection_instance *feci;
+	struct ecm_db_connection_instance *ci;
+
+	if (ecm_sfe_ipv4_is_conn_limit_reached()) {
+		DEBUG_TRACE("Reached connection limit\n");
+		return NULL;
+	}
+
+	/*
+	 * Now allocate the new connection
+	 */
+	*nci = ecm_db_connection_alloc();
+	if (!*nci) {
+		DEBUG_WARN("Failed to allocate connection\n");
+		return NULL;
+	}
+
+	ci = *nci;
 
 	npci = (struct ecm_sfe_ported_ipv4_connection_instance *)kzalloc(sizeof(struct ecm_sfe_ported_ipv4_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
 	if (!npci) {
 		DEBUG_WARN("Ported Front end alloc failed\n");
+		ecm_db_connection_deref(ci);
 		return NULL;
 	}
 
@@ -1714,6 +1732,7 @@ struct ecm_sfe_ported_ipv4_connection_instance *ecm_sfe_ported_ipv4_connection_i
 	} else {
 		DEBUG_WARN("%px: Wrong protocol: %d\n", npci, protocol);
 		DEBUG_CLEAR_MAGIC(npci);
+		ecm_db_connection_deref(ci);
 		kfree(npci);
 		return NULL;
 	}

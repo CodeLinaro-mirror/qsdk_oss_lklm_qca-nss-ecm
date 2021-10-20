@@ -786,15 +786,6 @@ process_packet:
 		spin_unlock_bh(&ecm_ipv4_lock);
 
 		/*
-		 * Now allocate the new connection
-		 */
-		nci = ecm_db_connection_alloc();
-		if (!nci) {
-			DEBUG_WARN("Failed to allocate connection\n");
-			goto done;
-		}
-
-		/*
 		 * Connection must have a front end instance associated with it
 		 */
 		fe_type = ecm_front_end_type_get();
@@ -827,26 +818,23 @@ process_packet:
 
 			defunct_callback = ecm_nss_multicast_ipv4_connection_defunct_callback;
 			if (ae_result == ECM_AE_CLASSIFIER_RESULT_NSS) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(nci, can_accel);
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(can_accel, &nci);
 			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NONE) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(nci, false);
+				feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(false, &nci);
 			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NOT_YET) {
-				ecm_db_connection_deref(nci);
 				return NF_ACCEPT;
 			} else {
 				DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
 			}
 		} else if (fe_type == ECM_FRONT_END_TYPE_NSS) {
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(nci, can_accel);
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv4_connection_instance_alloc(can_accel, &nci);
 			defunct_callback = ecm_nss_multicast_ipv4_connection_defunct_callback;
 		} else {
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			ecm_db_connection_deref(nci);
 			goto done;
 		}
 
 		if (!feci) {
-			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate front end\n");
 			goto done;
 		}
@@ -856,6 +844,7 @@ process_packet:
 		 */
 		tuple_instance = ecm_db_multicast_tuple_instance_alloc(ip_src_addr, ip_dest_addr, src_port, dest_port);
 		if (!tuple_instance) {
+			feci->deref(feci);
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate tuple instance\n");
 			goto done;

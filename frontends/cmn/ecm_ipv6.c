@@ -996,27 +996,6 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	uint8_t protonum;
 
 	/*
-	 * Check if the number of IPv6 DB connection entries need to be limited.
-	 *
-	 * TODO: What if SFE is selected in hybrid mode? Does limiting this count to NSS's
-	 * max count still applicable to SFE.
-	 */
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_CONN_LIMIT_ENABLE)
-	/*
-	 * If the connection limit feature is supported in the selected frontend,
-	 * do the check.
-	 */
-	if (likely(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_CONN_LIMIT)) && ecm_front_end_conn_limit) {
-		if (ecm_nss_ipv6_accelerated_count == nss_ipv6_max_conn_count()) {
-			DEBUG_INFO("ECM DB connection limit %d reached, \
-					new flows cannot be accelerated.\n",
-					nss_ipv6_max_conn_count());
-			return NF_ACCEPT;
-		}
-	}
-#endif
-
-	/*
 	 * Obtain the IP header from the skb
 	 */
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
