@@ -71,7 +71,7 @@
  */
 #define DEBUG_LEVEL ECM_SFE_IPV6_DEBUG_LEVEL
 
-#include <sfe_drv.h>
+#include <sfe_api.h>
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -119,7 +119,7 @@ DEFINE_SPINLOCK(ecm_sfe_ipv6_lock);			/* Protect against SMP access between netf
 /*
  * SFE driver linkage
  */
-struct sfe_drv_ctx_instance *ecm_sfe_ipv6_drv_mgr = NULL;
+struct sfe_ctx_instance *ecm_sfe_ipv6_mgr = NULL;
 
 static unsigned long ecm_sfe_ipv6_accel_cmd_time_avg_samples = 0;	/* Sum of time taken for the set of accel command samples, used to compute average time for an accel command to complete */
 static unsigned long ecm_sfe_ipv6_accel_cmd_time_avg_set = 1;	/* How many samples in the set */
@@ -181,7 +181,7 @@ void ecm_sfe_ipv6_decel_done_time_update(struct ecm_front_end_connection_instanc
 
 /*
  * ecm_sfe_ipv6_stats_sync_callback()
- *	Callback handler from the sfe driver.
+ *	Callback handler from the SFE.
  */
 static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
@@ -759,7 +759,7 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 	 * is a possibility that the ECM can try to send acceleration messages to the
 	 * acceleration engine without having an acceleration engine manager.
 	 */
-	ecm_sfe_ipv6_drv_mgr = sfe_drv_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, NULL);
+	ecm_sfe_ipv6_mgr = sfe_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, NULL);
 
 	return 0;
 
@@ -785,7 +785,7 @@ void ecm_sfe_ipv6_exit(void)
 	/*
 	 * Unregister from the Linux SFE Network driver
 	 */
-	sfe_drv_ipv6_notify_unregister();
+	sfe_ipv6_notify_unregister();
 
 	/*
 	 * Remove the debugfs files recursively.

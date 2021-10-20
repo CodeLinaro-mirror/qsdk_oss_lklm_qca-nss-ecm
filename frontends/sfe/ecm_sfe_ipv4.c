@@ -67,7 +67,7 @@
  */
 #define DEBUG_LEVEL ECM_SFE_IPV4_DEBUG_LEVEL
 
-#include <sfe_drv.h>
+#include <sfe_api.h>
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -114,7 +114,7 @@ DEFINE_SPINLOCK(ecm_sfe_ipv4_lock);			/* Protect against SMP access between netf
 /*
  * SFE driver linkage
  */
-struct sfe_drv_ctx_instance *ecm_sfe_ipv4_drv_mgr = NULL;
+struct sfe_ctx_instance *ecm_sfe_ipv4_mgr = NULL;
 
 static unsigned long ecm_sfe_ipv4_accel_cmd_time_avg_samples = 0;	/* Sum of time taken for the set of accel command samples, used to compute average time for an accel command to complete */
 static unsigned long ecm_sfe_ipv4_accel_cmd_time_avg_set = 1;	/* How many samples in the set */
@@ -176,7 +176,7 @@ void ecm_sfe_ipv4_decel_done_time_update(struct ecm_front_end_connection_instanc
 
 /*
  * ecm_sfe_ipv4_stats_sync_callback()
- *	Callback handler from the sfe driver.
+ *	Callback handler from the SFE.
  */
 static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg *nim)
 {
@@ -749,12 +749,12 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	}
 
 	/*
-	 * Register this module with the simulated sfe driver.
+	 * Register this module with SFE.
 	 * Notify manager should be registered before the netfilter hooks. Because there
 	 * is a possibility that the ECM can try to send acceleration messages to the
 	 * acceleration engine without having an acceleration engine manager.
 	 */
-	ecm_sfe_ipv4_drv_mgr = sfe_drv_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, NULL);
+	ecm_sfe_ipv4_mgr = sfe_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, NULL);
 
 	return 0;
 
@@ -778,9 +778,9 @@ void ecm_sfe_ipv4_exit(void)
 	DEBUG_INFO("ECM SFE IPv4 Module exit\n");
 
 	/*
-	 * Unregister from the simulated sfe driver
+	 * Unregister from the SFE
 	 */
-	sfe_drv_ipv4_notify_unregister();
+	sfe_ipv4_notify_unregister();
 
 	/*
 	 * Remove the debugfs files recursively.

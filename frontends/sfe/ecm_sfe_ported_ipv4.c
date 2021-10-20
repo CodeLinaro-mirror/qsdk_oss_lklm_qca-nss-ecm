@@ -66,7 +66,7 @@
  */
 #define DEBUG_LEVEL ECM_SFE_PORTED_IPV4_DEBUG_LEVEL
 
-#include <sfe_drv.h>
+#include <sfe_api.h>
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -1154,7 +1154,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * Call the rule create function
 	 */
-	sfe_tx_status = sfe_drv_ipv4_tx(ecm_sfe_ipv4_drv_mgr, &nim);
+	sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, &nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1382,7 +1382,7 @@ static bool ecm_sfe_ported_ipv4_connection_decelerate_msg_send(struct ecm_front_
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_tx_status = sfe_drv_ipv4_tx(ecm_sfe_ipv4_drv_mgr, &nim);
+	sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, &nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.

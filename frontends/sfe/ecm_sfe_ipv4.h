@@ -14,7 +14,7 @@
  **************************************************************************
  */
 
-#include <sfe_drv.h>
+#include <sfe_api.h>
 
 extern int ecm_sfe_ipv4_no_action_limit_default;		/* Default no-action limit. */
 extern int ecm_sfe_ipv4_driver_fail_limit_default;		/* Default driver fail limit. */
@@ -41,9 +41,9 @@ extern uint32_t ecm_sfe_ipv4_accel_limit_mode;
 extern spinlock_t ecm_sfe_ipv4_lock;			/* Protect against SMP access between netfilter, events and private threaded function. */
 
 /*
- * sfe driver linkage
+ * SFE linkage
  */
-extern struct sfe_drv_ctx_instance *ecm_sfe_ipv4_drv_mgr;
+extern struct sfe_ctx_instance *ecm_sfe_ipv4_mgr;
 
 /*
  * ecm_sfe_ipv4_accel_pending_set()
@@ -87,7 +87,7 @@ static inline bool ecm_sfe_ipv4_accel_pending_set(struct ecm_front_end_connectio
 	 */
 	spin_lock_bh(&ecm_sfe_ipv4_lock);
 	if (ecm_sfe_ipv4_accel_limit_mode & ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED) {
-		if ((ecm_sfe_ipv4_pending_accel_count + ecm_sfe_ipv4_accelerated_count) >= sfe_drv_ipv4_max_conn_count()) {
+		if ((ecm_sfe_ipv4_pending_accel_count + ecm_sfe_ipv4_accelerated_count) >= sfe_ipv4_max_conn_count()) {
 			spin_unlock_bh(&ecm_sfe_ipv4_lock);
 			spin_unlock_bh(&feci->lock);
 			DEBUG_INFO("%px: Accel limit reached, accel denied: %px\n", feci, feci->ci);

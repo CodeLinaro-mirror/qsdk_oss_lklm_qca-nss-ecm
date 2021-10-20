@@ -14,7 +14,7 @@
  **************************************************************************
  */
 
-#include <sfe_drv.h>
+#include <sfe_api.h>
 
 extern int ecm_sfe_ipv6_no_action_limit_default;		/* Default no-action limit. */
 extern int ecm_sfe_ipv6_driver_fail_limit_default;		/* Default driver fail limit. */
@@ -43,7 +43,7 @@ extern spinlock_t ecm_sfe_ipv6_lock;			/* Protect against SMP access between net
 /*
  * SFE driver linkage
  */
-extern struct sfe_drv_ctx_instance *ecm_sfe_ipv6_drv_mgr;
+extern struct sfe_ctx_instance *ecm_sfe_ipv6_mgr;
 
 /*
  * ecm_sfe_ipv6_accel_pending_set()
@@ -87,7 +87,7 @@ static inline bool ecm_sfe_ipv6_accel_pending_set(struct ecm_front_end_connectio
 	 */
 	spin_lock_bh(&ecm_sfe_ipv6_lock);
 	if (ecm_sfe_ipv6_accel_limit_mode & ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED) {
-		if ((ecm_sfe_ipv6_pending_accel_count + ecm_sfe_ipv6_accelerated_count) >= sfe_drv_ipv6_max_conn_count()) {
+		if ((ecm_sfe_ipv6_pending_accel_count + ecm_sfe_ipv6_accelerated_count) >= sfe_ipv6_max_conn_count()) {
 			spin_unlock_bh(&ecm_sfe_ipv6_lock);
 			spin_unlock_bh(&feci->lock);
 			DEBUG_INFO("%px: Accel limit reached, accel denied: %px\n", feci, feci->ci);
