@@ -161,7 +161,7 @@ void ecm_sfe_non_ported_ipv4_sit_set_peer(struct ecm_sfe_non_ported_ipv4_connect
 	iph6 = (struct ipv6hdr *)skb_transport_header(skb);
 	memcpy(tun6rdpeer->ipv6_address,&iph6->daddr, sizeof(struct  in6_addr));
 
-	sfe_tx_status = sfe_tun6rd_tx(ecm_sfe_ipv4_drv_mgr, &tun6rdmsg);
+	sfe_tx_status = sfe_tun6rd_tx(ecm_sfe_ipv4_mgr, &tun6rdmsg);
 	if (sfe_tx_status != SFE_TX_SUCCESS) {
 		/*
 		 * Nothing to do when faild to xmit the message.
@@ -528,35 +528,6 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	nircm->conn_rule.return_interface_num = to_sfe_iface_id;
 
 	/*
-	 * Set up the flow and return qos tags
-	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
-		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
-		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
-		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
-	}
-
-#if defined(ECM_CLASSIFIER_DSCP_ENABLE) && defined(ECM_CLASSIFIER_DSCP_IGS)
-	/*
-	 * Set up ingress shaper qostag values.
-	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
-		nircm->igs_rule.igs_flow_qos_tag = (uint16_t)pr->igs_flow_qos_tag;
-		nircm->igs_rule.igs_return_qos_tag = (uint16_t)pr->igs_return_qos_tag;
-		nircm->valid_flags |= SFE_IPV4_RULE_CREATE_IGS_VALID;
-	}
-#endif
-
-#ifdef ECM_CLASSIFIER_EMESH_ENABLE
-	/*
-	 * Mark the rule as E-MESH Service Prioritization valid.
-	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
-		nircm->rule_flags |= SFE_IPV4_RULE_CREATE_FLAG_EMESH_SP;
-	}
-#endif
-
-	/*
 	 * Set the mtu values. These values will be overwritten if the flow is
 	 * a specific tunnel type.
 	 */
@@ -639,10 +610,6 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, from_sfe_iface_address);
-			if (is_valid_ether_addr(from_sfe_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
-			}
-
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", nnpci, from_sfe_iface_address);
 #else
 			rule_invalid = true;
@@ -710,9 +677,10 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
 			nircm->pppoe_rule.flow_pppoe_session_id = pppoe_info.pppoe_session_id;
 			memcpy(nircm->pppoe_rule.flow_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_DECAP_VALID;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 
-			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", npci,
+			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", nnpci,
 					nircm->pppoe_rule.flow_pppoe_session_id,
 					nircm->pppoe_rule.flow_pppoe_remote_mac);
 #else
@@ -759,14 +727,9 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			 */
 			memcpy(from_sfe_iface_address, vlan_info.address, ETH_ALEN);
 			if (is_valid_ether_addr(from_sfe_iface_address)) {
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, from_sfe_iface_address);
+				memcpy(nircm->conn_rule.flow_mac, from_sfe_iface_address, ETH_ALEN);
 				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
-			/*
-			 * No MAC rule defined in rule_create_msg
-				memcpy(nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address, ETH_ALEN);
-				nircm->src_mac_rule.mac_valid_flags |= SFE_IPV4_SRC_MAC_FLOW_VALID;
-			 */
-				nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, from_sfe_iface_address);
 			}
 			DEBUG_TRACE("%px: vlan tag: %x\n", nnpci, vlan_value);
 #else
@@ -893,10 +856,6 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, to_sfe_iface_address);
-			if (is_valid_ether_addr(to_sfe_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
-			}
-
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", nnpci, to_sfe_iface_address);
 #else
 			rule_invalid = true;
@@ -938,9 +897,10 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
 			nircm->pppoe_rule.return_pppoe_session_id = pppoe_info.pppoe_session_id;
 			memcpy(nircm->pppoe_rule.return_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 
-			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", npci,
+			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", nnpci,
 					nircm->pppoe_rule.return_pppoe_session_id,
 					nircm->pppoe_rule.return_pppoe_remote_mac);
 #else
@@ -986,9 +946,9 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			 */
 			memcpy(to_sfe_iface_address, vlan_info.address, ETH_ALEN);
 			if (is_valid_ether_addr(to_sfe_iface_address)) {
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, to_sfe_iface_address);
-				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
 				memcpy(nircm->conn_rule.return_mac, to_sfe_iface_address, ETH_ALEN);
+				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, to_sfe_iface_address);
 			}
 
 			DEBUG_TRACE("%px: vlan tag: %x\n", nnpci, vlan_value);
@@ -1047,6 +1007,12 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		/*
 		 * TO DO: No interface check rule create message type defined in SFE's API.
 		 */
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
@@ -1779,16 +1745,34 @@ static int ecm_sfe_non_ported_ipv4_connection_state_get(struct ecm_front_end_con
  * ecm_sfe_non_ported_ipv4_connection_instance_alloc()
  *	Create a front end instance specific for non-ported connection
  */
-struct ecm_sfe_non_ported_ipv4_connection_instance *ecm_sfe_non_ported_ipv4_connection_instance_alloc(
-								struct ecm_db_connection_instance *ci,
-								int protocol, bool can_accel)
+struct ecm_sfe_non_ported_ipv4_connection_instance *ecm_sfe_non_ported_ipv4_connection_instance_alloc(bool can_accel,
+								int protocol,
+								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci;
 	struct ecm_front_end_connection_instance *feci;
+	struct ecm_db_connection_instance *ci;
+
+	if (ecm_sfe_ipv4_is_conn_limit_reached()) {
+		DEBUG_TRACE("Reached connection limit\n");
+		return NULL;
+	}
+
+	/*
+	 * Now allocate the new connection
+	 */
+	*nci = ecm_db_connection_alloc();
+	if (!*nci) {
+		DEBUG_WARN("Failed to allocate connection\n");
+		return NULL;
+	}
+
+	ci = *nci;
 
 	nnpci = (struct ecm_sfe_non_ported_ipv4_connection_instance *)kzalloc(sizeof(struct ecm_sfe_non_ported_ipv4_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nnpci) {
 		DEBUG_WARN("Non-Ported Front end alloc failed\n");
+		ecm_db_connection_deref(ci);
 		return NULL;
 	}
 

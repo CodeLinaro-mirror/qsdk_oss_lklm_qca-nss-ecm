@@ -66,10 +66,11 @@
  */
 #define DEBUG_LEVEL ECM_NSS_NON_PORTED_IPV4_DEBUG_LEVEL
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
-
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
-#include "nss_ipsec_cmn.h"
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
 #endif
 
 #include "ecm_types.h"
@@ -84,9 +85,16 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_non_ported_ipv4.h"
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_common.h"
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include "ecm_sfe_non_ported_ipv4.h"
+#include "ecm_sfe_ipv4.h"
+#include "ecm_sfe_common.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv4.h"
 #include "ecm_ae_classifier_public.h"
@@ -149,6 +157,11 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 	dest_port = 0;
 	dest_port_nat = 0;
 
+	/*
+	 * We are not yet supporting PPPOE bridge for SFE.
+	 * TODO: Revisit when we want to add that support.
+	 */
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(!is_routed &&
 			(l2_encap_proto == ETH_P_PPP_SES) &&
 			(nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T))) {
@@ -169,6 +182,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		ecm_front_end_pull_l2_encap_header(skb, l2_encap_len);
 		pppoe_bridged = true;
 	}
+#endif
 
 	if(!ecm_non_ported_ipv4_is_protocol_supported(protocol)) {
 		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
@@ -232,8 +246,6 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 			ecm_ae_classifier_get_t ae_get;
 			struct ecm_ae_classifier_info ae_info;
 
-			DEBUG_INFO("front end type is hybrid\n");
-
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
 							  src_port, dest_port, protocol, 4,
 							  is_routed, false,
@@ -250,15 +262,15 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 #endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_FRONT_END_TYPE_NSS:
-			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
 			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
+			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
 			break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_FRONT_END_TYPE_SFE:
-			/*
-			 * Fall through. Not supporting non-ported acceleration yet.
-			 */
+			ae_result = ECM_AE_CLASSIFIER_RESULT_SFE;
+			DEBUG_TRACE("front end type SFE, ae_result: %d\n", ae_result);
+			break;
 #endif
 		default:
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
@@ -289,6 +301,12 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
 			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
+			break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_SFE:
+			defunct_callback = ecm_sfe_non_ported_ipv4_connection_defunct_callback;
+			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
@@ -773,7 +791,7 @@ done:
 #ifdef ECM_INTERFACE_SIT_ENABLE
 #ifdef CONFIG_IPV6_SIT_6RD
 	/*
-	 * SIT tunnel acceleration needs create a rule to the nss firmware if the
+	 * SIT tunnel acceleration needs create a rule to the acceleration engine if the
 	 *	tunnel's dest ip address is empty,it will get dest ip and the embedded ipv6's dest ip
 	 *	address in the packet and send them to the nss firmware to accelerate the
 	 *	traffic on the tun6rd interface.

@@ -18,7 +18,7 @@
 
 extern bool ecm_sfe_non_ported_ipv6_debugfs_init(struct dentry *dentry);
 
-extern struct ecm_sfe_non_ported_ipv6_connection_instance *ecm_sfe_non_ported_ipv6_connection_instance_alloc(
-								struct ecm_db_connection_instance *ci,
-								int protocol, bool can_accel);
+struct ecm_sfe_non_ported_ipv6_connection_instance *ecm_sfe_non_ported_ipv6_connection_instance_alloc(bool can_accel,
+								int protocol,
+								struct ecm_db_connection_instance **nci);
 extern bool ecm_sfe_non_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode);
