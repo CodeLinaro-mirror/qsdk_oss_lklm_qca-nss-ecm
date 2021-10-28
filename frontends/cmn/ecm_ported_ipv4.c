@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -36,6 +38,10 @@
 #include <linux/in.h>
 #include <linux/udp.h>
 #include <linux/tcp.h>
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
+#endif
 
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
@@ -89,7 +95,10 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+#ifdef ECM_FRONT_END_SFE_ENABLE
 #include "ecm_sfe_ported_ipv4.h"
+#include "ecm_sfe_common.h"
+#endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_ported_ipv4.h"
 #include "ecm_nss_ipv4.h"
@@ -459,6 +468,11 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_SFE:
+			if (!ecm_sfe_feature_check(skb, iph, is_routed)) {
+				DEBUG_WARN("Unsupported feature found for SFE acceleration\n");
+				return NF_ACCEPT;
+			}
+
 			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
 			break;
