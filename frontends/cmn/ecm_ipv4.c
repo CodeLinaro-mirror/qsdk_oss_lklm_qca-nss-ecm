@@ -458,23 +458,34 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #endif
 			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
+				bool on_link = true;
 
 				/*
-				 * Try one more time with gateway ip address if it exists.
+				 * Check if we have a gateway address. If yes, first we will try to get the MAC address
+				 * of that gateway. If it fails, we will send ARP request to that address
+				 * to find the node MAC address while processing the subsequent packets.
 				 */
-				if (!ecm_interface_find_gateway(addr, gw_addr)) {
-					DEBUG_WARN("%px: Node establish failed, there is no gateway address for 2nd mac lookup try\n", feci);
-					return NULL;
+				if (ecm_interface_find_gateway(addr, gw_addr)) {
+					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
+					if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
+						DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
+						goto done;
+					}
+					on_link = false;
 				}
 
-				DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
-
-				if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
-					DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
-					goto done;
+				/*
+				 * If dev is a bridge port, we should use the bridge device for the ARP request.
+				 */
+				if (!ecm_front_end_is_bridge_port(dev)) {
+					ecm_interface_send_arp_request(dev, addr, on_link, gw_addr);
+				} else {
+					struct net_device *master;
+					master = ecm_interface_get_and_hold_dev_master(dev);
+					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
+					ecm_interface_send_arp_request(master, addr, on_link, gw_addr);
+					dev_put(master);
 				}
-
-				ecm_interface_send_arp_request(dev, addr, false, gw_addr);
 
 				DEBUG_WARN("%px: failed to obtain any node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
 
