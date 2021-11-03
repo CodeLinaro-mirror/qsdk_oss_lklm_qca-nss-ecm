@@ -88,6 +88,7 @@ enum ecm_fe_feature {
 	ECM_FE_FEATURE_DSCP_ACTION	= (1 << 9),
 	ECM_FE_FEATURE_XFRM		= (1 << 10),
 	ECM_FE_FEATURE_OVS_BRIDGE		= (1 << 11),
+	ECM_FE_FEATURE_OVS_VLAN		= (1 << 12),
 };
 
 /*

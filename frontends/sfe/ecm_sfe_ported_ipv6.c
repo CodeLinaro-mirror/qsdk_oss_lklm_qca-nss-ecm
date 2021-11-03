@@ -855,6 +855,24 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_VLAN)) {
+		/*
+		 * Copy the both primary and secondary (if exist) VLAN tags.
+		 */
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+			nircm->vlan_primary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+			nircm->vlan_primary_rule.egress_vlan_tag = pr->egress_vlan_tag[0];
+			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+		}
+
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+			nircm->vlan_secondary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+			nircm->vlan_secondary_rule.egress_vlan_tag = pr->egress_vlan_tag[1];
+		}
+	}
+#endif
+
 #ifdef CONFIG_XFRM
 	nircm->direction_rule.flow_accel = (npci->flow_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
 	nircm->direction_rule.return_accel = (npci->return_ipsec_state != ECM_SFE_IPSEC_STATE_TO_ENCRYPT);
