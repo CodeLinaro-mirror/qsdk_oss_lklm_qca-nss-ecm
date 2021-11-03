@@ -1880,6 +1880,96 @@ static struct nf_hook_ops ecm_ipv4_netfilter_bridge_hooks[] __read_mostly = {
 	},
 };
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_ipv4_ovs_dp_process()
+ *      Process OVS IPv4 bridged packets.
+ */
+unsigned int ecm_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device *out)
+{
+	struct ethhdr *skb_eth_hdr;
+	bool can_accel = true;
+	struct net_device *in;
+
+	/*
+	 * If operations have stopped then do not process packets
+	 */
+	spin_lock_bh(&ecm_ipv4_lock);
+	if (unlikely(ecm_front_end_ipv4_stopped)) {
+		spin_unlock_bh(&ecm_ipv4_lock);
+		DEBUG_TRACE("Front end stopped\n");
+		return 1;
+	}
+	spin_unlock_bh(&ecm_ipv4_lock);
+
+	/*
+	 * Don't process broadcast.
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+		return 1;
+	}
+
+	/*
+	 * Don't process multicast packet if frontend does not support it
+	 */
+	if (skb->pkt_type == PACKET_MULTICAST) {
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_MULTICAST)) {
+			DEBUG_TRACE("Frontend does not support mcast, ignoring: %px\n", skb);
+			return 1;
+		}
+	}
+
+	if (skb->protocol != ntohs(ETH_P_IP)) {
+		DEBUG_WARN("%px: Wrong skb protocol: %d", skb, skb->protocol);
+		return 1;
+	}
+
+	skb_eth_hdr = eth_hdr(skb);
+	if (!skb_eth_hdr) {
+		DEBUG_WARN("%px: Not Eth\n", skb);
+		return 1;
+	}
+
+	in = dev_get_by_index(&init_net, skb->skb_iif);
+	if (!in) {
+		DEBUG_WARN("%px: No in device\n", skb);
+		return 1;
+	}
+
+	DEBUG_TRACE("%px: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
+
+	if (netif_is_ovs_master(in)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_dest, in->dev_addr)) {
+			DEBUG_TRACE("%px: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	if (netif_is_ovs_master(out)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, out->dev_addr)) {
+			DEBUG_TRACE("%px: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	ecm_ipv4_ip_process((struct net_device *)out, in,
+			skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IP);
+
+	dev_put(in);
+
+	return 0;
+}
+
+static struct ovsmgr_dp_hook_ops ecm_ipv4_dp_hooks = {
+	.protocol = 4,
+	.hook_num = OVSMGR_DP_HOOK_POST_FLOW_PROC,
+	.hook = ecm_ipv4_ovs_dp_process,
+};
+#endif
+
 /*
  * ecm_ipv4_init()
  */
@@ -1929,6 +2019,16 @@ int ecm_ipv4_init(struct dentry *dentry)
 			goto nf_register_failed_2;
 		}
 	}
+
+	/*
+	 * Register OVS bridge DP hookup when AE frontend supports bridge processing
+	 */
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_BRIDGE)) {
+		ovsmgr_dp_hook_register(&ecm_ipv4_dp_hooks);
+	}
+#endif
+
 	return 0;
 
 nf_register_failed_2:
@@ -1977,6 +2077,16 @@ void ecm_ipv4_exit(void)
 #else
 	nf_unregister_net_hooks(&init_net, ecm_ipv4_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv4_netfilter_routing_hooks));
 #endif
+
+	/*
+	 * Unregister OVS bridge DP hook
+	 */
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_BRIDGE)) {
+		ovsmgr_dp_hook_unregister(&ecm_ipv4_dp_hooks);
+	}
+#endif
+
 	ecm_sfe_ipv4_exit();
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv4_exit();

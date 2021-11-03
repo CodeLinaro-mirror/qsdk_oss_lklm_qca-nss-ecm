@@ -87,6 +87,7 @@ enum ecm_fe_feature {
 	ECM_FE_FEATURE_CONN_LIMIT	= (1 << 8),
 	ECM_FE_FEATURE_DSCP_ACTION	= (1 << 9),
 	ECM_FE_FEATURE_XFRM		= (1 << 10),
+	ECM_FE_FEATURE_OVS_BRIDGE		= (1 << 11),
 };
 
 /*

@@ -1637,6 +1637,95 @@ static struct nf_hook_ops ecm_ipv6_netfilter_bridge_hooks[] __read_mostly = {
 	},
 };
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+/*
+ * ecm_ipv6_ovs_dp_process()
+ *      Process OVS IPv6 bridged packets.
+ */
+unsigned int ecm_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device *out)
+{
+	struct ethhdr *skb_eth_hdr;
+	bool can_accel = true;
+	struct net_device *in;
+
+	/*
+	 * If operations have stopped then do not process packets
+	 */
+	spin_lock_bh(&ecm_ipv6_lock);
+	if (unlikely(ecm_front_end_ipv6_stopped)) {
+		spin_unlock_bh(&ecm_ipv6_lock);
+		DEBUG_TRACE("Front end stopped\n");
+		return 1;
+	}
+	spin_unlock_bh(&ecm_ipv6_lock);
+
+	/*
+	 * Don't process broadcast.
+	 */
+	if (skb->pkt_type == PACKET_BROADCAST) {
+		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+		return 1;
+	}
+
+	/*
+	 * Don't process multicast packets if Frontend does not support mcast acceleration
+	 */
+	if (skb->pkt_type == PACKET_MULTICAST) {
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_MULTICAST)) {
+			DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+			return 1;
+		}
+	}
+
+	if (skb->protocol != ntohs(ETH_P_IPV6)) {
+		DEBUG_WARN("%px: Wrong skb protocol: %d", skb, skb->protocol);
+		return 1;
+	}
+
+	skb_eth_hdr = eth_hdr(skb);
+	if (!skb_eth_hdr) {
+		DEBUG_WARN("%px: Not Eth\n", skb);
+		return 1;
+	}
+
+	in = dev_get_by_index(&init_net, skb->skb_iif);
+	if (!in) {
+		DEBUG_WARN("%px: No in device\n", skb);
+		return 1;
+	}
+
+	DEBUG_TRACE("%px: in: %s out: %s skb->protocol: %x\n", skb, in->name, out->name, skb->protocol);
+
+	if (netif_is_ovs_master(in)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_dest, in->dev_addr)) {
+			DEBUG_TRACE("%px: in is bridge and mac address equals to packet dest, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	if (netif_is_ovs_master(out)) {
+		if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, out->dev_addr)) {
+			DEBUG_TRACE("%px: out is bridge and mac address equals to packet source, flow is routed, ignore \n", skb);
+			dev_put(in);
+			return 1;
+		}
+	}
+
+	ecm_ipv6_ip_process((struct net_device *)out, in,
+			skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IPV6);
+	dev_put(in);
+
+	return 0;
+}
+
+static struct ovsmgr_dp_hook_ops ecm_ipv6_dp_hooks = {
+	.protocol = 6,
+	.hook_num = OVSMGR_DP_HOOK_POST_FLOW_PROC,
+	.hook = ecm_ipv6_ovs_dp_process,
+};
+#endif
+
 /*
  * ecm_ipv6_init()
  */
@@ -1686,6 +1775,15 @@ int ecm_ipv6_init(struct dentry *dentry)
 			goto nf_register_failed_2;
 		}
 	}
+
+	/*
+	 * Register Ovs Bridge DP hooks for frontends that supports bridge acceleration
+	 */
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_BRIDGE)) {
+		ovsmgr_dp_hook_register(&ecm_ipv6_dp_hooks);
+	}
+#endif
 	return 0;
 
 nf_register_failed_2:
@@ -1733,6 +1831,11 @@ void ecm_ipv6_exit(void)
 	nf_unregister_hooks(ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
 #else
 	nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
+#endif
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_BRIDGE)) {
+		ovsmgr_dp_hook_unregister(&ecm_ipv6_dp_hooks);
+	}
 #endif
 	ecm_sfe_ipv6_exit();
 #ifdef ECM_FRONT_END_NSS_ENABLE
