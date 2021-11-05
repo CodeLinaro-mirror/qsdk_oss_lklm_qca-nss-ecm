@@ -33,6 +33,7 @@
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
+#include <net/xfrm.h>
 #include <linux/inet.h>
 #include <linux/in6.h>
 #include <linux/udp.h>
@@ -74,9 +75,6 @@
  */
 #define DEBUG_LEVEL ECM_NSS_IPV6_DEBUG_LEVEL
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include <nss_api_if.h>
-#endif
 #ifdef ECM_MULTICAST_ENABLE
 #include <mc_ecm.h>
 #endif
@@ -95,16 +93,6 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include "ecm_nss_common.h"
-#include "ecm_nss_ported_ipv6.h"
-#ifdef ECM_MULTICAST_ENABLE
-#include "ecm_nss_multicast_ipv6.h"
-#endif
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-#include "ecm_nss_non_ported_ipv6.h"
-#endif
-#endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE

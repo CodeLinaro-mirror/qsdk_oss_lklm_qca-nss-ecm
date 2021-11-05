@@ -29,6 +29,7 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/addrconf.h>
+#include <net/xfrm.h>
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
@@ -72,10 +73,6 @@
  */
 #define DEBUG_LEVEL ECM_NSS_IPV4_DEBUG_LEVEL
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include <nss_api_if.h>
-#endif
-
 #include "ecm_types.h"
 #include "ecm_db_types.h"
 #include "ecm_state.h"
@@ -90,16 +87,6 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include "ecm_nss_ported_ipv4.h"
-#ifdef ECM_MULTICAST_ENABLE
-#include "ecm_nss_multicast_ipv4.h"
-#endif
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-#include "ecm_nss_non_ported_ipv4.h"
-#endif
-#include "ecm_nss_common.h"
-#endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv4.h"
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
