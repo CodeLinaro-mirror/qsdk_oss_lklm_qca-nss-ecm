@@ -412,6 +412,10 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 		switch (ae_result) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_NSS:
+			if (!ecm_nss_feature_check(skb, iph)) {
+				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
+				return NF_ACCEPT;
+			}
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
 			defunct_callback = ecm_nss_ported_ipv6_connection_defunct_callback;
 			break;
