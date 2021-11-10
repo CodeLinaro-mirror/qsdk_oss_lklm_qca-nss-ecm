@@ -897,6 +897,15 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_DSCP_MARKING;
 		nircm->valid_flags |= SFE_RULE_CREATE_DSCP_MARKING_VALID;
 	}
+
+	/*
+	 * Set up the flow and return mark.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MARK) {
+		nircm->mark_rule.flow_mark = (uint32_t)pr->flow_mark;
+		nircm->mark_rule.return_mark = (uint32_t)pr->return_mark;
+		nircm->valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+	}
 #endif
 
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
@@ -1130,7 +1139,9 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"return_end: %u\n"
 			"return_max_end: %u\n"
 			"flow_dscp: %x\n"
-			"return_dscp: %x\n",
+			"return_dscp: %x\n"
+			"flow_mark:%x\n"
+			"return_mark:%x\n",
 			npci,
 			feci->ci,
 			nircm->tuple.protocol,
@@ -1165,7 +1176,9 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->tcp_rule.return_end,
 			nircm->tcp_rule.return_max_end,
 			nircm->dscp_rule.flow_dscp,
-			nircm->dscp_rule.return_dscp);
+			nircm->dscp_rule.return_dscp,
+			nircm->mark_rule.flow_mark,
+			nircm->mark_rule.return_mark);
 
 	if (protocol == IPPROTO_TCP) {
 
