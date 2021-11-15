@@ -552,7 +552,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 			nircm->pppoe_rule.flow_pppoe_session_id = pppoe_info.pppoe_session_id;
 			memcpy(nircm->pppoe_rule.flow_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_DECAP_VALID;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 
 			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", npci,
 					nircm->pppoe_rule.flow_pppoe_session_id,
@@ -762,7 +763,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
 			nircm->pppoe_rule.return_pppoe_session_id = pppoe_info.pppoe_session_id;
 			memcpy(nircm->pppoe_rule.return_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
-			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 
 			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", npci,
 				    nircm->pppoe_rule.return_pppoe_session_id,
