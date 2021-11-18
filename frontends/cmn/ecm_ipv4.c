@@ -1,6 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -25,6 +26,7 @@
 #include <linux/debugfs.h>
 #include <linux/pkt_sched.h>
 #include <linux/string.h>
+#include <net/ip_tunnels.h>
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
