@@ -139,6 +139,7 @@ static inline int32_t ecm_sfe_common_get_interface_type(struct ecm_front_end_con
 	return 0;
 }
 
+bool ecm_sfe_common_fast_xmit_check(s32 interface_num);
 bool ecm_sfe_ipv4_is_conn_limit_reached(void);
 bool ecm_sfe_ipv6_is_conn_limit_reached(void);
 

@@ -346,6 +346,35 @@ static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_i
 }
 
 /*
+ * ecm_sfe_ipv6_fast_xmit_set()
+ *	set the fast_xmit in the create message
+ */
+static void ecm_sfe_ipv6_fast_xmit_set(struct sfe_ipv6_rule_create_msg *msg)
+{
+	s32 interface_num;
+
+	rcu_read_lock_bh();
+
+	interface_num = msg->conn_rule.flow_top_interface_num;
+	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE) {
+		interface_num = msg->conn_rule.flow_interface_num;
+	}
+	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
+		msg->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
+	}
+
+	interface_num = msg->conn_rule.return_top_interface_num;
+	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE) {
+		interface_num = msg->conn_rule.return_interface_num;
+	}
+	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
+		msg->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
+	}
+
+	rcu_read_unlock_bh();
+}
+
+/*
  * ecm_sfe_ported_ipv6_connection_accelerate()
  *	Accelerate a connection
  */
@@ -1340,6 +1369,11 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	spin_lock_bh(&feci->lock);
 	feci->stats.cmd_time_begun = jiffies;
 	spin_unlock_bh(&feci->lock);
+
+	/*
+	 * Set fast xmit flags if connection can fast xmit
+	 */
+	ecm_sfe_ipv6_fast_xmit_set(nircm);
 
 	/*
 	 * Call the rule create function

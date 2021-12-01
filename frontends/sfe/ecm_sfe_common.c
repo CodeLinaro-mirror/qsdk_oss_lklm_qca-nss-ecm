@@ -21,6 +21,7 @@
 #include <linux/inet.h>
 #include <net/ipv6.h>
 #include <linux/etherdevice.h>
+#include <net/sch_generic.h>
 #define DEBUG_LEVEL ECM_SFE_COMMON_DEBUG_LEVEL
 
 #include <sfe_api.h>
@@ -121,6 +122,57 @@ bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_h
 
 fail:
 	return false;
+}
+
+/*
+ * ecm_sfe_common_fast_xmit_check()
+ *	Check the fast transmit feasibility.
+ *
+ * It only check device related attribute:
+ */
+bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
+{
+	struct net_device *dev;
+	struct netdev_queue *txq;
+	int i;
+	struct Qdisc *q;
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	struct mini_Qdisc *miniq;
+#endif
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+
+	/*
+	 * It assume that the qdisc attribute won't change after traffic
+	 * running, if the qdisc changed, we need flush all of the rule.
+	 */
+	for (i = 0; i < dev->real_num_tx_queues; i++) {
+		txq = netdev_get_tx_queue(dev, i);
+		q = rcu_dereference_bh(txq->qdisc);
+		if (q->enqueue) {
+			DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
+			dev_put(dev);
+			return false;
+		}
+	}
+
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	miniq = rcu_dereference_bh(dev->miniq_egress);
+	if (miniq) {
+		DEBUG_INFO("Egress needed\n");
+		dev_put(dev);
+		return false;
+	}
+#endif
+
+	dev_put(dev);
+
+	return true;
 }
 
 /*
