@@ -419,3 +419,47 @@ static inline bool ecm_nss_common_fill_mirror_info(struct ecm_classifier_process
 
 bool ecm_nss_ipv6_is_conn_limit_reached(void);
 bool ecm_nss_ipv4_is_conn_limit_reached(void);
+
+/*
+ * ecm_nss_feature_check()
+ *	Check some specific features for NSS acceleration
+ */
+static inline bool ecm_nss_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+	/*
+	 * If the DSCP value of the packet maps to the NOT accel action type,
+	 * do not accelerate the packet and let it go through the
+	 * slow path.
+	 */
+	if (ip_hdr->protocol == IPPROTO_UDP) {
+		uint8_t action = ip_hdr->is_v4 ?
+			nss_ipv4_dscp_action_get(ip_hdr->dscp) : nss_ipv6_dscp_action_get(ip_hdr->dscp);
+		if (action == NSS_IPV4_DSCP_MAP_ACTION_DONT_ACCEL || action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
+			DEBUG_TRACE("%px: dscp: %d maps to action not accel type, skip acceleration\n", skb, ip_hdr->dscp);
+			return false;
+		}
+	}
+
+	if (ecm_nss_common_is_xfrm_flow(skb, ip_hdr)) {
+#ifdef ECM_XFRM_ENABLE
+		struct net_device *ipsec_dev;
+		int32_t interface_type;
+
+		/*
+		* Check if the transformation for this flow
+		 * is done by NSS. If yes, then only try to accelerate.
+		 */
+		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
+		if (!ipsec_dev) {
+			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
+			return false;
+		}
+		dev_put(ipsec_dev);
+#else
+		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
+		return false;
+#endif
+	}
+
+	return true;
+}
