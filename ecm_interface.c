@@ -6499,6 +6499,29 @@ skip_bridge_refresh:
 			dev_put(dev);
 			continue;
 #endif
+
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		case ECM_DB_IFACE_TYPE_VLAN:
+			DEBUG_INFO("VLAN\n");
+			/*
+			 * Update vlan device with stats from SFE AE only when
+			 * SFE's l2_feature_support is enabled.
+			 */
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_VLAN))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+			stats.rx_packets = rx_packets;
+			stats.rx_bytes = rx_bytes;
+			stats.tx_packets = tx_packets;
+			stats.tx_bytes = tx_bytes;
+			__vlan_dev_update_accel_stats(dev, &stats);
+			dev_put(dev);
+			continue;
+#endif
+
 		default:
 			break;
 		}
@@ -6513,16 +6536,6 @@ skip_bridge_refresh:
 		}
 
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-		case ECM_DB_IFACE_TYPE_VLAN:
-			DEBUG_INFO("VLAN\n");
-			stats.rx_packets = rx_packets;
-			stats.rx_bytes = rx_bytes;
-			stats.tx_packets = tx_packets;
-			stats.tx_bytes = tx_bytes;
-			__vlan_dev_update_accel_stats(dev, &stats);
-			break;
-#endif
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 		case ECM_DB_IFACE_TYPE_PPPOE:
 			DEBUG_INFO("PPPOE\n");

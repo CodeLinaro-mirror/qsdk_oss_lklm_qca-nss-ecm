@@ -110,11 +110,6 @@ bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_h
 			DEBUG_TRACE("Top interface is not bridge, current index=%d\n", cur_heirarchy_index);
 			goto fail;
 		}
-
-		if ((cur_heirarchy_index  - first_heirarchy_index) != 1) {
-			DEBUG_TRACE("Heirarchy depth is more than 1, current index=%d\n", cur_heirarchy_index);
-			goto fail;
-		}
 		return true;
 
 	case ECM_DB_IFACE_TYPE_MACVLAN:

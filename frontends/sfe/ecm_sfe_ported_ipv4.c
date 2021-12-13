@@ -387,7 +387,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * Test if acceleration is permitted
 	 */
 	if (!ecm_sfe_ipv4_accel_pending_set(feci)) {
-		DEBUG_TRACE("%px: Acceleration not permitted: %px\n", feci, feci->ci);
+		DEBUG_TRACE("%px: Acceleration not permitted: %px skb=%px\n", feci, feci->ci, skb);
 		return;
 	}
 
@@ -475,7 +475,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: The lists may contain a complex heirarchy of similar type of interface e.g. multiple vlans or tunnels within tunnels.
 	 * This SFE cannot handle that - there is no way to describe this in the rule - if we see multiple types that would conflict we have to abort.
 	 */
-	DEBUG_TRACE("%px: Examine from/src heirarchy list\n", npci);
+	DEBUG_TRACE("%px: Examine from/src heirarchy list. skb=%px\n", npci, skb);
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
 	for (list_index = from_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
@@ -494,7 +494,10 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
-		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", npci, list_index, ii, ii_type, ii_name);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px (%s %d %d), type: %d (%s)\n",
+				npci, list_index, ii,
+				ii->name, ii->interface_identifier, ii->ae_interface_identifier,
+				ii_type, ii_name);
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -634,13 +637,24 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VLAN);
+
+				if (is_valid_ether_addr(vlan_info.address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, vlan_info.address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
 			/*
-			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 * If we have not yet got an ethernet mac then take this one
+			 * (very unlikely as mac should have been propagated to the slave (outer) device)
 			 */
 			if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
-				memcpy(from_sfe_iface_address, vlan_info.address, ETH_ALEN);
 				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", npci, from_sfe_iface_address);
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", npci, vlan_info.address);
 			}
 			DEBUG_TRACE("%px: vlan tag: %x\n", npci, vlan_value);
 #else
@@ -722,7 +736,10 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ii = to_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
-		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", npci, list_index, ii, ii_type, ii_name);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px (%s %d %d), type: %d (%s)\n",
+				npci, list_index, ii,
+				ii->name, ii->interface_identifier, ii->ae_interface_identifier,
+				ii_type, ii_name);
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -862,13 +879,24 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
+
+				if (is_valid_ether_addr(vlan_info.address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, vlan_info.address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
 			/*
-			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 * If we have not yet got an ethernet mac then take this one
+			 * (very unlikely as mac should have been propagated to the slave (outer) device)
 			 */
 			if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
-				memcpy(to_sfe_iface_address, vlan_info.address, ETH_ALEN);
 				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", npci, to_sfe_iface_address);
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", npci, vlan_info.address);
 			}
 			DEBUG_TRACE("%px: vlan tag: %x\n", npci, vlan_value);
 #else
@@ -1179,14 +1207,17 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"to_ip_xlate: %pI4n:%d\n"
 			"from_mac: %pM\n"
 			"to_mac: %pM\n"
-			"src_iface_num: %u\n"
-			"dest_iface_num: %u\n"
-			"ingress_inner_vlan_tag: %u\n"
-			"egress_inner_vlan_tag: %u\n"
-			"ingress_outer_vlan_tag: %u\n"
-			"egress_outer_vlan_tag: %u\n"
-			"rule_flags: %x\n"
-			"valid_flags: %x\n"
+			"from_src_mac: %pM\n"
+			"to_src_mac: %pM\n"
+			"from_iface_num: %u\n"
+			"to_iface_num: %u\n"
+			"from_top_interface_num: %d\n"
+			"to_top_interface_num: %d\n"
+			"primary_ingress_vlan_tag: %x\n"
+			"primary_egress_vlan_tag: %x\n"
+			"secondary_ingress_vlan_tag: %x\n"
+			"secondary_egress_vlan_tag: %x\n"
+			"flags: rule=%x valid=%x src_mac_valid=%x\n"
 			"return_pppoe_session_id: %u\n"
 			"return_pppoe_remote_mac: %pM\n"
 			"flow_pppoe_session_id: %u\n"
@@ -1210,20 +1241,25 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->tuple.protocol,
 			nircm->conn_rule.flow_mtu,
 			nircm->conn_rule.return_mtu,
-			&nircm->tuple.flow_ip, nircm->tuple.flow_ident,
-			&nircm->tuple.return_ip, nircm->tuple.return_ident,
-			&nircm->conn_rule.flow_ip_xlate, nircm->conn_rule.flow_ident_xlate,
-			&nircm->conn_rule.return_ip_xlate, nircm->conn_rule.return_ident_xlate,
+			&nircm->tuple.flow_ip, ntohs(nircm->tuple.flow_ident),
+			&nircm->tuple.return_ip, ntohs(nircm->tuple.return_ident),
+			&nircm->conn_rule.flow_ip_xlate, ntohs(nircm->conn_rule.flow_ident_xlate),
+			&nircm->conn_rule.return_ip_xlate, ntohs(nircm->conn_rule.return_ident_xlate),
 			nircm->conn_rule.flow_mac,
 			nircm->conn_rule.return_mac,
+			nircm->src_mac_rule.flow_src_mac,
+			nircm->src_mac_rule.return_src_mac,
 			nircm->conn_rule.flow_interface_num,
 			nircm->conn_rule.return_interface_num,
+			nircm->conn_rule.flow_top_interface_num,
+			nircm->conn_rule.return_top_interface_num,
 			nircm->vlan_primary_rule.ingress_vlan_tag,
 			nircm->vlan_primary_rule.egress_vlan_tag,
 			nircm->vlan_secondary_rule.ingress_vlan_tag,
 			nircm->vlan_secondary_rule.egress_vlan_tag,
 			nircm->rule_flags,
 			nircm->valid_flags,
+			nircm->src_mac_rule.mac_valid_flags,
 			nircm->pppoe_rule.return_pppoe_session_id,
 			nircm->pppoe_rule.return_pppoe_remote_mac,
 			nircm->pppoe_rule.flow_pppoe_session_id,
