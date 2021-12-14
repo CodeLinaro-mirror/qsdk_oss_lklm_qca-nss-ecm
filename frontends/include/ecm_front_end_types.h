@@ -295,17 +295,21 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
  */
 static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 {
+	bool nss_supported = false;
+	extern int front_end_selection;
+
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #ifdef CONFIG_OF
-	bool nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
+	nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
 				of_machine_is_compatible("qcom,ipq807x") ||
 				of_machine_is_compatible("qcom,ipq8074") ||
 				of_machine_is_compatible("qcom,ipq6018") ||
 				of_machine_is_compatible("qcom,ipq5018");
 #else
-	bool nss_supported = true;
+	nss_supported = true;
 #endif
-	extern int front_end_selection;
+#endif
 
 	if (nss_supported && ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) ||
 			      (front_end_selection == ECM_FRONT_END_TYPE_NSS))) {
