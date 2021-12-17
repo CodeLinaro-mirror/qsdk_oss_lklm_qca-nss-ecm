@@ -29,7 +29,7 @@
  * ecm_wifi_plugin_emesh
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
  */
-static struct ecm_classifier_emesh_callbacks ecm_wifi_plugin_emesh = {
+static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
 };
 
