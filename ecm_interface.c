@@ -6478,6 +6478,19 @@ skip_bridge_refresh:
 			dev_put(dev);
 			continue;
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+			DEBUG_INFO("OVS BRIDGE\n");
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_OVS_BRIDGE))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+			ovsmgr_bridge_interface_stats_update(dev, rx_packets, rx_bytes, tx_packets, tx_bytes);
+			dev_put(dev);
+			continue;
+#endif
 		default:
 			break;
 		}
@@ -6500,14 +6513,6 @@ skip_bridge_refresh:
 			stats.tx_packets = tx_packets;
 			stats.tx_bytes = tx_bytes;
 			__vlan_dev_update_accel_stats(dev, &stats);
-			break;
-#endif
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
-			DEBUG_INFO("OVS BRIDGE\n");
-			ovsmgr_bridge_interface_stats_update(dev,
-							     rx_packets, rx_bytes,
-							     tx_packets, tx_bytes);
 			break;
 #endif
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
