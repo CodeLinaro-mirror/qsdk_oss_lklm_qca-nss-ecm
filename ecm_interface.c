@@ -3526,8 +3526,8 @@ identifier_update:
 			/*
 			 * Get PPTP session info
 			 */
-			type_info.pptp.src_call_id = ntohs(opt.src_addr.call_id);
-			type_info.pptp.dst_call_id = ntohs(opt.dst_addr.call_id);
+			type_info.pptp.src_call_id = opt.src_addr.call_id;
+			type_info.pptp.dst_call_id = opt.dst_addr.call_id;
 			type_info.pptp.src_ip = ntohl(opt.src_addr.sin_addr.s_addr);
 			type_info.pptp.dst_ip = ntohl(opt.dst_addr.sin_addr.s_addr);
 
@@ -3680,12 +3680,12 @@ identifier_update:
 		/*
 		 * Get PPTP session info
 		 */
-		type_info.pptp.src_call_id = ntohs(opt.src_addr.call_id);
-		type_info.pptp.dst_call_id = ntohs(opt.dst_addr.call_id);
+		type_info.pptp.src_call_id = opt.src_addr.call_id;
+		type_info.pptp.dst_call_id = opt.dst_addr.call_id;
 		type_info.pptp.src_ip = ntohl(opt.src_addr.sin_addr.s_addr);
 		type_info.pptp.dst_ip = ntohl(opt.dst_addr.sin_addr.s_addr);
 
-		DEBUG_TRACE("%px: Net device: %px PPTP source call id: %d,n", feci, dev, type_info.pptp.src_call_id);
+		DEBUG_TRACE("%px: Net device: %px PPTP source call id: %d\n", feci, dev, type_info.pptp.src_call_id);
 		ppp_release_channels(ppp_chan, 1);
 
 		interface_type = feci->ae_interface_type_get(feci, dev);

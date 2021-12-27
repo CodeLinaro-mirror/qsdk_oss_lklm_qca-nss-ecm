@@ -854,10 +854,10 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
 
-			nircm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nircm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
-			nircm->conn_rule.flow_ident_xlate = ntohs(pptp_info.src_call_id);
-			nircm->conn_rule.return_ident_xlate = ntohs(pptp_info.dst_call_id);
+			nircm->tuple.flow_ident = pptp_info.src_call_id;
+			nircm->tuple.return_ident = pptp_info.dst_call_id;
+			nircm->conn_rule.flow_ident_xlate = pptp_info.src_call_id;
+			nircm->conn_rule.return_ident_xlate = pptp_info.dst_call_id;
 
 			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
@@ -1552,8 +1552,8 @@ static bool ecm_nss_non_ported_ipv4_connection_decelerate_msg_send(struct ecm_fr
 		 */
 		if (ECM_DB_IFACE_TYPE_PPTP == ii_type) {
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
-			nirdm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nirdm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
+			nirdm->tuple.flow_ident = pptp_info.src_call_id;
+			nirdm->tuple.return_ident = pptp_info.dst_call_id;
 		}
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 	}

@@ -802,10 +802,10 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
 
-			nircm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nircm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
-			nircm->conn_rule.flow_ident_xlate = ntohs(pptp_info.src_call_id);
-			nircm->conn_rule.return_ident_xlate = ntohs(pptp_info.dst_call_id);
+			nircm->tuple.flow_ident = htons(pptp_info.src_call_id);
+			nircm->tuple.return_ident = htons(pptp_info.dst_call_id);
+			nircm->conn_rule.flow_ident_xlate = htons(pptp_info.src_call_id);
+			nircm->conn_rule.return_ident_xlate = htons(pptp_info.dst_call_id);
 
 			/*
 			 * TO DO: NO NO SRC IDENT DEFINED.
@@ -1079,7 +1079,7 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 * The flow_ip is where the connection established from
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.flow_ip, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nircm->tuple.flow_ip, addr);
 
 	/*
 	 * The return_ip is where the connection is established to, however, in the case of ingress
@@ -1088,7 +1088,7 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 * the NAT'ed version would be the same as the normal address
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->tuple.return_ip, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nircm->tuple.return_ip, addr);
 
 	/*
 	 * When the packet is forwarded to the next interface get the address the source IP of the
@@ -1096,14 +1096,14 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	 * This also works for ingress as the NAT'ed version of the WAN host would be the same as non-NAT'ed
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->conn_rule.flow_ip_xlate, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nircm->conn_rule.flow_ip_xlate, addr);
 
 	/*
 	 * The destination address is what the destination IP is translated to as it is forwarded to the next interface.
 	 * For egress this would yield the normal wan host and for ingress this would correctly NAT back to the LAN host
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nircm->conn_rule.return_ip_xlate, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nircm->conn_rule.return_ip_xlate, addr);
 
 	/*
 	 * Get mac addresses.
@@ -1453,9 +1453,9 @@ static bool ecm_sfe_non_ported_ipv4_connection_decelerate_msg_send(struct ecm_fr
 	 * Get addressing information
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nirdm->tuple.flow_ip, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nirdm->tuple.flow_ip, addr);
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
-	ECM_IP_ADDR_TO_HIN4_ADDR(nirdm->tuple.return_ip, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(nirdm->tuple.return_ip, addr);
 	nirdm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
 	nirdm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
 
@@ -1487,8 +1487,8 @@ static bool ecm_sfe_non_ported_ipv4_connection_decelerate_msg_send(struct ecm_fr
 		 */
 		if (ECM_DB_IFACE_TYPE_PPTP == ii_type) {
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
-			nirdm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nirdm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
+			nirdm->tuple.flow_ident = htons(pptp_info.src_call_id);
+			nirdm->tuple.return_ident = htons(pptp_info.dst_call_id);
 		}
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 	}
