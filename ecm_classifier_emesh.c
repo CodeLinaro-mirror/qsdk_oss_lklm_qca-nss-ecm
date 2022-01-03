@@ -1258,6 +1258,35 @@ void ecm_classifier_emesh_latency_config_callback_unregister(void)
 EXPORT_SYMBOL(ecm_classifier_emesh_latency_config_callback_unregister);
 
 /*
+ * ecm_classifier_emesh_sawf_msduq_callback_register()
+ */
+int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if (ecm_emesh.update_service_id_get_msduq) {
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		DEBUG_ERROR("SAWF EMESH msduq callbacks are registered\n");
+		return -1;
+	}
+
+	ecm_emesh.update_service_id_get_msduq = emesh_cb->update_service_id_get_msduq;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+	return 0;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_msduq_callback_register);
+
+/*
+ * ecm_classifier_emesh_sawf_msduq_callback_unregister()
+ */
+void ecm_classifier_emesh_sawf_msduq_callback_unregister(void)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	ecm_emesh.update_service_id_get_msduq = NULL;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_msduq_callback_unregister);
+
+/*
  * ecm_classifier_emesh_sawf_init()
  */
 int ecm_classifier_emesh_sawf_init(struct dentry *dentry)

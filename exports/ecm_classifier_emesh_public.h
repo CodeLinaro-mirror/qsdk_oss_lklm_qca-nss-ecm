@@ -55,9 +55,9 @@ struct ecm_classifier_emesh_sawf_callbacks {
 };
 
 /**
- * Registers a client for E-mesh callbacks.
+ * Registers a client for EMESH-SAWF callbacks.
  *
- * @param	mesh_cb	E-mesh callback pointer.
+ * @param	mesh_cb	EMESH-SAWF callback pointer.
  *
  * @return
  * The status of the callback registration operation.
@@ -65,12 +65,30 @@ struct ecm_classifier_emesh_sawf_callbacks {
 int ecm_classifier_emesh_latency_config_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
 
 /**
- * Unregisters a client from E-mesh callbacks.
+ * Unregisters a client from EMESH-SAWF callbacks.
  *
  * @return
  * None.
  */
 void ecm_classifier_emesh_latency_config_callback_unregister(void);
+
+/**
+ * Registers msduq EMESH-SAWF callback.
+ *
+ * @param	mesh_cb	EMESH-SAWF callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
+int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+
+/**
+ * Unregisters msduq EMESH-SAWF callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_sawf_msduq_callback_unregister(void);
 
 /**
  * @}

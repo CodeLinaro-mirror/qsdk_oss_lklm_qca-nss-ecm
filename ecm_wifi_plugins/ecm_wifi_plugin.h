@@ -25,6 +25,7 @@
 
 #include <qca_mscs_if.h>
 #include <qca_mesh_latency_if.h>
+#include <qca_sawf_if.h>
 #include <ecm_classifier_mscs_public.h>
 #include <ecm_classifier_emesh_public.h>
 
