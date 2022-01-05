@@ -6440,6 +6440,14 @@ skip_bridge_refresh:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
 		case ECM_DB_IFACE_TYPE_MACVLAN:
 			DEBUG_INFO("MACVLAN\n");
+
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_MACVLAN))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+
 			stats.rx_packets = rx_packets;
 			stats.rx_bytes = rx_bytes;
 			stats.tx_packets = tx_packets;

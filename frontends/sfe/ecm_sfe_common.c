@@ -117,6 +117,9 @@ bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_h
 		}
 		return true;
 
+	case ECM_DB_IFACE_TYPE_MACVLAN:
+		return true;
+
 	default:
 		break;
 	}
