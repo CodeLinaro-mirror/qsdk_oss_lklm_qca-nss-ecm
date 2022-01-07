@@ -80,6 +80,16 @@
 #include "ecm_sfe_non_ported_ipv6.h"
 #endif
 
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include "ecm_ppe_ipv4.h"
+#include "ecm_ppe_ipv6.h"
+#include "ecm_ppe_common.h"
+#include "ecm_ppe_ported_ipv4.h"
+#include "ecm_ppe_ported_ipv6.h"
+#include "ecm_ppe_non_ported_ipv4.h"
+#include "ecm_ppe_non_ported_ipv6.h"
+#endif
+
 /*
  * Sysctl table header
  */
@@ -111,8 +121,9 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_SRC_IF_CHECK,
 
-	/* PPE (not implemented yet) */
-	0,
+	/* PPE */
+	ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_BRIDGE | ECM_FE_FEATURE_NON_PORTED |
+	ECM_FE_FEATURE_CONN_LIMIT,
 
 	/* NSS_SFE type */
 	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
@@ -123,11 +134,11 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 
 	/*
 	 * PPE_SFE type
-	 * TODO: Make it the same with SFE only for now and change it when PPE
+	 * TODO: Handle the features which are not supported by PPE, if the AE is selected as PPE.
 	 */
 	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
-	ECM_FE_FEATURE_BONDING,
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE,
 };
 
 struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
@@ -155,8 +166,14 @@ void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence)
 		precedence->non_ported_ipv6_alloc = ecm_nss_non_ported_ipv6_connection_instance_alloc;
 		break;
 #endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		/* TODO: Fall through until PPE is implemented */
+		precedence->ported_ipv4_alloc = ecm_ppe_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_ppe_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_ppe_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_ppe_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
 	default:
 		DEBUG_WARN("precedence->ae_type: %d is not supported yet", precedence->ae_type);
 	}
@@ -188,6 +205,7 @@ bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
 		if (!ecm_sfe_feature_check(skb, iph, is_routed)) {
 			return false;
 		}
+
 		return true;
 #endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
@@ -195,13 +213,21 @@ bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
 		if (!ecm_nss_feature_check(skb, iph)) {
 			return false;
 		}
+
 		return true;
 #endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		/* TODO: Fall through until PPE is implemented */
+		if (!ecm_ppe_feature_check(skb, iph)) {
+			return false;
+		}
+
+		return true;
+#endif
 	default:
 		DEBUG_WARN("ae_type: %d is not supported yet, feature check failed", ae_type);
 	}
+
 	return false;
 }
 
@@ -943,9 +969,14 @@ static bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		/*
-		 * TODO: Hasn't been implemented yet.
-		 */
+		if (ip_version == 4 && ecm_ppe_ipv4_is_conn_limit_reached()) {
+			return true;
+		}
+
+		if (ip_version == 6 && ecm_ppe_ipv6_is_conn_limit_reached()) {
+			return true;
+		}
+		break;
 #endif
 	default:
 		DEBUG_WARN("wrong ae_type: %d\n", ae_type);

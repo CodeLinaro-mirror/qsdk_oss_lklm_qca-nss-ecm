@@ -1932,6 +1932,13 @@ int ecm_ipv4_init(struct dentry *dentry)
 		return result;
 	}
 #endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	result = ecm_ppe_ipv4_init(dentry);
+	if (result < 0) {
+		DEBUG_ERROR("Can't initialize PPE ipv4\n");
+		goto ppe_ipv4_failed;
+	}
+#endif
 	result = ecm_sfe_ipv4_init(dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Can't initialize SFE ipv4\n");
@@ -1987,6 +1994,11 @@ nf_register_failed_1:
 	ecm_sfe_ipv4_exit();
 
 sfe_ipv4_failed:
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	ecm_ppe_ipv4_exit();
+ppe_ipv4_failed:
+#endif
+
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv4_exit();
 #endif
@@ -2034,6 +2046,9 @@ void ecm_ipv4_exit(void)
 #endif
 
 	ecm_sfe_ipv4_exit();
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	ecm_ppe_ipv4_exit();
+#endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv4_exit();
 #endif

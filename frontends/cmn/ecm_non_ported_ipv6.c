@@ -99,6 +99,11 @@
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
 #endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include "ecm_ppe_non_ported_ipv6.h"
+#include "ecm_ppe_ipv6.h"
+#include "ecm_ppe_common.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv6.h"
 #include "ecm_ae_classifier_public.h"
@@ -278,9 +283,13 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_PPE:
-			/*
-			 * Not implemented yet. Fall through.
-			 */
+			if (!ecm_ppe_feature_check(skb, ip_hdr)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
+			}
+
+			feci = ecm_ppe_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			goto feci_alloc_check;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
 			return NF_ACCEPT;

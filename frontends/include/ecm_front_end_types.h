@@ -116,8 +116,9 @@ enum ecm_fe_feature {
 	ECM_FE_FEATURE_CONN_LIMIT	= (1 << 8),
 	ECM_FE_FEATURE_DSCP_ACTION	= (1 << 9),
 	ECM_FE_FEATURE_XFRM		= (1 << 10),
-	ECM_FE_FEATURE_OVS_BRIDGE		= (1 << 11),
+	ECM_FE_FEATURE_OVS_BRIDGE	= (1 << 11),
 	ECM_FE_FEATURE_OVS_VLAN		= (1 << 12),
+	ECM_FE_FEATURE_PPE 		= (1 << 13),
 };
 
 /*
@@ -350,13 +351,13 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
  * ecm_front_end_type_select()
  * 	Detects and sets which front end to run
  *
- * User can select front end explicitly by passing 1(nss) or 2(sfe)
+ * User can select front end explicitly by passing the AE type
  * to kernel module parameter "front_end_selection". Or let ECM make
  * the decision by passing 0(auto). "auto" is also the default mode if
  * user didn't specify parameter "front_end_selection".
  *
  * In automatic selection mode, we prefer to select NSS front end if
- * hardware support it, then SFE front end.
+ * hardware support it, then the others.
  *
  * We check device tree to see if NSS is supported by hardware.
  * Currenly all ipq8064, ipq8062 and ipq807x  ipq60xx platforms support NSS.
