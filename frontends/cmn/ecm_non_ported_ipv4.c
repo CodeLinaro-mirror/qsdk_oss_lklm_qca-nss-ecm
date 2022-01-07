@@ -200,8 +200,8 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		struct ecm_db_iface_instance *from_nat_list[ECM_DB_IFACE_HEIRARCHY_MAX];
 		struct ecm_front_end_interface_construct_instance efeici;
 		enum ecm_front_end_type fe_type;
+		ecm_ae_classifier_result_t ae_result;
 		ecm_db_connection_defunct_callback_t defunct_callback;
-		struct ecm_ae_classifier_info ae_info;
 
 		DEBUG_INFO("New non-ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -225,22 +225,15 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * Connection must have a front end instance associated with it
 		 */
 		fe_type = ecm_front_end_type_get();
-		if (fe_type == ECM_FRONT_END_TYPE_HYBRID) {
-			ecm_ae_classifier_result_t ae_result;
+		switch (fe_type) {
+#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+		case ECM_FRONT_END_TYPE_HYBRID:
+		{
 			ecm_ae_classifier_get_t ae_get;
+			struct ecm_ae_classifier_info ae_info;
 
 			DEBUG_INFO("front end type is hybrid\n");
 
-			/*
-			 * Check the return type of the external callback.
-			 * 1. If NSS, allocate NSS ipv4 non-ported connection instance
-			 * 2. If NONE, allocate NSS ipv4 non-ported connection instance with can_accel flag is set to false.
-			 *    By doing this ECM will not ask again and again to the external module. If external module wants to
-			 *    accelerate this flow later, the flow needs to be defuncted first.
-			 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
-			 *    to the external module.
-			 * 4. If any other type is returned, ASSERT.
-			 */
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
 							  src_port, dest_port, protocol, 4,
 							  is_routed, false,
@@ -251,24 +244,58 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 			ae_result = ae_get(&ae_info);
 			rcu_read_unlock();
 
-			DEBUG_TRACE("ae_result is %d\n", ae_result);
-
-			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
-			if (ae_result == ECM_AE_CLASSIFIER_RESULT_NSS) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NONE) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
-			} else if (ae_result == ECM_AE_CLASSIFIER_RESULT_NOT_YET) {
-				return NF_ACCEPT;
-			} else {
-				DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
-			}
-		} else if (fe_type == ECM_FRONT_END_TYPE_NSS) {
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
-		} else {
+			DEBUG_TRACE("front end type hybrid, ae_result: %d\n", ae_result);
+			break;
+		}
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
+		case ECM_FRONT_END_TYPE_NSS:
+			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
+			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
+			break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+		case ECM_FRONT_END_TYPE_SFE:
+			/*
+			 * Fall through. Not supporting non-ported acceleration yet.
+			 */
+#endif
+		default:
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
 			return NF_ACCEPT;
+		}
+
+		/*
+		 * Check the ae_result.
+		 * 1. If NSS, allocate NSS ipv4 non-ported connection instance
+		 * 2. If NONE, allocate NSS ipv4 non-ported connection instance with can_accel flag is set to false.
+		 *    By doing this ECM will not ask again and again to the external module. If external module wants to
+		 *    accelerate this flow later, the flow needs to be defuncted first.
+		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
+		 *    to the external module.
+		 * 4. If any other type is returned, ASSERT.
+		 */
+		switch (ae_result) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_NSS:
+			if (!ecm_nss_feature_check(skb, ip_hdr)) {
+				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
+				goto fail_1;
+			}
+			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			break;
+
+		case ECM_AE_CLASSIFIER_RESULT_NONE:
+			defunct_callback = ecm_nss_non_ported_ipv4_connection_defunct_callback;
+			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
+			break;
+#endif
+		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
+			return NF_ACCEPT;
+
+		default:
+			DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
 		}
 
 		if (!feci) {
@@ -518,20 +545,21 @@ done:
 		;
 	}
 
-#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
+#if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS) && defined(ECM_FRONT_END_NSS_ENABLE)
 	/*
 	 * Check if IGS feature is enabled or not.
 	 */
 	if (unlikely(ecm_interface_igs_enabled)) {
-		bool ret;
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		ret = ecm_nss_common_igs_acceleration_is_allowed(feci, skb);
-		feci->deref(feci);
-		if (!ret) {
-			DEBUG_WARN("%px: Acceleration denied.\n", ci);
-			ecm_db_connection_deref(ci);
-			return NF_ACCEPT;
+		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
+			if (!ecm_nss_common_igs_acceleration_is_allowed(feci, skb)) {
+				DEBUG_WARN("%px: Non-ported IPv4 IGS acceleration denied\n", ci);
+				feci->deref(feci);
+				ecm_db_connection_deref(ci);
+				return NF_ACCEPT;
+			}
 		}
+		feci->deref(feci);
 	}
 #endif
 
