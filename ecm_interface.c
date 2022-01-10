@@ -6407,14 +6407,18 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 
 		if (likely(!is_mcast_to_if)) {
 
+#ifdef ECM_FRONT_END_SFE_ENABLE
+
 			/*
 			 * Skip bridge forwarding table update if SFE L2 feature is disabled.
+			 * TODO: Avoid calling front end function directly.
 			 */
 			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
-				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_BRIDGE))) {
+				if (!sfe_is_l2_feature_enabled()) {
 					goto skip_bridge_refresh;
 				}
 			}
+#endif
 
 			/*
 			 * Refresh the bridge forward table entry if the port is a bridge port.
@@ -6429,7 +6433,9 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			}
 		}
 
+#ifdef ECM_FRONT_END_SFE_ENABLE
 skip_bridge_refresh:
+#endif
 
 		memset(&stats, 0, sizeof(stats));
 
