@@ -98,12 +98,35 @@
  */
 struct ecm_sfe_non_ported_ipv4_connection_instance {
 	struct ecm_front_end_connection_instance base;		/* Base class */
+	struct ecm_sfe_common_fe_info fe_info;          	/* Front end information */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
 };
 
 static int ecm_sfe_non_ported_ipv4_accelerated_count = 0;		/* Number of Non-Ported connections currently offloaded */
+
+/*
+ * ecm_sfe_non_ported_ipv4_get_stats_bitmap()
+ *	Get bit map
+ */
+static uint32_t ecm_sfe_non_ported_ipv4_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
+{
+	struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci = (struct ecm_sfe_non_ported_ipv4_connection_instance *)feci;
+	DEBUG_CHECK_MAGIC(nnpci, ECM_SFE_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	return ecm_sfe_common_get_stats_bitmap(&nnpci->fe_info, dir);
+}
+
+/*
+ * ecm_sfe_non_ported_ipv4_set_stats_bitmap()
+ *	Set bit map
+ */
+static void ecm_sfe_non_ported_ipv4_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit)
+{
+	struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci = (struct ecm_sfe_non_ported_ipv4_connection_instance *)feci;
+	DEBUG_CHECK_MAGIC(nnpci, ECM_SFE_NON_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	ecm_sfe_common_set_stats_bitmap(&nnpci->fe_info, dir, bit);
+}
 
 #ifdef ECM_INTERFACE_SIT_ENABLE
 #ifdef CONFIG_IPV6_SIT_6RD
@@ -593,7 +616,17 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, from_ifaces_first)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_BRIDGE);
+			}
+
 			ecm_db_iface_bridge_address_get(ii, from_sfe_iface_address);
+			if (is_valid_ether_addr(from_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", nnpci, from_sfe_iface_address);
 			break;
 
@@ -839,7 +872,18 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, to_ifaces_first)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_BRIDGE);
+			}
+
 			ecm_db_iface_bridge_address_get(ii, to_sfe_iface_address);
+			if (is_valid_ether_addr(to_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", nnpci, to_sfe_iface_address);
 			break;
 
@@ -1819,6 +1863,11 @@ struct ecm_sfe_non_ported_ipv4_connection_instance *ecm_sfe_non_ported_ipv4_conn
 	feci->ae_interface_number_by_dev_type_get = ecm_sfe_common_get_interface_number_by_dev_type;
 	feci->ae_interface_type_get = ecm_sfe_common_get_interface_type;
 	feci->regenerate = ecm_sfe_common_connection_regenerate;
+
+	ecm_sfe_common_init_fe_info(&nnpci->fe_info);
+
+	feci->get_stats_bitmap = ecm_sfe_non_ported_ipv4_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_sfe_non_ported_ipv4_set_stats_bitmap;
 
 	return nnpci;
 }
