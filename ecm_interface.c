@@ -6522,6 +6522,20 @@ skip_bridge_refresh:
 			continue;
 #endif
 
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		case ECM_DB_IFACE_TYPE_PPPOE:
+			DEBUG_INFO("PPPOE\n");
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_PPPOE))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+			ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes, 0, 0, 0, 0);
+			dev_put(dev);
+			continue;
+#endif
+
 		default:
 			break;
 		}
@@ -6536,12 +6550,6 @@ skip_bridge_refresh:
 		}
 
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-		case ECM_DB_IFACE_TYPE_PPPOE:
-			DEBUG_INFO("PPPOE\n");
-			ppp_update_stats(dev, rx_packets, rx_bytes, tx_packets, tx_bytes, 0, 0, 0, 0);
-			break;
-#endif
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 		case ECM_DB_IFACE_TYPE_OVPN: {
 			ip_addr_t from_addr, to_addr;

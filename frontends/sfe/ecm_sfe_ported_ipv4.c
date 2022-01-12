@@ -587,6 +587,16 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
+			 * PPPoE is supported only when L2 feature flag is enabled
+			 */
+			if (!sfe_is_l2_feature_enabled()) {
+				DEBUG_TRACE("%px: PPPoE - unsupported\n", npci);
+				break;
+			}
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_PPPOE);
+
+			/*
 			 * Copy pppoe session info to the creation structure.
 			 */
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
@@ -828,6 +838,16 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				rule_invalid = true;
 				break;
 			}
+
+			/*
+			 * PPPoE is supported only when L2 feature flag is enabled
+			 */
+			if (!sfe_is_l2_feature_enabled()) {
+				DEBUG_TRACE("%px: PPPoE - unsupported\n", npci);
+				break;
+			}
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_PPPOE);
 
 			/*
 			 * Copy pppoe session info to the creation structure.
