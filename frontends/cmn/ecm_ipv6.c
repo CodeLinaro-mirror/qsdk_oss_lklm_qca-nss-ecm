@@ -33,6 +33,7 @@
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
+#include <net/xfrm.h>
 #include <linux/inet.h>
 #include <linux/in6.h>
 #include <linux/udp.h>
@@ -41,6 +42,7 @@
 #include <linux/mroute6.h>
 #include <linux/vmalloc.h>
 
+#include <net/ip6_tunnel.h>
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
 #include <linux/netfilter_ipv6.h>
@@ -74,9 +76,6 @@
  */
 #define DEBUG_LEVEL ECM_NSS_IPV6_DEBUG_LEVEL
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include <nss_api_if.h>
-#endif
 #ifdef ECM_MULTICAST_ENABLE
 #include <mc_ecm.h>
 #endif
@@ -95,16 +94,6 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include "ecm_nss_common.h"
-#include "ecm_nss_ported_ipv6.h"
-#ifdef ECM_MULTICAST_ENABLE
-#include "ecm_nss_multicast_ipv6.h"
-#endif
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-#include "ecm_nss_non_ported_ipv6.h"
-#endif
-#endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1011,60 +1000,11 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-	/*
-	 * If the DSCP value of the packet maps to the NOT accel action type,
-	 * do not accelerate the packet and let it go through the
-	 * slow path.
-	 *
-	 * TODO: What if SFE is selected in hybrid mode? Can we do this check after the accel
-	 * engine decision?
-	 */
-	if (likely(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_DSCP_ACTION))) {
-		if (ip_hdr.protocol == IPPROTO_UDP) {
-			uint8_t action = nss_ipv6_dscp_action_get(ip_hdr.dscp);
-			if (action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
-				DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
-				return NF_ACCEPT;
-			}
-		}
-	}
-#endif
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %px is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
-#ifdef ECM_XFRM_ENABLE
-		struct net_device *ipsec_dev;
-		int32_t interface_type;
-
-		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_XFRM)) {
-			DEBUG_TRACE("%px xfrm flow is not supported by SFE only mode\n", skb);
-			return NF_ACCEPT;
-		}
-
-		/* Check if the transformation for this flow
-		 * is done by NSS. If yes, then only try to accelerate.
-		 *
-		 * TODO: What if SFE is selected in hybrid mode? We are sure SFE will not be selected
-		 * for the non-ported flows in hybrid mode. Is this still needed to be checked after the
-		 * accel engine decision?
-		 */
-		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
-		if (!ipsec_dev) {
-			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
-			return NF_ACCEPT;
-		}
-		dev_put(ipsec_dev);
-#else
-		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
-		return NF_ACCEPT;
-#endif
-	}
-#endif
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
