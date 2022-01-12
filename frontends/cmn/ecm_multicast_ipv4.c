@@ -70,7 +70,10 @@
  */
 #define DEBUG_LEVEL ECM_NSS_MULTICAST_IPV4_DEBUG_LEVEL
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
+#endif
+
 #include <mc_ecm.h>
 
 #include "ecm_types.h"
@@ -85,9 +88,11 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_multicast_ipv4.h"
 #include "ecm_nss_common.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv4.h"
 #include "ecm_ae_classifier_public.h"
