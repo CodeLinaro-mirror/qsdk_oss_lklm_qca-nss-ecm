@@ -66,10 +66,12 @@
  */
 #define DEBUG_LEVEL ECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
+#endif
 
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
-#include "nss_ipsec_cmn.h"
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
 #endif
 
 #include "ecm_types.h"
@@ -84,9 +86,16 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_non_ported_ipv6.h"
 #include "ecm_nss_ipv6.h"
 #include "ecm_nss_common.h"
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include "ecm_sfe_non_ported_ipv6.h"
+#include "ecm_sfe_ipv6.h"
+#include "ecm_sfe_common.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv6.h"
 #include "ecm_ae_classifier_public.h"
@@ -144,6 +153,11 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	src_port = 0;
 	dest_port = 0;
 
+	/*
+	 * We are not yet supporting PPPOE bridge for SFE.
+	 * TODO: Revisit when we want to add that support.
+	 */
+#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(!is_routed &&
 			(l2_encap_proto == ETH_P_PPP_SES) &&
 			(nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T))) {
@@ -162,6 +176,7 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		ecm_front_end_pull_l2_encap_header(skb, l2_encap_len);
 		pppoe_bridged = true;
 	}
+#endif
 
 	if(!ecm_non_ported_ipv6_is_protocol_supported(protocol)) {
 		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);
@@ -220,8 +235,6 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 			ecm_ae_classifier_get_t ae_get;
 			struct ecm_ae_classifier_info ae_info;
 
-			DEBUG_INFO("front end type is hybrid\n");
-
 			/*
 			 * Check the return type of the external callback.
 			 * 1. If NSS, allocate NSS ipv6 non-ported connection instance
@@ -242,20 +255,21 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 			ae_result = ae_get(&ae_info);
 			rcu_read_unlock();
 
-			DEBUG_TRACE("ae_result is %d\n", ae_result);
+			DEBUG_TRACE("front end type hybrid, ae_result: %d\n", ae_result);
 			break;
 		}
 #endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_FRONT_END_TYPE_NSS:
 			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
+			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
 			break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_FRONT_END_TYPE_SFE:
-			/*
-			 * Fall through. Not supporting non-ported acceleration yet.
-			 */
+			ae_result = ECM_AE_CLASSIFIER_RESULT_SFE;
+			DEBUG_TRACE("front end type SFE, ae_result: %d\n", ae_result);
+			break;
 #endif
 		default:
 			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
@@ -286,6 +300,12 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
 			defunct_callback = ecm_nss_non_ported_ipv6_connection_defunct_callback;
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv6_connection_instance_alloc(false, protocol, &nci);
+			break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_SFE:
+			defunct_callback = ecm_sfe_non_ported_ipv6_connection_defunct_callback;
+			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:

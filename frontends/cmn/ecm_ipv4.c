@@ -40,6 +40,7 @@
 #include <linux/ppp_defs.h>
 #include <linux/mroute.h>
 
+#include <net/ip6_tunnel.h>
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
 #include <linux/netfilter_ipv4.h>

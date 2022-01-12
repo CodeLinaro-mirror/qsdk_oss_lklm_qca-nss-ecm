@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2018-2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -462,4 +464,20 @@ static inline bool ecm_nss_feature_check(struct sk_buff *skb, struct ecm_tracker
 	}
 
 	return true;
+}
+
+/*
+ * ecm_nss_common_dummy_get_stats_bitmap()
+ */
+static inline uint32_t ecm_nss_common_dummy_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
+{
+	return 0;
+}
+
+/*
+ * ecm_nss_common_dummy_set_stats_bitmap()
+ */
+static inline void ecm_nss_common_dummy_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit)
+{
+
 }

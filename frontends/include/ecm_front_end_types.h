@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -131,6 +133,7 @@ struct ecm_front_end_connection_instance;
 typedef void (*ecm_front_end_connection_accelerate_method_t)(struct ecm_front_end_connection_instance *feci,
                                                                         struct ecm_classifier_process_response *pr, bool is_l2_encap,
                                                                         struct nf_conn *ct, struct sk_buff *skb);
+
 typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef ecm_front_end_acceleration_mode_t (*ecm_front_end_connection_accel_state_get_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_ref_method_t)(struct ecm_front_end_connection_instance *feci);
@@ -148,6 +151,9 @@ typedef int32_t (*ecm_front_end_connection_ae_interface_number_by_dev_type_get_m
 typedef int32_t (*ecm_front_end_connection_ae_interface_type_get_method_t)(struct ecm_front_end_connection_instance *feci, struct net_device *dev);
 typedef void (*ecm_front_end_connection_regenerate_method_t)(struct ecm_front_end_connection_instance *feci, struct ecm_db_connection_instance *ci);
 typedef void (*ecm_front_end_connection_multicast_update_method_t)(ip_addr_t ip_grp_addr, struct net_device *brdev);
+
+typedef void (*ecm_front_end_connection_set_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
+typedef uint32_t (*ecm_front_end_connection_get_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
 
 /*
  * Acceleration limiting modes.
@@ -201,6 +207,9 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_state_get_callback_t state_get;		/* Obtain state for this object */
 #endif
 	ecm_front_end_connection_multicast_update_method_t multicast_update;	/* Update existing multicast connection */
+
+	ecm_front_end_connection_set_stats_bitmap_t set_stats_bitmap;		/* Set bitmap of interface types to be updated during sync */
+	ecm_front_end_connection_get_stats_bitmap_t get_stats_bitmap;		/* Get bitmap of interface types to be updated during sync */
 
 	enum ecm_front_end_engine accel_engine;	/* Acceleration engine type */
 
