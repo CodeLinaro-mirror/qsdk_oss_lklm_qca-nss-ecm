@@ -98,6 +98,7 @@ bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_h
 
 	switch (ii_type) {
 	case ECM_DB_IFACE_TYPE_BRIDGE:
+	case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 
 		/*
 		 * Below checks ensure that bridge slave interface is not a subinterce and top interface is bridge interface.

@@ -6407,14 +6407,18 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 
 		if (likely(!is_mcast_to_if)) {
 
+#ifdef ECM_FRONT_END_SFE_ENABLE
+
 			/*
 			 * Skip bridge forwarding table update if SFE L2 feature is disabled.
+			 * TODO: Avoid calling front end function directly.
 			 */
 			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
-				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_BRIDGE))) {
+				if (!sfe_is_l2_feature_enabled()) {
 					goto skip_bridge_refresh;
 				}
 			}
+#endif
 
 			/*
 			 * Refresh the bridge forward table entry if the port is a bridge port.
@@ -6429,7 +6433,9 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			}
 		}
 
+#ifdef ECM_FRONT_END_SFE_ENABLE
 skip_bridge_refresh:
+#endif
 
 		memset(&stats, 0, sizeof(stats));
 
@@ -6478,6 +6484,19 @@ skip_bridge_refresh:
 			dev_put(dev);
 			continue;
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+			DEBUG_INFO("OVS BRIDGE\n");
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_OVS_BRIDGE))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+			ovsmgr_bridge_interface_stats_update(dev, rx_packets, rx_bytes, tx_packets, tx_bytes);
+			dev_put(dev);
+			continue;
+#endif
 		default:
 			break;
 		}
@@ -6500,14 +6519,6 @@ skip_bridge_refresh:
 			stats.tx_packets = tx_packets;
 			stats.tx_bytes = tx_bytes;
 			__vlan_dev_update_accel_stats(dev, &stats);
-			break;
-#endif
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
-			DEBUG_INFO("OVS BRIDGE\n");
-			ovsmgr_bridge_interface_stats_update(dev,
-							     rx_packets, rx_bytes,
-							     tx_packets, tx_bytes);
 			break;
 #endif
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
