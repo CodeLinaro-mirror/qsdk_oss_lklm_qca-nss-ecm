@@ -372,12 +372,14 @@ void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
 	if (dscpcte && ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			dscpcte->flow_priority = skb->priority;
+			dscpcte->flow_mark = skb->mark;
 			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->flow_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
 			DEBUG_TRACE("%px: sender: %d flow priority: %d flow dscp: %d flow_set_flags: 0x%x\n",
 				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp, dscpcte->flow_set_flags);
 		} else {
 			dscpcte->reply_priority =  skb->priority;
+			dscpcte->reply_mark =  skb->mark;
 			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->return_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
 			DEBUG_TRACE("%px: sender: %d reply priority: %d reply dscp: %d return_set_flags: 0x%x\n",
