@@ -1334,7 +1334,6 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	return result;
 }
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
 /*
  * ecm_ipv6_pppoe_bridge_process()
  *	Called for PPPoE session packets that are going
@@ -1383,7 +1382,6 @@ skip_ipv6_process:
 
 	return result;
 }
-#endif
 
 /*
  * ecm_ipv6_bridge_post_routing_hook()
@@ -1532,8 +1530,9 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
+	if (unlikely(eth_type == ETH_P_PPP_SES)) {
+
 #ifdef ECM_FRONT_END_NSS_ENABLE
-	if (unlikely(eth_type != 0x86DD)) {
 		/*
 		 * Check if PPPoE bridge acceleration is disabled.
 		 */
@@ -1541,11 +1540,11 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
 			goto skip_ipv6_bridge_flow;
 		}
+#endif
 
 		result = ecm_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		goto skip_ipv6_bridge_flow;
 	}
-#endif
 	result = ecm_ipv6_ip_process((struct net_device *)out, in,
 							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 skip_ipv6_bridge_flow:
