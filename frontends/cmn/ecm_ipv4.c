@@ -1016,6 +1016,14 @@ unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
 		/*
+		 * Do not process the packet, if the conntrack is in dying state.
+		 */
+		if (unlikely(test_bit(IPS_DYING_BIT, &ct->status))) {
+			DEBUG_WARN("%px: ct: %px is in dying state\n", skb, ct);
+			return NF_ACCEPT;
+		}
+
+		/*
 		 * Fake untracked conntrack objects were removed on 4.12 kernel version
 		 * and onwards.
 		 * So, for the newer kernels, instead of comparing the ct with the percpu
