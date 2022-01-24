@@ -656,13 +656,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_MACVLAN:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
-			ecm_db_iface_macvlan_address_get(ii, from_sfe_iface_address);
-			if (is_valid_ether_addr(from_sfe_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
-				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, from_ifaces_first)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_MACVLAN);
 			}
+
+			ecm_db_iface_macvlan_address_get(ii, from_sfe_iface_address);
+			ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+			nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
 
 			DEBUG_TRACE("%px: Macvlan - mac: %pM\n", npci, from_sfe_iface_address);
 #else
@@ -883,13 +885,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_MACVLAN:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
-			ecm_db_iface_macvlan_address_get(ii, to_sfe_iface_address);
-			if (is_valid_ether_addr(to_sfe_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
-				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, to_ifaces_first)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_MACVLAN);
 			}
+
+			ecm_db_iface_macvlan_address_get(ii, to_sfe_iface_address);
+			ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+			nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+			nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
 
 			DEBUG_TRACE("%px: Macvlan - mac: %pM\n", npci, to_sfe_iface_address);
 #else
