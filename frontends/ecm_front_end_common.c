@@ -552,7 +552,7 @@ int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void _
 	return ret;
 }
 
-static struct ctl_table ecm_front_end_conn_limit_tbl[] = {
+static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 	{
 		.procname	= "front_end_conn_limit",
 		.data		= &ecm_front_end_conn_limit,
@@ -567,7 +567,7 @@ static struct ctl_table ecm_front_end_common_root[] = {
 	{
 		.procname	= "ecm",
 		.mode		= 0555,
-		.child		= ecm_front_end_conn_limit_tbl,
+		.child		= ecm_front_end_sysctl_tbl,
 	},
 	{ }
 };
@@ -591,6 +591,11 @@ void ecm_front_end_common_sysctl_register()
 	 * Register sysctl table.
 	 */
 	ecm_front_end_ctl_tbl_hdr = register_sysctl_table(ecm_front_end_common_root_dir);
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	if (ecm_front_end_ctl_tbl_hdr) {
+		ecm_sfe_sysctl_tbl_init();
+	}
+#endif
 }
 
 /*

@@ -142,7 +142,6 @@ static inline int32_t ecm_sfe_common_get_interface_type(struct ecm_front_end_con
 bool ecm_sfe_common_fast_xmit_check(s32 interface_num);
 bool ecm_sfe_ipv4_is_conn_limit_reached(void);
 bool ecm_sfe_ipv6_is_conn_limit_reached(void);
-
 bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_heirarchy_index, int first_heirarchy_index);
 
 void ecm_sfe_common_init_fe_info(struct ecm_sfe_common_fe_info *info);
