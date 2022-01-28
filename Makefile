@@ -147,9 +147,7 @@ ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
 # Define ECM_INTERFACE_GRE_TUN_ENABLE=y in order
 # to enable support for GRE TUN interface.
 # #############################################################################
-ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
-endif
 
 ifeq ($(ECM_IPV6_ENABLE), y)
 # #############################################################################

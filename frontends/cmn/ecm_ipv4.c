@@ -1,6 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -25,6 +26,7 @@
 #include <linux/debugfs.h>
 #include <linux/pkt_sched.h>
 #include <linux/string.h>
+#include <net/ip_tunnels.h>
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
@@ -1013,6 +1015,14 @@ unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *
 		reply_tuple.dst.u3.ip = orig_tuple.src.u3.ip;
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
+		/*
+		 * Do not process the packet, if the conntrack is in dying state.
+		 */
+		if (unlikely(test_bit(IPS_DYING_BIT, &ct->status))) {
+			DEBUG_WARN("%px: ct: %px is in dying state\n", skb, ct);
+			return NF_ACCEPT;
+		}
+
 		/*
 		 * Fake untracked conntrack objects were removed on 4.12 kernel version
 		 * and onwards.
