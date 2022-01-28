@@ -83,7 +83,8 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 				/* NSS type */
 
 	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |	/* SFE type */
-	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE,
+	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_BONDING,
 
 	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
@@ -111,7 +112,7 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 void ecm_front_end_bond_notifier_stop(int num)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		ecm_nss_bond_notifier_stop(num);
+		ecm_bond_notifier_stop(num);
 	}
 }
 
@@ -121,7 +122,7 @@ void ecm_front_end_bond_notifier_stop(int num)
 int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		return ecm_nss_bond_notifier_init(dentry);
+		return ecm_bond_notifier_init(dentry);
 	}
 
 	return 0;
@@ -133,7 +134,7 @@ int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 void ecm_front_end_bond_notifier_exit(void)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		ecm_nss_bond_notifier_exit();
+		ecm_bond_notifier_exit();
 	}
 }
 #endif

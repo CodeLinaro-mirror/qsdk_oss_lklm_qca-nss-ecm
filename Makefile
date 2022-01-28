@@ -1,5 +1,7 @@
 ##########################################################################
 # Copyright (c) 2014-2016, 2018-2021, The Linux Foundation. All rights reserved.
+# Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+#
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
 # above copyright notice and this permission notice appear in all copies.
@@ -101,7 +103,7 @@ ccflags-$(ECM_FRONT_END_CONN_LIMIT_ENABLE) += -DECM_FRONT_END_CONN_LIMIT_ENABLE
 # Define ECM_INTERFACE_BOND_ENABLE=y in order to enable
 # Bonding / Link Aggregation support.
 # #############################################################################
-ecm-$(ECM_INTERFACE_BOND_ENABLE) += frontends/nss/ecm_nss_bond_notifier.o
+ecm-$(ECM_INTERFACE_BOND_ENABLE) += frontends/cmn/ecm_bond_notifier.o
 ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
 
 # #############################################################################

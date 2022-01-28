@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,6 +16,11 @@
  **************************************************************************
  */
 
-extern void ecm_nss_bond_notifier_stop(int num);
-extern int ecm_nss_bond_notifier_init(struct dentry *dentry);
-extern void ecm_nss_bond_notifier_exit(void);
+#ifndef __ECM_BOND_NOTIFIER_H
+#define __ECM_BOND_NOTIFIER_H
+
+extern void ecm_bond_notifier_stop(int num);
+extern int ecm_bond_notifier_init(struct dentry *dentry);
+extern void ecm_bond_notifier_exit(void);
+
+#endif  /* __ECM_BOND_NOTIFIER_H */

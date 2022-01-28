@@ -712,6 +712,32 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", nnpci);
 #endif
 			break;
+
+		case ECM_DB_IFACE_TYPE_LAG:
+#ifdef ECM_INTERFACE_BOND_ENABLE
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				/*
+				 * LAG device gets its stats by summing up all stats of its
+				 * slaves (i.e. 'ethx' devices). Please see bond_get_stats()
+				 * in linux-5.4/drivers/net/bonding/bond_main.c.
+				 * So no need to call feci->set_stats_bitmap().
+				 */
+
+				ecm_db_iface_lag_address_get(ii, from_sfe_iface_address);
+				if (is_valid_ether_addr(from_sfe_iface_address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+				DEBUG_TRACE("%px: LAG - mac: %pM\n", nnpci, from_sfe_iface_address);
+			}
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: LAG - unsupported\n", nnpci);
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", nnpci, ii_type, ii_name);
 		}
@@ -913,6 +939,32 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", nnpci);
 #endif
 			break;
+
+		case ECM_DB_IFACE_TYPE_LAG:
+#ifdef ECM_INTERFACE_BOND_ENABLE
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				/*
+				 * LAG device gets its stats by summing up all stats of its
+				 * slaves (i.e. 'ethx' devices). Please see bond_get_stats()
+				 * in linux-5.4/drivers/net/bonding/bond_main.c.
+				 * So no need to call feci->set_stats_bitmap().
+				 */
+
+				ecm_db_iface_lag_address_get(ii, to_sfe_iface_address);
+				if (is_valid_ether_addr(to_sfe_iface_address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+				DEBUG_TRACE("%px: LAG - mac: %pM\n", nnpci, to_sfe_iface_address);
+			}
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: LAG - unsupported\n", nnpci);
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", nnpci, ii_type, ii_name);
 		}
