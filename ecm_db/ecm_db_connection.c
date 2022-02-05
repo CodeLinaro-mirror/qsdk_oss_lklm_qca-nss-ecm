@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -1523,15 +1526,22 @@ void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr_mask
 	/*
 	 * Iterate all connections
 	 */
-	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ca_type);
+	ci = ecm_db_connections_get_and_ref_first();
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
+		struct ecm_classifier_instance *eci;
 		ip_addr_t sip;
 		ip_addr_t dip;
 		uint16_t sport, dport;
 		int proto;
 
 		DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+		eci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ca_type);
+		if (!eci) {
+			goto next_ci;
+		}
+		eci->deref(eci);
 
 		/*
 		 *  Ignore connection with wrong version
@@ -1650,8 +1660,8 @@ defunct_conn:
 		ecm_db_connection_make_defunct(ci);
 
 next_ci:
-		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ca_type);
-		ecm_db_connection_by_classifier_type_assignment_deref(ci, ca_type);
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
 
