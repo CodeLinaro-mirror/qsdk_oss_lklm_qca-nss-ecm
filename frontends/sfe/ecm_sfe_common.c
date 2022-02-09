@@ -59,6 +59,92 @@ static struct ctl_table_header *ecm_sfe_ctl_tbl_hdr;
 static int ecm_sfe_fast_xmit_enable = 1;
 
 /*
+ * ecm_sfe_common_fast_xmit_check()
+ *	Check the fast transmit feasibility.
+ *
+ * It only check device related attribute:
+ */
+static bool ecm_sfe_common_fast_xmit_check(s32 interface_num) {
+
+	struct net_device *dev;
+
+	/*
+	 * Return failure if user has disabled SFE fast_xmit
+	 */
+	if (!ecm_sfe_fast_xmit_enable) {
+		return false;
+	}
+
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
+		DEBUG_INFO("Fast xmit is not enabled for ipsec device[%s]\n", dev->name);
+		dev_put(dev);
+		return false;
+	}
+#endif
+	dev_put(dev);
+	return true;
+}
+
+/*
+ * ecm_sfe_common_qdisc_check()
+ * 	Check whether the ifindex has a qdisc attached
+ */
+static bool ecm_sfe_common_qdisc_check(s32 interface_num)
+{
+	struct net_device *dev;
+	struct netdev_queue *txq;
+	int i;
+	struct Qdisc *q;
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	struct mini_Qdisc *miniq;
+#endif
+
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+
+	/*
+	 * It assume that the qdisc attribute won't change after traffic
+	 * running, if the qdisc changed, we need flush all of the rule.
+	 */
+	for (i = 0; i < dev->real_num_tx_queues; i++) {
+		txq = netdev_get_tx_queue(dev, i);
+		q = rcu_dereference_bh(txq->qdisc);
+		if (q->enqueue) {
+			DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
+			dev_put(dev);
+			return true;
+		}
+	}
+
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	miniq = rcu_dereference_bh(dev->miniq_egress);
+	if (miniq) {
+		DEBUG_INFO("Egress needed\n");
+		dev_put(dev);
+		return true;
+	}
+#endif
+
+	dev_put(dev);
+
+	return false;
+}
+
+/*
  * ecm_sfe_feature_check()
  *	Check some specific features for SFE acceleration
  */
@@ -113,69 +199,121 @@ fail:
 }
 
 /*
- * ecm_sfe_common_fast_xmit_check()
- *	Check the fast transmit feasibility.
+ * ecm_sfe_common_fast_xmit_set()
+ *	Configure the qdisc and fast transmit settings in the rule.
  *
- * It only check device related attribute:
+ * Note: We configure SFE to use full L2 offload in case a single qdisc or no qdisc is enabled in the xmit interface
+ * hierarchy for the direction. This configuration sequence works as below.
+ *
+ * Step 1.) Based on the qdisc checks, we first decide the destination interface for the direction as below:
+ *   a.) More than one qdisc in heirarchy - use top interface and disable L2 forwarding by disabling bottom
+ *   	interface setting.
+ *   b.) Single qdisc or no qdisc in heirarchy - enable L2 offload (set bottom interface flag). If qdisc is found,
+ *   we also configure the interface number on which qdisc is enabled, in the qdisc rule. SFE will use bottom
+ *   interface and qdisc interface settings to enable full L2 offload along with qdisc processing.
+ *
+ * Step 2.) Fast transmit setting is enabled on the destination interface only when no qdisc
+ * 	is found in the hierarchy.
  */
-bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
+void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, struct sfe_qdisc_rule *qdisc_rule, struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], int32_t from_interfaces_first, int32_t to_interfaces_first)
 {
-	struct net_device *dev;
-	struct netdev_queue *txq;
-	int i;
-	struct Qdisc *q;
-#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
-	struct mini_Qdisc *miniq;
-#endif
-	/*
-	 * Return failure if user has disabled SFE fast_xmit
-	 */
-	if (!ecm_sfe_fast_xmit_enable) {
-		return false;
-	}
+	s32 interface_num;
+	bool qdisc_found = false;
+	bool status;
+	int list_index;
 
-	dev = dev_get_by_index(&init_net, interface_num);
-	if (!dev) {
-		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
-		return false;
-	}
-
-	BUG_ON(!rcu_read_lock_bh_held());
-
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
-	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
-		DEBUG_INFO("Fast xmit is not enabled for ipsec device[%s]\n", dev->name);
-		dev_put(dev);
-		return false;
-	}
-#endif
+	rcu_read_lock_bh();
 
 	/*
-	 * It assume that the qdisc attribute won't change after traffic
-	 * running, if the qdisc changed, we need flush all of the rule.
+	 * Check if a single qdisc is enabled in the interface heirarchy. If yes, configure qdisc rule
 	 */
-	for (i = 0; i < dev->real_num_tx_queues; i++) {
-		txq = netdev_get_tx_queue(dev, i);
-		q = rcu_dereference_bh(txq->qdisc);
-		if (q->enqueue) {
-			DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
-			dev_put(dev);
-			return false;
+	qdisc_rule->flow_qdisc_interface = -1;
+	for (list_index = from_interfaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+		interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[list_index]);
+		status = ecm_sfe_common_qdisc_check(interface_num);
+		if (status) {
+			if (!qdisc_found) {
+				qdisc_found = true;
+				qdisc_rule->valid_flags |= SFE_QDISC_RULE_FLOW_VALID;
+				qdisc_rule->flow_qdisc_interface = interface_num;
+			} else {
+				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_FLOW_VALID;
+				qdisc_rule->flow_qdisc_interface = -1;
+				break;
+			}
 		}
 	}
 
-#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
-	miniq = rcu_dereference_bh(dev->miniq_egress);
-	if (miniq) {
-		DEBUG_INFO("Egress needed\n");
-		dev_put(dev);
-		return false;
+	/*
+	 * We have found more than one qdisc enabled in the interface heirarchy.
+	 * So strip the bottom interface flag for this case.
+	 */
+	if (qdisc_found && qdisc_rule->flow_qdisc_interface == -1) {
+		*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 	}
-#endif
 
-	dev_put(dev);
+	/*
+	 * Check if we can enable fast transmit for the destination interface (top/bottom)
+	 */
+	interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1]);
+        if (*rule_flags & SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE) {
+		interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[from_interfaces_first]);
+	}
 
-	return true;
+	if (!qdisc_found && ecm_sfe_common_fast_xmit_check(interface_num)) {
+		*rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
+	}
+
+	qdisc_found = false;
+
+	/*
+	 * Check if a single qdisc is enabled in the interface heirarchy. If yes, configure qdisc rule
+	 */
+	qdisc_rule->return_qdisc_interface = -1;
+	for (list_index = to_interfaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+		interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[list_index]);
+		status = ecm_sfe_common_qdisc_check(interface_num);
+		if (status) {
+			if (!qdisc_found) {
+				qdisc_found = true;
+				qdisc_rule->return_qdisc_interface = interface_num;
+				qdisc_rule->valid_flags |= SFE_QDISC_RULE_RETURN_VALID;
+			} else {
+				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_RETURN_VALID;
+				qdisc_rule->return_qdisc_interface = -1;
+				break;
+			}
+		}
+	}
+
+	/*
+	 * We have found more than one qdisc enabled in the interface heirarchy.
+	 * So strip the bottom interface flag for this case.
+	 */
+	if (qdisc_found && qdisc_rule->return_qdisc_interface == -1) {
+		*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+	}
+
+	/*
+	 * Check if we can enable fast transmit for the destination interface (top/bottom)
+	 */
+	interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+        if (*rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE) {
+		interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[to_interfaces_first]);
+	}
+
+	if (!qdisc_found && ecm_sfe_common_fast_xmit_check(interface_num)) {
+		*rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
+	}
+
+	/*
+	 * Set the Qdisc rule valid flag if qdisc is present in any direction.
+	 */
+	if ((qdisc_rule->valid_flags & SFE_QDISC_RULE_FLOW_VALID) || (qdisc_rule->valid_flags & SFE_QDISC_RULE_RETURN_VALID)) {
+		*valid_flags |= SFE_RULE_CREATE_QDISC_RULE_VALID;
+	}
+
+	rcu_read_unlock_bh();
 }
 
 /*

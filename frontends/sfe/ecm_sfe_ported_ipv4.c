@@ -304,35 +304,6 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 }
 
 /*
- * ecm_sfe_ipv4_fast_xmit_set()
- *	set the fast_xmit in the create message
- */
-static void ecm_sfe_ipv4_fast_xmit_set(struct sfe_ipv4_rule_create_msg *msg)
-{
-	s32 interface_num;
-
-	rcu_read_lock_bh();
-
-	interface_num = msg->conn_rule.flow_top_interface_num;
-	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE) {
-		interface_num = msg->conn_rule.flow_interface_num;
-	}
-	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
-	}
-
-	interface_num = msg->conn_rule.return_top_interface_num;
-	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE) {
-		interface_num = msg->conn_rule.return_interface_num;
-	}
-	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
-	}
-
-	rcu_read_unlock_bh();
-}
-
-/*
  * ecm_sfe_ported_ipv4_connection_accelerate()
  *	Accelerate a connection
  */
@@ -1347,6 +1318,13 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	/*
+	 * Configure qdisc rule and fast xmit settings in the rule
+	 */
+	if (sfe_is_l2_feature_enabled()) {
+		ecm_sfe_common_fast_xmit_set(&nircm->rule_flags, &nircm->valid_flags, &nircm->qdisc_rule, from_ifaces, to_ifaces, from_ifaces_first, to_ifaces_first);
+	}
+
+	/*
 	 * Release the interface lists
 	 */
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -1484,11 +1462,6 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	spin_lock_bh(&feci->lock);
 	feci->stats.cmd_time_begun = jiffies;
 	spin_unlock_bh(&feci->lock);
-
-	/*
-	 * Set fast xmit flags if connection can fast xmit
-	 */
-	ecm_sfe_ipv4_fast_xmit_set(nircm);
 
 	/*
 	 * Call the rule create function
