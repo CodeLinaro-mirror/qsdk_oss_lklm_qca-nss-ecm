@@ -1,6 +1,8 @@
 /*
  **************************************************************************
- * Copyright (c) 2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,57 +16,114 @@
  **************************************************************************
  */
 
+/**
+ * @file ecm_ae_classifier_public.h
+ *	ECM acceleration engine (AE) classifier.
+ */
+
 #ifndef __ECM_AE_CLASSIFIER_PUBLIC_H__
 #define __ECM_AE_CLASSIFIER_PUBLIC_H__
 
-#define ECM_AE_CLASSIFIER_FLOW_ROUTED		(1 << 0)
-#define ECM_AE_CLASSIFIER_FLOW_MULTICAST	(1 << 1)
+/**
+ * @addtogroup ecm_ae_classifier_subsystem
+ * @{
+ */
 
-/*
- * ECM acceleration engine types.
+#define ECM_AE_CLASSIFIER_FLOW_ROUTED		(1 << 0)	/**< Flow is routed. */
+#define ECM_AE_CLASSIFIER_FLOW_MULTICAST	(1 << 1)	/**< Flow is multicast. */
+
+/**
  *	External AE classifier returns these types to ECM per flow.
  */
-typedef enum ecm_ae_classifier_result {
-	ECM_AE_CLASSIFIER_RESULT_NSS,		/* Accelerate the flow in NSS */
-	ECM_AE_CLASSIFIER_RESULT_SFE,		/* Accelerate the flow in SFE */
-	ECM_AE_CLASSIFIER_RESULT_NONE,		/* Do not accelerate the flow */
-	ECM_AE_CLASSIFIER_RESULT_NOT_YET,	/* Acceleration engine hasn't been decided yet */
+typedef enum /** @cond */ ecm_ae_classifier_result /** @endcond */ {
+	ECM_AE_CLASSIFIER_RESULT_NSS,		/**< Accelerate the flow in NSS. */
+	ECM_AE_CLASSIFIER_RESULT_SFE,		/**< Accelerate the flow in SFE. */
+	ECM_AE_CLASSIFIER_RESULT_NONE,		/**< Do not accelerate the flow. */
+	ECM_AE_CLASSIFIER_RESULT_NOT_YET,	/**< Acceleration engine hasn't been decided yet. */
 } ecm_ae_classifier_result_t;
 
-/*
+/**
  * Data structure which is filled and passed to external module
  * for the acceleration engine decision.
  */
 struct ecm_ae_classifier_info {
 	union {
-		__be32 v4_addr;			/* IPv4 address in host order */
-		struct in6_addr v6_addr;	/* IPv6 address in host order */
-	} src;
+		__be32 v4_addr;			/**< IPv4 address in host order. */
+		struct in6_addr v6_addr;	/**< IPv6 address in host order. */
+	} src;					/**< Source address. */
 	union {
-		__be32 v4_addr;			/* IPv4 address in host order */
-		struct in6_addr v6_addr;	/* IPv6 address in host order */
-	} dest;
-	uint16_t dst_port;		/* Destination port in host order*/
-	uint16_t src_port;		/* Source port port in host order*/
-	uint8_t protocol;		/* Next protocol header number */
-	uint8_t ip_ver;			/* IP version 4 or 6 */
-	uint16_t flag;			/* Flow type flag */
+		__be32 v4_addr;			/**< IPv4 address in host order. */
+		struct in6_addr v6_addr;	/**< IPv6 address in host order. */
+	} dest;					/**< Destination address. */
+	uint16_t dst_port;			/**< Destination port in host order. */
+	uint16_t src_port;			/**< Source port port in host order. */
+	uint8_t protocol;			/**< Next protocol header number. */
+	uint8_t ip_ver;				/**< IP version 4 or 6. */
+	uint16_t flag;				/**< Flow type flag. */
 };
 
+/**
+* ECM AE classifier results.
+*/
 typedef ecm_ae_classifier_result_t (*ecm_ae_classifier_get_t)(struct ecm_ae_classifier_info *info);
 
-/*
- * ecm_ae_classifier_ops
+/**
+ * Data structure for acceleration engine classifier operations.
  */
 struct ecm_ae_classifier_ops {
-	ecm_ae_classifier_get_t ae_get;
+	ecm_ae_classifier_get_t ae_get;	/**< Get the acceleration engine classifier. */
 };
 
+/**
+ * Indicates whether the IPv4 connection is being decelerated in the AE.
+ *
+ * @param	src_ip		The source IP address.
+ * @param	src_port	The source port.
+ * @param	dest_ip		The destination IP address.
+ * @param	dest_port	The destination port.
+ * @param	protocol	The protocol.
+ *
+ * @return
+ * True if decelerated; false if not.
+ */
 bool ecm_ae_classifier_decelerate_v4_connection(__be32 src_ip, int src_port,
 						__be32 dest_ip, int dest_port, int protocol);
+
+/**
+ * Indicates whether the IPv6 connection is being decelerated in the AE.
+ *
+ * @param	src_ip		The source IP address.
+ * @param	src_port	The source port.
+ * @param	dest_ip		The destination IP address.
+ * @param	dest_port	The destination port.
+ * @param	protocol	The protocol.
+ *
+ * @return
+ * True if decelerated; false if not.
+ */
 bool ecm_ae_classifier_decelerate_v6_connection(struct in6_addr src_ip, int src_port,
 						struct in6_addr dest_ip, int dest_port, int protocol);
 
+/**
+ * Registers a client with the AE classifier.
+ *
+ * @param	ops		The acceleration engine classifier operations.
+ *
+ * @return
+ * None.
+ */
 void ecm_ae_classifier_ops_register(struct ecm_ae_classifier_ops *ops);
+
+/**
+ * Unregisters a client with the AE classifier.
+ *
+ * @return
+ * None.
+ */
 void ecm_ae_classifier_ops_unregister(void);
+
+/**
+ * @}
+ */
+
 #endif /* __ECM_AE_CLASSIFIER_PUBLIC_H__ */

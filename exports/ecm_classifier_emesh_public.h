@@ -1,6 +1,8 @@
 /*
  **************************************************************************
- * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,21 +16,55 @@
  **************************************************************************
  */
 
+/**
+ * @file ecm_classifier_emesh_public.h
+ *	ECM E-mesh classifier subsystem.
+ */
+
 #ifndef __ECM_CLASSIFIER_EMESH_PUBLIC_H__
 #define __ECM_CLASSIFIER_EMESH_PUBLIC_H__
 
-/*
- * Mesh latency config update callback function to which MSCS client will register
+/**
+ * @addtogroup ecm_classifier_emesh_subsystem
+ * @{
+ */
+
+/**
+ * Mesh latency configuration update callback function to which MSCS client will register.
  */
 typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
 		uint32_t service_interval_dl, uint32_t burst_size_dl,
 		uint32_t service_interval_ul, uint32_t burst_size_ul,
 		uint16_t priority, uint8_t add_or_sub);
 
+/**
+ * Data structure for easy mesh classifier callbacks.
+ */
 struct ecm_classifier_emesh_callbacks {
 	ecm_classifier_emesh_callback_t update_peer_mesh_latency_params;
+						/**< Parameters for peer mesh latency. */
 };
 
+/**
+ * Registers a client for E-mesh callbacks.
+ *
+ * @param	mesh_cb	E-mesh callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
 int ecm_classifier_emesh_latency_config_callback_register(struct ecm_classifier_emesh_callbacks *mesh_cb);
+
+/**
+ * Unregisters a client from E-mesh callbacks.
+ *
+ * @return
+ * None.
+ */
 void ecm_classifier_emesh_latency_config_callback_unregister(void);
+
+/**
+ * @}
+ */
+
 #endif /* __ECM_CLASSIFIER_EMESH_PUBLIC_H__ */
