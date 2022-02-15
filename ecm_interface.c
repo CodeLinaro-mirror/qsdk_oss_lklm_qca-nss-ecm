@@ -3207,6 +3207,19 @@ identifier_update:
 		 * This will apply to IPsec->WAN rule.
 		 * TODO: Move this override to accelerate function.
 		 */
+#ifdef ECM_XFRM_ENABLE
+		if (ip_hdr(skb)->version == IPVERSION) {
+			if ((ip_hdr(skb)->protocol == IPPROTO_ESP) ||
+			    ((ip_hdr(skb)->protocol == IPPROTO_UDP) &&
+			     (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED))) {
+				dev_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
+		} else {
+			if (ipv6_hdr(skb)->nexthdr == IPPROTO_ESP) {
+				dev_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
+		}
+#else
 		if (ip_hdr(skb)->version == IPVERSION) {
 			if ((ip_hdr(skb)->protocol == IPPROTO_ESP) ||
 			    ((ip_hdr(skb)->protocol == IPPROTO_UDP) &&
@@ -3218,6 +3231,7 @@ identifier_update:
 				dev_mtu = ECM_DB_IFACE_MTU_MAX;
 			}
 		}
+#endif
 
 		ii = ecm_interface_ipsec_tunnel_interface_establish(&type_info.ipsec_tunnel, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 		if (ii) {
@@ -4601,9 +4615,16 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 			return true;
 		}
 
+#ifdef ECM_XFRM_ENABLE
+		if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE && protocol == IPPROTO_UDP &&
+				(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+			return true;
+		}
+#else
 		if (protocol == IPPROTO_UDP && udp_hdr(skb)->dest == htons(4500)) {
 			return true;
 		}
+#endif
 	}
 
 	if (ip_version == 6 && protocol == IPPROTO_IPIP) {
@@ -4867,11 +4888,18 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				break;
 			}
 
+#ifdef ECM_XFRM_ENABLE
+			if (given_src_dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE && protocol == IPPROTO_UDP &&
+					(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+				skip = true;
+				break;
+			}
+#else
 			if ((protocol == IPPROTO_UDP) && (udp_hdr(skb)->dest == htons(4500))) {
 				skip = true;
 				break;
 			}
-
+#endif
 			break;
 
 		case 6:
