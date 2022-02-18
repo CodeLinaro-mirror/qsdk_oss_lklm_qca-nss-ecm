@@ -24,6 +24,8 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include "ecm_bond_notifier.h"
 
+#define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
+
 /*
  * Flag to limit the number of DB connections at any point to the maximum number
  * that can be accelerated by NSS. This may need to be enabled for low memory
@@ -309,5 +311,7 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 					int dest_port, int dest_port_nat, ecm_db_direction_t ecm_dir);
 void ecm_front_end_common_sysctl_register(void);
 void ecm_front_end_common_sysctl_unregister(void);
+int ecm_sfe_sysctl_tbl_init(void);
 
 #endif  /* __ECM_FRONT_END_COMMON_H */
+

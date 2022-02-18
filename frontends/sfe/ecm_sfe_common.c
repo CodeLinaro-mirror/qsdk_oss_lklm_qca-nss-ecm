@@ -42,6 +42,8 @@
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
 
+static bool ecm_sfe_fast_xmit_enable = true;
+
 /*
  * ecm_sfe_common_get_stats_bitmap()
  *	Get bit map
@@ -139,6 +141,13 @@ bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
 #if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
 	struct mini_Qdisc *miniq;
 #endif
+	/*
+	 * Return failure if user has disabled SFE fast_xmit
+	 */
+	if (!ecm_sfe_fast_xmit_enable) {
+		return false;
+	}
+
 	dev = dev_get_by_index(&init_net, interface_num);
 	if (!dev) {
 		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
@@ -173,6 +182,30 @@ bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
 	dev_put(dev);
 
 	return true;
+}
+
+/*
+ * ecm_sfe_fast_xmit_enable_handler()
+ *	Fast transmit sysctl node handler.
+ */
+int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if ((ecm_sfe_fast_xmit_enable != 0) && (ecm_sfe_fast_xmit_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
 }
 
 /*
@@ -227,6 +260,31 @@ bool ecm_sfe_ipv6_is_conn_limit_reached(void)
 }
 
 #endif
+
+static struct ctl_table ecm_sfe_sysctl_tbl[] = {
+	{
+		.procname	= "sfe_fast_xmit_enable",
+		.data		= &ecm_sfe_fast_xmit_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_fast_xmit_enable_handler,
+	},
+	{}
+};
+
+/*
+ * ecm_sfe_sysctl_tbl_init()
+ * 	Register sysctl for SFE
+ */
+int ecm_sfe_sysctl_tbl_init()
+{
+	if (!register_sysctl(ECM_FRONT_END_SYSCTL_PATH, ecm_sfe_sysctl_tbl)) {
+		DEBUG_WARN("Unable to register ecm_sfe_sysctl_tbl");
+		return -EINVAL;
+	}
+
+	return 0;
+}
 
 /*
  * ecm_sfe_common_init_fe_info()
