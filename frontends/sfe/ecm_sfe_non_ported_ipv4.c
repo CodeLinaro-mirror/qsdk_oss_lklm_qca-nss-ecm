@@ -1211,6 +1211,9 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		 * In the future, if any of the classifiers wants to pass any parameter, these parameters
 		 * should be received via this object and copied to the accel engine's create object (nircm).
 		*/
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		ecrc.skb = skb;
+#endif
 		aci = assignments[aci_index];
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", nnpci, aci, aci->type_get(aci));
 		aci->sync_from_v4(aci, &ecrc);
