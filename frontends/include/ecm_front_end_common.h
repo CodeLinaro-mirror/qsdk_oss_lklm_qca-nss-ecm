@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -14,9 +16,15 @@
  **************************************************************************
  */
 
+#ifndef __ECM_FRONT_END_COMMON_H
+#define __ECM_FRONT_END_COMMON_H
+
 #include <linux/if_pppox.h>
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_acct.h>
+#include "ecm_bond_notifier.h"
+
+#define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
 
 /*
  * Flag to limit the number of DB connections at any point to the maximum number
@@ -24,34 +32,6 @@
  * platforms to control memory allocated by ECM databases.
  */
 extern unsigned int ecm_front_end_conn_limit;
-
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include "ecm_nss_bond_notifier.h"
-#else
-static inline void ecm_nss_bond_notifier_stop(int num)
-{
-	/*
-	 * Just return if nss front end is not enabled
-	 */
-	return;
-}
-
-static inline int ecm_nss_bond_notifier_init(struct dentry *dentry)
-{
-	/*
-	 * Just return if nss front end is not enabled
-	 */
-	return 0;
-}
-
-static inline void ecm_nss_bond_notifier_exit(void)
-{
-	/*
-	 * Just return if nss front end is not enabled
-	 */
-	return;
-}
-#endif
 
 /*
  * ecm_front_end_l2_encap_header_len()
@@ -331,3 +311,7 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 					int dest_port, int dest_port_nat, ecm_db_direction_t ecm_dir);
 void ecm_front_end_common_sysctl_register(void);
 void ecm_front_end_common_sysctl_unregister(void);
+int ecm_sfe_sysctl_tbl_init(void);
+
+#endif  /* __ECM_FRONT_END_COMMON_H */
+

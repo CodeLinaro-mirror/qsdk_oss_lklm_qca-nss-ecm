@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -852,10 +854,10 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
 
-			nircm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nircm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
-			nircm->conn_rule.flow_ident_xlate = ntohs(pptp_info.src_call_id);
-			nircm->conn_rule.return_ident_xlate = ntohs(pptp_info.dst_call_id);
+			nircm->tuple.flow_ident = pptp_info.src_call_id;
+			nircm->tuple.return_ident = pptp_info.dst_call_id;
+			nircm->conn_rule.flow_ident_xlate = pptp_info.src_call_id;
+			nircm->conn_rule.return_ident_xlate = pptp_info.dst_call_id;
 
 			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
@@ -1550,8 +1552,8 @@ static bool ecm_nss_non_ported_ipv4_connection_decelerate_msg_send(struct ecm_fr
 		 */
 		if (ECM_DB_IFACE_TYPE_PPTP == ii_type) {
 			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
-			nirdm->tuple.flow_ident = ntohs(pptp_info.src_call_id);
-			nirdm->tuple.return_ident = ntohs(pptp_info.dst_call_id);
+			nirdm->tuple.flow_ident = pptp_info.src_call_id;
+			nirdm->tuple.return_ident = pptp_info.dst_call_id;
 		}
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 	}
@@ -1926,6 +1928,9 @@ struct ecm_nss_non_ported_ipv4_connection_instance *ecm_nss_non_ported_ipv4_conn
 	feci->ae_interface_number_by_dev_type_get = ecm_nss_common_get_interface_number_by_dev_type;
 	feci->ae_interface_type_get = ecm_nss_common_get_interface_type;
 	feci->regenerate = ecm_nss_common_connection_regenerate;
+
+	feci->get_stats_bitmap = ecm_nss_common_dummy_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_nss_common_dummy_set_stats_bitmap;
 
 	return nnpci;
 }

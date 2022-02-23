@@ -204,6 +204,7 @@ void ecm_db_iface_add_lag(struct ecm_db_iface_instance *ii,
 			  uint8_t *address, char *name, int32_t mtu,
 			  int32_t interface_identifier, int32_t ae_interface_identifier,
 			  ecm_db_iface_final_callback_t final, void *arg);
+void ecm_db_iface_lag_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
 #endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE

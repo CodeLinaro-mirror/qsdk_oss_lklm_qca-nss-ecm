@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -80,8 +82,9 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	ECM_FE_FEATURE_OVS_VLAN,
 				/* NSS type */
 
-	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_CONN_LIMIT |	/* SFE type */
-	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN,
+	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |	/* SFE type */
+	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_BONDING,
 
 	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
@@ -109,7 +112,7 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 void ecm_front_end_bond_notifier_stop(int num)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		ecm_nss_bond_notifier_stop(num);
+		ecm_bond_notifier_stop(num);
 	}
 }
 
@@ -119,7 +122,7 @@ void ecm_front_end_bond_notifier_stop(int num)
 int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		return ecm_nss_bond_notifier_init(dentry);
+		return ecm_bond_notifier_init(dentry);
 	}
 
 	return 0;
@@ -131,7 +134,7 @@ int ecm_front_end_bond_notifier_init(struct dentry *dentry)
 void ecm_front_end_bond_notifier_exit(void)
 {
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BONDING)) {
-		ecm_nss_bond_notifier_exit();
+		ecm_bond_notifier_exit();
 	}
 }
 #endif
@@ -370,12 +373,14 @@ void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
 	if (dscpcte && ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			dscpcte->flow_priority = skb->priority;
+			dscpcte->flow_mark = skb->mark;
 			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->flow_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
 			DEBUG_TRACE("%px: sender: %d flow priority: %d flow dscp: %d flow_set_flags: 0x%x\n",
 				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp, dscpcte->flow_set_flags);
 		} else {
 			dscpcte->reply_priority =  skb->priority;
+			dscpcte->reply_mark =  skb->mark;
 			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->return_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP;
 			DEBUG_TRACE("%px: sender: %d reply priority: %d reply dscp: %d return_set_flags: 0x%x\n",
@@ -547,7 +552,7 @@ int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void _
 	return ret;
 }
 
-static struct ctl_table ecm_front_end_conn_limit_tbl[] = {
+static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 	{
 		.procname	= "front_end_conn_limit",
 		.data		= &ecm_front_end_conn_limit,
@@ -562,7 +567,7 @@ static struct ctl_table ecm_front_end_common_root[] = {
 	{
 		.procname	= "ecm",
 		.mode		= 0555,
-		.child		= ecm_front_end_conn_limit_tbl,
+		.child		= ecm_front_end_sysctl_tbl,
 	},
 	{ }
 };
@@ -586,6 +591,11 @@ void ecm_front_end_common_sysctl_register()
 	 * Register sysctl table.
 	 */
 	ecm_front_end_ctl_tbl_hdr = register_sysctl_table(ecm_front_end_common_root_dir);
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	if (ecm_front_end_ctl_tbl_hdr) {
+		ecm_sfe_sysctl_tbl_init();
+	}
+#endif
 }
 
 /*
