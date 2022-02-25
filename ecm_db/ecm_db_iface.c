@@ -1453,6 +1453,22 @@ void ecm_db_iface_ovs_bridge_address_get(struct ecm_db_iface_instance *ii, uint8
 }
 #endif
 
+#ifdef ECM_INTERFACE_BOND_ENABLE
+/*
+ * ecm_db_iface_lag_address_get()
+ *	Obtain the ethernet address for a LAG interface
+ */
+void ecm_db_iface_lag_address_get(struct ecm_db_iface_instance *ii, uint8_t *address)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed", ii);
+	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_LAG, "%px: Bad type, expected LAG, actual: %d\n", ii, ii->type);
+	spin_lock_bh(&ecm_db_lock);
+	ether_addr_copy(address, ii->type_info.lag.address);
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_iface_lag_address_get);
+#endif
+
 /*
  * _ecm_db_iface_identifier_hash_table_insert_entry()
  *	Calculate the hash index based on updated interface_identifier, and

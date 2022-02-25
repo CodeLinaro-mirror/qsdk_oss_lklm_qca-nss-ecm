@@ -1,6 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -25,6 +26,7 @@
 #include <linux/kthread.h>
 #include <linux/pkt_sched.h>
 #include <linux/string.h>
+#include <net/ip_tunnels.h>
 #include <net/ip6_route.h>
 #include <net/ip6_fib.h>
 #include <net/addrconf.h>
@@ -33,6 +35,7 @@
 #include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
+#include <net/xfrm.h>
 #include <linux/inet.h>
 #include <linux/in6.h>
 #include <linux/udp.h>
@@ -41,6 +44,7 @@
 #include <linux/mroute6.h>
 #include <linux/vmalloc.h>
 
+#include <net/ip6_tunnel.h>
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
 #include <linux/netfilter_ipv6.h>
@@ -74,9 +78,6 @@
  */
 #define DEBUG_LEVEL ECM_NSS_IPV6_DEBUG_LEVEL
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include <nss_api_if.h>
-#endif
 #ifdef ECM_MULTICAST_ENABLE
 #include <mc_ecm.h>
 #endif
@@ -95,16 +96,6 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
-#ifdef ECM_FRONT_END_NSS_ENABLE
-#include "ecm_nss_common.h"
-#include "ecm_nss_ported_ipv6.h"
-#ifdef ECM_MULTICAST_ENABLE
-#include "ecm_nss_multicast_ipv6.h"
-#endif
-#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-#include "ecm_nss_non_ported_ipv6.h"
-#endif
-#endif
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1011,60 +1002,11 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-	/*
-	 * If the DSCP value of the packet maps to the NOT accel action type,
-	 * do not accelerate the packet and let it go through the
-	 * slow path.
-	 *
-	 * TODO: What if SFE is selected in hybrid mode? Can we do this check after the accel
-	 * engine decision?
-	 */
-	if (likely(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_DSCP_ACTION))) {
-		if (ip_hdr.protocol == IPPROTO_UDP) {
-			uint8_t action = nss_ipv6_dscp_action_get(ip_hdr.dscp);
-			if (action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
-				DEBUG_TRACE("dscp: %d maps to action not accel type, skip acceleration\n", ip_hdr.dscp);
-				return NF_ACCEPT;
-			}
-		}
-	}
-#endif
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %px is fragmented\n", skb);
 		return NF_ACCEPT;
 	}
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
-	if (ecm_nss_common_is_xfrm_flow(skb, &ip_hdr)) {
-#ifdef ECM_XFRM_ENABLE
-		struct net_device *ipsec_dev;
-		int32_t interface_type;
-
-		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_XFRM)) {
-			DEBUG_TRACE("%px xfrm flow is not supported by SFE only mode\n", skb);
-			return NF_ACCEPT;
-		}
-
-		/* Check if the transformation for this flow
-		 * is done by NSS. If yes, then only try to accelerate.
-		 *
-		 * TODO: What if SFE is selected in hybrid mode? We are sure SFE will not be selected
-		 * for the non-ported flows in hybrid mode. Is this still needed to be checked after the
-		 * accel engine decision?
-		 */
-		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
-		if (!ipsec_dev) {
-			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
-			return NF_ACCEPT;
-		}
-		dev_put(ipsec_dev);
-#else
-		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
-		return NF_ACCEPT;
-#endif
-	}
-#endif
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
@@ -1078,6 +1020,14 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		ECM_IP_ADDR_TO_NIN6_ADDR(reply_tuple.dst.u3.in6, ip_hdr.src_addr);
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
+		/*
+		 * Do not process the packet, if the conntrack is in dying state.
+		 */
+		if (unlikely(test_bit(IPS_DYING_BIT, &ct->status))) {
+			DEBUG_WARN("%px: ct: %px is in dying state\n", skb, ct);
+			return NF_ACCEPT;
+		}
+
 		/*
 		 * Fake untracked conntrack objects were removed on 4.12 kernel version
 		 * and onwards.
@@ -1384,7 +1334,6 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	return result;
 }
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
 /*
  * ecm_ipv6_pppoe_bridge_process()
  *	Called for PPPoE session packets that are going
@@ -1433,7 +1382,6 @@ skip_ipv6_process:
 
 	return result;
 }
-#endif
 
 /*
  * ecm_ipv6_bridge_post_routing_hook()
@@ -1582,8 +1530,9 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 
+	if (unlikely(eth_type == ETH_P_PPP_SES)) {
+
 #ifdef ECM_FRONT_END_NSS_ENABLE
-	if (unlikely(eth_type != 0x86DD)) {
 		/*
 		 * Check if PPPoE bridge acceleration is disabled.
 		 */
@@ -1591,11 +1540,11 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
 			goto skip_ipv6_bridge_flow;
 		}
+#endif
 
 		result = ecm_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		goto skip_ipv6_bridge_flow;
 	}
-#endif
 	result = ecm_ipv6_ip_process((struct net_device *)out, in,
 							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
 skip_ipv6_bridge_flow:
