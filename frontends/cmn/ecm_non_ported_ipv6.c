@@ -291,7 +291,7 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		case ECM_AE_CLASSIFIER_RESULT_NSS:
 			if (!ecm_nss_feature_check(skb, ip_hdr)) {
 				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
-				goto fail_1;
+				return NF_ACCEPT;
 			}
 			defunct_callback = ecm_nss_non_ported_ipv6_connection_defunct_callback;
 			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
