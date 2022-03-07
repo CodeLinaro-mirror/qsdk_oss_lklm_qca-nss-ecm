@@ -312,6 +312,6 @@ void ecm_front_end_fill_ovs_params(struct ecm_front_end_ovs_params ovs_params[],
 void ecm_front_end_common_sysctl_register(void);
 void ecm_front_end_common_sysctl_unregister(void);
 int ecm_sfe_sysctl_tbl_init(void);
+void ecm_sfe_sysctl_tbl_exit(void);
 
 #endif  /* __ECM_FRONT_END_COMMON_H */
-

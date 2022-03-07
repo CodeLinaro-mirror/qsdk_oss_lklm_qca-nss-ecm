@@ -42,6 +42,11 @@
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
 
+/*
+ * Sysctl table
+ */
+static struct ctl_table_header *ecm_sfe_ctl_tbl_hdr;
+
 static bool ecm_sfe_fast_xmit_enable = true;
 
 /*
@@ -278,12 +283,24 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
  */
 int ecm_sfe_sysctl_tbl_init()
 {
-	if (!register_sysctl(ECM_FRONT_END_SYSCTL_PATH, ecm_sfe_sysctl_tbl)) {
+	ecm_sfe_ctl_tbl_hdr = register_sysctl(ECM_FRONT_END_SYSCTL_PATH, ecm_sfe_sysctl_tbl);
+	if (!ecm_sfe_ctl_tbl_hdr) {
 		DEBUG_WARN("Unable to register ecm_sfe_sysctl_tbl");
 		return -EINVAL;
 	}
 
 	return 0;
+}
+
+/*
+ * ecm_sfe_sysctl_tbl_exit()
+ * 	Unregister sysctl for SFE
+ */
+void ecm_sfe_sysctl_tbl_exit()
+{
+	if (ecm_sfe_ctl_tbl_hdr) {
+		unregister_sysctl_table(ecm_sfe_ctl_tbl_hdr);
+	}
 }
 
 /*
