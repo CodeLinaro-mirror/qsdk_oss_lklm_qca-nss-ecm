@@ -608,6 +608,9 @@ void ecm_front_end_common_sysctl_unregister()
 	 * Unregister sysctl table.
 	 */
 	if (ecm_front_end_ctl_tbl_hdr) {
+#ifdef ECM_FRONT_END_SFE_ENABLE
+		ecm_sfe_sysctl_tbl_exit();
+#endif
 		unregister_sysctl_table(ecm_front_end_ctl_tbl_hdr);
 	}
 }
