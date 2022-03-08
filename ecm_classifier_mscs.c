@@ -39,6 +39,8 @@
 #include <net/netfilter/nf_conntrack_l4proto.h>
 #include <net/netfilter/nf_conntrack_core.h>
 
+#include <sp_api.h>
+
 /*
  * Debug output levels
  * 0 = OFF
@@ -200,7 +202,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	ecm_front_end_acceleration_mode_t accel_mode;
 	int protocol;
 	uint32_t became_relevant = 0;
-	ecm_classifier_mscs_process_callback_t cb = NULL;
+	//ecm_classifier_mscs_process_callback_t cb = NULL;
 	ecm_classifier_mscs_result_t result = 0;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
@@ -210,6 +212,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 
 	cmscsi = (struct ecm_classifier_mscs_instance *)aci;
 	DEBUG_CHECK_MAGIC(cmscsi, ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC, "%px: magic failed\n", cmscsi);
+
 
 	/*
 	 * Are we yet to decide if this instance is relevant to the connection?
@@ -287,23 +290,16 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	 * if MSCS QoS tag is valid for WiFi peer corresponding to
 	 * skb->src_mac_addr
 	 */
-	cb = ecm_mscs.get_peer_priority;
-	if (!cb) {
-		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto mscs_classifier_out;
-	}
+	//cb = ecm_mscs.get_peer_priority;
+	//if (!cb) {
+	//	cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+	//	goto mscs_classifier_out;
+	//}
 
 	spin_unlock_bh(&ecm_classifier_mscs_lock);
 
-	/*
-	 * Invoke callback registered to classifier for peer look up
-	 */
-	result = cb(smac, dmac, skb);
-
-	/*
-	 * check the result of callback
-	 */
-	if (result == ECM_CLASSIFIER_MSCS_RESULT_DENY_PRIORITY) {
+	sp_mapdb_apply(skb, smac, dmac);
+	if(skb->priority == 0) {
 		spin_lock_bh(&ecm_classifier_mscs_lock);
 		cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 		goto mscs_classifier_out;
