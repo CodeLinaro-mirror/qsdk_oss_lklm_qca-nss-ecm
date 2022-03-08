@@ -407,19 +407,41 @@ void ecm_db_connection_make_defunct(struct ecm_db_connection_instance *ci)
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
 
 	/*
-	 * If defunct fails, return. Do not remove the timer. This failure means
-	 * it will be re-tried later until the total failure count reaches to the
-	 * max limit which is 250. When the limit is reached, defunct process will return
-	 * true and let the connection goes off.
+	 * If connection's defunct timer is already removed from the groups,
+	 * this means that the connection is timed out and already in defunct process.
+	 * So, let's not continue in this defunct process.
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	if (ci->defunct_timer.group == ECM_DB_TIMER_GROUPS_MAX) {
+		spin_unlock_bh(&ecm_db_lock);
+		return;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Call the frontend's defunct callback function and handle the return values.
 	 */
 	ret = ci->defunct(ci->feci, &accel_mode);
 
 	/*
-	 * Remove the connection from the timer group and release the last reference
-	 * of this connection. This reference is the one which was held when the
-	 * connection was allocated.
+	 * If the defunct is success, first we should remove the timer and then release
+	 * the last reference. It is possible that while we are handling the defunct callback,
+	 * the timer was expired and removed from the list. So, we don't need to check the
+	 * return value of the timer removal function. Regardless of who removed the timer, we should
+	 * release the last reference.
 	 */
-	if (ret || ECM_FRONT_END_ACCELERATION_FAILED(accel_mode)) {
+	if (ret) {
+		ecm_db_timer_group_entry_remove(&ci->defunct_timer);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+
+	/*
+	 * If defunct fails and the connection state is in one of the fail states, we should remove the timer
+	 * and release the last reference. In this case we should check the timer removal function's return value
+	 * to make sure that it is removed by us.
+	 */
+	if (ECM_FRONT_END_ACCELERATION_FAILED(accel_mode)) {
 		if (ecm_db_timer_group_entry_remove(&ci->defunct_timer)) {
 			ecm_db_connection_deref(ci);
 		}
