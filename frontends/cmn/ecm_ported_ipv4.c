@@ -1032,6 +1032,17 @@ done:
 					ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
+
+		/*
+		 * E-MESH SAWF metadata is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF metadata is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
+			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
+			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
+		}
 #endif
 
 #ifdef ECM_CLASSIFIER_PCC_ENABLE

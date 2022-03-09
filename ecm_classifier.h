@@ -1,16 +1,19 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2015, 2018-2021 The Linux Foundation. All rights reserved.
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
  * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  **************************************************************************
  */
 
@@ -102,15 +105,16 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 #define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW 0x00000400	/* Mark the E-MESH Service Prioritization flow */
+#define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG 0x00000800		/* Mark the E-MESH SAWF tag */
 #endif
 
-#define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00000400	/* Do not update CI time */
+#define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00001000	/* Do not update CI time */
 
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
-#define ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED 0x00000800	/* Contains mirror dynamic interface number */
+#define ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED 0x00002000	/* Contains mirror dynamic interface number */
 #endif
 
-#define ECM_CLASSIFIER_PROCESS_ACTION_MARK 0x00001000	/* Contains flow & return skb mark */
+#define ECM_CLASSIFIER_PROCESS_ACTION_MARK 0x00004000	/* Contains flow & return skb mark */
 
 /*
  * struct ecm_classifier_process_response
@@ -149,6 +153,10 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
 	int flow_mirror_ifindex;			/* Flow mirror device index value */
 	int return_mirror_ifindex;			/* Return mirror device index value */
+#endif
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	uint32_t flow_sawf_metadata;			/* Flow SAWF metadata value */
+	uint32_t return_sawf_metadata;			/* Return SAWF metadata value */
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
