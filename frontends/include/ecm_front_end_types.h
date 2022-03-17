@@ -63,6 +63,7 @@ enum ecm_front_end_ported_proto_types {
  */
 enum ecm_front_end_engine {
 	ECM_FRONT_END_ENGINE_NSS,
+	ECM_FRONT_END_ENGINE_PPE,
 	ECM_FRONT_END_ENGINE_SFE,
 	ECM_FRONT_END_ENGINE_MAX
 };
@@ -76,13 +77,18 @@ enum ecm_front_end_engine {
  * ECM_FRONT_END_TYPE_NSS: select NSS front end if hardware support it,
  *			   otherwise abort initailization.
  * ECM_FRONT_END_TYPE_SFE: select SFE front end.
- * ECM_FRONT_END_TYPE_HYBRID: Both NSS and SFE can be selected.
+ * ECM_FRONT_END_TYPE_PPE: select PPE front end.
+ * ECM_FRONT_END_TYPE_NSS_SFE: Both NSS and SFE can be selected.
+ * ECM_FRONT_END_TYPE_PPE_SFE: Both PPE and SFE can be selected.
+ *
  */
 enum ecm_front_end_type {
 	ECM_FRONT_END_TYPE_AUTO,
 	ECM_FRONT_END_TYPE_NSS,
 	ECM_FRONT_END_TYPE_SFE,
-	ECM_FRONT_END_TYPE_HYBRID,
+	ECM_FRONT_END_TYPE_PPE,
+	ECM_FRONT_END_TYPE_NSS_SFE,
+	ECM_FRONT_END_TYPE_PPE_SFE,
 	ECM_FRONT_END_TYPE_MAX
 };
 
@@ -330,10 +336,10 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
  */
 static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 {
-	bool nss_supported = false;
 	extern int front_end_selection;
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
+	bool nss_supported = false;
 #ifdef CONFIG_OF
 	nss_supported = of_machine_is_compatible("qcom,ipq8064") ||
 				of_machine_is_compatible("qcom,ipq8062") ||
@@ -344,21 +350,36 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 #else
 	nss_supported = true;
 #endif
-#endif
-
 	if (nss_supported && ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) ||
 			      (front_end_selection == ECM_FRONT_END_TYPE_NSS))) {
 		return ECM_FRONT_END_TYPE_NSS;
 	}
+#endif
 
+#ifdef ECM_FRONT_END_SFE_ENABLE
 	if ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) ||
 	    (front_end_selection == ECM_FRONT_END_TYPE_SFE)) {
 		return ECM_FRONT_END_TYPE_SFE;
 	}
+#endif
 
-	if (nss_supported && (front_end_selection == ECM_FRONT_END_TYPE_HYBRID)) {
-		return ECM_FRONT_END_TYPE_HYBRID;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	if (front_end_selection == ECM_FRONT_END_TYPE_PPE){
+		return ECM_FRONT_END_TYPE_PPE;
 	}
+#endif
+
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	if (front_end_selection == ECM_FRONT_END_TYPE_PPE_SFE){
+		return ECM_FRONT_END_TYPE_PPE_SFE;
+	}
+#endif
+
+#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	if (nss_supported && (front_end_selection == ECM_FRONT_END_TYPE_NSS_SFE)) {
+		return ECM_FRONT_END_TYPE_NSS_SFE;
+	}
+#endif
 
 	return ECM_FRONT_END_TYPE_MAX;
 }

@@ -243,7 +243,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		fe_type = ecm_front_end_type_get();
 		switch (fe_type) {
 #if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_FRONT_END_TYPE_HYBRID:
+		case ECM_FRONT_END_TYPE_NSS_SFE:
 		{
 			ecm_ae_classifier_get_t ae_get;
 			struct ecm_ae_classifier_info ae_info;
@@ -258,7 +258,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 			ae_result = ae_get(&ae_info);
 			rcu_read_unlock();
 
-			DEBUG_TRACE("front end type hybrid, ae_result: %d\n", ae_result);
+			DEBUG_TRACE("front end type NSS_SFE, ae_result: %d\n", ae_result);
 			break;
 		}
 #endif
