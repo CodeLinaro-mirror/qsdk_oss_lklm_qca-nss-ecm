@@ -77,7 +77,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT 16
 #define ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG 0xAA
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS 0xff
-#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ 0xff
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ 0xffff
 
 /*
  * EMESH classifier type.
@@ -385,6 +385,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	struct ecm_front_end_connection_instance *feci;
 	ecm_front_end_acceleration_mode_t accel_mode;
 	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	ecm_db_obj_dir_t dir;
 	uint32_t became_relevant = 0;
 	struct nf_conn *ct;
 	struct net_device *dev;
@@ -505,7 +506,14 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * (received from spm rule lookup), netdev, mac and. Obtain the
 		 * corresponding netdev from ECM's 'to' and 'from' interface list.
 		 */
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+			dir = ECM_DB_OBJ_DIR_TO;
+		} else {
+			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+			dir = ECM_DB_OBJ_DIR_FROM;
+		}
+
 		msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
@@ -526,9 +534,18 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			ecm_db_connection_interfaces_deref(interfaces, first_index);
 			goto get_source_dev;
 		}
-		DEBUG_WARN("%px: Failed to get %s 'to' interfaces list\n", ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_TO]);
+
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
 get_source_dev:
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+			dir = ECM_DB_OBJ_DIR_FROM;
+		} else {
+			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+			dir = ECM_DB_OBJ_DIR_TO;
+		}
+
 		msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
@@ -549,7 +566,9 @@ get_source_dev:
 			ecm_db_connection_interfaces_deref(interfaces, first_index);
 			goto update_sawf_info;
 		}
-		DEBUG_WARN("%px: Failed to get %s 'to' interfaces list\n", ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_FROM]);
+
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
 
 update_sawf_info:
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
