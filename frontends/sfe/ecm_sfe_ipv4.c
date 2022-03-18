@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -82,6 +85,7 @@
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
 #endif
+#include "ecm_ipv4.h"
 #include "ecm_interface.h"
 #include "ecm_sfe_ported_ipv4.h"
 #include "ecm_front_end_common.h"
@@ -93,6 +97,20 @@ int ecm_sfe_ipv4_nack_limit_default = 250;			/* Default nack limit. */
 int ecm_sfe_ipv4_accelerated_count = 0;			/* Total offloads */
 int ecm_sfe_ipv4_pending_accel_count = 0;			/* Total pending offloads issued to the SFE / awaiting completion */
 int ecm_sfe_ipv4_pending_decel_count = 0;			/* Total pending deceleration requests issued to the SFE / awaiting completion */
+
+#define ECM_SFE_IPV4_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
+#define ECM_SFE_IPV4_STATS_SYNC_UDELAY 4000     /* Delay for 4 ms */
+/*
+ * Workqueue for the connection sync
+ */
+struct workqueue_struct *ecm_sfe_ipv4_workqueue;
+struct delayed_work ecm_sfe_ipv4_work;
+struct sfe_ipv4_msg *ecm_sfe_ipv4_sync_req_msg;
+static unsigned long int ecm_sfe_ipv4_next_req_time;
+static unsigned long int ecm_sfe_ipv4_roll_check_jiffies;
+static unsigned long int ecm_sfe_ipv4_stats_request_success = 0;	/* Number of success stats request */
+static unsigned long int ecm_sfe_ipv4_stats_request_fail = 0;		/* Number of failed stats request */
+static unsigned long int ecm_sfe_ipv4_stats_request_nack = 0;		/* Number of NACK'd stats request */
 
 /*
  * Limiting the acceleration of connections.
@@ -175,12 +193,11 @@ void ecm_sfe_ipv4_decel_done_time_update(struct ecm_front_end_connection_instanc
 }
 
 /*
- * ecm_sfe_ipv4_stats_sync_callback()
- *	Callback handler from the SFE.
+ * ecm_sfe_ipv4_process_one_conn_sync_msg()
+ *	handle one conn from the SFE.
  */
-static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg *nim)
+static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sync)
 {
-	struct sfe_ipv4_conn_sync *sync;
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conn *ct;
@@ -199,15 +216,6 @@ static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg
 	int return_dir;
 	int flow_ident;
 	int return_ident_xlate;
-
-	/*
-	 * Only respond to sync messages
-	 */
-	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
-		DEBUG_TRACE("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
-		return;
-	}
-	sync = &nim->msg.conn_stats;
 
 	/*
 	 * Look up ecm connection with a view to synchronising the connection, classifier and data tracker.
@@ -538,6 +546,22 @@ sync_conntrack:
 }
 
 /*
+ * ecm_sfe_ipv4_stats_sync_callback()
+ *	Callback handler from the SFE.
+ */
+static void ecm_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg *nim)
+{
+	/*
+	 * Only respond to sync messages
+	 */
+	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
+		DEBUG_TRACE("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
+		return;
+	}
+	ecm_sfe_ipv4_process_one_conn_sync_msg(&nim->msg.conn_stats);
+}
+
+/*
  * ecm_sfe_ipv4_get_accel_limit_mode()
  */
 static int ecm_sfe_ipv4_get_accel_limit_mode(void *data, u64 *val)
@@ -682,6 +706,194 @@ static struct file_operations ecm_sfe_ipv4_decel_cmd_avg_millis_fops = {
 };
 
 /*
+ * ecm_sfe_ipv4_get_stats_request_counter()
+ */
+static ssize_t ecm_sfe_ipv4_get_stats_request_counter(struct file *file,
+								char __user *user_buf,
+								size_t sz, loff_t *ppos)
+{
+	char *buf;
+	int ret;
+
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	ret = snprintf(buf, (ssize_t)PAGE_SIZE, "success=%lu\tfail=%lu\tnack=%lu\t\n",
+			ecm_sfe_ipv4_stats_request_success, ecm_sfe_ipv4_stats_request_fail,
+			ecm_sfe_ipv4_stats_request_nack);
+	if (ret < 0) {
+		kfree(buf);
+		return -EFAULT;
+	}
+
+	ret = simple_read_from_buffer(user_buf, sz, ppos, buf, ret);
+	kfree(buf);
+	return ret;
+}
+
+/*
+ * File operations for decel command average time.
+ */
+static struct file_operations ecm_sfe_ipv4_stats_request_counter_fops = {
+	.read = ecm_sfe_ipv4_get_stats_request_counter,
+};
+
+/*
+ * ecm_sfe_ipv4_connection_sync_many_callback()
+ *	Callback for conn_sync_many request message
+ */
+static void ecm_sfe_ipv4_connection_sync_many_callback(void *app_data, struct sfe_ipv4_msg *nim)
+{
+	struct sfe_ipv4_conn_sync_many_msg *nicsm = &nim->msg.conn_stats_many;
+	int i;
+
+	/*
+	 * If ECM is terminating, don't process this final stats
+	 */
+	if (ecm_ipv4_terminate_pending) {
+		return;
+	}
+
+	if (nim->cm.response == SFE_CMN_RESPONSE_ACK) {
+		for (i = 0; i < nicsm->count; i++) {
+			ecm_sfe_ipv4_process_one_conn_sync_msg(&nicsm->conn_sync[i]);
+		}
+		ecm_sfe_ipv4_sync_req_msg->msg.conn_stats_many.index = nicsm->next;
+	} else {
+		/*
+		 * We get a NACK from FW, which should not happen, restart the request
+		 */
+		DEBUG_WARN("IPv4 conn stats request failed, restarting\n");
+		ecm_sfe_ipv4_stats_request_nack++;
+		ecm_sfe_ipv4_sync_req_msg->msg.conn_stats_many.index = 0;
+	}
+	queue_delayed_work(ecm_sfe_ipv4_workqueue, &ecm_sfe_ipv4_work, 0);
+}
+
+/*
+ * ecm_sfe_ipv4_stats_sync_req_work()
+ *      Schedule delayed work to process connection stats and request next sync
+ */
+static void ecm_sfe_ipv4_stats_sync_req_work(struct work_struct *work)
+{
+	/*
+	 * Prepare a sfe_ipv4_msg with CONN_STATS_SYNC_MANY request
+	 */
+	struct sfe_ipv4_conn_sync_many_msg *nicsm_req = &ecm_sfe_ipv4_sync_req_msg->msg.conn_stats_many;
+	sfe_tx_status_t sfe_tx_status;
+	int retry = 3;
+	unsigned long int current_jiffies;
+
+	spin_lock_bh(&ecm_sfe_ipv4_lock);
+	if (ecm_sfe_ipv4_accelerated_count == 0) {
+		spin_unlock_bh(&ecm_sfe_ipv4_lock);
+		DEBUG_TRACE("There is no accelerated IPv4 connection\n");
+		goto reschedule;
+	}
+	spin_unlock_bh(&ecm_sfe_ipv4_lock);
+
+	usleep_range(ECM_SFE_IPV4_STATS_SYNC_UDELAY - 100, ECM_SFE_IPV4_STATS_SYNC_UDELAY);
+
+	/*
+	 * If index is 0, we are starting a new round, but if we still have time remain
+	 * in this round, sleep until it ends
+	 */
+	if (nicsm_req->index == 0) {
+		current_jiffies = jiffies;
+
+		if (time_is_after_jiffies(ecm_sfe_ipv4_roll_check_jiffies))  {
+			ecm_sfe_ipv4_next_req_time = jiffies + ECM_SFE_IPV4_STATS_SYNC_PERIOD;
+		}
+
+		if (time_after(ecm_sfe_ipv4_next_req_time, current_jiffies)) {
+			msleep(jiffies_to_msecs(ecm_sfe_ipv4_next_req_time - current_jiffies));
+		}
+		ecm_sfe_ipv4_roll_check_jiffies = jiffies;
+		ecm_sfe_ipv4_next_req_time = ecm_sfe_ipv4_roll_check_jiffies + ECM_SFE_IPV4_STATS_SYNC_PERIOD;
+	}
+
+	while (retry) {
+		if (ecm_ipv4_terminate_pending) {
+			return;
+		}
+		sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, ecm_sfe_ipv4_sync_req_msg);
+		if (sfe_tx_status == SFE_TX_SUCCESS) {
+			ecm_sfe_ipv4_stats_request_success++;
+			return;
+		}
+		ecm_sfe_ipv4_stats_request_fail++;
+		retry--;
+		DEBUG_TRACE("TX_NOT_OKAY, try again later\n");
+		usleep_range(100, 200);
+	}
+
+reschedule:
+	/*
+	 * TX failed after retries, reschedule ourselves with fresh start
+	 */
+	nicsm_req->count = 0;
+	nicsm_req->index = 0;
+	queue_delayed_work(ecm_sfe_ipv4_workqueue, &ecm_sfe_ipv4_work, ECM_SFE_IPV4_STATS_SYNC_PERIOD);
+}
+
+/*
+ * ecm_sfe_ipv4_sync_queue_init
+ *	Initialize the workqueue for ipv4 stats sync
+ */
+static bool ecm_sfe_ipv4_sync_queue_init(void)
+{
+	struct sfe_ipv4_conn_sync_many_msg *nicsm;
+
+	/*
+	 * Setup the connection sync msg/work/workqueue
+	 */
+	ecm_sfe_ipv4_sync_req_msg = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!ecm_sfe_ipv4_sync_req_msg) {
+		return false;
+	}
+
+	sfe_ipv4_msg_init(ecm_sfe_ipv4_sync_req_msg, SFE_SPECIAL_INTERFACE_IPV4,
+		SFE_TX_CONN_STATS_SYNC_MANY_MSG,
+		sizeof(struct sfe_ipv4_conn_sync_many_msg),
+		NULL,
+		NULL);
+
+	nicsm = &ecm_sfe_ipv4_sync_req_msg->msg.conn_stats_many;
+
+	/*
+	 * Start with index 0 and calculate the size of the conn stats array
+	 */
+	nicsm->index = 0;
+	nicsm->size = PAGE_SIZE;
+
+	ecm_sfe_ipv4_workqueue = create_singlethread_workqueue("ecm_sfe_ipv4_workqueue");
+	if (!ecm_sfe_ipv4_workqueue) {
+		kfree(ecm_sfe_ipv4_sync_req_msg);
+		return false;
+	}
+	INIT_DELAYED_WORK(&ecm_sfe_ipv4_work, ecm_sfe_ipv4_stats_sync_req_work);
+	queue_delayed_work(ecm_sfe_ipv4_workqueue, &ecm_sfe_ipv4_work, ECM_SFE_IPV4_STATS_SYNC_PERIOD);
+
+	return true;
+}
+
+/*
+ * ecm_sfe_ipv4_sync_queue_exit
+ *	 the workqueue for ipv4 stats sync
+ */
+static void ecm_sfe_ipv4_sync_queue_exit(void)
+{
+	/*
+	 * Cancel the conn sync req work and destroy workqueue
+	 */
+	cancel_delayed_work_sync(&ecm_sfe_ipv4_work);
+	destroy_workqueue(ecm_sfe_ipv4_workqueue);
+	kfree(ecm_sfe_ipv4_sync_req_msg);
+}
+
+/*
  * ecm_sfe_ipv4_init()
  */
 int ecm_sfe_ipv4_init(struct dentry *dentry)
@@ -768,13 +980,24 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv4_dentry,
+					NULL, &ecm_sfe_ipv4_stats_request_counter_fops))
+	{
+		DEBUG_ERROR("Failed to create ecm sfe ipv4 stats request ounter file in debugfs\n");
+		goto task_cleanup;
+	}
+
 	/*
 	 * Register this module with SFE.
 	 * Notify manager should be registered before the netfilter hooks. Because there
 	 * is a possibility that the ECM can try to send acceleration messages to the
 	 * acceleration engine without having an acceleration engine manager.
 	 */
-	ecm_sfe_ipv4_mgr = sfe_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, NULL);
+	if (!ecm_sfe_ipv4_sync_queue_init()) {
+		DEBUG_ERROR("Failed to init queue\n");
+		goto task_cleanup;
+	}
+	ecm_sfe_ipv4_mgr = sfe_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, ecm_sfe_ipv4_connection_sync_many_callback, NULL);
 
 	return 0;
 
@@ -796,11 +1019,8 @@ void ecm_sfe_ipv4_exit(void)
 	}
 
 	DEBUG_INFO("ECM SFE IPv4 Module exit\n");
-
-	/*
-	 * Unregister from the SFE
-	 */
 	sfe_ipv4_notify_unregister();
+	ecm_sfe_ipv4_sync_queue_exit();
 
 	/*
 	 * Remove the debugfs files recursively.

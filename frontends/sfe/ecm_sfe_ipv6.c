@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -88,9 +91,13 @@
 #endif
 #include "ecm_interface.h"
 #include "ecm_sfe_common.h"
+#include "ecm_ipv6.h"
 #include "ecm_sfe_ported_ipv6.h"
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
+
+#define ECM_SFE_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
+#define ECM_SFE_IPV6_STATS_SYNC_UDELAY 4000	/* Delay for 4ms */
 
 int ecm_sfe_ipv6_no_action_limit_default = 250;		/* Default no-action limit. */
 int ecm_sfe_ipv6_driver_fail_limit_default = 250;		/* Default driver fail limit. */
@@ -98,6 +105,15 @@ int ecm_sfe_ipv6_nack_limit_default = 250;			/* Default nack limit. */
 int ecm_sfe_ipv6_accelerated_count = 0;			/* Total offloads */
 int ecm_sfe_ipv6_pending_accel_count = 0;			/* Total pending offloads issued to the SFE / awaiting completion */
 int ecm_sfe_ipv6_pending_decel_count = 0;			/* Total pending deceleration requests issued to the SFE / awaiting completion */
+
+struct workqueue_struct *ecm_sfe_ipv6_workqueue;
+struct delayed_work ecm_sfe_ipv6_work;
+struct sfe_ipv6_msg *ecm_sfe_ipv6_sync_req_msg;
+static unsigned long int ecm_sfe_ipv6_next_req_time;
+static unsigned long int ecm_sfe_ipv6_roll_check_jiffies;
+static unsigned long int ecm_sfe_ipv6_stats_request_success = 0;	/* Number of success stats request */
+static unsigned long int ecm_sfe_ipv6_stats_request_fail = 0;		/* Number of failed stats request */
+static unsigned long int ecm_sfe_ipv6_stats_request_nack = 0;		/* Number of NACK'd stats request */
 
 /*
  * Limiting the acceleration of connections.
@@ -180,12 +196,11 @@ void ecm_sfe_ipv6_decel_done_time_update(struct ecm_front_end_connection_instanc
 }
 
 /*
- * ecm_sfe_ipv6_stats_sync_callback()
+ * ecm_sfe_ipv6_process_one_conn_sync_msg()
  *	Callback handler from the SFE.
  */
-static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg *nim)
+static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sync)
 {
-	struct sfe_ipv6_conn_sync *sync;
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conn *ct;
@@ -203,15 +218,6 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 	struct ecm_classifier_rule_sync class_sync;
 	int flow_dir;
 	int return_dir;
-
-	/*
-	 * Only respond to sync messages
-	 */
-	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
-		DEBUG_TRACE("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
-		return;
-	}
-	sync = &nim->msg.conn_stats;
 
 	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
 	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
@@ -529,6 +535,25 @@ sync_conntrack:
 }
 
 /*
+ * ecm_sfe_ipv6_stats_sync_callback()
+ *	Callback handler from the SFE.
+ */
+static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg *nim)
+{
+	struct sfe_ipv6_conn_sync *sync;
+
+	/*
+	 * Only respond to sync messages
+	 */
+	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
+		DEBUG_TRACE("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
+		return;
+	}
+	sync = &nim->msg.conn_stats;
+
+	ecm_sfe_ipv6_process_one_conn_sync_msg(sync);
+}
+/*
  * ecm_sfe_ipv6_get_accel_limit_mode()
  */
 static int ecm_sfe_ipv6_get_accel_limit_mode(void *data, u64 *val)
@@ -673,6 +698,194 @@ static struct file_operations ecm_sfe_ipv6_decel_cmd_avg_millis_fops = {
 };
 
 /*
+ * ecm_sfe_ipv6_get_stats_request_counter()
+ */
+static ssize_t ecm_sfe_ipv6_get_stats_request_counter(struct file *file,
+								char __user *user_buf,
+								size_t sz, loff_t *ppos)
+{
+	char *buf;
+	int ret;
+
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	ret = snprintf(buf, (ssize_t)PAGE_SIZE, "success=%lu\tfail=%lu\tnack=%lu\t\n",
+			ecm_sfe_ipv6_stats_request_success, ecm_sfe_ipv6_stats_request_fail,
+			ecm_sfe_ipv6_stats_request_nack);
+	if (ret < 0) {
+		kfree(buf);
+		return -EFAULT;
+	}
+
+	ret = simple_read_from_buffer(user_buf, sz, ppos, buf, ret);
+	kfree(buf);
+	return ret;
+}
+
+/*
+ * File operations for request stats.
+ */
+static struct file_operations ecm_sfe_ipv6_stats_request_counter_fops = {
+	.read = ecm_sfe_ipv6_get_stats_request_counter,
+};
+
+/*
+ * ecm_sfe_ipv6_connection_sync_many_callback()
+ *	Callback for conn_sync_many request message
+ */
+static void ecm_sfe_ipv6_connection_sync_many_callback(void *app_data, struct sfe_ipv6_msg *nim)
+{
+	struct sfe_ipv6_conn_sync_many_msg *nicsm = &nim->msg.conn_stats_many;
+	int i;
+
+	/*
+	 * If ECM is terminating, don't process this final stats
+	 */
+	if (ecm_ipv6_terminate_pending) {
+		return;
+	}
+
+	if (nim->cm.response == SFE_CMN_RESPONSE_ACK) {
+		for (i = 0; i < nicsm->count; i++) {
+			ecm_sfe_ipv6_process_one_conn_sync_msg(&nicsm->conn_sync[i]);
+		}
+		ecm_sfe_ipv6_sync_req_msg->msg.conn_stats_many.index = nicsm->next;
+	} else {
+		/*
+		 * We get a NACK from FW, which should not happen, restart the request
+		 */
+		DEBUG_WARN("IPv4 conn stats request failed, restarting\n");
+		ecm_sfe_ipv6_stats_request_nack++;
+		ecm_sfe_ipv6_sync_req_msg->msg.conn_stats_many.index = 0;
+	}
+	queue_delayed_work(ecm_sfe_ipv6_workqueue, &ecm_sfe_ipv6_work, 0);
+}
+
+/*
+ * ecm_sfe_ipv6_stats_sync_req_work()
+ *      Schedule delayed work to process connection stats and request next sync
+ */
+static void ecm_sfe_ipv6_stats_sync_req_work(struct work_struct *work)
+{
+	/*
+	 * Prepare a sfe_ipv6_msg with CONN_STATS_SYNC_MANY request
+	 */
+	struct sfe_ipv6_conn_sync_many_msg *nicsm_req = &ecm_sfe_ipv6_sync_req_msg->msg.conn_stats_many;
+	sfe_tx_status_t nss_tx_status;
+	int retry = 3;
+	unsigned long int current_jiffies;
+
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	if (ecm_sfe_ipv6_accelerated_count == 0) {
+		spin_unlock_bh(&ecm_sfe_ipv6_lock);
+		DEBUG_TRACE("There is no accelerated IPv4 connection\n");
+		goto reschedule;
+	}
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
+
+	usleep_range(ECM_SFE_IPV6_STATS_SYNC_UDELAY - 100, ECM_SFE_IPV6_STATS_SYNC_UDELAY);
+
+	/*
+	 * If index is 0, we are starting a new round, but if we still have time remain
+	 * in this round, sleep until it ends
+	 */
+	if (nicsm_req->index == 0) {
+		current_jiffies = jiffies;
+
+		if (time_is_after_jiffies(ecm_sfe_ipv6_roll_check_jiffies))  {
+			ecm_sfe_ipv6_next_req_time = jiffies + ECM_SFE_IPV6_STATS_SYNC_PERIOD;
+		}
+
+		if (time_after(ecm_sfe_ipv6_next_req_time, current_jiffies)) {
+			msleep(jiffies_to_msecs(ecm_sfe_ipv6_next_req_time - current_jiffies));
+		}
+		ecm_sfe_ipv6_roll_check_jiffies = jiffies;
+		ecm_sfe_ipv6_next_req_time = ecm_sfe_ipv6_roll_check_jiffies + ECM_SFE_IPV6_STATS_SYNC_PERIOD;
+	}
+
+	while (retry) {
+		if (ecm_ipv6_terminate_pending) {
+			return;
+		}
+		nss_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, ecm_sfe_ipv6_sync_req_msg);
+		if (nss_tx_status == SFE_TX_SUCCESS) {
+			ecm_sfe_ipv6_stats_request_success++;
+			return;
+		}
+		ecm_sfe_ipv6_stats_request_fail++;
+		retry--;
+		DEBUG_TRACE("TX_NOT_OKAY, try again later\n");
+		usleep_range(100, 200);
+	}
+
+reschedule:
+	/*
+	 * TX failed after retries, reschedule ourselves with fresh start
+	 */
+	nicsm_req->count = 0;
+	nicsm_req->index = 0;
+	queue_delayed_work(ecm_sfe_ipv6_workqueue, &ecm_sfe_ipv6_work, ECM_SFE_IPV6_STATS_SYNC_PERIOD);
+}
+
+/*
+ * ecm_sfe_ipv6_sync_queue_init
+ *	Initialize the workqueue for ipv6 stats sync
+ */
+static bool ecm_sfe_ipv6_sync_queue_init(void)
+{
+	struct sfe_ipv6_conn_sync_many_msg *nicsm;
+
+	/*
+	 * Setup the connection sync msg/work/workqueue
+	 */
+	ecm_sfe_ipv6_sync_req_msg = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!ecm_sfe_ipv6_sync_req_msg) {
+		return false;
+	}
+
+	sfe_ipv6_msg_init(ecm_sfe_ipv6_sync_req_msg, SFE_SPECIAL_INTERFACE_IPV6,
+		SFE_TX_CONN_STATS_SYNC_MANY_MSG,
+		sizeof(struct sfe_ipv6_conn_sync_many_msg),
+		NULL,
+		NULL);
+
+	nicsm = &ecm_sfe_ipv6_sync_req_msg->msg.conn_stats_many;
+
+	/*
+	 * Start with index 0 and calculate the size of the conn stats array
+	 */
+	nicsm->index = 0;
+	nicsm->size = PAGE_SIZE;
+
+	ecm_sfe_ipv6_workqueue = create_singlethread_workqueue("ecm_sfe_ipv6_workqueue");
+	if (!ecm_sfe_ipv6_workqueue) {
+		kfree(ecm_sfe_ipv6_sync_req_msg);
+		return false;
+	}
+	INIT_DELAYED_WORK(&ecm_sfe_ipv6_work, ecm_sfe_ipv6_stats_sync_req_work);
+	queue_delayed_work(ecm_sfe_ipv6_workqueue, &ecm_sfe_ipv6_work, ECM_SFE_IPV6_STATS_SYNC_PERIOD);
+
+	return true;
+}
+
+/*
+ * ecm_sfe_ipv6_sync_queue_exit
+ *	 the workqueue for ipv4 stats sync
+ */
+static void ecm_sfe_ipv6_sync_queue_exit(void)
+{
+	/*
+	 * Cancel the conn sync req work and destroy workqueue
+	 */
+	cancel_delayed_work_sync(&ecm_sfe_ipv6_work);
+	destroy_workqueue(ecm_sfe_ipv6_workqueue);
+	kfree(ecm_sfe_ipv6_sync_req_msg);
+}
+
+/*
  * ecm_sfe_ipv6_init()
  */
 int ecm_sfe_ipv6_init(struct dentry *dentry)
@@ -759,13 +972,23 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv6_dentry,
+					NULL, &ecm_sfe_ipv6_stats_request_counter_fops)) {
+		DEBUG_ERROR("Failed to create ecm sfe ipv6 stats_request_counter file in debugfs\n");
+		goto task_cleanup;
+	}
+
 	/*
 	 * Register this module with the Linux SFE Network driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there
 	 * is a possibility that the ECM can try to send acceleration messages to the
 	 * acceleration engine without having an acceleration engine manager.
 	 */
-	ecm_sfe_ipv6_mgr = sfe_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, NULL);
+	if (!ecm_sfe_ipv6_sync_queue_init()) {
+		DEBUG_ERROR("Failed to init queue\n");
+		goto task_cleanup;
+	}
+	ecm_sfe_ipv6_mgr = sfe_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, ecm_sfe_ipv6_connection_sync_many_callback, NULL);
 
 	return 0;
 
@@ -792,6 +1015,7 @@ void ecm_sfe_ipv6_exit(void)
 	 * Unregister from the Linux SFE Network driver
 	 */
 	sfe_ipv6_notify_unregister();
+	ecm_sfe_ipv6_sync_queue_exit();
 
 	/*
 	 * Remove the debugfs files recursively.
