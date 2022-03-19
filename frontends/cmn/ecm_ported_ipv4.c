@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -39,10 +40,6 @@
 #include <linux/udp.h>
 #include <linux/tcp.h>
 
-#ifdef ECM_FRONT_END_SFE_ENABLE
-#include <sfe_api.h>
-#endif
-
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
 #include <linux/netfilter_ipv4.h>
@@ -74,13 +71,17 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_PORTED_IPV4_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_CMN_PORTED_IPV4_DEBUG_LEVEL
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 #include "nss_ipsec_cmn.h"
 #endif
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
 #endif
 
 #include "ecm_types.h"
@@ -144,7 +145,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 	__be16 *layer4hdr = NULL;
 
 	if (protocol == IPPROTO_TCP) {
-
 		if (likely(ct)) {
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 			/*
@@ -360,7 +360,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
 		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
-		ecm_db_connection_defunct_callback_t defunct_callback;
 
 		DEBUG_INFO("New ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -462,8 +461,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
 				return NF_ACCEPT;
 			}
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
+			feci = ecm_nss_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -473,18 +471,15 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 				return NF_ACCEPT;
 			}
 
-			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
+			feci = ecm_sfe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 #endif
 #if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
 			if (is_routed) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
-				defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
+				feci = ecm_sfe_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
 			} else {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
-				defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
+				feci = ecm_nss_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
 			}
 			break;
 #endif
@@ -505,7 +500,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 							ip_src_addr, ip_src_addr_nat,
 							ip_dest_addr, ip_dest_addr_nat,
 							&efeici)) {
-
 			DEBUG_WARN("ECM front end ipv4 interface construct set failed for routed traffic\n");
 			goto fail_1;
 		}
@@ -697,7 +691,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 			ecm_db_connection_add(nci, mi, ni,
 					4, protocol, ecm_dir,
 					NULL /* final callback */,
-					defunct_callback,
 					tg, is_routed, nci);
 
 			spin_unlock_bh(&ecm_ipv4_lock);
@@ -719,7 +712,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 
 		goto done;
 fail_11:
@@ -743,7 +736,7 @@ fail_3:
 fail_2:
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 fail_1:
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(nci);
 		return NF_ACCEPT;
 done:
@@ -773,12 +766,12 @@ done:
 		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
 			if (!ecm_nss_common_igs_acceleration_is_allowed(feci, skb)) {
 				DEBUG_WARN("%px: IPv4 IGS acceleration denied\n", ci);
-				feci->deref(feci);
+				ecm_front_end_connection_deref(feci);
 				ecm_db_connection_deref(ci);
 				return NF_ACCEPT;
 			}
 		}
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 #endif
 
@@ -861,7 +854,7 @@ done:
 	spin_lock_bh(&feci->lock);
 	feci->stats.slow_path_packets++;
 	spin_unlock_bh(&feci->lock);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	/*
 	 * Iterate the assignments and call to process!
@@ -1111,7 +1104,7 @@ done:
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);
 

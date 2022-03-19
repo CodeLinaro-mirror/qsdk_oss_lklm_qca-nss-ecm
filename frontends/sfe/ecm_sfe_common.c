@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
  * copyright notice and this permission notice appear in all copies.
@@ -59,15 +61,17 @@ static bool ecm_sfe_fast_xmit_enable = true;
 /*
  * ecm_sfe_common_get_stats_bitmap()
  *	Get bit map
-*/
-uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir)
+ */
+uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
 {
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
 	switch (dir) {
 	case ECM_DB_OBJ_DIR_FROM:
-		return fe_info->from_stats_bitmap;
+		return feci->fe_info.from_stats_bitmap;
 
 	case ECM_DB_OBJ_DIR_TO:
-		return fe_info->to_stats_bitmap;
+		return feci->fe_info.to_stats_bitmap;
 
 	default:
 		DEBUG_WARN("Direction not handled dir=%d for get stats bitmap\n", dir);
@@ -81,15 +85,17 @@ uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info,
  * ecm_sfe_common_set_stats_bitmap()
  *	Set bit map
  */
-void ecm_sfe_common_set_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir, uint8_t bit)
+void ecm_sfe_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit)
 {
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
 	switch (dir) {
 	case ECM_DB_OBJ_DIR_FROM:
-		fe_info->from_stats_bitmap |= BIT(bit);
+		feci->fe_info.from_stats_bitmap |= BIT(bit);
 		break;
 
 	case ECM_DB_OBJ_DIR_TO:
-		fe_info->to_stats_bitmap |= BIT(bit);
+		feci->fe_info.to_stats_bitmap |= BIT(bit);
 		break;
 	default:
 		DEBUG_WARN("Direction not handled dir=%d for set stats bitmap\n", dir);
@@ -314,7 +320,7 @@ void ecm_sfe_sysctl_tbl_exit()
  * ecm_sfe_common_init_fe_info()
  *	Initialize common fe info
  */
-void ecm_sfe_common_init_fe_info(struct ecm_sfe_common_fe_info *info)
+void ecm_sfe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
 {
 	info->from_stats_bitmap = 0;
 	info->to_stats_bitmap = 0;
@@ -340,7 +346,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		int assignment_count;
 		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 
-		if (feci->accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+		if (ecm_front_end_connection_accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
 			DEBUG_WARN("%px: connection is not in accelerated mode\n", feci);
 			return;
 		}

@@ -67,7 +67,7 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_NON_PORTED_IPV6_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_CMN_NON_PORTED_IPV6_DEBUG_LEVEL
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
@@ -207,7 +207,6 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		struct ecm_front_end_interface_construct_instance efeici;
 		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
-		ecm_db_connection_defunct_callback_t defunct_callback;
 
 		DEBUG_INFO("New connection from " ECM_IP_ADDR_OCTAL_FMT " to " ECM_IP_ADDR_OCTAL_FMT "\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
@@ -296,19 +295,16 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
 				return NF_ACCEPT;
 			}
-			defunct_callback = ecm_nss_non_ported_ipv6_connection_defunct_callback;
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_nss_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
-			defunct_callback = ecm_nss_non_ported_ipv6_connection_defunct_callback;
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_non_ported_ipv6_connection_instance_alloc(false, protocol, &nci);
+			feci = ecm_nss_non_ported_ipv6_connection_instance_alloc(false, protocol, &nci);
 			break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_SFE:
-			defunct_callback = ecm_sfe_non_ported_ipv6_connection_defunct_callback;
-			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_sfe_non_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
@@ -451,7 +447,6 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 			ecm_db_connection_add(nci, mi, ni,
 					6, protocol, ecm_dir,
 					NULL /* final callback */,
-					defunct_callback,
 					tg, is_routed, nci);
 
 			spin_unlock_bh(&ecm_ipv6_lock);
@@ -473,7 +468,7 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 
 		goto done;
 fail_7:
@@ -489,7 +484,7 @@ fail_3:
 fail_2:
 		ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 fail_1:
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(nci);
 		return NF_ACCEPT;
 done:
@@ -505,12 +500,12 @@ done:
 		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
 			if (!ecm_nss_common_igs_acceleration_is_allowed(feci, skb)) {
 				DEBUG_WARN("%px: Non-ported IPv6 IGS acceleration denied\n", ci);
-				feci->deref(feci);
+				ecm_front_end_connection_deref(feci);
 				ecm_db_connection_deref(ci);
 				return NF_ACCEPT;
 			}
 		}
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 #endif
 
@@ -548,7 +543,7 @@ done:
 	spin_lock_bh(&feci->lock);
 	feci->stats.slow_path_packets++;
 	spin_unlock_bh(&feci->lock);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	/*
 	 * Iterate the assignments and call to process!
@@ -736,7 +731,7 @@ done:
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);
 

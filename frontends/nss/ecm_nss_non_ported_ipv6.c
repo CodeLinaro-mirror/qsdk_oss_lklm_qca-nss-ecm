@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -91,22 +92,6 @@
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
 
-/*
- * Magic numbers
- */
-#define ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC 0xEC34
-
-/*
- * struct ecm_nss_non_ported_ipv6_connection_instance
- *	A connection specific front end instance for Non-Ported connections
- */
-struct ecm_nss_non_ported_ipv6_connection_instance {
-	struct ecm_front_end_connection_instance base;		/* Base class */
-#if (DEBUG_LEVEL > 0)
-	uint16_t magic;
-#endif
-};
-
 static int ecm_nss_non_ported_ipv6_accelerated_count = 0;		/* Number of Non-Ported connections currently offloaded */
 
 /*
@@ -119,7 +104,6 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci;
 	ip_addr_t flow_ip;
 	ip_addr_t return_ip;
 	ecm_front_end_acceleration_mode_t result_mode;
@@ -153,8 +137,7 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 	 * Get the front end instance
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, nircm->tuple.flow_ip);
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, nircm->tuple.return_ip);
@@ -167,21 +150,21 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 	/*
 	 * Dump some useful trace information.
 	 */
-	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n", nnpci, feci->ci, serial);
-	DEBUG_TRACE("%px: rule_flags: %x, valid_flags: %x\n", nnpci, nircm->rule_flags, nircm->valid_flags);
-	DEBUG_TRACE("%px: flow_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", nnpci, ECM_IP_ADDR_TO_OCTAL(flow_ip), nircm->tuple.flow_ident);
-	DEBUG_TRACE("%px: return_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", nnpci, ECM_IP_ADDR_TO_OCTAL(return_ip), nircm->tuple.return_ident);
-	DEBUG_TRACE("%px: protocol: %d\n", nnpci, nircm->tuple.protocol);
+	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n", feci, feci->ci, serial);
+	DEBUG_TRACE("%px: rule_flags: %x, valid_flags: %x\n", feci, nircm->rule_flags, nircm->valid_flags);
+	DEBUG_TRACE("%px: flow_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(flow_ip), nircm->tuple.flow_ident);
+	DEBUG_TRACE("%px: return_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(return_ip), nircm->tuple.return_ident);
+	DEBUG_TRACE("%px: protocol: %d\n", feci, nircm->tuple.protocol);
 
 	/*
 	 * Handle the creation result code.
 	 */
-	DEBUG_TRACE("%px: response: %d\n", nnpci, nim->cm.response);
+	DEBUG_TRACE("%px: response: %d\n", feci, nim->cm.response);
 	if (nim->cm.response != NSS_CMN_RESPONSE_ACK) {
 		/*
 		 * Creation command failed (specific reason ignored).
 		 */
-		DEBUG_TRACE("%px: accel nack: %d\n", nnpci, nim->cm.error);
+		DEBUG_TRACE("%px: accel nack: %d\n", feci, nim->cm.error);
 		spin_lock_bh(&feci->lock);
 		DEBUG_ASSERT(feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%px: Unexpected mode: %d\n", ci, feci->accel_mode);
 		feci->stats.ae_nack++;
@@ -220,7 +203,7 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 		/*
 		 * Release the connection.
 		 */
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(ci);
 		return;
 	}
@@ -249,7 +232,7 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 		/*
 		 * Release the connection.
 		 */
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(ci);
 		return;
 	}
@@ -288,7 +271,7 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 		/*
 		 * Release the connection.
 		 */
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(ci);
 		return;
 	}
@@ -321,7 +304,7 @@ static void ecm_nss_non_ported_ipv6_connection_callback(void *app_data, struct n
 	/*
 	 * Release the connection.
 	 */
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 }
 
@@ -336,7 +319,6 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
                                                                         struct ecm_classifier_process_response *pr, bool is_l2_encap,
                                                                         struct nf_conn *ct, struct sk_buff *skb)
 {
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
 	uint16_t regen_occurrances;
 	int32_t from_ifaces_first;
 	int32_t to_ifaces_first;
@@ -364,7 +346,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	struct net_device *dev;
 #endif
 
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	/*
 	 * Get the re-generation occurrance counter of the connection.
@@ -416,13 +398,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 */
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", nnpci);
+		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
 		goto non_ported_accel_bad_rule;
 	}
 
 	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		DEBUG_WARN("%px: Accel attempt failed - no interfaces in to_interfaces list!\n", nnpci);
+		DEBUG_WARN("%px: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		goto non_ported_accel_bad_rule;
 	}
@@ -435,7 +417,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	from_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
 	to_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(to_nss_iface);
 	if ((from_nss_iface_id < 0) || (to_nss_iface_id < 0)) {
-		DEBUG_TRACE("%px: from_nss_iface_id: %d, to_nss_iface_id: %d\n", nnpci, from_nss_iface_id, to_nss_iface_id);
+		DEBUG_TRACE("%px: from_nss_iface_id: %d, to_nss_iface_id: %d\n", feci, from_nss_iface_id, to_nss_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 		goto non_ported_accel_bad_rule;
@@ -513,7 +495,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * NOTE: The lists may contain a complex heirarchy of similar type of interface e.g. multiple vlans or tunnels within tunnels.
 	 * This NSS cannot handle that - there is no way to describe this in the rule - if we see multiple types that would conflict we have to abort.
 	 */
-	DEBUG_TRACE("%px: Examine from/src heirarchy list\n", nnpci);
+	DEBUG_TRACE("%px: Examine from/src heirarchy list\n", feci);
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
 	for (list_index = from_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
@@ -532,7 +514,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
-		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", nnpci, list_index, ii, ii_type, ii_name);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", feci, list_index, ii, ii_type, ii_name);
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -540,13 +522,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		 */
 		switch (ii_type) {
 		case ECM_DB_IFACE_TYPE_BRIDGE:
-			DEBUG_TRACE("%px: Bridge\n", nnpci);
+			DEBUG_TRACE("%px: Bridge\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: Bridge - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 				break;
 			}
 
@@ -557,18 +539,18 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: Bridge - mac: %pM\n", nnpci, from_nss_iface_address);
+			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_nss_iface_address);
 			break;
 
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Bridge\n", nnpci);
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
 				break;
 			}
 
@@ -579,20 +561,20 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", nnpci, from_nss_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_nss_iface_address);
 #else
 			rule_invalid = true;
 #endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
-			DEBUG_TRACE("%px: Ethernet\n", nnpci);
+			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Ignore additional mac addresses, these are usually as a result of address propagation
 				 * from bridges down to ports etc.
 				 */
-				DEBUG_TRACE("%px: Ethernet - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: Ethernet - ignore additional\n", feci);
 				break;
 			}
 
@@ -612,7 +594,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
 					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TAP, &(nircm->conn_rule.flow_mtu))) {
 						rule_invalid = true;
-						DEBUG_WARN("%px: Unable to get mtu value for the GRE TAP interface\n", nnpci);
+						DEBUG_WARN("%px: Unable to get mtu value for the GRE TAP interface\n", feci);
 					}
 				}
 				dev_put(dev);
@@ -622,7 +604,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * Can only handle one MAC, the first outermost mac.
 			 */
 			ecm_db_iface_ethernet_address_get(ii, from_nss_iface_address);
-			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", nnpci, from_nss_iface_address);
+			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, from_nss_iface_address);
 			break;
 
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
@@ -643,7 +625,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
 			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, &(nircm->conn_rule.flow_mtu))) {
 				rule_invalid = true;
-				DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", nnpci);
+				DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", feci);
 			}
 #endif
 			break;
@@ -654,7 +636,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * More than one PPPoE in the list is not valid!
 			 */
 			if (interface_type_counts[ii_type] != 0) {
-				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 				rule_invalid = true;
 				break;
 			}
@@ -665,14 +647,14 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->pppoe_rule.flow_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
 			if (nircm->pppoe_rule.flow_if_num < 0) {
 				DEBUG_TRACE("%px: PPPoE - acceleration engine flow interface (%d) is not valid\n",
-						nnpci, nircm->pppoe_rule.flow_if_num);
+						feci, nircm->pppoe_rule.flow_if_num);
 				rule_invalid = true;
 				break;
 			}
 			nircm->pppoe_rule.flow_if_exist = 1;
 			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_PPPOE_VALID;
 
-			DEBUG_TRACE("%px: PPPoE - exist: %d flow_if_num: %d\n", nnpci,
+			DEBUG_TRACE("%px: PPPoE - exist: %d flow_if_num: %d\n", feci,
 					nircm->pppoe_rule.flow_if_exist,
 					nircm->pppoe_rule.flow_if_num);
 #else
@@ -681,13 +663,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-			DEBUG_TRACE("%px: VLAN\n", nnpci);
+			DEBUG_TRACE("%px: VLAN\n", feci);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: VLAN - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
 			ecm_db_iface_vlan_info_get(ii, &vlan_info);
@@ -718,28 +700,28 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 */
 			memcpy(from_nss_iface_address, vlan_info.address, ETH_ALEN);
 			if (is_valid_ether_addr(from_nss_iface_address)) {
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, from_nss_iface_address);
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, from_nss_iface_address);
 				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
 				memcpy(nircm->src_mac_rule.flow_src_mac, from_nss_iface_address, ETH_ALEN);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_FLOW_VALID;
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: vlan tag: %x\n", nnpci, vlan_value);
+			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
-			DEBUG_TRACE("%px: VLAN - unsupported\n", nnpci);
+			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
-			DEBUG_TRACE("%px: IPSEC\n", nnpci);
+			DEBUG_TRACE("%px: IPSEC\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Can only support one ipsec
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", feci);
 				break;
 			}
 
@@ -747,7 +729,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->nexthop_rule.flow_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.flow_nexthop);
 #else
 			rule_invalid = true;
-			DEBUG_TRACE("%px: IPSEC - unsupported\n", nnpci);
+			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
 			break;
 		case ECM_DB_IFACE_TYPE_TUNIPIP6:
@@ -766,7 +748,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 #endif
 			break;
 		default:
-			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", nnpci, ii_type, ii_name);
+			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
 
 		/*
@@ -776,7 +758,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	}
 
 	if (rule_invalid) {
-		DEBUG_WARN("%px: from/src Rule invalid\n", nnpci);
+		DEBUG_WARN("%px: from/src Rule invalid\n", feci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 		goto non_ported_accel_bad_rule;
@@ -785,7 +767,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Now examine the TO / DEST heirarchy list to construct the destination part of the rule
 	 */
-	DEBUG_TRACE("%px: Examine to/dest heirarchy list\n", nnpci);
+	DEBUG_TRACE("%px: Examine to/dest heirarchy list\n", feci);
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
 	for (list_index = to_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
@@ -801,7 +783,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		ii = to_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
-		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", nnpci, list_index, ii, ii_type, ii_name);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", feci, list_index, ii, ii_type, ii_name);
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -809,13 +791,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		 */
 		switch (ii_type) {
 		case ECM_DB_IFACE_TYPE_BRIDGE:
-			DEBUG_TRACE("%px: Bridge\n", nnpci);
+			DEBUG_TRACE("%px: Bridge\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: Bridge - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 				break;
 			}
 
@@ -826,18 +808,18 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: Bridge - mac: %pM\n", nnpci, to_nss_iface_address);
+			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_nss_iface_address);
 			break;
 
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Bridge\n", nnpci);
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
 				break;
 			}
 
@@ -848,20 +830,20 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", nnpci, to_nss_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_nss_iface_address);
 #else
 			rule_invalid = true;
 #endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
-			DEBUG_TRACE("%px: Ethernet\n", nnpci);
+			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Ignore additional mac addresses, these are usually as a result of address propagation
 				 * from bridges down to ports etc.
 				 */
-				DEBUG_TRACE("%px: Ethernet - ignore additional\n", nnpci);
+				DEBUG_TRACE("%px: Ethernet - ignore additional\n", feci);
 				break;
 			}
 
@@ -869,7 +851,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * Can only handle one MAC, the first outermost mac.
 			 */
 			ecm_db_iface_ethernet_address_get(ii, to_nss_iface_address);
-			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", nnpci, to_nss_iface_address);
+			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_nss_iface_address);
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
@@ -877,7 +859,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * More than one PPPoE in the list is not valid!
 			 */
 			if (interface_type_counts[ii_type] != 0) {
-				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 				rule_invalid = true;
 				break;
 			}
@@ -888,14 +870,14 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->pppoe_rule.return_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
 			if (nircm->pppoe_rule.return_if_num < 0) {
 				DEBUG_TRACE("%px: PPPoE - acceleration engine return interface (%d) is not valid\n",
-						nnpci, nircm->pppoe_rule.return_if_num);
+						feci, nircm->pppoe_rule.return_if_num);
 				rule_invalid = true;
 				break;
 			}
 			nircm->pppoe_rule.return_if_exist = 1;
 			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_PPPOE_VALID;
 
-			DEBUG_TRACE("%px: PPPoE - exist: %d return_if_num: %d\n", nnpci,
+			DEBUG_TRACE("%px: PPPoE - exist: %d return_if_num: %d\n", feci,
 					nircm->pppoe_rule.return_if_exist,
 					nircm->pppoe_rule.return_if_num);
 #else
@@ -904,13 +886,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-			DEBUG_TRACE("%px: VLAN\n", nnpci);
+			DEBUG_TRACE("%px: VLAN\n", feci);
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: VLAN - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
 			ecm_db_iface_vlan_info_get(ii, &vlan_info);
@@ -941,28 +923,28 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 */
 			memcpy(to_nss_iface_address, vlan_info.address, ETH_ALEN);
 			if (is_valid_ether_addr(to_nss_iface_address)) {
-				DEBUG_TRACE("%px: VLAN use mac: %pM\n", nnpci, to_nss_iface_address);
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, to_nss_iface_address);
 				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
 				memcpy(nircm->src_mac_rule.return_src_mac, to_nss_iface_address, ETH_ALEN);
 				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_RETURN_VALID;
 				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
 			}
 
-			DEBUG_TRACE("%px: vlan tag: %x\n", nnpci, vlan_value);
+			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
-			DEBUG_TRACE("%px: VLAN - unsupported\n", nnpci);
+			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
-			DEBUG_TRACE("%px: IPSEC\n", nnpci);
+			DEBUG_TRACE("%px: IPSEC\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Can only support one ipsec
 				 */
 				rule_invalid = true;
-				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", nnpci);
+				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", feci);
 				break;
 			}
 
@@ -970,11 +952,11 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->nexthop_rule.return_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.return_nexthop);
 #else
 			rule_invalid = true;
-			DEBUG_TRACE("%px: IPSEC - unsupported\n", nnpci);
+			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
 			break;
 		default:
-			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", nnpci, ii_type, ii_name);
+			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
 
 		/*
@@ -984,7 +966,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	}
 
 	if (rule_invalid) {
-		DEBUG_WARN("%px: to/dest Rule invalid\n", nnpci);
+		DEBUG_WARN("%px: to/dest Rule invalid\n", feci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 		goto non_ported_accel_bad_rule;
@@ -1003,7 +985,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	}
 
 	if (ecm_interface_src_check || ecm_db_connection_is_pppoe_bridged_get(feci->ci)) {
-		DEBUG_INFO("%px: Source interface check flag is enabled\n", nnpci);
+		DEBUG_INFO("%px: Source interface check flag is enabled\n", feci);
 		nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
 	}
 
@@ -1069,7 +1051,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		 * should be received via this object and copied to the accel engine's create object (nircm).
 		*/
 		aci = assignments[aci_index];
-		DEBUG_TRACE("%px: sync from: %px, type: %d\n", nnpci, aci, aci->type_get(aci));
+		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v6(aci, &ecrc);
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
@@ -1108,7 +1090,7 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"igs_return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n",
-			nnpci,
+			feci,
 			feci->ci,
 			nircm->tuple.protocol,
 			nircm->conn_rule.flow_mtu,
@@ -1196,11 +1178,11 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * TX failed
 	 */
 	spin_lock_bh(&feci->lock);
-	DEBUG_ASSERT(feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%px: Accel mode unexpected: %d\n", nnpci, feci->accel_mode);
+	DEBUG_ASSERT(feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING, "%px: Accel mode unexpected: %d\n", feci, feci->accel_mode);
 	feci->stats.driver_fail_total++;
 	feci->stats.driver_fail++;
 	if (feci->stats.driver_fail >= feci->stats.driver_fail_limit) {
-		DEBUG_WARN("%px: Accel failed - driver fail limit\n", nnpci);
+		DEBUG_WARN("%px: Accel failed - driver fail limit\n", feci);
 		result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DRIVER;
 	} else {
 		result_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
@@ -1220,7 +1202,7 @@ non_ported_accel_bad_rule:
 	/*
 	 * Jump to here when rule data is bad and an offload command cannot be constructed
 	 */
-	DEBUG_WARN("%px: Accel failed - bad rule\n", nnpci);
+	DEBUG_WARN("%px: Accel failed - bad rule\n", feci);
 	ecm_nss_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE);
 }
 
@@ -1234,7 +1216,6 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci;
 	ip_addr_t flow_ip;
 	ip_addr_t return_ip;
 
@@ -1266,8 +1247,7 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 	 * Get the front end instance
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, nirdm->tuple.flow_ip);
 	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, nirdm->tuple.return_ip);
@@ -1280,10 +1260,10 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 	/*
 	 * Dump some useful trace information.
 	 */
-	DEBUG_TRACE("%px: decelerate response for connection: %px\n", nnpci, feci->ci);
-	DEBUG_TRACE("%px: flow_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", nnpci, ECM_IP_ADDR_TO_OCTAL(flow_ip), nirdm->tuple.flow_ident);
-	DEBUG_TRACE("%px: return_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", nnpci, ECM_IP_ADDR_TO_OCTAL(return_ip), nirdm->tuple.return_ident);
-	DEBUG_TRACE("%px: protocol: %d\n", nnpci, nirdm->tuple.protocol);
+	DEBUG_TRACE("%px: decelerate response for connection: %px\n", feci, feci->ci);
+	DEBUG_TRACE("%px: flow_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(flow_ip), nirdm->tuple.flow_ident);
+	DEBUG_TRACE("%px: return_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(return_ip), nirdm->tuple.return_ident);
+	DEBUG_TRACE("%px: protocol: %d\n", feci, nirdm->tuple.protocol);
 
 	/*
 	 * Drop decel pending counter
@@ -1305,12 +1285,12 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 		/*
 		 * Release the connections.
 		 */
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(ci);
 		return;
 	}
 
-	DEBUG_TRACE("%px: response: %d\n", nnpci, nim->cm.response);
+	DEBUG_TRACE("%px: response: %d\n", feci, nim->cm.response);
 	if (nim->cm.response != NSS_CMN_RESPONSE_ACK) {
 		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DECEL;
 	} else {
@@ -1338,7 +1318,7 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 	/*
 	 * Release the connections.
 	 */
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 }
 
@@ -1348,7 +1328,6 @@ static void ecm_nss_non_ported_ipv6_connection_destroy_callback(void *app_data, 
  */
 static bool ecm_nss_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
 	struct nss_ipv6_msg nim;
 	struct nss_ipv6_rule_destroy_msg *nirdm;
 	ip_addr_t src_ip;
@@ -1356,7 +1335,7 @@ static bool ecm_nss_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	nss_tx_status_t nss_tx_status;
 	bool ret;
 
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	/*
 	 * Increment the decel pending counter
@@ -1389,7 +1368,7 @@ static bool ecm_nss_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	DEBUG_INFO("%px: NON_PORTED Connection %px decelerate\n"
 			"src_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
 			"dest_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
-			nnpci, feci->ci,
+			feci, feci->ci,
 			ECM_IP_ADDR_TO_OCTAL(src_ip), nirdm->tuple.flow_ident,
 			ECM_IP_ADDR_TO_OCTAL(dest_ip), nirdm->tuple.return_ident);
 
@@ -1469,9 +1448,8 @@ bool ecm_nss_non_ported_ipv6_connection_defunct_callback(void *arg, int *accel_m
 {
 	bool ret;
 	struct ecm_front_end_connection_instance *feci = (struct ecm_front_end_connection_instance *)arg;
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
 
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	spin_lock_bh(&feci->lock);
 	/*
@@ -1514,40 +1492,6 @@ bool ecm_nss_non_ported_ipv6_connection_defunct_callback(void *arg, int *accel_m
 }
 
 /*
- * ecm_nss_non_ported_ipv6_connection_accel_state_get()
- *	Get acceleration state
- */
-static ecm_front_end_acceleration_mode_t ecm_nss_non_ported_ipv6_connection_accel_state_get(struct ecm_front_end_connection_instance *feci)
-{
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-	ecm_front_end_acceleration_mode_t state;
-
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
-	spin_lock_bh(&feci->lock);
-	state = feci->accel_mode;
-	spin_unlock_bh(&feci->lock);
-	return state;
-}
-
-/*
- * ecm_nss_non_ported_ipv6_connection_action_seen()
- *	Acceleration action / activity has been seen for this connection.
- *
- * NOTE: Call the action_seen() method when the NSS has demonstrated that it has offloaded some data for a connection.
- */
-static void ecm_nss_non_ported_ipv6_connection_action_seen(struct ecm_front_end_connection_instance *feci)
-{
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
-
-	DEBUG_INFO("%px: Action seen\n", nnpci);
-	spin_lock_bh(&feci->lock);
-	feci->stats.no_action_seen = 0;
-	spin_unlock_bh(&feci->lock);
-}
-
-/*
  * ecm_nss_non_ported_ipv6_connection_accel_ceased()
  *	NSS has indicated that acceleration has stopped.
  *
@@ -1556,11 +1500,9 @@ static void ecm_nss_non_ported_ipv6_connection_action_seen(struct ecm_front_end_
  */
 static void ecm_nss_non_ported_ipv6_connection_accel_ceased(struct ecm_front_end_connection_instance *feci)
 {
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
-
-	DEBUG_INFO("%px: accel ceased\n", nnpci);
+	DEBUG_INFO("%px: accel ceased\n", feci);
 
 	spin_lock_bh(&feci->lock);
 
@@ -1614,54 +1556,6 @@ static void ecm_nss_non_ported_ipv6_connection_accel_ceased(struct ecm_front_end
 	spin_unlock_bh(&ecm_nss_ipv6_lock);
 }
 
-/*
- * ecm_nss_non_ported_ipv6_connection_ref()
- *	Ref a connection front end instance
- */
-static void ecm_nss_non_ported_ipv6_connection_ref(struct ecm_front_end_connection_instance *feci)
-{
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
-	spin_lock_bh(&feci->lock);
-	feci->refs++;
-	DEBUG_TRACE("%px: nnpci ref %d\n", nnpci, feci->refs);
-	DEBUG_ASSERT(feci->refs > 0, "%px: ref wrap\n", nnpci);
-	spin_unlock_bh(&feci->lock);
-}
-
-/*
- * ecm_nss_non_ported_ipv6_connection_deref()
- *	Deref a connection front end instance
- */
-static int ecm_nss_non_ported_ipv6_connection_deref(struct ecm_front_end_connection_instance *feci)
-{
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
-
-	spin_lock_bh(&feci->lock);
-	feci->refs--;
-	DEBUG_ASSERT(feci->refs >= 0, "%px: ref wrap\n", nnpci);
-
-	if (feci->refs > 0) {
-		int refs = feci->refs;
-		spin_unlock_bh(&feci->lock);
-		DEBUG_TRACE("%px: nnpci deref %d\n", nnpci, refs);
-		return refs;
-	}
-	spin_unlock_bh(&feci->lock);
-
-	/*
-	 * We can now destroy the instance
-	 */
-	DEBUG_TRACE("%px: nnpci final\n", nnpci);
-	DEBUG_CLEAR_MAGIC(nnpci);
-	kfree(nnpci);
-
-	return 0;
-}
-
 #ifdef ECM_STATE_OUTPUT_ENABLE
 /*
  * ecm_nss_non_ported_ipv6_connection_state_get()
@@ -1669,9 +1563,7 @@ static int ecm_nss_non_ported_ipv6_connection_deref(struct ecm_front_end_connect
  */
 static int ecm_nss_non_ported_ipv6_connection_state_get(struct ecm_front_end_connection_instance *feci, struct ecm_state_file_instance *sfi)
 {
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)feci;
-
-	DEBUG_CHECK_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", nnpci);
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	return ecm_front_end_common_connection_state_get(feci, sfi, "nss_v6.non_ported");
 }
@@ -1681,11 +1573,10 @@ static int ecm_nss_non_ported_ipv6_connection_state_get(struct ecm_front_end_con
  * ecm_nss_non_ported_ipv6_connection_instance_alloc()
  *	Create a front end instance specific for non-ported connection
  */
-struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_connection_instance_alloc(
+struct ecm_front_end_connection_instance *ecm_nss_non_ported_ipv6_connection_instance_alloc(
 									bool can_accel, int protocol,
 								struct ecm_db_connection_instance **nci)
 {
-	struct ecm_nss_non_ported_ipv6_connection_instance *nnpci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
 
@@ -1705,9 +1596,8 @@ struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_conn
 
 	ci = *nci;
 
-	nnpci = (struct ecm_nss_non_ported_ipv6_connection_instance *)kzalloc(sizeof(struct ecm_nss_non_ported_ipv6_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
-
-	if (!nnpci) {
+	feci = (struct ecm_front_end_connection_instance *)kzalloc(sizeof(struct ecm_front_end_connection_instance), GFP_ATOMIC | __GFP_NOWARN);
+	if (!feci) {
 		DEBUG_WARN("Non-Ported Front end alloc failed\n");
 		ecm_db_connection_deref(ci);
 		return NULL;
@@ -1716,9 +1606,8 @@ struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_conn
 	/*
 	 * Refs is 1 for the creator of the connection
 	 */
-	feci = (struct ecm_front_end_connection_instance *)nnpci;
 	feci->refs = 1;
-	DEBUG_SET_MAGIC(nnpci, ECM_NSS_NON_PORTED_IPV6_CONNECTION_INSTANCE_MAGIC);
+	DEBUG_SET_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC);
 	spin_lock_init(&feci->lock);
 
 	feci->can_accel = can_accel;
@@ -1742,12 +1631,8 @@ struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_conn
 	/*
 	 * Populate the methods and callbacks
 	 */
-	feci->ref = ecm_nss_non_ported_ipv6_connection_ref;
-	feci->deref = ecm_nss_non_ported_ipv6_connection_deref;
 	feci->accelerate = ecm_nss_non_ported_ipv6_connection_accelerate;
 	feci->decelerate = ecm_nss_non_ported_ipv6_connection_decelerate;
-	feci->accel_state_get = ecm_nss_non_ported_ipv6_connection_accel_state_get;
-	feci->action_seen = ecm_nss_non_ported_ipv6_connection_action_seen;
 	feci->accel_ceased = ecm_nss_non_ported_ipv6_connection_accel_ceased;
 #ifdef ECM_STATE_OUTPUT_ENABLE
 	feci->state_get = ecm_nss_non_ported_ipv6_connection_state_get;
@@ -1756,11 +1641,12 @@ struct ecm_nss_non_ported_ipv6_connection_instance *ecm_nss_non_ported_ipv6_conn
 	feci->ae_interface_number_by_dev_type_get = ecm_nss_common_get_interface_number_by_dev_type;
 	feci->ae_interface_type_get = ecm_nss_common_get_interface_type;
 	feci->regenerate = ecm_nss_common_connection_regenerate;
+	feci->defunct = ecm_nss_non_ported_ipv6_connection_defunct_callback;
 
 	feci->get_stats_bitmap = ecm_nss_common_dummy_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_nss_common_dummy_set_stats_bitmap;
 
-	return nnpci;
+	return feci;
 }
 
 /*

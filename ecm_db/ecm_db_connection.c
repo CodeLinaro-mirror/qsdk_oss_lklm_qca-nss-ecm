@@ -66,6 +66,7 @@
 #include "ecm_front_end_types.h"
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic number
@@ -260,7 +261,7 @@ uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci)
 struct ecm_front_end_connection_instance *ecm_db_connection_front_end_get_and_ref(struct ecm_db_connection_instance *ci)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
-	ci->feci->ref(ci->feci);
+	ecm_front_end_connection_ref(ci->feci);
 	return ci->feci;
 }
 EXPORT_SYMBOL(ecm_db_connection_front_end_get_and_ref);
@@ -279,7 +280,14 @@ static void ecm_db_connection_defunct_callback(void *arg)
 
 	DEBUG_INFO("%px: defunct timer expired\n", ci);
 
-	ret = ci->defunct(ci->feci, &accel_mode);
+	/*
+	 * If defunct fails, return. Do not remove the last ref count. This failure means
+	 * it will be re-tried later with the ecm_db_connection_make_defunct function
+	 * until the total failure count reaches to the max limit which is 250.
+	 * When the limit is reached, defunct process will return true and let
+	 * the connection goes off.
+	 */
+	ret = ci->feci->defunct(ci->feci, &accel_mode);
 
 	/*
 	 * If the returned 'ret' is success, this means this callback succeeded to
@@ -420,7 +428,7 @@ void ecm_db_connection_make_defunct(struct ecm_db_connection_instance *ci)
 	/*
 	 * Call the frontend's defunct callback function and handle the return values.
 	 */
-	ret = ci->defunct(ci->feci, &accel_mode);
+	ret = ci->feci->defunct(ci->feci, &accel_mode);
 
 	/*
 	 * If the defunct is success, first we should remove the timer and then release
@@ -941,7 +949,7 @@ void ecm_db_connection_regenerate(struct ecm_db_connection_instance *ci)
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	feci->regenerate(feci, ci);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 }
 EXPORT_SYMBOL(ecm_db_connection_regenerate);
 
@@ -1458,7 +1466,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	}
 
 	if (ci->feci) {
-		ci->feci->deref(ci->feci);
+		ecm_front_end_connection_deref(ci->feci);
 	}
 
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
@@ -2645,7 +2653,6 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 							int ip_version,
 							int protocol, ecm_db_direction_t ecm_dir,
 							ecm_db_connection_final_callback_t final,
-							ecm_db_connection_defunct_callback_t defunct,
 							ecm_db_timer_group_t tg, bool is_routed,
 							void *arg)
 {
@@ -2672,7 +2679,6 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 	 * Record owner arg and callbacks
 	 */
 	ci->final = final;
-	ci->defunct = defunct;
 	ci->arg = arg;
 
 #ifdef ECM_MULTICAST_ENABLE
@@ -3241,7 +3247,7 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	result = feci->state_get(feci, sfi);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	if (result) {
 		return result;
 	}
@@ -3718,7 +3724,7 @@ void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
 
-	feci->ref(feci);
+	ecm_front_end_connection_ref(feci);
 	ci->feci = feci;
 }
 EXPORT_SYMBOL(ecm_db_front_end_instance_ref_and_set);

@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014,2015,2017-2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -243,11 +246,6 @@ typedef void (*ecm_db_connection_listener_removed_callback_t)(void *arg, struct 
  * Connection creator events
  */
 typedef void (*ecm_db_connection_final_callback_t)(void *arg);		/* Finaliser callback */
-
-/*
- * Connection defunct event
- */
-typedef bool (*ecm_db_connection_defunct_callback_t)(void *arg, int *accel_mode);	/* Defunct callback */
 
 /*
  * Device Type for IPSec Tunnel devices

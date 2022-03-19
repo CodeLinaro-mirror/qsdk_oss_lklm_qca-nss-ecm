@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -313,5 +314,10 @@ void ecm_front_end_common_sysctl_register(void);
 void ecm_front_end_common_sysctl_unregister(void);
 int ecm_sfe_sysctl_tbl_init(void);
 void ecm_sfe_sysctl_tbl_exit(void);
+
+ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci);
+void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci);
+void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci);
+int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci);
 
 #endif  /* __ECM_FRONT_END_COMMON_H */

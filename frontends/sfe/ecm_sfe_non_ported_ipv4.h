@@ -1,7 +1,8 @@
 /*
  **************************************************************************
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2015 The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2015 The Linux Foundation. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -18,8 +19,7 @@
 
 extern bool ecm_sfe_non_ported_ipv4_debugfs_init(struct dentry *dentry);
 
-extern struct ecm_sfe_non_ported_ipv4_connection_instance *ecm_sfe_non_ported_ipv4_connection_instance_alloc(
+extern struct ecm_front_end_connection_instance *ecm_sfe_non_ported_ipv4_connection_instance_alloc(
 								bool can_accel, int protocol,
 								struct ecm_db_connection_instance **nci);
-extern bool ecm_sfe_non_ported_ipv4_connection_defunct_callback(void *arg, int *accel_mode);
-extern void ecm_sfe_non_ported_ipv4_sit_set_peer(struct ecm_sfe_non_ported_ipv4_connection_instance *nnpci, struct sk_buff *skb);
+extern void ecm_sfe_non_ported_ipv4_sit_set_peer(struct ecm_front_end_connection_instance *feci, struct sk_buff *skb);

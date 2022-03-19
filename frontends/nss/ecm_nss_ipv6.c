@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -359,7 +360,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 		/*
 		 * As packets have been accelerated we have seen some action.
 		 */
-		feci->action_seen(feci);
+		ecm_front_end_connection_action_seen(feci);
 #else
 		/*
 		 * The amount of data *sent* by the ECM connection 'from' side is the amount the NSS has *received* in the 'flow' direction.
@@ -374,7 +375,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 		/*
 		 * As packets have been accelerated we have seen some action.
 		 */
-		feci->action_seen(feci);
+		ecm_front_end_connection_action_seen(feci);
 
 		/*
 		 * Update interface statistics
@@ -466,7 +467,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 		feci->decelerate(feci);
 	}
 
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
 sync_conntrack:

@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -330,9 +330,9 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 	}
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	accel_mode = feci->accel_state_get(feci);
+	accel_mode = ecm_front_end_connection_accel_state_get(feci);
 	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	protocol = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_deref(ci);
 	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {

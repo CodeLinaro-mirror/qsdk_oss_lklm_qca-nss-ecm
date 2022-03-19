@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -22,6 +23,8 @@
 #include <net/netfilter/nf_conntrack.h>
 
 #include "ecm_ae_classifier_public.h"
+
+#define ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC 0xFEC1
 
 /*
  * Constant used with constructing acceleration rules.
@@ -44,6 +47,15 @@
 #define ecm_front_end_is_lag_slave(dev)	((dev->flags & IFF_SLAVE)	\
 							 && (dev->priv_flags & IFF_BONDING))
 #endif
+
+/*
+ * Protocol type that ported file supports.
+ */
+enum ecm_front_end_ported_proto_types {
+	ECM_FRONT_END_PORTED_PROTO_TCP,
+	ECM_FRONT_END_PORTED_PROTO_UDP,
+	ECM_FRONT_END_PORTED_PROTO_MAX
+};
 
 /*
  * Front end engine types which the frontend
@@ -136,10 +148,6 @@ typedef void (*ecm_front_end_connection_accelerate_method_t)(struct ecm_front_en
                                                                         struct nf_conn *ct, struct sk_buff *skb);
 
 typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
-typedef ecm_front_end_acceleration_mode_t (*ecm_front_end_connection_accel_state_get_method_t)(struct ecm_front_end_connection_instance *feci);
-typedef void (*ecm_front_end_connection_ref_method_t)(struct ecm_front_end_connection_instance *feci);
-typedef int (*ecm_front_end_connection_deref_callback_t)(struct ecm_front_end_connection_instance *feci);
-typedef void (*ecm_front_end_connection_action_seen_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_accel_ceased_method_t)(struct ecm_front_end_connection_instance *feci);
 #ifdef ECM_STATE_OUTPUT_ENABLE
 typedef int (*ecm_front_end_connection_state_get_callback_t)(struct ecm_front_end_connection_instance *feci, struct ecm_state_file_instance *sfi);
@@ -156,6 +164,8 @@ typedef void (*ecm_front_end_connection_multicast_update_method_t)(ip_addr_t ip_
 typedef void (*ecm_front_end_connection_set_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 typedef uint32_t (*ecm_front_end_connection_get_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
 typedef void (*ecm_front_end_connection_update_rule_t)(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
+
+typedef bool (*ecm_front_end_connection_defunct_method_t)(void *arg, int *accel_mode);       /* Defunct callback */
 
 /*
  * Acceleration limiting modes.
@@ -186,16 +196,20 @@ struct ecm_front_end_connection_mode_stats {
 };
 
 /*
+ * Common information
+ */
+struct ecm_front_end_common_fe_info {
+	uint32_t from_stats_bitmap;     /* Bitmap of L2 features enabled for from direction */
+	uint32_t to_stats_bitmap;       /* Bitmap of L2 features enabled for to direction */
+};
+
+/*
  * Connection front end instance
  *	Each new connection requires it to also have one of these to maintain front end specific information and operations
  */
 struct ecm_front_end_connection_instance {
-	ecm_front_end_connection_ref_method_t ref;				/* Ref the instance */
-	ecm_front_end_connection_deref_callback_t deref;			/* Deref the instance */
 	ecm_front_end_connection_accelerate_method_t accelerate;		/* accelerate a connection */
 	ecm_front_end_connection_decelerate_method_t decelerate;		/* Decelerate a connection */
-	ecm_front_end_connection_accel_state_get_method_t accel_state_get;	/* Get the acceleration state */
-	ecm_front_end_connection_action_seen_method_t action_seen;		/* Acceleration action has occurred */
 	ecm_front_end_connection_accel_ceased_method_t accel_ceased;		/* Acceleration has stopped */
 	ecm_front_end_connection_ae_interface_number_by_dev_get_method_t ae_interface_number_by_dev_get;
 										/* Get the acceleration engine interface number from the dev instance */
@@ -205,6 +219,8 @@ struct ecm_front_end_connection_instance {
 										/* Get the acceleration engine interface type */
 	ecm_front_end_connection_regenerate_method_t regenerate;
 										/* regenerate a connection */
+	ecm_front_end_connection_defunct_method_t defunct;			/* defunct a connection */
+
 #ifdef ECM_STATE_OUTPUT_ENABLE
 	ecm_front_end_connection_state_get_callback_t state_get;		/* Obtain state for this object */
 #endif
@@ -215,6 +231,9 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_update_rule_t update_rule;			/* Updates the frontend specific data */
 
 	enum ecm_front_end_engine accel_engine;	/* Acceleration engine type */
+	uint8_t ported_accelerated_count_index;                 /* Index value of accelerated count array (UDP or TCP) */
+
+	struct ecm_front_end_common_fe_info fe_info;          /* Front end information */
 
 	/*
 	 * Accel/decel mode statistics.
@@ -233,7 +252,9 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_acceleration_mode_t accel_mode;		/* Indicates the type of acceleration being applied to a connection, if any. */
 	spinlock_t lock;					/* Lock for structure data */
 	int refs;						/* Integer to trap we never go negative */
-
+#if (DEBUG_LEVEL > 0)
+	uint16_t magic;
+#endif
 };
 
 /*

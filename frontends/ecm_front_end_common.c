@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -145,8 +146,8 @@ void ecm_front_end_bond_notifier_exit(void)
  *	Return state of the front end instance.
  */
 int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_instance *feci,
-					     struct ecm_state_file_instance *sfi,
-					     char *conn_type)
+					      struct ecm_state_file_instance *sfi,
+					      char *conn_type)
 {
 	int result;
 	bool can_accel;
@@ -614,3 +615,77 @@ void ecm_front_end_common_sysctl_unregister()
 		unregister_sysctl_table(ecm_front_end_ctl_tbl_hdr);
 	}
 }
+
+/*
+ * ecm_front_end_connection_accel_state_get()
+ *      Get acceleration state
+ */
+ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci)
+{
+	ecm_front_end_acceleration_mode_t state;
+
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	spin_lock_bh(&feci->lock);
+	state = feci->accel_mode;
+	spin_unlock_bh(&feci->lock);
+	return state;
+}
+
+/*
+ * ecm_front_end_connection_action_seen()
+ *      Acceleration action / activity has been seen for this connection.
+ *
+ * NOTE: Call the action_seen() method when the AE has demonstrated that it has offloaded some data for a connection.
+ */
+void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	DEBUG_INFO("%px: Action seen\n", feci);
+	spin_lock_bh(&feci->lock);
+	feci->stats.no_action_seen = 0;
+	spin_unlock_bh(&feci->lock);
+}
+
+/*
+ * ecm_front_end_connection_ref()
+ *      Ref a connection front end instance
+ */
+void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	spin_lock_bh(&feci->lock);
+	feci->refs++;
+	DEBUG_TRACE("%px: feci ref %d\n", feci, feci->refs);
+	DEBUG_ASSERT(feci->refs > 0, "%px: ref wrap\n", feci);
+	spin_unlock_bh(&feci->lock);
+}
+
+/*
+ * ecm_front_end_connection_deref()
+ *      Deref a connection front end instance
+ */
+int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	spin_lock_bh(&feci->lock);
+	feci->refs--;
+	DEBUG_ASSERT(feci->refs >= 0, "%px: ref wrap\n", feci);
+
+	if (feci->refs > 0) {
+		int refs = feci->refs;
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: feci deref %d\n", feci, refs);
+		return refs;
+	}
+	spin_unlock_bh(&feci->lock);
+
+	/*
+	* We can now destroy the instance
+	*/
+	DEBUG_TRACE("%px: feci final\n", feci);
+	DEBUG_CLEAR_MAGIC(feci);
+	kfree(feci);
+	return 0;
+}
+
