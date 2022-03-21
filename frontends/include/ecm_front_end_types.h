@@ -93,6 +93,15 @@ enum ecm_front_end_type {
 };
 
 /*
+ * Acceleration engine precedence
+ */
+enum ecm_ae_precedence_order {
+	ECM_AE_PRECEDENCE_0,
+	ECM_AE_PRECEDENCE_1,
+	ECM_AE_PRECEDENCE_MAX,
+};
+
+/*
  * Features supported in ECM's frontends.
  */
 enum ecm_fe_feature {
@@ -179,6 +188,19 @@ typedef bool (*ecm_front_end_connection_defunct_method_t)(void *arg, int *accel_
  */
 #define ECM_FRONT_END_ACCEL_LIMIT_MODE_UNLIMITED 0x00	/* No limits on acceleration rule creation */
 #define ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED 0x01	/* Fixed upper limit for connection acceleration based on information from driver */
+
+typedef struct ecm_front_end_connection_instance *
+	(*ecm_front_end_connection_alloc_method_t)(bool can_accel, int protocol, struct ecm_db_connection_instance **nci);
+
+struct ecm_ae_precedence {
+	int ae_type;
+	ecm_front_end_connection_alloc_method_t ported_ipv4_alloc;
+	ecm_front_end_connection_alloc_method_t ported_ipv6_alloc;
+	ecm_front_end_connection_alloc_method_t non_ported_ipv4_alloc;
+	ecm_front_end_connection_alloc_method_t non_ported_ipv6_alloc;
+};
+
+extern struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
 
 /*
  * Accel/decel mode statistics data structure.
@@ -308,6 +330,8 @@ void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_para
 
 bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature);
 
+void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence);
+
 /*
  * ecm_front_end_type_get()
  *	Returns the selcted fornt-end type.
@@ -382,4 +406,68 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 #endif
 
 	return ECM_FRONT_END_TYPE_MAX;
+}
+
+/*
+ * ecm_front_end_set_ae_precendence_array()
+ *	Sets the precedence array based on the selected frontend mode.
+ *
+ * If any new combination of AEs or a single AE is added to the system, this function
+ * must be updated for the new frontend modes.
+ */
+static inline bool ecm_front_end_set_ae_precendence_array(enum ecm_front_end_type type)
+{
+	switch (type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_TYPE_NSS:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_NSS;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_TYPE_SFE:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_SFE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_TYPE_PPE:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_PPE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+#endif
+#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	case ECM_FRONT_END_TYPE_NSS_SFE:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_NSS;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_SFE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_1]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_MAX].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+#endif
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	case ECM_FRONT_END_TYPE_PPE_SFE:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_PPE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_SFE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_1]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_MAX].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+#endif
+	default:
+		DEBUG_TRACE("precedence is not supported for the ECM mode type: %d\n", type);
+		return false;
+	}
+
+	return true;
 }

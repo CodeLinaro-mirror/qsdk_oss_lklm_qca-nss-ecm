@@ -58,6 +58,28 @@
 #include "ecm_front_end_common.h"
 #include "ecm_interface.h"
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
+#include <nss_api_if.h>
+#include "ecm_nss_ipv4.h"
+#include "ecm_nss_ipv6.h"
+#include "ecm_nss_common.h"
+#include "ecm_nss_ported_ipv4.h"
+#include "ecm_nss_ported_ipv6.h"
+#include "ecm_nss_non_ported_ipv4.h"
+#include "ecm_nss_non_ported_ipv6.h"
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
+#include "ecm_sfe_ipv4.h"
+#include "ecm_sfe_ipv6.h"
+#include "ecm_sfe_common.h"
+#include "ecm_sfe_ported_ipv4.h"
+#include "ecm_sfe_ported_ipv6.h"
+#include "ecm_sfe_non_ported_ipv4.h"
+#include "ecm_sfe_non_ported_ipv6.h"
+#endif
+
 /*
  * Sysctl table header
  */
@@ -107,6 +129,38 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_BONDING,
 };
+
+struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
+
+/*
+ * ecm_front_end_set_ae_alloc_methods()
+ *	Set the AE front-end alloc methods at the precedence array index.
+ */
+void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence)
+{
+	switch (precedence->ae_type) {
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		precedence->ported_ipv4_alloc = ecm_sfe_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_sfe_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_sfe_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_sfe_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		precedence->ported_ipv4_alloc = ecm_nss_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_nss_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_nss_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_nss_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
+	case ECM_FRONT_END_ENGINE_PPE:
+		/* TODO: Fall through until PPE is implemented */
+	default:
+		DEBUG_WARN("precedence->ae_type: %d is not supported yet", precedence->ae_type);
+	}
+}
 
 /*
  * ecm_front_end_is_feature_supported()
