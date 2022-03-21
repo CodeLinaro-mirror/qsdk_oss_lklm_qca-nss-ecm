@@ -78,6 +78,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG 0xAA
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS 0xff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ 0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP 0xffff
 
 /*
  * EMESH classifier type.
@@ -243,6 +244,93 @@ static void ecm_classifier_emesh_sawf_fill_pcp(struct ecm_classifier_emesh_sawf_
 }
 
 /*
+ * ecm_classifier_emesh_sawf_get_msduq_metadata()
+ *	Get bidirectional msduq from wlan driver callback API.
+ */
+static void ecm_classifier_emesh_sawf_get_msduq_metadata(struct ecm_db_connection_instance *ci,
+						ecm_tracker_sender_type_t sender, uint8_t *smac, uint8_t *dmac,
+						uint8_t flow_service_class, uint8_t return_service_class,
+						uint32_t *msduq_forward, uint32_t *msduq_reverse)
+{
+	uint32_t first_index;
+	ecm_db_obj_dir_t dir;
+	struct net_device *dev;
+	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+
+	/*
+	 * Obtained destination netdev form ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	}
+
+	*msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			goto get_source_dev;
+		}
+
+		/*
+		 * get the forward msduq data form wlan driver
+		 */
+		if (ecm_emesh.update_service_id_get_msduq) {
+			*msduq_forward = ecm_emesh.update_service_id_get_msduq(dev, dmac, flow_service_class);
+		}
+
+		dev_put(dev);
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		goto get_source_dev;
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
+	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+get_source_dev:
+	/*
+	 * Obtained source netdev form ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	}
+
+	*msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			return;
+		}
+
+		/*
+		 * get the reverse msduq form wlan driver
+		 */
+		if (ecm_emesh.update_service_id_get_msduq) {
+			*msduq_reverse = ecm_emesh.update_service_id_get_msduq(dev, smac, return_service_class);
+		}
+
+		dev_put(dev);
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		return;
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
+	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+}
+
+/*
  * ecm_classifier_emesh_sawf_fill_sawf_metadata()
  *	Save the sawf metadata in the classifier instance.
  */
@@ -256,8 +344,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	 * distinguish between valid and invalid sawf_metadata.
 	 */
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS &&
-			msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.flow_sawf_metadata = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
 		cemi->process_response.flow_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
 		cemi->process_response.flow_sawf_metadata |= flow_output_params->service_class_id;
@@ -271,8 +358,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	 * if the service class id is valid. Tag bits are used to
 	 * distinguish between valid and invalid sawf_metadata.
 	 */
-	if (return_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS &&
-			msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+	if (return_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.return_sawf_metadata = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
 		cemi->process_response.return_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
 		cemi->process_response.return_sawf_metadata |= return_output_params->service_class_id;
@@ -384,21 +470,18 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	struct ecm_db_connection_instance *ci = NULL;
 	struct ecm_front_end_connection_instance *feci;
 	ecm_front_end_acceleration_mode_t accel_mode;
-	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-	ecm_db_obj_dir_t dir;
 	uint32_t became_relevant = 0;
 	struct nf_conn *ct;
-	struct net_device *dev;
 	enum ip_conntrack_info ctinfo;
 	int protocol;
 	uint64_t slow_pkts;
-	uint32_t first_index;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
 	struct sp_rule_input_params flow_input_params;
 	struct sp_rule_input_params return_input_params;
 	struct sp_rule_output_params flow_output_params;
 	struct sp_rule_output_params return_output_params;
+	bool is_sawf_relevant = false;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
@@ -423,7 +506,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 * Yes or maybe relevant.
 	 *
 	 * Need to decide our relevance to this connection.
-	 * We are only relevent to a connection if:
+	 * We are only relevant to a connection if:
 	 * 1. We are enabled.
 	 * 2. Connection can be accelerated.
 	 * Any other condition and we are not and will stop analysing this connection.
@@ -486,6 +569,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 * emesh-sawf takes precedence over the emesh classifier.
 	 * emesh classifer SPM lookup will be done in case sawf is not enabled.
 	 */
+	flow_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
+	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward, msduq_reverse;
 		DEBUG_INFO("ecm classifier sawf is enabled\n");
@@ -502,75 +587,31 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		sp_mapdb_rule_apply_sawf(skb, &return_input_params, &return_output_params);
 
 		/*
-		 * Get the bidirectional msduq from wlan driver using the service id
-		 * (received from spm rule lookup), netdev, mac and. Obtain the
-		 * corresponding netdev from ECM's 'to' and 'from' interface list.
+		 * If sawf SPM rule lookup fails for both directions,
+		 * SAWF classifier is no longer valid and check for emesh classifier.
 		 */
-		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
-			dir = ECM_DB_OBJ_DIR_TO;
-		} else {
-			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
-			dir = ECM_DB_OBJ_DIR_FROM;
+		if (flow_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
+			&& return_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+			goto check_emesh_classifier;
 		}
 
-		msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-		if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
-			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
-			if (!dev) {
-				DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
-				ecm_db_connection_interfaces_deref(interfaces, first_index);
-				goto get_source_dev;
-			}
+		/*
+		 * Get the bidirectional msduq from wlan driver using the service id
+		 * (received from spm rule lookup), netdev, and mac address.
+		 */
+		ecm_classifier_emesh_sawf_get_msduq_metadata(ci, sender, smac, dmac,
+								flow_output_params.service_class_id,
+								return_output_params.service_class_id,
+								&msduq_forward, &msduq_reverse);
 
-			/*
-			 * get the msduq form wlan driver
-			 */
-			if (ecm_emesh.update_service_id_get_msduq) {
-				msduq_forward = ecm_emesh.update_service_id_get_msduq(dev, dmac, flow_output_params.service_class_id);
-			}
-
-			dev_put(dev);
-			ecm_db_connection_interfaces_deref(interfaces, first_index);
-			goto get_source_dev;
+		/*
+		 * Update skb->priority with the priority sent by
+		 * SPM-SAWF rule lookup in case of successful rule lookup.
+		 */
+		if (flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+			skb->priority = flow_output_params.priority;
 		}
 
-		ecm_db_connection_interfaces_deref(interfaces, first_index);
-		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
-get_source_dev:
-		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
-			dir = ECM_DB_OBJ_DIR_FROM;
-		} else {
-			first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
-			dir = ECM_DB_OBJ_DIR_TO;
-		}
-
-		msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-		if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
-			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
-			if (!dev) {
-				DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
-				ecm_db_connection_interfaces_deref(interfaces, first_index);
-				goto update_sawf_info;
-			}
-
-			/*
-			 * get the reverse msduq form wlan driver
-			 */
-			if (ecm_emesh.update_service_id_get_msduq) {
-				msduq_reverse = ecm_emesh.update_service_id_get_msduq(dev, smac, return_output_params.service_class_id);
-			}
-
-			dev_put(dev);
-			ecm_db_connection_interfaces_deref(interfaces, first_index);
-			goto update_sawf_info;
-		}
-
-		ecm_db_connection_interfaces_deref(interfaces, first_index);
-		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
-
-update_sawf_info:
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &flow_output_params, &return_output_params,
 				msduq_forward, msduq_reverse);
@@ -581,7 +622,7 @@ update_sawf_info:
 
 		cemi->type = ECM_CLASSIFIER_SAWF;
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
-		goto sawf_classifier_out;
+		is_sawf_relevant = true;
 	}
 
 	/*
@@ -589,16 +630,33 @@ update_sawf_info:
 	 * we should check for emesh classifier.
 	 */
 check_emesh_classifier:
-	if (!ecm_classifier_emesh_enabled) {
+	if (!ecm_classifier_emesh_enabled && !is_sawf_relevant) {
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 		cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto sawf_emesh_classifier_out;
 	}
 
-	if (ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP) {
-		sp_mapdb_apply(skb, smac, dmac);
+	if (ecm_classifier_emesh_enabled &&
+			(ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP)) {
+
+		/*
+		 * Update skb->priority with emesh SPM rule lookup if
+		 * 1. If sawf classifier is not relevant or.
+		 * 2. SAWF rule match for this direction fails, then the emesh priority has to be used.
+		 */
+		if (!is_sawf_relevant || (flow_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP)) {
+			sp_mapdb_apply(skb, smac, dmac);
+		}
+
+		/*
+		 * Classifier type is emesh if
+		 * 1. SAWF is not enabled or
+		 * 2. Both direction SAWF rule match fails
+		 */
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-		cemi->type = ECM_CLASSIFIER_EMESH;
+		if (!is_sawf_relevant) {
+			cemi->type = ECM_CLASSIFIER_EMESH;
+		}
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 	}
 sawf_classifier_out:
@@ -703,6 +761,14 @@ sawf_classifier_out:
 		 */
 		cemi->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
 		cemi->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+
+		/*
+		 * In case if SAWF rule matches with reverse direction,
+		 * use that priority value.
+		 */
+		if (is_sawf_relevant && (return_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP)) {
+			cemi->pcp[ECM_CONN_DIR_RETURN] = return_output_params.priority;
+		}
 	}
 
 done:
