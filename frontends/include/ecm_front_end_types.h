@@ -331,6 +331,11 @@ void ecm_front_end_ipv4_fill_ovs_params(struct ecm_front_end_ovs_params ovs_para
 bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature);
 
 void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence);
+bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
+                                        struct sk_buff *skb,
+                                        struct ecm_tracker_ip_header *iph,
+                                        bool is_routed);
+
 
 /*
  * ecm_front_end_type_get()

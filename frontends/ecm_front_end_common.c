@@ -173,6 +173,38 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 	return !!(ecm_fe_feature_list[type] & feature);
 }
 
+/*
+ * ecm_front_end_common_feature_check()
+ *	Check if the selected AE supports the flow.
+ */
+bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
+					struct sk_buff *skb,
+					struct ecm_tracker_ip_header *iph,
+					bool is_routed)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		if (!ecm_sfe_feature_check(skb, iph, is_routed)) {
+			return false;
+		}
+		return true;
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		if (!ecm_nss_feature_check(skb, iph)) {
+			return false;
+		}
+		return true;
+#endif
+	case ECM_FRONT_END_ENGINE_PPE:
+		/* TODO: Fall through until PPE is implemented */
+	default:
+		DEBUG_WARN("ae_type: %d is not supported yet, feature check failed", ae_type);
+	}
+	return false;
+}
+
 #ifdef ECM_INTERFACE_BOND_ENABLE
 /*
  * ecm_front_end_bond_notifier_stop()

@@ -771,8 +771,8 @@ process_packet:
 		int32_t *to_first;
 		int ret;
 		uint8_t dest_mac_addr[ETH_ALEN];
-		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
+		ecm_ae_classifier_get_t ae_get;
 
 		DEBUG_TRACE("New UDP connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u\n", ECM_IP_ADDR_TO_DOT(ip_src_addr), \
 				src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port);
@@ -793,60 +793,39 @@ process_packet:
 		spin_unlock_bh(&ecm_ipv4_lock);
 
 		/*
-		 * Connection must have a front end instance associated with it
+		 * Check if an external AE classifier is registered.
+		 * If it is not registered at all or unregistered at runtime
+		 * a dummy callback will return ECM_AE_CLASSIFIER_RESULT_DONT_CARE.
 		 */
-		fe_type = ecm_front_end_type_get();
-		switch (fe_type) {
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_FRONT_END_TYPE_NSS_SFE:
-		{
-			ecm_ae_classifier_get_t ae_get;
+		rcu_read_lock();
+		ae_get = rcu_dereference(ae_ops.ae_get);
+		if (!ae_get) {
+			ae_result = ECM_AE_CLASSIFIER_RESULT_DONT_CARE;
+		} else {
 			struct ecm_ae_classifier_info ae_info;
-
-
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
-							  src_port, dest_port, protocol, 4,
-							  is_routed, true,
-							  &ae_info);
-			rcu_read_lock();
-			ae_get = rcu_dereference(ae_ops.ae_get);
+						  src_port, dest_port, protocol, 4,
+						  is_routed, true,
+						  &ae_info);
 			ae_result = ae_get(&ae_info);
-			rcu_read_unlock();
+		}
+		rcu_read_unlock();
 
-			DEBUG_TRACE("front end type NSS_SFE, ae_result: %d\n", ae_result);
-			break;
-		}
-#endif
-#ifdef ECM_FRONT_END_NSS_ENABLE
-		case ECM_FRONT_END_TYPE_NSS:
-			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
-			break;
-#endif
-#ifdef ECM_FRONT_END_SFE_ENABLE
-		case ECM_FRONT_END_TYPE_SFE:
-			/*
-			 * Fall through. Not supporting multicast acceleration yet.
-			 */
-#endif
-		default:
-			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			goto done;
-		}
+		DEBUG_TRACE("front end type: %d ae_result: %d\n", ecm_front_end_type_get(), ae_result);
 
 		/*
-		 * Check the ae_result.
-		 * 1. If NSS, allocate NSS ipv4 multicast connection instance
-		 * 2. If NONE, allocate NSS ipv4 multicast connection instance with can_accel flag is set to false.
-		 *    By doing this ECM will not ask again and again to the external module. If external module wants to
-		 *    accelerate this flow later, the flow needs to be defuncted first.
-		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
-		 *    to the external module.
-		 * 4. If any other type is returned, ASSERT.
+		 * Which AE can be used for this flow.
+		 * 1. If NSS or DONT_CARE, allocate NSS ipv4 multicast connection instance
+		 * 2. If NONE, allocate NSS ipv4 multicast connection instance with
+		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
+		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be
+		 *    re-evaluated.
+		 * 4. If any other type, return NF_ACCEPT.
 		 */
 		switch (ae_result) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_NSS:
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
 			feci = ecm_nss_multicast_ipv4_connection_instance_alloc(can_accel, &nci);
 			break;
 
@@ -858,7 +837,8 @@ process_packet:
 			goto done;
 
 		default:
-			DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
+			DEBUG_WARN("unexpected ae_result: %d\n", ae_result);
+			return NF_ACCEPT;
 		}
 
 		if (!feci) {

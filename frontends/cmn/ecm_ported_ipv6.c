@@ -322,8 +322,9 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 		struct ecm_db_iface_instance *from_list[ECM_DB_IFACE_HEIRARCHY_MAX];
 		struct ecm_front_end_interface_construct_instance efeici;
 		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
-		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
+		ecm_ae_classifier_get_t ae_get;
+		int i;
 
 		DEBUG_INFO("New Ported connection from " ECM_IP_ADDR_OCTAL_FMT ":%u to " ECM_IP_ADDR_OCTAL_FMT ":%u\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port);
@@ -362,61 +363,37 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 		}
 
 		/*
-		 * Connection must have a front end instance associated with it
+		 * Check if an external AE classifier is registered.
+		 * If it is not registered at all or unregistered at runtime
+		 * a dummy callback will return ECM_AE_CLASSIFIER_RESULT_DONT_CARE.
 		 */
-		fe_type = ecm_front_end_type_get();
-		switch (fe_type) {
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_FRONT_END_TYPE_NSS_SFE:
-		{
-			ecm_ae_classifier_get_t ae_get;
+		rcu_read_lock();
+		ae_get = rcu_dereference(ae_ops.ae_get);
+		if (!ae_get) {
+			ae_result = ECM_AE_CLASSIFIER_RESULT_DONT_CARE;
+		} else {
 			struct ecm_ae_classifier_info ae_info;
-
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
-							  src_port, dest_port, protocol, 6,
-							  is_routed, false,
-							  &ae_info);
-
-			rcu_read_lock();
-			ae_get = rcu_dereference(ae_ops.ae_get);
+						  src_port, dest_port, protocol, 6,
+						  is_routed, false,
+						  &ae_info);
 			ae_result = ae_get(&ae_info);
-			rcu_read_unlock();
+		}
+		rcu_read_unlock();
 
-			DEBUG_TRACE("front end type NSS_SFE, ae_result: %d\n", ae_result);
-			break;
-		}
-#endif
-#ifdef ECM_FRONT_END_NSS_ENABLE
-		case ECM_FRONT_END_TYPE_NSS:
-			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
-			break;
-#endif
-#ifdef ECM_FRONT_END_SFE_ENABLE
-		case ECM_FRONT_END_TYPE_SFE:
-			DEBUG_TRACE("front end type SFE, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_SFE;
-			break;
-#endif
-		default:
-			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			return NF_ACCEPT;
-		}
+		DEBUG_TRACE("front end type: %d ae_result: %d\n", ecm_front_end_type_get(), ae_result);
 
 		/*
-		 * Check the ae_result.
+		 * Which AE can be used for this flow.
 		 * 1. If NSS, allocate NSS ipv6 ported connection instance
 		 * 2. If SFE, allocate SFE ipv6 ported connection instance
-		 * 3. If NONE, allocate ported connection instance beased on the is_routed flag.
-		 *    If it is set allocate SFE ipv6 ported connection instance with can_accel flag is set to false, otherwise
-		 *    allocate NSS ipv6 ported connection instance with can_accel flag is set to false.
-		 *    By doing this ECM will not ask again and again to the external module. If external module wants to
-		 *    accelerate this flow later, the flow needs to be defuncted first.
-		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
-		 *    to the external module.
-		 * 5. If any other type is returned, ASSERT.
-		 *
-		 * As an example here, we accelerate the routed flows on SFE, bridge flows on NSS.
+		 * 3. If PPE, allocate PPE ipv6 ported connection instance
+		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be
+		 *    re-evaluated.
+		 * 5. If NONE, allocate ported connection instance based on the precedence array with
+		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
+		 * 6. If DONT_CARE, select the AE from the precdence array which is in the highest priority index.
+		 * 7. If any other type, return NF_ACCEPT.
 		 */
 		switch (ae_result) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
@@ -425,8 +402,9 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
 				return NF_ACCEPT;
 			}
+
 			feci = ecm_nss_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
-			break;
+			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_SFE:
@@ -434,30 +412,73 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 				DEBUG_WARN("Unsupported feature found for SFE acceleration\n");
 				return NF_ACCEPT;
 			}
+
 			feci = ecm_sfe_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
-			break;
+			goto feci_alloc_check;
 #endif
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_AE_CLASSIFIER_RESULT_NONE:
-			if (is_routed) {
-				feci = ecm_sfe_ported_ipv6_connection_instance_alloc(false, protocol, &nci);
-			} else {
-				feci = ecm_nss_ported_ipv6_connection_instance_alloc(false, protocol, &nci);
-			}
-			break;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_PPE:
+			/*
+			 * Not implemented yet. Fall through.
+			 */
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
 			return NF_ACCEPT;
 
+		case ECM_AE_CLASSIFIER_RESULT_NONE:
+			/*
+			 * Let the precedence array select the AE type and add it
+			 * to the database without accelerating the flow.
+			 */
+			can_accel = false;
+			goto precedence_alloc;
+
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+			/*
+			 * External module doesn't care about which AE is selected.
+			 * So, allocate one from the AE precedence array.
+			 */
+			goto precedence_alloc;
+
 		default:
-			DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
+			DEBUG_WARN("unexpected ae_result: %d\n", ae_result);
+			return NF_ACCEPT;
 		}
 
+precedence_alloc:
+		for (i = 0; i <= ECM_AE_PRECEDENCE_MAX; i++) {
+			if (ae_precedence[i].ae_type == ECM_FRONT_END_ENGINE_MAX) {
+				DEBUG_WARN("None of the AE types in the precedence array could allocate the front end instance\n");
+				return NF_ACCEPT;
+			}
+
+			/*
+			 * Allocate a frontend instance for the type selected in the precedence array.
+			 * Do a feature check. If the AE doesn't support it, try the next one in the array.
+			 */
+			if (!ecm_front_end_common_feature_check(ae_precedence[i].ae_type, skb, iph, is_routed)) {
+				DEBUG_WARN("Unsupported feature found for the selected AE: %d\n", ae_precedence[i].ae_type);
+				continue;
+			}
+
+			/*
+			 * If allocation fails for the selected AE, try the next one.
+			 */
+			feci = ae_precedence[i].ported_ipv6_alloc(can_accel, protocol, &nci);
+			if (!feci) {
+				DEBUG_WARN("Failed to allocate front end instance\n");
+				continue;
+			}
+			goto feci_alloc_done;
+		}
+
+feci_alloc_check:
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
 			return NF_ACCEPT;
 		}
 
+feci_alloc_done:
 		if (!ecm_front_end_ipv6_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
 							ip_src_addr, ip_dest_addr,
