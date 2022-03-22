@@ -320,4 +320,5 @@ void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instan
 void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci);
 int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci);
 
+bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci);
 #endif  /* __ECM_FRONT_END_COMMON_H */

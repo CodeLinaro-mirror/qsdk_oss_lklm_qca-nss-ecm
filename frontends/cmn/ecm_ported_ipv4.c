@@ -764,6 +764,13 @@ done:
 	}
 
 	/*
+	 * Check if AE switch is needed.
+	 */
+	if (ecm_front_end_connection_check_and_switch_to_next_ae(ci->feci)) {
+		DEBUG_TRACE("%px: new AE type: %d\n", ci, ci->feci->accel_engine);
+	}
+
+	/*
 	 * Bridged traffic goes through the IP post routing hook as well after it
 	 * finishes the bridge post routing hook. In that case, ecm_dir will become
 	 * as Non-Nat since the is_routed flag is true. But the is_routed flag of the connection

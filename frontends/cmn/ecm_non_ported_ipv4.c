@@ -591,6 +591,13 @@ done:
 		;
 	}
 
+	/*
+	 * Check if AE switch is needed.
+	 */
+	if (ecm_front_end_connection_check_and_switch_to_next_ae(ci->feci)) {
+		DEBUG_TRACE("%px: new AE type: %d\n", ci, ci->feci->accel_engine);
+	}
+
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS) && defined(ECM_FRONT_END_NSS_ENABLE)
 	/*
 	 * Check if IGS feature is enabled or not.

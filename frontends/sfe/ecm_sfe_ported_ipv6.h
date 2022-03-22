@@ -23,3 +23,4 @@ extern struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv6_connection_
 								bool can_accel,
 								int protocol,
 								struct ecm_db_connection_instance **nci);
+extern void ecm_sfe_ported_ipv6_connection_set(struct ecm_front_end_connection_instance *feci);
