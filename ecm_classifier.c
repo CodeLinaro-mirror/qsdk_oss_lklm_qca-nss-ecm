@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2016, 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -125,9 +128,9 @@ struct ecm_classifier_instance *ecm_classifier_assign_classifier(struct ecm_db_c
 #endif
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 	case ECM_CLASSIFIER_TYPE_EMESH: {
-		struct ecm_classifier_emesh_instance *cemi;
+		struct ecm_classifier_emesh_sawf_instance *cemi;
 
-		cemi = ecm_classifier_emesh_instance_alloc(ci);
+		cemi = ecm_classifier_emesh_sawf_instance_alloc(ci);
 		if (!cemi) {
 			DEBUG_TRACE("%px: Failed to create emesh classifier\n", ci);
 			return NULL;

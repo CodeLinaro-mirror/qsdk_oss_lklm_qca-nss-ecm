@@ -29,8 +29,9 @@
  * ecm_wifi_plugin_emesh
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
  */
-static struct ecm_classifier_emesh_callbacks ecm_wifi_plugin_emesh = {
+static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
+	.update_service_id_get_msduq = qca_sawf_get_msduq,
 };
 
 /*
@@ -41,6 +42,12 @@ int ecm_wifi_plugin_emesh_register(void)
 {
 	if (ecm_classifier_emesh_latency_config_callback_register(&ecm_wifi_plugin_emesh)) {
 		ecm_wifi_plugin_warning("ecm emesh classifier callback registration failed.\n");
+		return -1;
+	}
+
+	if (ecm_classifier_emesh_sawf_msduq_callback_register(&ecm_wifi_plugin_emesh)) {
+		ecm_classifier_emesh_latency_config_callback_unregister();
+		ecm_wifi_plugin_warning("ecm emesh msduq callback registration failed.\n");
 		return -1;
 	}
 
@@ -55,5 +62,6 @@ int ecm_wifi_plugin_emesh_register(void)
 void ecm_wifi_plugin_emesh_unregister(void)
 {
 	ecm_classifier_emesh_latency_config_callback_unregister();
+	ecm_classifier_emesh_sawf_msduq_callback_unregister();
 	ecm_wifi_plugin_info("EMESH classifier callbacks unregistered\n");
 }

@@ -575,11 +575,20 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		 * GGG TODO The empty list checks should not be needed, mapping_establish_and_ref() should fail out if there is no list anyway.
 		 */
 		DEBUG_TRACE("%px: Create the 'from NAT' interface heirarchy list\n", nci);
+#ifdef ECM_XFRM_ENABLE
+		if ((in_dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) && (protocol == IPPROTO_UDP) && (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev, is_routed, in_dev, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_FROM_NAT]);
+		} else {
+			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_FROM_NAT]);
+		}
+#else
+
 		if ((in_dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) && (protocol == IPPROTO_UDP) && (dest_port == 4500)) {
 			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev, is_routed, in_dev, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_FROM_NAT]);
 		} else {
 			from_nat_list_first = ecm_interface_heirarchy_construct(feci, from_nat_list, efeici.from_nat_dev, efeici.from_nat_other_dev, ip_dest_addr, efeici.from_nat_mac_lookup_ip_addr, ip_src_addr_nat, 4, protocol, in_dev_nat, is_routed, in_dev_nat, src_node_addr_nat, dest_node_addr_nat, layer4hdr, skb, &ovs_params[ECM_DB_OBJ_DIR_FROM_NAT]);
 		}
+#endif
 
 		if (from_nat_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 			DEBUG_WARN("Failed to obtain 'from NAT' heirarchy list\n");
@@ -1022,6 +1031,17 @@ done:
 			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh Service Prioritization is valid\n",
 					ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
+		}
+
+		/*
+		 * E-MESH SAWF metadata is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF metadata is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
+			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
+			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
 		}
 #endif
 
