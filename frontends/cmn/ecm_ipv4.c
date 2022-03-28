@@ -178,11 +178,12 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 		struct ecm_db_interface_info_pptp pptp_info;
 #endif
+		struct net_device *mac_dev;
+
 		type = ecm_db_iface_type_get(interface_list[i]);
 		DEBUG_INFO("%px: Lookup node address, interface @ %d is type: %d\n", feci, i, type);
 
 		switch (type) {
-
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
@@ -196,7 +197,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px:PPPoE interface unsupported\n", feci);
 			return NULL;
 #endif
-
 		case ECM_DB_IFACE_TYPE_SIT:
 		case ECM_DB_IFACE_TYPE_TUNIPIP6:
 			done = true;
@@ -281,7 +281,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: PPPoL2TPV2 interface unsupported\n", feci);
 			return NULL;
 #endif
-
 		case ECM_DB_IFACE_TYPE_PPTP:
 #ifdef ECM_INTERFACE_PPTP_ENABLE
 			ecm_db_iface_pptp_session_info_get(interface_list[i], &pptp_info);
@@ -337,7 +336,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: PPTP interface unsupported\n", feci);
 			return NULL;
 #endif
-
 		case ECM_DB_IFACE_TYPE_MAP_T:
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 			in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -353,7 +351,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: MAP-T interface unsupported\n", feci);
 			return NULL;
 #endif
-
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 			in = dev_get_by_index(&init_net, skb->skb_iif);
@@ -406,17 +403,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: GRE Tunnel interface unsupported\n", feci);
 			return NULL;
 #endif
-
-		case ECM_DB_IFACE_TYPE_VLAN:
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			/*
-			 * VLAN handled same along with ethernet, lag, bridge etc.
-			 */
-#else
-			DEBUG_TRACE("%px: VLAN interface unsupported\n", feci);
-			return NULL;
-#endif
-
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_XFRM_ENABLE
 			if (dst_xfrm(skb_dst(skb))) {
@@ -442,12 +428,28 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #endif
 #endif
 		case ECM_DB_IFACE_TYPE_ETHERNET:
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		case ECM_DB_IFACE_TYPE_VLAN:
+#endif
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #endif
-			if (!ecm_interface_mac_addr_get_no_route(dev, addr, node_addr)) {
+			/*
+			 * If dev is a bridge port, we should use the bridge device for the MAC lookup and ARP request.
+			 */
+			if (ecm_front_end_is_bridge_port(dev)) {
+				mac_dev = ecm_interface_get_and_hold_dev_master(dev);
+				DEBUG_ASSERT(mac_dev, "%px: Expected a master mac_dev\n", feci);
+				DEBUG_TRACE("%s is a bridge port\n", dev->name);
+			} else {
+				dev_hold(dev);
+				mac_dev = dev;
+				DEBUG_TRACE("%s is not a bridge port\n", dev->name);
+			}
+
+			if (!ecm_interface_mac_addr_get_no_route(mac_dev, addr, node_addr)) {
 				ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 				bool on_link = true;
 
@@ -458,33 +460,25 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 				 */
 				if (ecm_interface_find_gateway(addr, gw_addr)) {
 					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
-					if (ecm_interface_mac_addr_get_no_route(dev, gw_addr, node_addr)) {
+					if (ecm_interface_mac_addr_get_no_route(mac_dev, gw_addr, node_addr)) {
 						DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
+						dev_put(mac_dev);
 						goto done;
 					}
 					on_link = false;
 				}
 
-				/*
-				 * If dev is a bridge port, we should use the bridge device for the ARP request.
-				 */
-				if (!ecm_front_end_is_bridge_port(dev)) {
-					ecm_interface_send_arp_request(dev, addr, on_link, gw_addr);
-				} else {
-					struct net_device *master;
-					master = ecm_interface_get_and_hold_dev_master(dev);
-					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
-					ecm_interface_send_arp_request(master, addr, on_link, gw_addr);
-					dev_put(master);
-				}
+				ecm_interface_send_arp_request(mac_dev, addr, on_link, gw_addr);
 
 				DEBUG_WARN("%px: failed to obtain any node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
+				dev_put(mac_dev);
 
 				/*
 				 * Unable to get node address at this time.
 				 */
 				return NULL;
 			}
+			dev_put(mac_dev);
 done:
 			if (is_multicast_ether_addr(node_addr)) {
 				DEBUG_TRACE("%px: multicast node address for host " ECM_IP_ADDR_DOT_FMT ", node_addr: %pM\n", feci, ECM_IP_ADDR_TO_DOT(addr), node_addr);
@@ -497,6 +491,7 @@ done:
 			 */
 			done = true;
 			break;
+
 		case ECM_DB_IFACE_TYPE_RAWIP:
 #ifdef ECM_INTERFACE_RAWIP_ENABLE
 			done = true;
@@ -545,6 +540,7 @@ done:
 			memcpy(node_addr, (uint8_t *)addr, ETH_ALEN);
 		}
 	}
+
 	if (!done) {
 		DEBUG_WARN("%px: Failed to establish node for " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
 		return NULL;
