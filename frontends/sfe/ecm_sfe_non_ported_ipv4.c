@@ -754,6 +754,16 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VLAN);
+				if (is_valid_ether_addr(vlan_info.address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, vlan_info.address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
 			/*
 			 * If we have not yet got an ethernet mac then take this one (very unlikely as
 			 * mac should have been propagated to the slave (outer) device
@@ -1010,6 +1020,16 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				nircm->vlan_secondary_rule.egress_vlan_tag = vlan_value;
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+
+			if (sfe_is_l2_feature_enabled()) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
+				if (is_valid_ether_addr(vlan_info.address)) {
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, vlan_info.address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
 
 			/*
 			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
