@@ -219,14 +219,15 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
 
 			if (local_dev->type == ARPHRD_PPP) {
-				struct ppp_channel *ppp_chan[1];
-				struct pppoe_opt addressing;
-				int px_proto;
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
 				DEBUG_TRACE("%px: l2tp over netdevice %s unsupported\n", feci, local_dev->name);
 				dev_put(local_dev);
 				return NULL;
 #else
+				struct ppp_channel *ppp_chan[1];
+				struct pppoe_opt addressing;
+				int px_proto;
+
 				if (ppp_hold_channels(local_dev, ppp_chan, 1) != 1) {
 					DEBUG_WARN("%px: l2tpv2 over netdevice %s unsupported; could not hold ppp channels\n", feci, local_dev->name);
 					dev_put(local_dev);
