@@ -312,3 +312,79 @@ void ecm_sfe_common_init_fe_info(struct ecm_sfe_common_fe_info *info)
 	info->from_stats_bitmap = 0;
 	info->to_stats_bitmap = 0;
 }
+
+/*
+ * ecm_sfe_common_update_rule()
+ *	Updates the frontend specifc data.
+ *
+ * Currently, only updates the mark values of the connection and updates the SFE AE.
+ */
+void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg)
+{
+
+	switch (type) {
+	case ECM_RULE_UPDATE_TYPE_CONNMARK:
+	{
+		struct nf_conn *ct = (struct nf_conn *)arg;
+		struct sfe_connection_mark mark;
+		ip_addr_t src_addr;
+		ip_addr_t dest_addr;
+		int aci_index;
+		int assignment_count;
+		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+
+		if (feci->accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+			DEBUG_WARN("%px: connection is not in accelerated mode\n", feci);
+			return;
+		}
+
+		/*
+		 * Get connection information
+		 */
+		mark.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+		mark.src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+		mark.dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_addr);
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_addr);
+		mark.mark = ct->mark;
+
+		DEBUG_TRACE("%px: Update the mark value for the SFE connection\n", feci);
+
+		if (feci->ip_version == 4) {
+			ECM_IP_ADDR_TO_NIN4_ADDR(mark.src_ip[0], src_addr);
+			ECM_IP_ADDR_TO_NIN4_ADDR(mark.dest_ip[0], dest_addr);
+			sfe_ipv4_mark_rule_update(&mark);
+			DEBUG_TRACE("%px: src_ip: %pI4 dest_ip: %pI4 src_port: %d dest_port: %d protocol: %d\n",
+				    feci, &mark.src_ip[0], &mark.dest_ip[0],
+				    ntohs(mark.src_port), ntohs(mark.dest_port), mark.protocol);
+		} else {
+			ECM_IP_ADDR_TO_SFE_IPV6_ADDR(mark.src_ip, src_addr);
+			ECM_IP_ADDR_TO_SFE_IPV6_ADDR(mark.dest_ip, dest_addr);
+			sfe_ipv6_mark_rule_update(&mark);
+			DEBUG_TRACE("%px: src_ip: " ECM_IP_ADDR_OCTAL_FMT "dest_ip: " ECM_IP_ADDR_OCTAL_FMT
+				    " src_port: %d dest_port: %d protocol: %d\n",
+				    feci, ECM_IP_ADDR_TO_OCTAL(src_addr), ECM_IP_ADDR_TO_OCTAL(dest_addr),
+				    ntohs(mark.src_port), ntohs(mark.dest_port), mark.protocol);
+		}
+
+		/*
+		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+		 * update, they will handle the event.
+		 */
+		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+			struct ecm_classifier_instance *aci;
+			aci = assignments[aci_index];
+			if (aci->update) {
+				aci->update(aci, type, ct);
+			}
+		}
+		ecm_db_connection_assignments_release(assignment_count, assignments);
+
+		break;
+	}
+	default:
+		DEBUG_WARN("%px: unsupported update rule type: %d\n", feci, type);
+		break;
+	}
+}

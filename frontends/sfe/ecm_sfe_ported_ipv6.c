@@ -1972,6 +1972,7 @@ struct ecm_sfe_ported_ipv6_connection_instance *ecm_sfe_ported_ipv6_connection_i
 
 	feci->get_stats_bitmap = ecm_sfe_ported_ipv6_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_sfe_ported_ipv6_set_stats_bitmap;
+	feci->update_rule = ecm_sfe_common_update_rule;
 
 	if (protocol == IPPROTO_TCP) {
 		npci->ported_accelerated_count_index = ECM_SFE_PORTED_IPV6_PROTO_TCP;

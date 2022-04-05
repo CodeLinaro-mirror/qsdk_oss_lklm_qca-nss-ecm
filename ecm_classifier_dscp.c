@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2019-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -220,6 +223,45 @@ static void ecm_classifier_dscp_fill_info(struct ecm_classifier_dscp_instance *c
 }
 
 /*
+ * ecm_classifier_dscp_update()
+ *	Called from the frontend files to update the classifier instance.
+ */
+void ecm_classifier_dscp_update(struct ecm_classifier_instance *aci, enum ecm_rule_update_type type, void *arg)
+{
+	struct nf_ct_dscpremark_ext *dscpcte;
+	struct nf_conn *ct = (struct nf_conn *)arg;
+	struct ecm_classifier_dscp_instance *cdscpi = (struct ecm_classifier_dscp_instance *)aci;
+	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed\n", cdscpi);
+
+	if (type != ECM_RULE_UPDATE_TYPE_CONNMARK) {
+		DEBUG_WARN("%px: unsupported update type: %d\n", aci, type);
+		return;
+	}
+
+	/*
+	 * Since we set the mark values from the DSCP extension, we need to update this
+	 * extension as well. Because in case of a rule flush, the updated value should be read.
+	 * UDP flows should also overwrite the classifier's response mark field which is set with the
+	 * skb->mark.
+	 */
+	spin_lock_bh(&ct->lock);
+	dscpcte = nf_ct_dscpremark_ext_find(ct);
+	if (!dscpcte) {
+		spin_unlock_bh(&ct->lock);
+		DEBUG_WARN("%px: no dscp extension\n", aci);
+		return;
+	}
+	dscpcte->flow_mark = ct->mark;
+	dscpcte->reply_mark = ct->mark;
+	dscpcte->flow_set_flags |= NF_CT_DSCPREMARK_EXT_MARK;
+	dscpcte->return_set_flags |= NF_CT_DSCPREMARK_EXT_MARK;
+	spin_unlock_bh(&ct->lock);
+
+	cdscpi->process_response.flow_mark = ct->mark;
+	cdscpi->process_response.return_mark = ct->mark;
+}
+
+/*
  * ecm_classifier_dscp_process()
  *	Process new data for connection
  */
@@ -350,8 +392,8 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 		 * If DSCP conntrack extension is filled in the frontend, use those values
 		 * instead of waiting both direction traffic again.
 		 */
-		if ((dscpcte->flow_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP))
-			&& (dscpcte->return_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP))) {
+		if ((dscpcte->flow_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP | NF_CT_DSCPREMARK_EXT_MARK))
+			&& (dscpcte->return_set_flags == (NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP | NF_CT_DSCPREMARK_EXT_MARK))) {
 			/*
 			 * If sender and the conntrack info direction are consistent, fill the response field
 			 * with the flow/return values as it is. Otherwise reverse the assignments.
@@ -495,6 +537,16 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			if (cdscpi->process_response.flow_dscp == 0) {
 				cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 			}
+		}
+
+		/*
+		 * If the flow and return set flags are set for the MARK, we overwrite the mark field.
+		 * These values are stored in the dscp extentension in the update callback.
+		 */
+		if ((dscpcte->flow_set_flags & NF_CT_DSCPREMARK_EXT_MARK) &&
+				(dscpcte->return_set_flags & NF_CT_DSCPREMARK_EXT_MARK)) {
+			cdscpi->process_response.flow_mark = dscpcte->flow_mark;
+			cdscpi->process_response.return_mark = dscpcte->reply_mark;
 		}
 	}
 done:
@@ -713,6 +765,7 @@ struct ecm_classifier_dscp_instance *ecm_classifier_dscp_instance_alloc(struct e
 #endif
 	cdscpi->base.ref = ecm_classifier_dscp_ref;
 	cdscpi->base.deref = ecm_classifier_dscp_deref;
+	cdscpi->base.update = ecm_classifier_dscp_update;
 	cdscpi->ci_serial = ecm_db_connection_serial_get(ci);
 	cdscpi->process_response.process_actions = 0;
 	cdscpi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;

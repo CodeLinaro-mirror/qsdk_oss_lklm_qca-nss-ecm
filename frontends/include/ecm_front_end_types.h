@@ -154,6 +154,7 @@ typedef void (*ecm_front_end_connection_multicast_update_method_t)(ip_addr_t ip_
 
 typedef void (*ecm_front_end_connection_set_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 typedef uint32_t (*ecm_front_end_connection_get_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
+typedef void (*ecm_front_end_connection_update_rule_t)(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
 
 /*
  * Acceleration limiting modes.
@@ -210,6 +211,7 @@ struct ecm_front_end_connection_instance {
 
 	ecm_front_end_connection_set_stats_bitmap_t set_stats_bitmap;		/* Set bitmap of interface types to be updated during sync */
 	ecm_front_end_connection_get_stats_bitmap_t get_stats_bitmap;		/* Get bitmap of interface types to be updated during sync */
+	ecm_front_end_connection_update_rule_t update_rule;			/* Updates the frontend specific data */
 
 	enum ecm_front_end_engine accel_engine;	/* Acceleration engine type */
 

@@ -1782,6 +1782,7 @@ struct ecm_sfe_non_ported_ipv6_connection_instance *ecm_sfe_non_ported_ipv6_conn
 
 	feci->get_stats_bitmap = ecm_sfe_non_ported_ipv6_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_sfe_non_ported_ipv6_set_stats_bitmap;
+	feci->update_rule = ecm_sfe_common_update_rule;
 
 
 	return nnpci;
