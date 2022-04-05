@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -408,7 +410,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 			/*
 			 * Update the neighbour entry for source IP address
 			 */
-			neigh = ecm_interface_ipv6_neigh_get(flow_ip);
+			neigh = ecm_interface_ipv6_neigh_get(feci, ECM_DB_OBJ_DIR_FROM, flow_ip);
 			if (!neigh) {
 				DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(flow_ip));
 			} else {
@@ -425,7 +427,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 			 * Update the neighbour entry for destination IP address
 			 */
 			if (!ecm_ip_addr_is_multicast(return_ip)) {
-				neigh = ecm_interface_ipv6_neigh_get(return_ip);
+				neigh = ecm_interface_ipv6_neigh_get(feci, ECM_DB_OBJ_DIR_TO,  return_ip);
 				if (!neigh) {
 					DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(return_ip));
 				} else {
@@ -441,7 +443,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 			/*
 			 * Update the neighbour entry for destination IP address
 			 */
-			neigh = ecm_interface_ipv6_neigh_get(return_ip);
+			neigh = ecm_interface_ipv6_neigh_get(feci, ECM_DB_OBJ_DIR_TO, return_ip);
 			if (!neigh) {
 				DEBUG_WARN("Neighbour entry for " ECM_IP_ADDR_OCTAL_FMT " not found\n", ECM_IP_ADDR_TO_OCTAL(return_ip));
 			} else {

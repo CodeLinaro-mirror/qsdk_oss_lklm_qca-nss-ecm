@@ -1316,22 +1316,32 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
  *
  * Returns NULL on fail.
  */
-struct neighbour *ecm_interface_ipv6_neigh_get(ip_addr_t addr)
+struct neighbour *ecm_interface_ipv6_neigh_get(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, ip_addr_t addr)
 {
 	struct neighbour *neigh;
-	struct rt6_info *rt;
-	struct dst_entry *dst;
 	struct in6_addr ipv6_addr;
+	int32_t ifaces_first, iface_idx;
+	struct net_device *netdev;
+	struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 
-	ECM_IP_ADDR_TO_NIN6_ADDR(ipv6_addr, addr);
-
-	rt = ecm_interface_ipv6_route_lookup(&init_net, &ipv6_addr);
-	if (!rt) {
+	ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, ifaces, dir);
+	if (ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		return NULL;
 	}
-	dst = (struct dst_entry *)rt;
-	neigh = dst_neigh_lookup(dst, &ipv6_addr);
-	dst_release(dst);
+
+	iface_idx = ecm_db_iface_interface_identifier_get(ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+	netdev = dev_get_by_index(&init_net, iface_idx);
+	if (!netdev) {
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+		return NULL;
+	}
+
+	ECM_IP_ADDR_TO_NIN6_ADDR(ipv6_addr, addr);
+	neigh = neigh_lookup(&nd_tbl, &ipv6_addr, netdev);
+
+	dev_put(netdev);
+	ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+
 	return neigh;
 }
 #endif
