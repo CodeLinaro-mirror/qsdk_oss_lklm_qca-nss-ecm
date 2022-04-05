@@ -883,6 +883,14 @@ done:
 				prevalent_pr.return_dscp = aci_pr.return_dscp;
 			}
 		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MARK) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow mark: %u, return mark: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_mark, aci_pr.return_mark);
+			prevalent_pr.flow_mark = aci_pr.flow_mark;
+			prevalent_pr.return_mark = aci_pr.return_mark;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_MARK;
+		}
 #endif
 
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE

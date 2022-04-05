@@ -1,7 +1,7 @@
 /*
  **************************************************************************
+ * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2015-2020 The Linux Foundation.  All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1039,6 +1039,15 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_DSCP_MARKING;
 		nircm->valid_flags |= SFE_RULE_CREATE_DSCP_MARKING_VALID;
 	}
+
+	/*
+	 * Set up the flow and return mark.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MARK) {
+		nircm->mark_rule.flow_mark = (uint32_t)pr->flow_mark;
+		nircm->mark_rule.return_mark = (uint32_t)pr->return_mark;
+		nircm->valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+	}
 #endif
 	/*
 	 * Set protocol
@@ -1124,7 +1133,9 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
-			"return_dscp: %x\n",
+			"return_dscp: %x\n"
+			"flow_mark: %x\n"
+			"return_mark: %x\n",
 			nnpci,
 			feci->ci,
 			nircm->tuple.protocol,
@@ -1145,7 +1156,9 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
 			nircm->dscp_rule.flow_dscp,
-			nircm->dscp_rule.return_dscp);
+			nircm->dscp_rule.return_dscp,
+			nircm->mark_rule.flow_mark,
+			nircm->mark_rule.return_mark);
 
 	/*
 	 * Now that the rule has been constructed we re-compare the generation occurrance counter.
