@@ -6462,15 +6462,12 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			 */
 			if ((is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) &&
 				is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
-				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
 
+				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
 				/*
-				 * Update fdb entry only if it exist. Please note that br_refresh_fdb_entry() API
-				 * creates new fdb entry if it does not exist.
+				 * Update the existing fdb entry's timestamp only.
 				 */
-				if (br_fdb_has_entry(dev, mac_addr, 0)) {
-					br_refresh_fdb_entry(dev, mac_addr);
-				}
+				br_fdb_entry_refresh(dev, mac_addr, 0);
 			}
 		}
 
