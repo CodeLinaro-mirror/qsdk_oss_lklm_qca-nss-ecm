@@ -354,7 +354,7 @@ static void ecm_sfe_ipv4_fast_xmit_set(struct sfe_ipv4_rule_create_msg *msg)
 		interface_num = msg->conn_rule.flow_interface_num;
 	}
 	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
+		msg->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
 	}
 
 	interface_num = msg->conn_rule.return_top_interface_num;
@@ -362,7 +362,7 @@ static void ecm_sfe_ipv4_fast_xmit_set(struct sfe_ipv4_rule_create_msg *msg)
 		interface_num = msg->conn_rule.return_interface_num;
 	}
 	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
+		msg->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
 	}
 
 	rcu_read_unlock_bh();
