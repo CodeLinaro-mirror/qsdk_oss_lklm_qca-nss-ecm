@@ -363,7 +363,12 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *
 		return false;
 	}
 
-	flow_input_params->pcp = return_input_params->pcp = skb_vlan_tag_get(skb);
+	flow_input_params->vlan_tci = return_input_params->vlan_tci = SP_RULE_INVALID_VLAN_TCI;
+
+	if (is_vlan_dev(skb->dev)) {
+		flow_input_params->vlan_tci = vlan_dev_vlan_id(skb->dev);
+	}
+
 	ether_addr_copy(flow_input_params->src.mac, smac);
 	ether_addr_copy(flow_input_params->dst.mac, dmac);
 	ether_addr_copy(return_input_params->src.mac, dmac);
