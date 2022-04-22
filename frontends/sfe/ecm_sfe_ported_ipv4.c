@@ -1070,6 +1070,11 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		}
 	}
 
+	if (ecm_interface_src_check) {
+		DEBUG_INFO("%px: Source interface check flag is enabled\n", npci);
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
+	}
+
 	/*
 	 * Set up the flow and return qos tags
 	 */
