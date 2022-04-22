@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -676,6 +679,14 @@ done:
 				prevalent_pr.flow_dscp = aci_pr.flow_dscp;
 				prevalent_pr.return_dscp = aci_pr.return_dscp;
 			}
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_MARK) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow mark: %u, return mark: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_mark, aci_pr.return_mark);
+			prevalent_pr.flow_mark = aci_pr.flow_mark;
+			prevalent_pr.return_mark = aci_pr.return_mark;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_MARK;
 		}
 #endif
 
