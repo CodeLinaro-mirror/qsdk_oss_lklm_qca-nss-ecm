@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2016-2017, 2019-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -132,7 +135,7 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifier_instance *__attribute__((unused))cls;
 
-	DEBUG_INFO("Mark event for ct: %px\n", ct);
+	DEBUG_INFO("%px: IPv6 mark event ct->mark: %d\n", ct, ct->mark);
 
 	/*
 	 * Ignore transitions to zero
@@ -158,6 +161,10 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 		cls->deref(cls);
 	}
 #endif
+	if (ci->feci->update_rule) {
+		ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
+	}
+
 	/*
 	 * All done
 	 */
@@ -240,7 +247,7 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifier_instance *__attribute__((unused))cls;
 
-	DEBUG_INFO("Mark event for ct: %px\n", ct);
+	DEBUG_INFO("%px: IPv4 mark event ct->mark: %d\n", ct, ct->mark);
 
 	/*
 	 * Ignore transitions to zero
@@ -266,6 +273,9 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 		cls->deref(cls);
 	}
 #endif
+	if (ci->feci->update_rule) {
+		ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
+	}
 
 	/*
 	 * All done

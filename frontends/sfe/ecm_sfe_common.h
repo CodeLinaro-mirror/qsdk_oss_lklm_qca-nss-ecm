@@ -147,3 +147,4 @@ bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_h
 void ecm_sfe_common_init_fe_info(struct ecm_sfe_common_fe_info *info);
 uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir);
 void ecm_sfe_common_set_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir, uint8_t bit);
+void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
