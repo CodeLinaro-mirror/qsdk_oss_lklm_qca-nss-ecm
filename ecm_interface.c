@@ -6462,36 +6462,15 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			 */
 			if ((is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) &&
 				is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
-				struct net_device *br_dev, *fdb_dev;
 				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
 
 				/*
 				 * Update fdb entry only if it exist. Please note that br_refresh_fdb_entry() API
 				 * creates new fdb entry if it does not exist.
 				 */
-				if (!br_fdb_has_entry(dev, mac_addr, 0)) {
-					goto skip_bridge_refresh;
+				if (br_fdb_has_entry(dev, mac_addr, 0)) {
+					br_refresh_fdb_entry(dev, mac_addr);
 				}
-
-				br_dev = ecm_interface_get_and_hold_dev_master(dev);
-				if (!br_dev) {
-					goto skip_bridge_refresh;
-				}
-
-				if (!ecm_front_end_is_bridge_device(br_dev)) {
-					dev_put(br_dev);
-					goto skip_bridge_refresh;
-				}
-
-				/*
-				 * Use the dev of existing fdb entry instead of
-				 * the dev of ci. In roaming case, the ci dev is
-				 * stale while the one in fdb entry is new..
-				 */
-				fdb_dev = br_fdb_find_port(br_dev, mac_addr, 0);
-				dev_put(br_dev);
-
-				br_refresh_fdb_entry(fdb_dev, mac_addr);
 			}
 		}
 
