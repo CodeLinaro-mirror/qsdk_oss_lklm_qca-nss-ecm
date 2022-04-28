@@ -279,20 +279,19 @@ static void ecm_db_connection_defunct_callback(void *arg)
 
 	DEBUG_INFO("%px: defunct timer expired\n", ci);
 
-	/*
-	 * If defunct fails, return. Do not remove the last ref count. This failure means
-	 * it will be re-tried later with the ecm_db_connection_make_defunct function
-	 * until the total failure count reaches to the max limit which is 250.
-	 * When the limit is reached, defunct process will return true and let
-	 * the connection goes off.
-	 */
 	ret = ci->defunct(ci->feci, &accel_mode);
 
 	/*
-	 * Release the last reference of this connection. This reference is the one
-	 * which was held when the connection was allocated.
+	 * If the returned 'ret' is success, this means this callback succeeded to
+	 * defunct the connection and it can release the last reference.
+	 * If it fails, this means that another defunct process defuncted the connection
+	 * before this callback. In that case, we will check the accel_mode of the connection.
+	 * If the other call defuncted the connection successfully, it will set the accel_mode to
+	 * ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT_SHORT for s short amount of time to avoid
+	 * further accel/decel attempts. So, in this accel_mode, this callback shouldn't release the
+	 * last reference. It will be released by the ecm_db_connection_make_defunct() function.
 	 */
-	if (ret || ECM_FRONT_END_ACCELERATION_FAILED(accel_mode)) {
+	if (ret || (ECM_FRONT_END_ACCELERATION_FAILED(accel_mode) && (accel_mode != ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT_SHORT))) {
 		ecm_db_connection_deref(ci);
 	}
 }
