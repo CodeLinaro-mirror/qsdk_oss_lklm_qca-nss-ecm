@@ -1328,7 +1328,7 @@ static void ecm_sfe_non_ported_ipv6_connection_destroy_callback(void *app_data, 
 	 * If connection became defunct then set mode so that no further accel/decel attempts occur.
 	 */
 	if (feci->is_defunct) {
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT_SHORT;
 	}
 	spin_unlock_bh(&feci->lock);
 
