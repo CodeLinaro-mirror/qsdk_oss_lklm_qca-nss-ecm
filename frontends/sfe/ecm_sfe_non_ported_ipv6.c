@@ -355,7 +355,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * Test if acceleration is permitted
 	 */
 	if (!ecm_sfe_ipv6_accel_pending_set(feci)) {
-		DEBUG_TRACE("%px: Acceleration not permitted: %px\n", feci, feci->ci);
+		DEBUG_TRACE("%px: Acceleration not permitted: %px accel_mode=%d skb=%px\n", feci, feci->ci, feci->accel_mode, skb);
 		return;
 	}
 
@@ -457,7 +457,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	 * NOTE: The lists may contain a complex heirarchy of similar type of interface e.g. multiple vlans or tunnels within tunnels.
 	 * This SFE cannot handle that - there is no way to describe this in the rule - if we see multiple types that would conflict we have to abort.
 	 */
-	DEBUG_TRACE("%px: Examine from/src heirarchy list\n", feci);
+	DEBUG_TRACE("%px: Examine from/src heirarchy list skb=%px\n", feci, skb);
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
 	for (list_index = from_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
@@ -585,6 +585,16 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			}
 
 			/*
+			 * PPPoE is supported only when L2 feature flag is enabled
+			 */
+			if (!sfe_is_l2_feature_enabled()) {
+				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
+				break;
+			}
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_PPPOE);
+
+			/*
 			 * Copy pppoe session info to the creation structure.
 			 */
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
@@ -594,7 +604,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 
 
-			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", feci,
+			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
 					nircm->pppoe_rule.flow_pppoe_session_id,
 					nircm->pppoe_rule.flow_pppoe_remote_mac);
 #else
@@ -825,6 +835,16 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			}
 
 			/*
+			 * PPPoE is supported only when L2 feature flag is enabled
+			 */
+			if (!sfe_is_l2_feature_enabled()) {
+				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
+				break;
+			}
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_PPPOE);
+
+			/*
 			 * Copy pppoe session info to the creation structure.
 			 */
 			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
@@ -833,7 +853,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 
-			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", feci,
+			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
 					nircm->pppoe_rule.return_pppoe_session_id,
 					nircm->pppoe_rule.return_pppoe_remote_mac);
 #else
@@ -970,7 +990,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		}
 	}
 
-	if (ecm_interface_src_check) {
+	if (ecm_interface_src_check || ecm_db_connection_is_pppoe_bridged_get(feci->ci)) {
 		DEBUG_INFO("%px: Source interface check flag is enabled\n", feci);
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK;
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_SRC_INTERFACE_CHECK;
@@ -1025,8 +1045,8 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Same approach as above for port information
 	 */
-	nircm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	nircm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
+	nircm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nircm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
 
 	/*
 	 * Get mac addresses.
@@ -1074,18 +1094,24 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"Protocol: %d\n"
 			"from_mtu: %u\n"
 			"to_mtu: %u\n"
-			"from_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
-			"to_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+			"from_ip: " ECM_IP_ADDR_OCTAL_FMT ":%u\n"
+			"to_ip: " ECM_IP_ADDR_OCTAL_FMT ":%u\n"
 			"from_mac: %pM\n"
 			"to_mac: %pM\n"
-			"src_iface_num: %u\n"
-			"dest_iface_num: %u\n"
-			"ingress_inner_vlan_tag: %u\n"
-			"egress_inner_vlan_tag: %u\n"
-			"ingress_outer_vlan_tag: %u\n"
-			"egress_outer_vlan_tag: %u\n"
+			"from_iface_num: %u\n"
+			"to_iface_num: %u\n"
+			"from_top_interface_num: %d\n"
+			"to_top_interface_num: %d\n"
+			"primary_ingress_vlan_tag: %x\n"
+			"primary_egress_vlan_tag: %x\n"
+			"secondary_ingress_vlan_tag: %x\n"
+			"secondary_egress_vlan_tag: %x\n"
 			"rule_flags: %x\n"
 			"valid_flags: %x\n"
+			"flow_pppoe_session_id: %u\n"
+			"flow_pppoe_remote_mac: %pM\n"
+			"return_pppoe_session_id: %u\n"
+			"return_pppoe_remote_mac: %pM\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
@@ -1097,18 +1123,24 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->tuple.protocol,
 			nircm->conn_rule.flow_mtu,
 			nircm->conn_rule.return_mtu,
-			ECM_IP_ADDR_TO_OCTAL(src_ip), nircm->tuple.flow_ident,
-			ECM_IP_ADDR_TO_OCTAL(dest_ip), nircm->tuple.return_ident,
+			ECM_IP_ADDR_TO_OCTAL(src_ip), htons(nircm->tuple.flow_ident),
+			ECM_IP_ADDR_TO_OCTAL(dest_ip), htons(nircm->tuple.return_ident),
 			nircm->conn_rule.flow_mac,
 			nircm->conn_rule.return_mac,
 			nircm->conn_rule.flow_interface_num,
 			nircm->conn_rule.return_interface_num,
+			nircm->conn_rule.flow_top_interface_num,
+			nircm->conn_rule.return_top_interface_num,
 			nircm->vlan_primary_rule.ingress_vlan_tag,
 			nircm->vlan_primary_rule.egress_vlan_tag,
 			nircm->vlan_secondary_rule.ingress_vlan_tag,
 			nircm->vlan_secondary_rule.egress_vlan_tag,
 			nircm->rule_flags,
 			nircm->valid_flags,
+			nircm->pppoe_rule.flow_pppoe_session_id,
+			nircm->pppoe_rule.flow_pppoe_remote_mac,
+			nircm->pppoe_rule.return_pppoe_session_id,
+			nircm->pppoe_rule.return_pppoe_remote_mac,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
 			nircm->dscp_rule.flow_dscp,
@@ -1358,8 +1390,8 @@ static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.flow_ip, src_ip);
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.return_ip, dest_ip);
-	nirdm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	nirdm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
+	nirdm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nirdm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
 
 	DEBUG_INFO("%px: NON_PORTED Connection %px decelerate\n"
 			"src_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"

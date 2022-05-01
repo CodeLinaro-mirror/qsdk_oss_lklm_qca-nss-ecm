@@ -24,6 +24,12 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_acct.h>
 #include "ecm_bond_notifier.h"
+#ifdef ECM_FRONT_END_NSS_ENABLE
+#include <nss_api_if.h>
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
+#endif
 
 #define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
 
@@ -282,6 +288,65 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 	spin_unlock_bh(&feci->lock);
 
 	return false;
+}
+
+/*
+ * ecm_front_end_ppppoe_br_accel_disabled()
+ *      Check if acceleration of PPPoE bridged flow is disabled or not.
+ */
+static inline bool ecm_front_end_ppppoe_br_accel_disabled(void)
+{
+	enum ecm_front_end_type fe_type;
+	bool ret = true;
+
+	fe_type = ecm_front_end_type_get();
+	switch (fe_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_TYPE_NSS:
+		ret = (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_DIS);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_TYPE_SFE:
+		ret = (sfe_pppoe_get_br_accel_mode() == SFE_PPPOE_BR_ACCEL_MODE_DISABLED);
+		break;
+#endif
+	default:
+		DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+		break;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_front_end_ppppoe_br_accel_3tuple()
+ *      Check if acceleration of PPPoE bridged flow is based on 3-tuple.
+ *      (default is 5-tuple acceleration)
+ */
+static inline bool ecm_front_end_ppppoe_br_accel_3tuple(void)
+{
+	enum ecm_front_end_type fe_type;
+	bool ret = false;
+
+	fe_type = ecm_front_end_type_get();
+	switch (fe_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_TYPE_NSS:
+		ret = (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_TYPE_SFE:
+		ret = (sfe_pppoe_get_br_accel_mode() == SFE_PPPOE_BR_ACCEL_MODE_EN_3T);
+		break;
+#endif
+	default:
+		DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+		break;
+	}
+
+	return ret;
 }
 
 extern void ecm_front_end_bond_notifier_stop(int num);

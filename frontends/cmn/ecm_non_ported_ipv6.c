@@ -162,13 +162,11 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	dest_port = 0;
 
 	/*
-	 * We are not yet supporting PPPOE bridge for SFE.
-	 * TODO: Revisit when we want to add that support.
+	 * 3-tuple acceleration for PPPoE bridged flow?
 	 */
-#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(!is_routed &&
 			(l2_encap_proto == ETH_P_PPP_SES) &&
-			(nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T))) {
+			ecm_front_end_ppppoe_br_accel_3tuple())) {
 		struct pppoe_hdr *ph;
 		uint32_t l2_encap_len = ecm_front_end_l2_encap_header_len(l2_encap_proto);
 
@@ -177,14 +175,13 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 		 */
 		ecm_front_end_push_l2_encap_header(skb, l2_encap_len);
 		ph = pppoe_hdr(skb);
-		DEBUG_TRACE("PPPoE session ID: %x\n", ntohs(ph->sid));
 		src_port = ntohs(ph->sid);
 		protocol = IPPROTO_RAW;
 		dest_port = src_port;
 		ecm_front_end_pull_l2_encap_header(skb, l2_encap_len);
 		pppoe_bridged = true;
+		DEBUG_TRACE("PPPoE bridged flow: session ID=%#x skb=%px\n", ntohs(ph->sid), skb);
 	}
-#endif
 
 	if(!ecm_non_ported_ipv6_is_protocol_supported(protocol)) {
 		DEBUG_TRACE("Unsupported non-ported protocol: %d, do not process.\n", protocol);

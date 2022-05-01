@@ -1180,17 +1180,15 @@ vxlan_done:
 	 * If PPPoE bridged flows are to be handled with 3-tuple rule, set protocol to IPPROTO_RAW.
 	 */
 	protonum = orig_tuple.dst.protonum;
-#ifdef ECM_FRONT_END_NSS_ENABLE
 	if (unlikely(!is_routed && (l2_encap_proto == ETH_P_PPP_SES))) {
 		/*
 		 * Check if PPPoE bridge acceleration is 3-tuple based.
 		 */
-		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_EN_3T) {
+		if (ecm_front_end_ppppoe_br_accel_3tuple()) {
 			DEBUG_TRACE("3-tuple acceleration is enabled for PPPoE bridged flows\n");
 			protonum = IPPROTO_RAW;
 		}
 	}
-#endif
 	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
 			ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
@@ -1525,15 +1523,13 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 
 	if (unlikely(eth_type == ETH_P_PPP_SES)) {
 
-#ifdef ECM_FRONT_END_NSS_ENABLE
 		/*
 		 * Check if PPPoE bridge acceleration is disabled.
 		 */
-		if (nss_pppoe_get_br_accel_mode() == NSS_PPPOE_BR_ACCEL_MODE_DIS) {
+		if (ecm_front_end_ppppoe_br_accel_disabled()) {
 			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
 			goto skip_ipv6_bridge_flow;
 		}
-#endif
 
 		result = ecm_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
 		goto skip_ipv6_bridge_flow;
