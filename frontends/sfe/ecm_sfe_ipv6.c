@@ -90,6 +90,9 @@
 #include "ecm_classifier_nl.h"
 #endif
 #include "ecm_interface.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+#include "ecm_sfe_non_ported_ipv6.h"
+#endif
 #include "ecm_sfe_common.h"
 #include "ecm_ipv6.h"
 #include "ecm_sfe_ported_ipv6.h"
@@ -978,6 +981,12 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+	if (!ecm_sfe_non_ported_ipv6_debugfs_init(ecm_sfe_ipv6_dentry)) {
+		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
+		goto task_cleanup;
+	}
+#endif
 	/*
 	 * Register this module with the Linux SFE Network driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there
