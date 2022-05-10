@@ -7629,9 +7629,9 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-	iov_iter_init(&msg.msg_iter, READ, &iov, 1, 1);
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
+	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
 	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
 #else
