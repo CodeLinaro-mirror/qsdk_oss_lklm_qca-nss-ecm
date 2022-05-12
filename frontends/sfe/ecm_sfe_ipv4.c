@@ -85,6 +85,9 @@
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
 #endif
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+#include "ecm_sfe_non_ported_ipv4.h"
+#endif
 #include "ecm_ipv4.h"
 #include "ecm_interface.h"
 #include "ecm_sfe_ported_ipv4.h"
@@ -987,6 +990,12 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+	if (!ecm_sfe_non_ported_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
+		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
+		goto task_cleanup;
+	}
+#endif
 	/*
 	 * Register this module with SFE.
 	 * Notify manager should be registered before the netfilter hooks. Because there
