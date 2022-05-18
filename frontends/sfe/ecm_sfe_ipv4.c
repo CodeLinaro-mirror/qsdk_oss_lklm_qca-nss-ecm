@@ -337,8 +337,11 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		 * for the sync message which comes as a final sync for the ECM initiated destroy request.
 		 * Because this means the connection is not active for sometime and adding this delta time
 		 * to the conntrack timeout will update it eventhough there is no traffic for this connection.
+		 * When the CT in destroy status, find ct could cause race
+		 * conditions
 		 */
-		if (!sync->flow_tx_packet_count && !sync->return_tx_packet_count) {
+		if ((!sync->flow_tx_packet_count && !sync->return_tx_packet_count)
+				|| (ci->flags & ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED)) {
 			feci->deref(feci);
 			ecm_db_connection_deref(ci);
 			return;
