@@ -113,6 +113,7 @@ static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
+	ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
 	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
 
 	/*
@@ -221,6 +222,8 @@ static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
+	ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
+
 	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
 
 	/*
