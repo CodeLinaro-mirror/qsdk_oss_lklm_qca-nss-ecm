@@ -220,6 +220,7 @@ struct ecm_db_connection_instance {
  */
 #define ECM_DB_CONNECTION_FLAGS_INSERTED 0x1			/* Connection is inserted into connection database tables */
 #define ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE 0x2		/* Connection is PPPoE bridge entry */
+#define ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED 0x4	/* Connection is defuncted because of conntarck Destroyed */
 
 int _ecm_db_connection_count_get(void);
 
