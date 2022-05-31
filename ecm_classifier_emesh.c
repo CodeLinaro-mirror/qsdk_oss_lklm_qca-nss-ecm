@@ -79,6 +79,9 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS 0xff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ 0xffff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP 0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT 16
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE 0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK 0xffff
 
 /*
  * EMESH classifier type.
@@ -123,6 +126,7 @@ struct ecm_classifier_emesh_sawf_instance {
 static uint32_t ecm_classifier_emesh_enabled;			/* Operational behaviour */
 static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency profile enable flag */
 static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
+static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
 
 /*
  * Management thread control
@@ -232,8 +236,23 @@ static inline bool ecm_classifier_emesh_sawf_is_bidi_packet_seen(struct ecm_clas
  *	Save the PCP value in the classifier instance.
  */
 static void ecm_classifier_emesh_sawf_fill_pcp(struct ecm_classifier_emesh_sawf_instance *cemi,
-		 ecm_tracker_sender_type_t sender, struct sk_buff *skb)
+		 ecm_tracker_sender_type_t sender, struct sk_buff *skb, uint16_t cake_handle)
 {
+	/*
+	 * If CAKE Qdisc is enabled on the destination interface, put Qdisc handle as the
+	 * major number in the priority field (in skb->priority, upper 16 bits are interpreted as
+	 * major number and the lower 16 as minor number). CAKE will use the major number for
+	 * Qdisc match and the minor number will be used for priority classification inside CAKE.
+	 */
+	if (cake_handle != ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE) {
+		/*
+		 * First clear out upper 16 bits and then put the
+		 * handle in case of CAKE is enabled.
+		 */
+		skb->priority &= ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK;
+		skb->priority |= (cake_handle << ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT);
+	}
+
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		cemi->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
 		cemi->packet_seen[ECM_CONN_DIR_FLOW] = true;
@@ -244,13 +263,34 @@ static void ecm_classifier_emesh_sawf_fill_pcp(struct ecm_classifier_emesh_sawf_
 }
 
 /*
- * ecm_classifier_emesh_sawf_get_msduq_metadata()
- *	Get bidirectional msduq from wlan driver callback API.
+ * ecm_classifier_emesh_sawf_check_cake_qdisc()
+ *	Here we check if CAKE Qdisc is enabled on the given interface or not.
+ *	If yes, we can fetch the Qdisc handle so that it will be placed inside skb->priority
+ *	for CAKE priority classification.
  */
-static void ecm_classifier_emesh_sawf_get_msduq_metadata(struct ecm_db_connection_instance *ci,
-						ecm_tracker_sender_type_t sender, uint8_t *smac, uint8_t *dmac,
-						uint8_t flow_service_class, uint8_t return_service_class,
-						uint32_t *msduq_forward, uint32_t *msduq_reverse)
+static void ecm_classifier_emesh_sawf_check_cake_qdisc(struct net_device *dev, uint32_t *cake_handle)
+{
+	/*
+	 * Check if given dev has a qdisc attached or not, if yes, return the handle.
+	 */
+	if (dev && ecm_classifier_sawf_cake_enabled)
+	{
+		if (dev->qdisc && (!strcmp(dev->qdisc->ops->id, "cake"))){
+			DEBUG_INFO("%px: CAKE Qdisc is attached on dev %s\n", dev, dev->name);
+			*cake_handle = dev->qdisc->handle >> ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT;
+		}
+	}
+}
+
+/*
+ * ecm_classifier_emesh_sawf_get_and_hold_netdevs()
+ *	Get source and the destination net devices for fetching msduq information
+ *	from wlan driver and also to check if CAKE qdisc is enable or not on these
+ *	netdevices for SAWF.
+ */
+static void ecm_classifier_emesh_sawf_get_and_hold_netdevs(struct ecm_db_connection_instance *ci,
+						ecm_tracker_sender_type_t sender,
+						struct net_device **src_dev, struct net_device **dest_dev)
 {
 	uint32_t first_index;
 	ecm_db_obj_dir_t dir;
@@ -258,7 +298,7 @@ static void ecm_classifier_emesh_sawf_get_msduq_metadata(struct ecm_db_connectio
 	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 
 	/*
-	 * Obtained destination netdev form ECM's 'to' or 'from' interface list
+	 * Obtained destination netdev from ECM's 'to' or 'from' interface list
 	 * according to the type of sender.
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
@@ -269,7 +309,6 @@ static void ecm_classifier_emesh_sawf_get_msduq_metadata(struct ecm_db_connectio
 		dir = ECM_DB_OBJ_DIR_FROM;
 	}
 
-	*msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
 		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
 		if (!dev) {
@@ -278,14 +317,7 @@ static void ecm_classifier_emesh_sawf_get_msduq_metadata(struct ecm_db_connectio
 			goto get_source_dev;
 		}
 
-		/*
-		 * get the forward msduq data form wlan driver
-		 */
-		if (ecm_emesh.update_service_id_get_msduq) {
-			*msduq_forward = ecm_emesh.update_service_id_get_msduq(dev, dmac, flow_service_class);
-		}
-
-		dev_put(dev);
+		*dest_dev = dev;
 		ecm_db_connection_interfaces_deref(interfaces, first_index);
 		goto get_source_dev;
 	}
@@ -305,7 +337,6 @@ get_source_dev:
 		dir = ECM_DB_OBJ_DIR_TO;
 	}
 
-	*msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
 		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
 		if (!dev) {
@@ -314,14 +345,7 @@ get_source_dev:
 			return;
 		}
 
-		/*
-		 * get the reverse msduq form wlan driver
-		 */
-		if (ecm_emesh.update_service_id_get_msduq) {
-			*msduq_reverse = ecm_emesh.update_service_id_get_msduq(dev, smac, return_service_class);
-		}
-
-		dev_put(dev);
+		*src_dev = dev;
 		ecm_db_connection_interfaces_deref(interfaces, first_index);
 		return;
 	}
@@ -482,6 +506,10 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	uint64_t slow_pkts;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
+	uint32_t cake_flow_handle = ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE;
+	uint32_t cake_return_handle = ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
 	struct sp_rule_input_params flow_input_params;
 	struct sp_rule_input_params return_input_params;
 	struct sp_rule_output_params flow_output_params;
@@ -569,6 +597,12 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	}
 
 	/*
+	 * Fetch the src and dest net devices required to get the msduq for SAWF
+	 * and to check for the CAKE Qdisc as well.
+	 */
+	ecm_classifier_emesh_sawf_get_and_hold_netdevs(ci, sender, &src_dev, &dest_dev);
+
+	/*
 	 * Invoke SPM rule lookup API for skb priority update
 	 * For bridging traffic, it will be matched with the rule table on SPM prerouting hook
 	 * emesh-sawf takes precedence over the emesh classifier.
@@ -577,7 +611,9 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	flow_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	if (ecm_classifier_sawf_enabled) {
-		uint32_t msduq_forward, msduq_reverse;
+		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+
 		DEBUG_INFO("ecm classifier sawf is enabled\n");
 		if (!ecm_classifier_sawf_fill_input_params(skb, smac, dmac, &flow_input_params, &return_input_params)) {
 			DEBUG_TRACE("%px: failed to fill in sawf input params\n", ci);
@@ -604,17 +640,28 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * Get the bidirectional msduq from wlan driver using the service id
 		 * (received from spm rule lookup), netdev, and mac address.
 		 */
-		ecm_classifier_emesh_sawf_get_msduq_metadata(ci, sender, smac, dmac,
-								flow_output_params.service_class_id,
-								return_output_params.service_class_id,
-								&msduq_forward, &msduq_reverse);
+		if (ecm_emesh.update_service_id_get_msduq) {
+			if (dest_dev) {
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id);
+			}
+			if (src_dev) {
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id);
+			}
+		}
 
 		/*
-		 * Update skb->priority with the priority sent by
-		 * SPM-SAWF rule lookup in case of successful rule lookup.
+		 * Update skb->priority with the priority sent by SPM-SAWF rule lookup in case of
+		 * successful rule lookup. Also if SAWF has updated the priority value, CAKE priority classification
+		 * should take over the dscp classification (if enabled), so we check if CAKE is enabled on
+		 * the interface or not and put the cake handle in skb->priority.
 		 */
 		if (flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
 			skb->priority = flow_output_params.priority;
+			ecm_classifier_emesh_sawf_check_cake_qdisc(dest_dev, &cake_flow_handle);
+			/*
+			 * This is for UDP traffic with accel delay packets disabled.
+			 */
+			ecm_classifier_emesh_sawf_check_cake_qdisc(src_dev, &cake_return_handle);
 		}
 
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
@@ -648,9 +695,15 @@ check_emesh_classifier:
 		 * Update skb->priority with emesh SPM rule lookup if
 		 * 1. If sawf classifier is not relevant or.
 		 * 2. SAWF rule match for this direction fails, then the emesh priority has to be used.
+		 * Also, if emesh classifier is updating priority, we apply CAKE priority classification if enabled.
 		 */
 		if (!is_sawf_relevant || (flow_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP)) {
 			sp_mapdb_apply(skb, smac, dmac);
+			ecm_classifier_emesh_sawf_check_cake_qdisc(dest_dev, &cake_flow_handle);
+			/*
+			 * This is for UDP traffic with accel delay packets disabled.
+			 */
+			ecm_classifier_emesh_sawf_check_cake_qdisc(src_dev, &cake_return_handle);
 		}
 
 		/*
@@ -664,6 +717,7 @@ check_emesh_classifier:
 		}
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 	}
+
 sawf_classifier_out:
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	accel_mode = feci->accel_state_get(feci);
@@ -707,7 +761,7 @@ sawf_classifier_out:
 		 * Store the PCP value in the classifier instance and deny the
 		 * acceleration if both side PCP value is not yet available.
 		 */
-		ecm_classifier_emesh_sawf_fill_pcp(cemi, sender, skb);
+		ecm_classifier_emesh_sawf_fill_pcp(cemi, sender, skb, cake_flow_handle);
 		if (!ecm_classifier_emesh_sawf_is_bidi_packet_seen(cemi)) {
 			DEBUG_TRACE("%px: Both side PCP value is not yet picked\n", cemi);
 			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
@@ -739,7 +793,7 @@ sawf_classifier_out:
 			 * Store the PCP value in the classifier instance and allow the
 			 * acceleration if both side PCP value is not yet available.
 			 */
-			ecm_classifier_emesh_sawf_fill_pcp(cemi, sender, skb);
+			ecm_classifier_emesh_sawf_fill_pcp(cemi, sender, skb, cake_flow_handle);
 			if (ecm_classifier_emesh_sawf_is_bidi_packet_seen(cemi)) {
 				DEBUG_TRACE("%px: Both side PCP value is picked\n", cemi);
 				goto done;
@@ -773,6 +827,31 @@ sawf_classifier_out:
 		 */
 		if (is_sawf_relevant && (return_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP)) {
 			cemi->pcp[ECM_CONN_DIR_RETURN] = return_output_params.priority;
+			/*
+			 * Check for CAKE handle for return direction as sawf has updated priority.
+			 */
+			ecm_classifier_emesh_sawf_check_cake_qdisc(src_dev, &cake_return_handle);
+		}
+
+		/*
+		 * In case of acceleration delay option is disabled,
+		 * CASE 1 : CAKE is enabled on flow direction, put the handle in skb->priority (current
+		 * packet) and store the same to pass it to the acceleration engine.
+		 * CASE 2 : CAKE is enabled on the return direction, store the handle to pass it to the
+		 * acceleration engine.
+		 * First clear out upper 16 bits and then put the handle in case of CAKE is enabled.
+		 */
+		if (cake_flow_handle != ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE) {
+
+			skb->priority &= ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK;
+			skb->priority |= (cake_flow_handle << ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT);
+			cemi->pcp[ECM_CONN_DIR_FLOW] &= ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK;
+			cemi->pcp[ECM_CONN_DIR_FLOW] |= (cake_flow_handle << ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT);
+		}
+
+		if (cake_return_handle != ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE) {
+			cemi->pcp[ECM_CONN_DIR_RETURN] &= ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK;
+			cemi->pcp[ECM_CONN_DIR_RETURN] |= (cake_return_handle << ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT);
 		}
 	}
 
@@ -797,7 +876,16 @@ sawf_emesh_classifier_out:
 
 	/*
 	 * Return our process response
+	 * Release the source and destination dev count
 	 */
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+
 	*process_response = cemi->process_response;
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
@@ -1411,6 +1499,14 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
+
+	if (!debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_sawf_cake_enabled)) {
+		DEBUG_ERROR("Failed to create ecm sawf cake enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+		return -1;
+	}
+
 	/*
 	 * Register for service prioritization notification update.
 	 */
