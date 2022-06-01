@@ -421,6 +421,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
 	ecm_front_end_acceleration_mode_t result_mode;
+	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
+	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
 
 	DEBUG_CHECK_MAGIC(npci, ECM_SFE_PORTED_IPV4_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", npci);
 
@@ -507,6 +509,23 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	nircm->conn_rule.return_interface_num = to_sfe_iface_id;
 
 	/*
+	 * Check which side of the connection can support L2 acceleration.
+	 * The check is done only for the routed flows and if the L2 feature is enabled.
+	 */
+	if (sfe_is_l2_feature_enabled() && ecm_db_connection_is_routed_get(feci->ci)) {
+		rcu_read_lock();
+		l2_accel_check = rcu_dereference(ecm_sfe_cb.l2_accel_check);
+		if (l2_accel_check) {
+			struct ecm_sfe_common_tuple l2_accel_tuple;
+
+			ecm_sfe_common_tuple_set(feci, from_sfe_iface_id, to_sfe_iface_id, &l2_accel_tuple);
+
+			l2_accel_bits = l2_accel_check(&l2_accel_tuple);
+		}
+		rcu_read_unlock();
+	}
+
+	/*
 	 * Set interface numbers involved in accelerating this connection.
 	 * These are the inner facing addresses from the heirarchy interface lists we got above.
 	 */
@@ -563,7 +582,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, from_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, from_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_BRIDGE);
 			}
@@ -589,7 +608,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_OVS_BRIDGE, list_index, from_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_OVS_BRIDGE, list_index, from_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_OVS_BRIDGE);
 			}
@@ -639,6 +658,15 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			if (!sfe_is_l2_feature_enabled()) {
 				DEBUG_TRACE("%px: PPPoE - unsupported\n", npci);
+				break;
+			}
+
+			/*
+			 * If external module decide that L2 acceleration is not allowed, we should return
+			 * without setting PPPoE parameters.
+			 */
+			if (!(l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				DEBUG_TRACE("%px: L2 acceleration is not allowed for the PPPoE interface\n", npci);
 				break;
 			}
 
@@ -695,7 +723,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 
-			if (sfe_is_l2_feature_enabled()) {
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VLAN);
 
@@ -722,7 +750,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			break;
 		case ECM_DB_IFACE_TYPE_MACVLAN:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, from_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, from_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_MACVLAN);
 			}
@@ -759,7 +787,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_LAG:
 #ifdef ECM_INTERFACE_BOND_ENABLE
-			if (sfe_is_l2_feature_enabled()) {
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				/*
 				 * LAG device gets its stats by summing up all stats of its
@@ -841,7 +869,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, to_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, to_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_BRIDGE);
 			}
@@ -868,7 +896,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_OVS_BRIDGE, list_index, to_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_OVS_BRIDGE, list_index, to_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_OVS_BRIDGE);
 			}
@@ -918,6 +946,15 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			if (!sfe_is_l2_feature_enabled()) {
 				DEBUG_TRACE("%px: PPPoE - unsupported\n", npci);
+				break;
+			}
+
+			/*
+			 * If external module decide that L2 acceleration is not allowed, we should return
+			 * without setting PPPoE parameters.
+			 */
+			if (!(l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+				DEBUG_TRACE("%px: L2 acceleration is not allowed for the PPPoE interface\n", npci);
 				break;
 			}
 
@@ -973,7 +1010,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 
-			if (sfe_is_l2_feature_enabled()) {
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
 
@@ -1001,7 +1038,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_MACVLAN:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
-			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, to_ifaces_first)) {
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, to_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_MACVLAN);
 			}
@@ -1038,7 +1075,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_LAG:
 #ifdef ECM_INTERFACE_BOND_ENABLE
-			if (sfe_is_l2_feature_enabled()) {
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				/*
 				 * LAG device gets its stats by summing up all stats of its
@@ -1091,7 +1128,25 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 	if (ecm_interface_src_check) {
 		DEBUG_INFO("%px: Source interface check flag is enabled\n", npci);
-		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_SRC_INTERFACE_CHECK;
+	}
+
+	/*
+	 * Enable source interface check without flushing the rule for this flow to re-inject the packet to
+	 * the network stack in SFE driver after the first pass of the packet coming with the L2 interface.
+	 * In the second pass, the packet will come to SFE with the L3 interface. If there are more than 3 interfaces
+	 * in the hierarchy, the packet will be re-injected to the stack until the flows input interface matches with the
+	 * rule's match_dev.
+	 */
+	if (!(l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK_NO_FLUSH;
+	}
+
+	if (!(l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_SRC_INTERFACE_CHECK_NO_FLUSH;
 	}
 
 	/*

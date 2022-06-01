@@ -15,6 +15,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "ecm_sfe_common_public.h"
+
+/*
+ * Export the callback object for frontend usage.
+ */
+extern struct ecm_sfe_common_callbacks ecm_sfe_cb;
+
 #ifdef CONFIG_XFRM
 /*
  * Which type of ipsec process traffic need.
@@ -148,3 +155,6 @@ void ecm_sfe_common_init_fe_info(struct ecm_sfe_common_fe_info *info);
 uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir);
 void ecm_sfe_common_set_stats_bitmap(struct ecm_sfe_common_fe_info *fe_info, ecm_db_obj_dir_t dir, uint8_t bit);
 void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
+void ecm_sfe_common_tuple_set(struct ecm_front_end_connection_instance *feci,
+			      int32_t from_iface_id, int32_t to_iface_id,
+			      struct ecm_sfe_common_tuple *tuple);
