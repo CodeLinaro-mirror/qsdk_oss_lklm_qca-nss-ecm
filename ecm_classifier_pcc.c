@@ -79,6 +79,7 @@
 #include "ecm_front_end_common.h"
 #include "ecm_classifier_pcc.h"
 #include "ecm_classifier_pcc_public.h"
+#include "ecm_front_end_common.h"
 
 /*
  * Magic numbers
@@ -97,6 +98,7 @@ struct ecm_classifier_pcc_instance {
 	long process_jiffies_last;				/* Rate limiting the calls to the registrant */
 	uint32_t reg_calls_to;					/* #calls to registrant */
 	uint32_t reg_calls_from;				/* #calls from registrant */
+	uint32_t rate_exceeds;					/* call rate exceeds */
 	uint32_t feature_flags;					/* Feature flags */
 
 	struct ecm_classifier_process_response process_response;
@@ -738,13 +740,15 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	/*
 	 * We need to call to the registrant BUT we cannot do this at a rate that exceeds 1/sec
 	 * NOTE: Not worried about wrap around, it's only one second.
+	 * As an exception, we try with the first packet.
 	 */
 	jiffies_now = jiffies;
-	if ((jiffies_now - pcci->process_jiffies_last) < HZ) {
+	if (((jiffies_now - pcci->process_jiffies_last) < HZ) && (ecm_front_end_get_slow_packet_count(ci->feci) > 1)) {
 		/*
 		 * We cannot permit acceleration just yet
 		 * Deny accel but don't change the permit state - we try again later
 		 */
+		pcci->rate_exceeds++;
 		goto deny_accel;
 	}
 	pcci->process_jiffies_last = jiffies_now;
@@ -1088,6 +1092,7 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	ecm_classifier_pcc_result_t accel_permit_state;
 	uint32_t reg_calls_to;
 	uint32_t reg_calls_from;
+	uint32_t rate_exceeds;
 	uint32_t feature_flags;
 
 	pcci = (struct ecm_classifier_pcc_instance *)ci;
@@ -1102,6 +1107,7 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	process_response = pcci->process_response;
 	reg_calls_to = pcci->reg_calls_to;
 	reg_calls_from = pcci->reg_calls_from;
+	rate_exceeds = pcci->rate_exceeds;
 	feature_flags = pcci->feature_flags;
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
 
@@ -1114,6 +1120,10 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 	}
 
 	if ((result = ecm_state_write(sfi, "reg_calls_from", "%d", reg_calls_from))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "rate_exceeds", "%d", rate_exceeds))) {
 		return result;
 	}
 
