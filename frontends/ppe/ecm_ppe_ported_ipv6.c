@@ -493,12 +493,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * Override the flow MTU to MAX, to avoid fragmentation for flows coming in from WAN.
 			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
 			 */
-
-			/*
-			 * TODO: Add support for VxLAN.
-			 * set conn_rule.flow_mtu & rule_flags ?
-			 */
-			rule_invalid = true;
+			rule_invalid = false;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
