@@ -464,9 +464,9 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
-			DEBUG_TRACE("%px: IPsec is not supported in PPE: %d (%s)\n", feci, ii_type, ii_name);
+#ifndef ECM_INTERFACE_IPSEC_ENABLE
 			rule_invalid = true;
+			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
 			break;
 
@@ -652,12 +652,9 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-#ifdef ECM_INTERFACE_IPSEC_ENABLE
-			/*
-			 * TODO: Add support for IPsec in PPE Frontend.
-			 */
-			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
+#ifndef ECM_INTERFACE_IPSEC_ENABLE
 			rule_invalid = true;
+			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
 			break;
 
