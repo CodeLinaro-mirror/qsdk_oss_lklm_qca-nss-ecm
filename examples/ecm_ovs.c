@@ -123,7 +123,7 @@ static ecm_classifier_ovs_result_t ecm_ovs_process(struct ovsmgr_dp_flow *flow, 
 
 		return_status = ovsmgr_flow_info_get(&return_flow, skb, &return_ofi);
 		if ((return_status == OVSMGR_FLOW_STATUS_DENY_ACCEL) || (return_status == OVSMGR_FLOW_STATUS_UNKNOWN)) {
-			pr_info("%px: Deny accelerating the return flow\n", &return_flow);
+			pr_debug("%px: Deny accelerating the return flow\n", &return_flow);
 			goto process_flow;
 		}
 
