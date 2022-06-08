@@ -85,6 +85,9 @@
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
 #endif
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+#include "ecm_sfe_non_ported_ipv4.h"
+#endif
 #include "ecm_ipv4.h"
 #include "ecm_interface.h"
 #include "ecm_sfe_ported_ipv4.h"
@@ -334,8 +337,11 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		 * for the sync message which comes as a final sync for the ECM initiated destroy request.
 		 * Because this means the connection is not active for sometime and adding this delta time
 		 * to the conntrack timeout will update it eventhough there is no traffic for this connection.
+		 * When the CT in destroy status, find ct could cause race
+		 * conditions
 		 */
-		if (!sync->flow_tx_packet_count && !sync->return_tx_packet_count) {
+		if ((!sync->flow_tx_packet_count && !sync->return_tx_packet_count)
+				|| (ci->flags & ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED)) {
 			feci->deref(feci);
 			ecm_db_connection_deref(ci);
 			return;
@@ -987,6 +993,12 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
+	if (!ecm_sfe_non_ported_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
+		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
+		goto task_cleanup;
+	}
+#endif
 	/*
 	 * Register this module with SFE.
 	 * Notify manager should be registered before the netfilter hooks. Because there
