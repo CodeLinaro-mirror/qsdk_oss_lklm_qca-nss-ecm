@@ -1112,7 +1112,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 	/*
 	 * DSCP information?
 	 */
@@ -1133,6 +1133,34 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+	/*
+	 * SAWF information
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+		nircm->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		nircm->sawf_rule.return_mark = pr->return_sawf_metadata;
+	}
+
+	/*
+	 * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
+	 * and send the update VLAN tag to SFE.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+		if (pr->flow_vlan_pcp != SFE_INVALID_VLAN_PCP &&
+				nircm->vlan_primary_rule.egress_vlan_tag != SFE_VLAN_ID_NOT_CONFIGURED) {
+			nircm->vlan_primary_rule.egress_vlan_tag &= ~VLAN_PRIO_MASK;
+			nircm->vlan_primary_rule.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+
+		if (pr->return_vlan_pcp != SFE_INVALID_VLAN_PCP &&
+				nircm->vlan_primary_rule.ingress_vlan_tag != SFE_VLAN_ID_NOT_CONFIGURED) {
+			nircm->vlan_primary_rule.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
+			nircm->vlan_primary_rule.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+	}
+#endif
+
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_VLAN)) {
 		/*
@@ -1148,16 +1176,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			nircm->vlan_secondary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[1];
 			nircm->vlan_secondary_rule.egress_vlan_tag = pr->egress_vlan_tag[1];
 		}
-	}
-#endif
-
-#ifdef ECM_CLASSIFIER_EMESH_ENABLE
-	/*
-	 * SAWF information
-	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
-		nircm->sawf_rule.flow_mark = pr->flow_sawf_metadata;
-		nircm->sawf_rule.return_mark = pr->return_sawf_metadata;
 	}
 #endif
 

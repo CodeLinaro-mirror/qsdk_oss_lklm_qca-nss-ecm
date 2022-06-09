@@ -103,6 +103,7 @@ struct ecm_classifier_emesh_sawf_instance {
 
 	uint32_t ci_serial;					/* RO: Serial of the connection */
 	uint32_t pcp[ECM_CONN_DIR_MAX];				/* PCP values for the connections */
+	uint32_t dscp[ECM_CONN_DIR_MAX];			/* DSCP values for the connections */
 	struct ecm_classifier_process_response process_response;/* Last process response computed */
 
 	int refs;						/* Integer to trap we never go negative */
@@ -232,6 +233,38 @@ static inline bool ecm_classifier_emesh_sawf_is_bidi_packet_seen(struct ecm_clas
 }
 
 /*
+ * ecm_classifier_emesh_sawf_fill_dscp_info()
+ *	Save the DSCP values in classifier instance for SPM rule match.
+ */
+static void ecm_classifier_emesh_sawf_fill_dscp_info(uint16_t dscp, struct ecm_classifier_emesh_sawf_instance *cemi,
+							ecm_tracker_sender_type_t sender,
+							struct sp_rule_input_params *flow_input_params,
+							struct sp_rule_input_params *return_input_params)
+{
+	/*
+	 * Save the dscp values and fill the flow and return
+	 * input parameters accordingly.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		cemi->dscp[ECM_CONN_DIR_FLOW] = dscp;
+		/*
+		 * In case of UDP acceleration delay packets disabled, we save the same
+		 * DSCP value in the return direction. Also we avoid saving the value if
+		 * we have already seen reverse direction packet and saved the dscp in reverse direction.
+		 */
+		if (!cemi->dscp[ECM_CONN_DIR_RETURN]) {
+			cemi->dscp[ECM_CONN_DIR_RETURN] = dscp;
+		}
+
+		flow_input_params->dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+		return_input_params->dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+	} else {
+		cemi->dscp[ECM_CONN_DIR_RETURN] = dscp;
+		flow_input_params->dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+		return_input_params->dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+	}
+}
+/*
  * ecm_classifier_emesh_sawf_fill_pcp()
  *	Save the PCP value in the classifier instance.
  */
@@ -273,13 +306,105 @@ static void ecm_classifier_emesh_sawf_check_cake_qdisc(struct net_device *dev, u
 	/*
 	 * Check if given dev has a qdisc attached or not, if yes, return the handle.
 	 */
-	if (dev && ecm_classifier_sawf_cake_enabled)
-	{
-		if (dev->qdisc && (!strcmp(dev->qdisc->ops->id, "cake"))){
+	if (dev && ecm_classifier_sawf_cake_enabled) {
+		if (dev->qdisc && (!strcmp(dev->qdisc->ops->id, "cake"))) {
 			DEBUG_INFO("%px: CAKE Qdisc is attached on dev %s\n", dev, dev->name);
 			*cake_handle = dev->qdisc->handle >> ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT;
 		}
 	}
+}
+
+/*
+ * ecm_classifier_emesh_sawf_fill_vlan_info()
+ *	Get the VLAN info in respective directions by iterating over the ECM's
+ *	'to' and 'from' list and getting the source and the destination vlan net devices
+ *	(if vlan is configured in the respective direction) for vlan_pcp remark support for SAWF.
+ */
+static void ecm_classifier_emesh_sawf_fill_vlan_info(struct ecm_db_connection_instance *ci,
+						ecm_tracker_sender_type_t sender,
+						struct sp_rule_input_params *flow_input_params,
+						struct sp_rule_input_params *return_input_params)
+{
+	uint32_t first_index;
+	uint32_t i;
+	ecm_db_obj_dir_t dir;
+	struct net_device *dev = NULL;
+	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+
+	/*
+	 * Obtained destination vlan dev from ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	}
+
+	if (first_index == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+		goto get_source_vlan_dev;
+        }
+
+	for (i = first_index; i < ECM_DB_IFACE_HEIRARCHY_MAX; i++) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[i]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			goto get_source_vlan_dev;
+		}
+
+		if (is_vlan_dev(dev)) {
+			flow_input_params->vlan_tci = vlan_dev_vlan_id(dev);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			dev_put(dev);
+			goto get_source_vlan_dev;
+		}
+
+		dev_put(dev);
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
+
+get_source_vlan_dev:
+	/*
+	 * Obtained source vlan netdev form ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	}
+
+	if (first_index == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+		return;
+        }
+
+	for (i = first_index; i < ECM_DB_IFACE_HEIRARCHY_MAX; i++) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[i]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			return;
+		}
+
+		if (is_vlan_dev(dev)) {
+			return_input_params->vlan_tci = vlan_dev_vlan_id(dev);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			dev_put(dev);
+			return;
+		}
+
+		dev_put(dev);
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
 }
 
 /*
@@ -391,6 +516,47 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 		cemi->return_rule_id = return_output_params->rule_id;
 	}
 
+	/*
+	 * Indicates response contains SAWF information.
+	 */
+	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
+
+	/*
+	 * While updating the DSCP remark values, even if one direction rule matches and we have one sided dscp remark
+	 * coming from userspace, we will apply the same for both direction. Does not apply for vlan
+	 * pcp remark as vlan id could be different in the other direction.
+	 */
+	if (flow_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK &&
+			return_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
+		cemi->process_response.flow_dscp = flow_output_params->dscp_remark;
+		cemi->process_response.return_dscp = return_output_params->dscp_remark;
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
+	} else if (flow_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
+		cemi->process_response.flow_dscp = flow_output_params->dscp_remark;
+		cemi->process_response.return_dscp = flow_output_params->dscp_remark;
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
+	} else if (return_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
+		cemi->process_response.flow_dscp = return_output_params->dscp_remark;
+		cemi->process_response.return_dscp = return_output_params->dscp_remark;
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
+	}
+
+	/*
+	 * Fill VLAN pcp remark coming from user.
+	 */
+	cemi->process_response.flow_vlan_pcp = flow_output_params->vlan_pcp_remark;
+	cemi->process_response.return_vlan_pcp = return_output_params->vlan_pcp_remark;
+
+	/*
+	 * Set VLAN PCP values if SAWF rules has provided the remark in atleast one direction.
+	 */
+	if ((flow_output_params->vlan_pcp_remark != SP_RULE_INVALID_VLAN_PCP_REMARK) ||
+					(return_output_params->vlan_pcp_remark != SP_RULE_INVALID_VLAN_PCP_REMARK)) {
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK;
+	}
+
+	cemi->type = ECM_CLASSIFIER_SAWF;
+
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
 
@@ -398,7 +564,10 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
  * ecm_classifier_sawf_fill_input_params()
  *	fill sawf input params for sp rule lookup.
  */
-static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *smac, uint8_t *dmac,
+static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ecm_db_connection_instance *ci,
+							struct ecm_classifier_emesh_sawf_instance *cemi,
+							ecm_tracker_sender_type_t sender,
+							uint8_t *smac, uint8_t *dmac,
 							struct sp_rule_input_params *flow_input_params,
 							struct sp_rule_input_params *return_input_params)
 {
@@ -406,6 +575,7 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *
 	struct ipv6hdr *ip6h;
 	struct tcphdr *tcphdr;
 	struct udphdr *udphdr;
+	uint16_t dscp;
 
 	if (skb->protocol == ntohs(ETH_P_IP)) {
 		if (unlikely(!pskb_may_pull(skb, sizeof(*iph)))) {
@@ -421,7 +591,8 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *
 		return_input_params->protocol = iph->protocol;
 		flow_input_params->src.ip.ipv4_addr = return_input_params->dst.ip.ipv4_addr = iph->saddr;
 		flow_input_params->dst.ip.ipv4_addr = return_input_params->src.ip.ipv4_addr = iph->daddr;
-		flow_input_params->dscp = return_input_params->dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
+		dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
+		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
 	} else if (skb->protocol == ntohs(ETH_P_IPV6)) {
 		if (unlikely(!pskb_may_pull(skb, sizeof(*ip6h)))) {
 			/*
@@ -438,7 +609,8 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *
 		memcpy(&flow_input_params->dst.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
 		memcpy(&return_input_params->src.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
 		memcpy(&return_input_params->dst.ip.ipv6_addr, &ip6h->saddr, sizeof(struct in6_addr));
-		flow_input_params->dscp = return_input_params->dscp = ipv6_get_dsfield(ip6h) >> XT_DSCP_SHIFT;
+		dscp = ipv6_get_dsfield(ip6h) >> XT_DSCP_SHIFT;
+		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
 	} else {
 		DEBUG_INFO("Not ip packet protocol: %x \n", skb->protocol);
 		return false;
@@ -475,9 +647,10 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, uint8_t *
 
 	flow_input_params->vlan_tci = return_input_params->vlan_tci = SP_RULE_INVALID_VLAN_TCI;
 
-	if (is_vlan_dev(skb->dev)) {
-		flow_input_params->vlan_tci = vlan_dev_vlan_id(skb->dev);
-	}
+	/*
+	 * Get the source and destination VLAN information.
+	 */
+	ecm_classifier_emesh_sawf_fill_vlan_info(ci, sender, flow_input_params, return_input_params);
 
 	ether_addr_copy(flow_input_params->src.mac, smac);
 	ether_addr_copy(flow_input_params->dst.mac, dmac);
@@ -599,6 +772,14 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	ecm_classifier_emesh_sawf_get_and_hold_netdevs(ci, sender, &src_dev, &dest_dev);
 
 	/*
+	 * SAWF does support ported protocols.
+	 */
+	protocol = ecm_db_connection_protocol_get(ci);
+	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP)) {
+		goto check_emesh_classifier;
+	}
+
+	/*
 	 * Invoke SPM rule lookup API for skb priority update
 	 * For bridging traffic, it will be matched with the rule table on SPM prerouting hook
 	 * emesh-sawf takes precedence over the emesh classifier.
@@ -611,7 +792,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 
 		DEBUG_INFO("ecm classifier sawf is enabled\n");
-		if (!ecm_classifier_sawf_fill_input_params(skb, smac, dmac, &flow_input_params, &return_input_params)) {
+		if (!ecm_classifier_sawf_fill_input_params(skb, ci, cemi, sender, smac, dmac,
+								&flow_input_params, &return_input_params)) {
 			DEBUG_TRACE("%px: failed to fill in sawf input params\n", ci);
 			/*
 			 * If SAWF fails to fill input parameters,
@@ -668,8 +850,6 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				msduq_reverse, msduq_forward);
 		}
 
-		cemi->type = ECM_CLASSIFIER_SAWF;
-		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 		is_sawf_relevant = true;
 	}
 
