@@ -18,6 +18,9 @@
 # Makefile for the QCA NSS ECM
 # ###################################################
 
+ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
+obj-m += examples/ecm_sfe_l2.o
+endif
 obj-m +=examples/ecm_ae_select.o
 
 obj-m += ecm.o

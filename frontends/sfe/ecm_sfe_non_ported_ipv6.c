@@ -1015,7 +1015,8 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	if (ecm_interface_src_check) {
 		DEBUG_INFO("%px: Source interface check flag is enabled\n", nnpci);
-		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_SRC_INTERFACE_CHECK;
 	}
 
 	/*
