@@ -1831,14 +1831,10 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num);
+	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num, ae_interface_num);
 
 	if (ii) {
 		DEBUG_TRACE("%px: iface established\n", ii);
-		/*
-		 * Update the accel engine interface identifier, just in case it was changed.
-		 */
-		ecm_db_iface_ae_interface_identifier_set(ii, ae_interface_num);
 		return ii;
 	}
 
@@ -1855,7 +1851,7 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num);
+	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
