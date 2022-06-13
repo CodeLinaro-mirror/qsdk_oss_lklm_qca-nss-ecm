@@ -349,15 +349,12 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t ad
  */
 struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr)
 {
-	char __attribute__((unused)) addr_str[40];
-
-	DEBUG_ECM_IP_ADDR_TO_STRING(addr_str, addr);
-	DEBUG_TRACE("Locate dev for: %s\n", addr_str);
-
 	if (ECM_IP_ADDR_IS_V4(addr)) {
+		DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
 		return ecm_interface_dev_find_by_local_addr_ipv4(addr);
 	}
 
+	DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 #ifdef ECM_IPV6_ENABLE
 	return ecm_interface_dev_find_by_local_addr_ipv6(addr);
 #else
@@ -375,32 +372,34 @@ EXPORT_SYMBOL(ecm_interface_dev_find_by_local_addr);
  */
 struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr)
 {
-	char __attribute__((unused)) addr_str[40];
 	struct ecm_interface_route ecm_rt;
 	struct net_device *dev;
 	struct dst_entry *dst;
 
-	DEBUG_ECM_IP_ADDR_TO_STRING(addr_str, addr);
+	if (ECM_IP_ADDR_IS_V4(addr)) {
+		DEBUG_TRACE("find net device for address: " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
+	} else {
+		DEBUG_TRACE("find net device for address: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
+	}
 
 	/*
 	 * Is the address a local IP?
 	 */
-	DEBUG_TRACE("find net device for address: %s\n", addr_str);
 	dev = ecm_interface_dev_find_by_local_addr(addr);
 	if (dev) {
 		 *from_local_addr = true;
-		DEBUG_TRACE("addr: %s is local: %px (%s)\n", addr_str, dev, dev->name);
+		DEBUG_TRACE("address is local: %px (%s)\n", dev, dev->name);
 		return dev;
 	}
 
-	DEBUG_TRACE("addr: %s is not local\n", addr_str);
+	DEBUG_TRACE("address is not local\n");
 
 	/*
 	 * Try a route to the address instead
 	 * NOTE: This will locate a route entry in the route destination *cache*.
 	 */
 	if (!ecm_interface_find_route_by_addr(addr, &ecm_rt)) {
-		DEBUG_WARN("addr: %s - no dev locatable\n", addr_str);
+		DEBUG_WARN("no route found\n");
 		return NULL;
 	}
 
@@ -409,7 +408,7 @@ struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_loc
 	dev = dst->dev;
 	dev_hold(dev);
 	ecm_interface_route_release(&ecm_rt);
-	DEBUG_TRACE("dest_addr: %s uses dev: %px(%s)\n", addr_str, dev, dev->name);
+	DEBUG_TRACE("address uses dev: %px(%s)\n", dev, dev->name);
 	return dev;
 }
 EXPORT_SYMBOL(ecm_interface_dev_find_by_addr);
@@ -1161,15 +1160,12 @@ static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t addr, struct ecm_int
  */
 bool ecm_interface_find_route_by_addr(ip_addr_t addr, struct ecm_interface_route *ecm_rt)
 {
-	char __attribute__((unused)) addr_str[40];
-
-	DEBUG_ECM_IP_ADDR_TO_STRING(addr_str, addr);
-	DEBUG_TRACE("Locate route to: %s\n", addr_str);
-
 	if (ECM_IP_ADDR_IS_V4(addr)) {
+		DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(addr));
 		return ecm_interface_find_route_by_addr_ipv4(addr, ecm_rt);
 	}
 
+	DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 #ifdef ECM_IPV6_ENABLE
 	return ecm_interface_find_route_by_addr_ipv6(addr, ecm_rt);
 #else
