@@ -192,13 +192,13 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 #define ECM_LINUX6_TO_IP_ADDR(d,s) \
 	{ \
 		ecm_type_check_ecm_ip_addr(d); \
-		ecm_type_check_ae_ipv6(&s); \
+		ecm_type_check_ae_ipv6(s); \
 		__ECM_IP_ADDR_COPY_NO_CHECK(d,s); \
 	}
 
 #define ECM_IP_ADDR_TO_LINUX6(d,s) \
 	{ \
-		ecm_type_check_ae_ipv6(&d); \
+		ecm_type_check_ae_ipv6(d); \
 		ecm_type_check_ecm_ip_addr(s); \
 		__ECM_IP_ADDR_COPY_NO_CHECK(d,s); \
 	}

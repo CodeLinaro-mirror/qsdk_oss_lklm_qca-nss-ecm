@@ -41,6 +41,13 @@
 #include "ecm_sfe_ipv4.h"
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
+#include "exports/ecm_sfe_common_public.h"
+
+
+/*
+ * Callback object to support SFE frontend interaction with external code
+ */
+struct ecm_sfe_common_callbacks ecm_sfe_cb;
 
 /*
  * Sysctl table
@@ -388,3 +395,119 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		break;
 	}
 }
+
+/*
+ * ecm_sfe_common_tuple_set()
+ *	Sets the SFE common tuple object with the ECM connection rule paramaters.
+ *
+ * This tuple object will be used by external module to make decision on L2 acceleration.
+ */
+void ecm_sfe_common_tuple_set(struct ecm_front_end_connection_instance *feci,
+			      int32_t from_iface_id, int32_t to_iface_id,
+			      struct ecm_sfe_common_tuple *tuple)
+{
+	ip_addr_t saddr;
+	ip_addr_t daddr;
+
+	tuple->protocol = ecm_db_connection_protocol_get(feci->ci);
+	tuple->ip_ver = feci->ip_version;
+
+	tuple->src_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+        tuple->dest_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	tuple->src_ifindex = from_iface_id;
+	tuple->dest_ifindex = to_iface_id;
+
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+
+	if (feci->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(tuple->src_addr[0], saddr);
+		ECM_IP_ADDR_TO_NIN4_ADDR(tuple->dest_addr[0], daddr);
+	} else {
+		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(tuple->src_addr, saddr);
+		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(tuple->dest_addr, daddr);
+	}
+}
+
+/*
+ * ecm_sfe_common_defunct_ipv4_connection()
+ *	Defunct an IPv4 5-tuple connection.
+ */
+bool ecm_sfe_common_defunct_ipv4_connection(__be32 src_ip, int src_port,
+					    __be32 dest_ip, int dest_port, int protocol)
+{
+	return ecm_db_connection_decel_v4(src_ip, src_port, dest_ip, dest_port, protocol);
+}
+EXPORT_SYMBOL(ecm_sfe_common_defunct_ipv4_connection);
+
+/*
+ * ecm_sfe_common_defunct_ipv6_connection()
+ *	Defunct an IPv6 5-tuple connection.
+ */
+bool ecm_sfe_common_defunct_ipv6_connection(struct in6_addr *src_ip, int src_port,
+					    struct in6_addr *dest_ip, int dest_port, int protocol)
+{
+	return ecm_db_connection_decel_v6(src_ip, src_port, dest_ip, dest_port, protocol);
+}
+EXPORT_SYMBOL(ecm_sfe_common_defunct_ipv6_connection);
+
+/*
+ * ecm_sfe_common_defunct_by_protocol()
+ *	Defunct the connections by the protocol type (e.g:TCP, UDP)
+ */
+void ecm_sfe_common_defunct_by_protocol(int protocol)
+{
+	ecm_db_connection_defunct_by_protocol(protocol);
+}
+EXPORT_SYMBOL(ecm_sfe_common_defunct_by_protocol);
+
+/*
+ * ecm_sfe_common_defunct_by_port()
+ *	Defunct the connections associated with this port in the direction
+ * relative to the ECM's connection direction as well.
+ *
+ * TODO:
+ *	For now, all the connections from/to this port number are defuncted.
+ *	Directional defunct can be implemented later, but there is a trade of here:
+ *	For each connection in the database, the connection's from/to interfaces will
+ *	be checked with the wan_name and direction will be determined and then the connection
+ *	will be defuncted if there is a match with this port number. This process may be heavier
+ *	than defuncting all the connections from/to this port number. So, the direction and  wan_name
+ *	are optional for this API for now.
+ */
+void ecm_sfe_common_defunct_by_port(int port, int direction, char *wan_name)
+{
+	ecm_db_connection_defunct_by_port(htons(port), ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_defunct_by_port(htons(port), ECM_DB_OBJ_DIR_TO);
+}
+EXPORT_SYMBOL(ecm_sfe_common_defunct_by_port);
+
+/*
+ * ecm_sfe_common_callbacks_register()
+ *	Registers SFE common callbacks.
+ */
+int ecm_sfe_common_callbacks_register(struct ecm_sfe_common_callbacks *sfe_cb)
+{
+	if (!sfe_cb || !sfe_cb->l2_accel_check) {
+		DEBUG_ERROR("SFE L2 acceleration check callback is NULL\n");
+		return -EINVAL;
+	}
+
+	rcu_assign_pointer(ecm_sfe_cb.l2_accel_check, sfe_cb->l2_accel_check);
+	synchronize_rcu();
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_sfe_common_callbacks_register);
+
+/*
+ * ecm_sfe_common_callbacks_unregister()
+ *	Unregisters SFE common callbacks.
+ */
+void ecm_sfe_common_callbacks_unregister(void)
+{
+	rcu_assign_pointer(ecm_sfe_cb.l2_accel_check, NULL);
+	synchronize_rcu();
+}
+EXPORT_SYMBOL(ecm_sfe_common_callbacks_unregister);
