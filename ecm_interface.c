@@ -3820,7 +3820,15 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 				/*
 				 * Ethernet - but what sub type?
 				 */
-
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+				if (dest_dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
+					DEBUG_TRACE("%px: Acceleration not supported for GRE tap flows\n", dest_dev);
+					dev_put(dest_dev);
+					ecm_db_multicast_copy_if_heirarchy(to_list_single, interface);
+					ecm_db_connection_interfaces_deref(to_list_single, current_interface_index);
+					return ECM_DB_IFACE_HEIRARCHY_MAX;
+				}
+#endif
 				/*
 				 * VLAN?
 				 */
@@ -5920,6 +5928,16 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 				/*
 				 * Ethernet - but what sub type?
 				 */
+
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+				if (dest_dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
+					DEBUG_TRACE("%px: Acceleration not supported for GRE tap flows.\n", dest_dev);
+					dev_put(src_dev);
+					dev_put(dest_dev);
+					ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+					return ECM_DB_IFACE_HEIRARCHY_MAX;
+				}
+#endif
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				/*
