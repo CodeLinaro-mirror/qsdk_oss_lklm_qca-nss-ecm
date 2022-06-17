@@ -51,6 +51,12 @@ int ecm_wifi_plugin_emesh_register(void)
 		return -1;
 	}
 
+	if (ecm_classifier_emesh_sawf_update_fse_flow_callback_register(&ecm_wifi_plugin_emesh)) {
+		ecm_classifier_emesh_latency_config_callback_unregister();
+		ecm_classifier_emesh_sawf_msduq_callback_unregister();
+		ecm_wifi_plugin_warning("ecm emesh fse callback registration failed.\n");
+		return -1;
+	}
 	ecm_wifi_plugin_info("EMESH classifier callbacks registered\n");
 	return 0;
 }
@@ -63,5 +69,6 @@ void ecm_wifi_plugin_emesh_unregister(void)
 {
 	ecm_classifier_emesh_latency_config_callback_unregister();
 	ecm_classifier_emesh_sawf_msduq_callback_unregister();
+	ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister();
 	ecm_wifi_plugin_info("EMESH classifier callbacks unregistered\n");
 }

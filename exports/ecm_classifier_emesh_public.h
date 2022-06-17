@@ -31,6 +31,36 @@
  */
 
 /**
+ * State of the connection while informing 5-tuple
+ * information to FSE (Flow search engine) via register callback.
+ */
+enum ecm_classifier_fse_connection_state {
+	ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_ACCEL,		/**< FSE callback at the time of connection acceleration. */
+	ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_DECEL,		/**< FSE callback at the time of connection deceleration. */
+	ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_MAX		/**< Indicates the last item. */
+};
+typedef enum ecm_classifier_fse_connection_state ecm_classifier_fse_connection_state_t;
+
+/**
+ * This structure collects 5-tuple information to send it to
+ * WLAN driver via the registered FSE (Flow Search Engine) callback.
+ */
+struct ecm_classifier_fse_info {
+	union {
+		__be32 v4_addr;			/**< Source IPv4 address. */
+		struct in6_addr v6_addr;	/**< Source IPv6 address. */
+	} src;
+	union {
+		__be32 v4_addr;			/**< Destination IPv4 address. */
+		struct in6_addr v6_addr;	/**< Destination IPv6 address. */
+	} dest;
+	uint16_t ip_version;			/**< IP version. */
+	uint16_t src_port;			/**< Source port. */
+	uint16_t dest_port;			/**< Destination port. */
+	uint16_t protocol;			/**< Protocol number. */
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
 typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
@@ -45,6 +75,11 @@ typedef uint16_t (*ecm_classifier_emesh_msduq_callback_t)(struct net_device *out
 		uint8_t dest_mac[], uint32_t service_class_id);
 
 /**
+ * FSE flow update callback to which emesh-sawf will register.
+ */
+typedef void (*ecm_classifier_emesh_fse_flow_callback_t)(void *appdata, ecm_classifier_fse_connection_state_t state);
+
+/**
  * Data structure for easy mesh-sawf classifier callbacks.
  */
 struct ecm_classifier_emesh_sawf_callbacks {
@@ -52,6 +87,8 @@ struct ecm_classifier_emesh_sawf_callbacks {
 						/**< Parameters for peer mesh latency. */
 	ecm_classifier_emesh_msduq_callback_t update_service_id_get_msduq;
 						/**< Get msduq for SAWF classifier. */
+	ecm_classifier_emesh_fse_flow_callback_t update_fse_flow_info;
+						/**< Update fse flow callback. */
 };
 
 /**
@@ -89,6 +126,24 @@ int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emes
  * None.
  */
 void ecm_classifier_emesh_sawf_msduq_callback_unregister(void);
+
+/**
+ * Registers EMESH-SAWF fse flow update callback.
+ *
+ * @param	mesh_cb	EMESH-SAWF callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
+int ecm_classifier_emesh_sawf_update_fse_flow_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+
+/**
+ * Unregisters EMESH-SAWF fse flow update callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister(void);
 
 /**
  * @}

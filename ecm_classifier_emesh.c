@@ -891,6 +891,70 @@ sawf_emesh_classifier_out:
 }
 
 /*
+ * ecm_classifier_emesh_sawf_update_fse_flow()
+ *	Update fse flow parameters to wlan host driver when
+ *	emesh-sawf connection is accelerated as well as decelerated.
+ */
+void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *aci,
+						ecm_classifier_fse_connection_state_t state)
+{
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+	struct ecm_classifier_fse_info fse_info;
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct ecm_db_connection_instance *ci;
+
+	/*
+	 * Return if fse callback is not registered.
+	 */
+	if (!ecm_emesh.update_fse_flow_info) {
+		DEBUG_WARN("fse callback is not registered\n");
+		return;
+	}
+
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
+
+	/*
+	 * Return if the connection does not have emesh SAWF classifier.
+	 */
+	if (cemi->type != ECM_CLASSIFIER_SAWF) {
+		DEBUG_WARN("%px: No emesh SAWF classifier present\n", cemi);
+		return;
+	}
+
+	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+	if (!ci) {
+		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+		return;
+	}
+
+	/*
+	 * Get the five tuple information.
+	 */
+	fse_info.ip_version = ecm_db_connection_ip_version_get(ci);
+	fse_info.protocol = ecm_db_connection_protocol_get(ci);
+	fse_info.src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+	fse_info.dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+
+	ecm_db_connection_deref(ci);
+	if (fse_info.ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info.src.v4_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info.dest.v4_addr, dest_ip);
+	} else if (fse_info.ip_version == 6) {
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info.src.v6_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info.dest.v6_addr, dest_ip);
+	} else {
+		DEBUG_WARN("Wrong IP protocol: %d\n", fse_info.ip_version);
+		return;
+	}
+
+	ecm_emesh.update_fse_flow_info(&fse_info, state);
+}
+
+/*
  * ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel()
  *	Update mesh latency parameters to wlan host driver when a connection gets decelerated in ECM
  */
@@ -959,6 +1023,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v4(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_EVICT:
 	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
+		ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_DECEL);
 		break;
 	default:
 		break;
@@ -1081,7 +1146,7 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 static void ecm_classifier_emesh_sawf_sync_from_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
 	ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(aci, ecrc);
-
+	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_ACCEL);
 }
 
 /*
@@ -1099,6 +1164,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_EVICT:
 	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
+		ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_DECEL);
 		break;
 	default:
 		break;
@@ -1112,6 +1178,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance 
 static void ecm_classifier_emesh_sawf_sync_from_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
 	ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(aci, ecrc);
+	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_ACCEL);
 }
 
 /*
@@ -1463,6 +1530,35 @@ void ecm_classifier_emesh_sawf_msduq_callback_unregister(void)
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_msduq_callback_unregister);
+
+/*
+ * ecm_classifier_emesh_sawf_update_fse_flow_callback_register()
+ */
+int ecm_classifier_emesh_sawf_update_fse_flow_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if (ecm_emesh.update_fse_flow_info) {
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		DEBUG_ERROR("SAWF EMESH update fse flow callbacks are registered\n");
+		return -1;
+	}
+
+	ecm_emesh.update_fse_flow_info = emesh_cb->update_fse_flow_info;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+	return 0;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_update_fse_flow_callback_register);
+
+/*
+ * ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister()
+ */
+void ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister(void)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	ecm_emesh.update_fse_flow_info = NULL;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister);
 
 /*
  * ecm_classifier_emesh_sawf_init()
