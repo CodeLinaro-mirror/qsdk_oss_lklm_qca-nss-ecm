@@ -100,6 +100,15 @@ ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_PPE_ENABLE=y in order to select
+# ppe as ECM's front end.
+# #############################################################################
+ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_common.o
+ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ipv4.o
+ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv4.o
+ccflags-$(ECM_FRONT_END_PPE_ENABLE) += -DECM_FRONT_END_PPE_ENABLE
+
+# #############################################################################
 # Define ECM_FRONT_END_CONN_LIMIT_ENABLE=y in order to limit accelerated
 # connections for low-memory profiles.
 # #############################################################################
@@ -248,6 +257,10 @@ ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv6.o
 endif
+ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
+ecm-$(ECM_IPV6_ENABLE) += frontends/ppe/ecm_ppe_ipv6.o
+ecm-$(ECM_IPV6_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv6.o
+endif
 
 # #############################################################################
 # Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
@@ -325,6 +338,13 @@ ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/sfe/ecm_sfe_non_ported_ipv6.o
 endif
 endif
 
+ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
+ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/ppe/ecm_ppe_non_ported_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
+ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/ppe/ecm_ppe_non_ported_ipv6.o
+endif
+endif
+
 ccflags-$(ECM_NON_PORTED_SUPPORT_ENABLE) += -DECM_NON_PORTED_SUPPORT_ENABLE
 
 # #############################################################################
@@ -395,6 +415,14 @@ ccflags-y += -DECM_INIT_DEBUG_LEVEL=3
 ccflags-y += -DECM_FRONT_END_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_FRONT_END_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_FRONT_END_COMMON_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_NON_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_NON_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_MULTICAST_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_CMN_MULTICAST_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_COMMON_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_NSS_PORTED_IPV4_DEBUG_LEVEL=1
@@ -411,6 +439,13 @@ ccflags-y += -DECM_SFE_NON_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_NON_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_COMMON_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_NON_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_NON_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_CONNTRACK_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_TRACKER_DEBUG_LEVEL=1
 ccflags-y += -DECM_TRACKER_DATAGRAM_DEBUG_LEVEL=1
@@ -424,6 +459,11 @@ ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_AE_CLASSIFIER_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
+
+ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
+	ccflags-y += -I$(obj)/frontends/ppe
+endif
+
 ccflags-y += -Wall -Werror
 
 obj ?= .

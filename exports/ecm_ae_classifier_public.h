@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -36,10 +37,12 @@
  *	External AE classifier returns these types to ECM per flow.
  */
 typedef enum /** @cond */ ecm_ae_classifier_result /** @endcond */ {
-	ECM_AE_CLASSIFIER_RESULT_NSS,		/**< Accelerate the flow in NSS. */
-	ECM_AE_CLASSIFIER_RESULT_SFE,		/**< Accelerate the flow in SFE. */
-	ECM_AE_CLASSIFIER_RESULT_NONE,		/**< Do not accelerate the flow. */
-	ECM_AE_CLASSIFIER_RESULT_NOT_YET,	/**< Acceleration engine hasn't been decided yet. */
+	ECM_AE_CLASSIFIER_RESULT_NSS,		/**< Accelerate the flow in NSS */
+	ECM_AE_CLASSIFIER_RESULT_PPE,		/**< Accelerate the flow in PPE */
+	ECM_AE_CLASSIFIER_RESULT_SFE,		/**< Accelerate the flow in SFE */
+	ECM_AE_CLASSIFIER_RESULT_NONE,		/**< Do not accelerate the flow */
+	ECM_AE_CLASSIFIER_RESULT_NOT_YET,	/**< Acceleration engine hasn't been decided yet */
+	ECM_AE_CLASSIFIER_RESULT_DONT_CARE,	/**< External module doesn't care about the selected AE */
 } ecm_ae_classifier_result_t;
 
 /**

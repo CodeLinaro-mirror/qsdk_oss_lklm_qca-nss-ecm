@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -621,7 +624,7 @@ ecm_classifier_nl_process_mark(struct ecm_classifier_nl_instance *cnli,
 		return;
 	}
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	accel_mode = feci->accel_state_get(feci);
+	accel_mode = ecm_front_end_connection_accel_state_get(feci);
 	if ((accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL)
 			|| (accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING)) {
 		DEBUG_TRACE("%px: mark changed on offloaded connection, decelerate. new mark: 0x%08x\n",
@@ -631,7 +634,7 @@ ecm_classifier_nl_process_mark(struct ecm_classifier_nl_instance *cnli,
 		DEBUG_TRACE("%px: mark changed on non-offloaded connection. new mark: 0x%08x\n",
 			    cnli, mark);
 	}
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 }
 EXPORT_SYMBOL(ecm_classifier_nl_process_mark);
@@ -681,8 +684,8 @@ static void ecm_classifier_nl_process(struct ecm_classifier_instance *aci, ecm_t
 	if (ci) {
 		struct ecm_front_end_connection_instance *feci;
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		accel_mode = feci->accel_state_get(feci);
-		feci->deref(feci);
+		accel_mode = ecm_front_end_connection_accel_state_get(feci);
+		ecm_front_end_connection_deref(feci);
 		if (enabled && ECM_FRONT_END_ACCELERATION_POSSIBLE(accel_mode) && ecm_db_connection_is_routed_get(ci)) {
 			relevance = ECM_CLASSIFIER_RELEVANCE_YES;
 			became_relevant = ecm_db_time_get();
@@ -1278,7 +1281,7 @@ static ssize_t ecm_classifier_nl_set_command(struct file *file,
 		spin_unlock_bh(&ecm_classifier_nl_lock);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		feci->decelerate(feci);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		break;
 	case 'S':
 	case 'F':

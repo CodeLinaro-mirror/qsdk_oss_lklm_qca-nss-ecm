@@ -303,7 +303,7 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		/*
 		 * As packets have been accelerated we have seen some action.
 		 */
-		feci->action_seen(feci);
+		ecm_front_end_connection_action_seen(feci);
 
 		/*
 		 * Update interface stats.
@@ -332,7 +332,7 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		 */
 		if ((!sync->flow_tx_packet_count && !sync->return_tx_packet_count)
 				|| (ci->flags & ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED)) {
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(ci);
 			return;
 		}
@@ -391,7 +391,7 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		feci->decelerate(feci);
 	}
 
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
 sync_conntrack:

@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -39,10 +40,6 @@
 #include <linux/udp.h>
 #include <linux/tcp.h>
 
-#ifdef ECM_FRONT_END_SFE_ENABLE
-#include <sfe_api.h>
-#endif
-
 #include <linux/inetdevice.h>
 #include <linux/if_arp.h>
 #include <linux/netfilter_ipv4.h>
@@ -74,13 +71,17 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_PORTED_IPV4_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_CMN_PORTED_IPV4_DEBUG_LEVEL
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 #include "nss_ipsec_cmn.h"
 #endif
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
 #endif
 
 #include "ecm_types.h"
@@ -98,6 +99,10 @@
 #ifdef ECM_FRONT_END_SFE_ENABLE
 #include "ecm_sfe_ported_ipv4.h"
 #include "ecm_sfe_common.h"
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include "ecm_ppe_ported_ipv4.h"
+#include "ecm_ppe_common.h"
 #endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_nss_ported_ipv4.h"
@@ -144,7 +149,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 	__be16 *layer4hdr = NULL;
 
 	if (protocol == IPPROTO_TCP) {
-
 		if (likely(ct)) {
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 			/*
@@ -358,9 +362,9 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		struct ecm_db_iface_instance *from_nat_list[ECM_DB_IFACE_HEIRARCHY_MAX];
 		struct ecm_front_end_interface_construct_instance efeici;
 		struct ecm_front_end_ovs_params ovs_params[ECM_DB_OBJ_DIR_MAX];
-		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
-		ecm_db_connection_defunct_callback_t defunct_callback;
+		ecm_ae_classifier_get_t ae_get;
+		int i;
 
 		DEBUG_INFO("New ported connection from " ECM_IP_ADDR_DOT_FMT ":%u to " ECM_IP_ADDR_DOT_FMT ":%u protocol: %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), src_port, ECM_IP_ADDR_TO_DOT(ip_dest_addr), dest_port, protocol);
@@ -399,72 +403,48 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		}
 
 		/*
-		 * Connection must have a front end instance associated with it
+		 * Check if an external AE classifier is registered.
+		 * If it is not registered at all or unregistered at runtime
+		 * a dummy callback will return ECM_AE_CLASSIFIER_RESULT_DONT_CARE.
 		 */
-		fe_type = ecm_front_end_type_get();
-		switch (fe_type) {
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_FRONT_END_TYPE_HYBRID:
-		{
-			ecm_ae_classifier_get_t ae_get;
+		rcu_read_lock();
+		ae_get = rcu_dereference(ae_ops.ae_get);
+		if (!ae_get) {
+			ae_result = ECM_AE_CLASSIFIER_RESULT_DONT_CARE;
+		} else {
 			struct ecm_ae_classifier_info ae_info;
-
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
-							  src_port, dest_port, protocol, 4,
-							  is_routed, false,
-							  &ae_info);
-
-			rcu_read_lock();
-			ae_get = rcu_dereference(ae_ops.ae_get);
+						  src_port, dest_port, protocol, 4,
+						  is_routed, false,
+						  &ae_info);
 			ae_result = ae_get(&ae_info);
-			rcu_read_unlock();
+		}
+		rcu_read_unlock();
 
-			DEBUG_TRACE("front end type hybrid, ae_result: %d\n", ae_result);
-			break;
-		}
-#endif
-#ifdef ECM_FRONT_END_NSS_ENABLE
-		case ECM_FRONT_END_TYPE_NSS:
-			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
-			break;
-#endif
-#ifdef ECM_FRONT_END_SFE_ENABLE
-		case ECM_FRONT_END_TYPE_SFE:
-			DEBUG_TRACE("front end type SFE, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_SFE;
-			break;
-#endif
-		default:
-			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			return NF_ACCEPT;
-		}
+		DEBUG_TRACE("front end type: %d ae_result: %d\n", ecm_front_end_type_get(), ae_result);
 
 		/*
-		 * Check the ae_result.
+		 * Which AE can be used for this flow.
 		 * 1. If NSS, allocate NSS ipv4 ported connection instance
 		 * 2. If SFE, allocate SFE ipv4 ported connection instance
-		 * 3. If NONE, allocate ported connection instance based on the is_routed flag.
-		 *    If it is set allocate SFE ipv4 ported connection instance with can_accel flag is set to false, otherwise
-		 *    allocate NSS ipv4 ported connection instance with can_accel flag is set to false.
-		 *    By doing this ECM will not ask again and again to the external module. If external module wants to
-		 *    accelerate this flow later, the flow needs to be defuncted first.
-		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
-		 *    to the external module.
-		 * 5. If any other type is returned, ASSERT.
-		 *
-		 * As an example here, we accelerate the routed flows on SFE, bridge flows on NSS.
+		 * 3. If PPE, allocate PPE ipv4 ported connection instance
+		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be
+		 *    re-evaluated.
+		 * 5. If NONE, allocate ported connection instance based on the precedence array with
+		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
+		 * 6. If DONT_CARE, select the AE from the precdence array which is in the highest priority index.
+		 * 7. If any other type, return NF_ACCEPT.
 		 */
-		switch(ae_result) {
+		switch (ae_result) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_NSS:
 			if (!ecm_nss_feature_check(skb, iph)) {
 				DEBUG_WARN("Unsupported feature found for NSS acceleration\n");
 				return NF_ACCEPT;
 			}
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
-			break;
+
+			feci = ecm_nss_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_SFE:
@@ -473,39 +453,81 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 				return NF_ACCEPT;
 			}
 
-			feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
-			defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
-			break;
+			feci = ecm_sfe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			goto feci_alloc_check;
 #endif
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_AE_CLASSIFIER_RESULT_NONE:
-			if (is_routed) {
-				feci = (struct ecm_front_end_connection_instance *)ecm_sfe_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
-				defunct_callback = ecm_sfe_ported_ipv4_connection_defunct_callback;
-			} else {
-				feci = (struct ecm_front_end_connection_instance *)ecm_nss_ported_ipv4_connection_instance_alloc(false, protocol, &nci);
-				defunct_callback = ecm_nss_ported_ipv4_connection_defunct_callback;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_PPE:
+			if (!ecm_ppe_feature_check(skb, iph)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
 			}
-			break;
+
+			feci = ecm_ppe_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			goto feci_alloc_check;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
 			return NF_ACCEPT;
 
+		case ECM_AE_CLASSIFIER_RESULT_NONE:
+			/*
+			 * Let the precedence array select the AE type and add it
+			 * to the database without accelerating the flow.
+			 */
+			can_accel = false;
+			goto precedence_alloc;
+
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+			/*
+			 * External module doesn't care about which AE is selected.
+			 * So, allocate one from the AE precedence array.
+			 */
+			goto precedence_alloc;
+
 		default:
-			DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
+			DEBUG_WARN("unexpected ae_result: %d\n", ae_result);
+			return NF_ACCEPT;
 		}
 
+precedence_alloc:
+		for (i = 0; i <= ECM_AE_PRECEDENCE_MAX; i++) {
+			if (ae_precedence[i].ae_type == ECM_FRONT_END_ENGINE_MAX) {
+				DEBUG_WARN("None of the AE types in the precedence array could allocate the front end instance\n");
+				return NF_ACCEPT;
+			}
+
+			/*
+			 * Allocate a frontend instance for the type selected in the precedence array.
+			 * Do a feature check. If the AE doesn't support it, try the next one in the array.
+			 */
+			if (!ecm_front_end_common_feature_check(ae_precedence[i].ae_type, skb, iph, is_routed)) {
+				DEBUG_WARN("Unsupported feature found for the selected AE: %d\n", ae_precedence[i].ae_type);
+				continue;
+			}
+
+			/*
+			 * If allocation fails for the selected AE, try the next one.
+			 */
+			feci = ae_precedence[i].ported_ipv4_alloc(can_accel, protocol, &nci);
+			if (!feci) {
+				DEBUG_WARN("Failed to allocate front end instance\n");
+				continue;
+			}
+			goto feci_alloc_done;
+		}
+
+feci_alloc_check:
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
 			return NF_ACCEPT;
 		}
 
+feci_alloc_done:
 		if (!ecm_front_end_ipv4_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
 							ip_src_addr, ip_src_addr_nat,
 							ip_dest_addr, ip_dest_addr_nat,
 							&efeici)) {
-
 			DEBUG_WARN("ECM front end ipv4 interface construct set failed for routed traffic\n");
 			goto fail_1;
 		}
@@ -697,7 +719,6 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 			ecm_db_connection_add(nci, mi, ni,
 					4, protocol, ecm_dir,
 					NULL /* final callback */,
-					defunct_callback,
 					tg, is_routed, nci);
 
 			spin_unlock_bh(&ecm_ipv4_lock);
@@ -719,7 +740,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 
 		goto done;
 fail_11:
@@ -743,11 +764,18 @@ fail_3:
 fail_2:
 		ecm_front_end_ipv4_interface_construct_netdev_put(&efeici);
 fail_1:
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(nci);
 		return NF_ACCEPT;
 done:
 		;
+	}
+
+	/*
+	 * Check if AE switch is needed.
+	 */
+	if (ecm_front_end_connection_check_and_switch_to_next_ae(ci->feci)) {
+		DEBUG_TRACE("%px: new AE type: %d\n", ci, ci->feci->accel_engine);
 	}
 
 	/*
@@ -773,12 +801,12 @@ done:
 		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
 			if (!ecm_nss_common_igs_acceleration_is_allowed(feci, skb)) {
 				DEBUG_WARN("%px: IPv4 IGS acceleration denied\n", ci);
-				feci->deref(feci);
+				ecm_front_end_connection_deref(feci);
 				ecm_db_connection_deref(ci);
 				return NF_ACCEPT;
 			}
 		}
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 #endif
 
@@ -861,7 +889,7 @@ done:
 	spin_lock_bh(&feci->lock);
 	feci->stats.slow_path_packets++;
 	spin_unlock_bh(&feci->lock);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	/*
 	 * Iterate the assignments and call to process!
@@ -1111,7 +1139,7 @@ done:
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);
 

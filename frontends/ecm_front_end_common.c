@@ -6,6 +6,7 @@
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -57,6 +58,38 @@
 #include "ecm_front_end_common.h"
 #include "ecm_interface.h"
 
+#ifdef ECM_FRONT_END_NSS_ENABLE
+#include <nss_api_if.h>
+#include "ecm_nss_ipv4.h"
+#include "ecm_nss_ipv6.h"
+#include "ecm_nss_common.h"
+#include "ecm_nss_ported_ipv4.h"
+#include "ecm_nss_ported_ipv6.h"
+#include "ecm_nss_non_ported_ipv4.h"
+#include "ecm_nss_non_ported_ipv6.h"
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+#include <sfe_api.h>
+#include "ecm_sfe_ipv4.h"
+#include "ecm_sfe_ipv6.h"
+#include "ecm_sfe_common.h"
+#include "ecm_sfe_ported_ipv4.h"
+#include "ecm_sfe_ported_ipv6.h"
+#include "ecm_sfe_non_ported_ipv4.h"
+#include "ecm_sfe_non_ported_ipv6.h"
+#endif
+
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include "ecm_ppe_ipv4.h"
+#include "ecm_ppe_ipv6.h"
+#include "ecm_ppe_common.h"
+#include "ecm_ppe_ported_ipv4.h"
+#include "ecm_ppe_ported_ipv6.h"
+#include "ecm_ppe_non_ported_ipv4.h"
+#include "ecm_ppe_non_ported_ipv6.h"
+#endif
+
 /*
  * Sysctl table header
  */
@@ -73,26 +106,78 @@ unsigned int ecm_front_end_conn_limit = 0;
  * Predefined frontend and feature support map.
  */
 uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
-	0, 			/* Auto: This type will never be selected */
+	/* Auto: This type will never be selected */
+	0,
 
+	/* NSS type */
 	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
 	ECM_FE_FEATURE_SRC_IF_CHECK | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_DSCP_ACTION | ECM_FE_FEATURE_XFRM | ECM_FE_FEATURE_OVS_BRIDGE |
 	ECM_FE_FEATURE_OVS_VLAN,
-				/* NSS type */
 
-	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |	/* SFE type */
+	/* SFE type */
+	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_SRC_IF_CHECK,
 
+	/* PPE */
+	ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_BRIDGE | ECM_FE_FEATURE_NON_PORTED |
+	ECM_FE_FEATURE_CONN_LIMIT,
+
+	/* NSS_SFE type */
 	ECM_FE_FEATURE_NSS | ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_IGS |
 	ECM_FE_FEATURE_SRC_IF_CHECK | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_DSCP_ACTION | ECM_FE_FEATURE_XFRM | ECM_FE_FEATURE_OVS_BRIDGE |
 	ECM_FE_FEATURE_OVS_VLAN,
-				/* Hybrid type */
+
+	/*
+	 * PPE_SFE type
+	 * TODO: Handle the features which are not supported by PPE, if the AE is selected as PPE.
+	 */
+	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
+	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE,
 };
+
+struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
+
+/*
+ * ecm_front_end_set_ae_alloc_methods()
+ *	Set the AE front-end alloc methods at the precedence array index.
+ */
+void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence)
+{
+	switch (precedence->ae_type) {
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		precedence->ported_ipv4_alloc = ecm_sfe_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_sfe_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_sfe_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_sfe_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		precedence->ported_ipv4_alloc = ecm_nss_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_nss_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_nss_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_nss_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		precedence->ported_ipv4_alloc = ecm_ppe_ported_ipv4_connection_instance_alloc;
+		precedence->ported_ipv6_alloc = ecm_ppe_ported_ipv6_connection_instance_alloc;
+		precedence->non_ported_ipv4_alloc = ecm_ppe_non_ported_ipv4_connection_instance_alloc;
+		precedence->non_ported_ipv6_alloc = ecm_ppe_non_ported_ipv6_connection_instance_alloc;
+		break;
+#endif
+	default:
+		DEBUG_WARN("precedence->ae_type: %d is not supported yet", precedence->ae_type);
+	}
+}
 
 /*
  * ecm_front_end_is_feature_supported()
@@ -103,6 +188,47 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	return !!(ecm_fe_feature_list[type] & feature);
+}
+
+/*
+ * ecm_front_end_common_feature_check()
+ *	Check if the selected AE supports the flow.
+ */
+bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
+					struct sk_buff *skb,
+					struct ecm_tracker_ip_header *iph,
+					bool is_routed)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		if (!ecm_sfe_feature_check(skb, iph, is_routed)) {
+			return false;
+		}
+
+		return true;
+#endif
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		if (!ecm_nss_feature_check(skb, iph)) {
+			return false;
+		}
+
+		return true;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		if (!ecm_ppe_feature_check(skb, iph)) {
+			return false;
+		}
+
+		return true;
+#endif
+	default:
+		DEBUG_WARN("ae_type: %d is not supported yet, feature check failed", ae_type);
+	}
+
+	return false;
 }
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
@@ -145,8 +271,8 @@ void ecm_front_end_bond_notifier_exit(void)
  *	Return state of the front end instance.
  */
 int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_instance *feci,
-					     struct ecm_state_file_instance *sfi,
-					     char *conn_type)
+					      struct ecm_state_file_instance *sfi,
+					      char *conn_type)
 {
 	int result;
 	bool can_accel;
@@ -613,4 +739,329 @@ void ecm_front_end_common_sysctl_unregister()
 #endif
 		unregister_sysctl_table(ecm_front_end_ctl_tbl_hdr);
 	}
+}
+
+/*
+ * ecm_front_end_connection_accel_state_get()
+ *      Get acceleration state
+ */
+ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci)
+{
+	ecm_front_end_acceleration_mode_t state;
+
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	spin_lock_bh(&feci->lock);
+	state = feci->accel_mode;
+	spin_unlock_bh(&feci->lock);
+	return state;
+}
+
+/*
+ * ecm_front_end_connection_action_seen()
+ *      Acceleration action / activity has been seen for this connection.
+ *
+ * NOTE: Call the action_seen() method when the AE has demonstrated that it has offloaded some data for a connection.
+ */
+void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	DEBUG_INFO("%px: Action seen\n", feci);
+	spin_lock_bh(&feci->lock);
+	feci->stats.no_action_seen = 0;
+	spin_unlock_bh(&feci->lock);
+}
+
+/*
+ * ecm_front_end_connection_ref()
+ *      Ref a connection front end instance
+ */
+void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+	spin_lock_bh(&feci->lock);
+	feci->refs++;
+	DEBUG_TRACE("%px: feci ref %d\n", feci, feci->refs);
+	DEBUG_ASSERT(feci->refs > 0, "%px: ref wrap\n", feci);
+	spin_unlock_bh(&feci->lock);
+}
+
+/*
+ * ecm_front_end_connection_deref()
+ *      Deref a connection front end instance
+ */
+int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	spin_lock_bh(&feci->lock);
+	feci->refs--;
+	DEBUG_ASSERT(feci->refs >= 0, "%px: ref wrap\n", feci);
+
+	if (feci->refs > 0) {
+		int refs = feci->refs;
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: feci deref %d\n", feci, refs);
+		return refs;
+	}
+	spin_unlock_bh(&feci->lock);
+
+	/*
+	* We can now destroy the instance
+	*/
+	DEBUG_TRACE("%px: feci final\n", feci);
+	DEBUG_CLEAR_MAGIC(feci);
+	kfree(feci);
+	return 0;
+}
+
+/*
+ * ecm_front_end_non_ported_ipv6_connection_update()
+ *	Update the non-ported IPv6 feci instance fields.
+ */
+static void ecm_front_end_non_ported_ipv6_connection_update(struct ecm_front_end_connection_instance *feci,
+							enum ecm_front_end_engine ae_type)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
+
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to NSS from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		ecm_sfe_non_ported_ipv6_connection_set(feci);
+		break;
+#endif
+	default:
+		DEBUG_WARN("%px: unknown AE type to update\n", feci);
+		break;
+	}
+}
+
+/*
+ * ecm_front_end_non_ported_ipv4_connection_update()
+ *	Update the non-ported IPv4 feci instance fields.
+ */
+static void ecm_front_end_non_ported_ipv4_connection_update(struct ecm_front_end_connection_instance *feci,
+							enum ecm_front_end_engine ae_type)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
+
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to NSS from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		ecm_sfe_non_ported_ipv4_connection_set(feci);
+		break;
+#endif
+	default:
+		DEBUG_WARN("%px: unknown AE type to update\n", feci);
+		break;
+	}
+}
+
+/*
+ * ecm_front_end_ported_ipv6_connection_update()
+ *	Update the ported IPv6 feci instance fields.
+ */
+static void ecm_front_end_ported_ipv6_connection_update(struct ecm_front_end_connection_instance *feci,
+							enum ecm_front_end_engine ae_type)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
+
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to NSS from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		ecm_sfe_ported_ipv6_connection_set(feci);
+		break;
+#endif
+	default:
+		DEBUG_WARN("%px: unknown AE type to update\n", feci);
+		break;
+	}
+}
+
+/*
+ * ecm_front_end_ported_ipv4_connection_update()
+ *	Update the ported IPv4 feci instance fields.
+ */
+static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_connection_instance *feci,
+							enum ecm_front_end_engine ae_type)
+{
+	DEBUG_ASSERT(spin_is_locked(&feci->lock), "%px: feci lock is not held\n", feci);
+
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to NSS from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		ecm_sfe_ported_ipv4_connection_set(feci);
+		break;
+#endif
+	default:
+		DEBUG_WARN("%px: unknown AE type to update\n", feci);
+		break;
+	}
+}
+
+/*
+ * ecm_front_end_connection_limit_reached()
+ *	Check connection limit.
+ */
+static bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		if (ip_version == 4 && ecm_nss_ipv4_is_conn_limit_reached()) {
+			return true;
+		}
+
+		if (ip_version == 6 && ecm_nss_ipv6_is_conn_limit_reached()) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		if (ip_version == 4 && ecm_sfe_ipv4_is_conn_limit_reached()) {
+			return true;
+		}
+
+		if (ip_version == 6 && ecm_sfe_ipv6_is_conn_limit_reached()) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		if (ip_version == 4 && ecm_ppe_ipv4_is_conn_limit_reached()) {
+			return true;
+		}
+
+		if (ip_version == 6 && ecm_ppe_ipv6_is_conn_limit_reached()) {
+			return true;
+		}
+		break;
+#endif
+	default:
+		DEBUG_WARN("wrong ae_type: %d\n", ae_type);
+	}
+
+	return false;
+}
+
+/*
+ * ecm_front_end_connection_check_and_switch_to_next_ae()
+ *	Switches the AE type of the front end instance.
+ */
+bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci)
+{
+	int i;
+
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	DEBUG_TRACE("%px: Frontend switch from AE type %d\n", feci, feci->accel_engine);
+
+	spin_lock_bh(&feci->lock);
+	/*
+	 * Check the accel_mode of the existing connection.
+	 * If it is set to one of the FAIL modes, this means that, we tried to accelerate
+	 * the connection with the selected AE and it is not accepted. We can switch to the next AE
+	 * if there is one.
+	 */
+	if (!ECM_FRONT_END_ACCELERATION_FAILED(feci->accel_mode)
+			|| (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED)) {
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: AE switch is not possible yet\n", feci);
+		return false;
+	}
+
+	/*
+	 * Find the next AE type in the precedence array.
+	 */
+	for (i = 0; i < ECM_AE_PRECEDENCE_MAX; i++) {
+		if (ae_precedence[i].ae_type == feci->accel_engine) {
+			/*
+			 * Check if the next AE in he precedence array is valid.
+			 */
+			if (ae_precedence[++i].ae_type == ECM_FRONT_END_ENGINE_MAX) {
+				spin_unlock_bh(&feci->lock);
+				DEBUG_TRACE("%px: There is no next AE to switch\n", feci);
+				return false;
+			}
+			break;
+		}
+	}
+
+	/*
+	 * Check if this new AE has space for a new connection.
+	 */
+	if (ecm_front_end_connection_limit_reached(ae_precedence[i].ae_type, feci->ip_version)) {
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: AE type: %d reached its connection limit\n", feci, ae_precedence[i].ae_type);
+		return false;
+	}
+
+	switch (feci->ip_version) {
+	case 4:
+		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
+			ecm_front_end_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
+		} else {
+			ecm_front_end_non_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
+		}
+		break;
+
+	case 6:
+		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
+			ecm_front_end_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
+		} else {
+			ecm_front_end_non_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
+		}
+		break;
+
+	default:
+		spin_unlock_bh(&feci->lock);
+		DEBUG_ERROR("%px: Unexpected IP version: %d\n", feci, feci->ip_version);
+		return false;
+	}
+
+	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+	spin_unlock_bh(&feci->lock);
+	DEBUG_TRACE("%px: Frontend switch to AE type %d\n", feci, feci->accel_engine);
+	return true;
 }

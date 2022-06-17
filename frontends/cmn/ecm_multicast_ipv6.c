@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -69,7 +72,7 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_MULTICAST_IPV6_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_CMN_MULTICAST_IPV6_DEBUG_LEVEL
 
 #include <nss_api_if.h>
 #include <mc_ecm.h>
@@ -178,7 +181,7 @@ static void ecm_multicast_ipv6_connection_regenerate(struct ecm_db_connection_in
 	ecm_db_connection_interfaces_reset(ci, from_list, from_list_first, ECM_DB_OBJ_DIR_FROM);
 	ecm_db_connection_interfaces_deref(from_list, from_list_first);
 
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	/*
 	 * Get list of assigned classifiers to reclassify.
@@ -238,7 +241,7 @@ ecm_multicast_ipv6_regen_done:
 	return;
 
 ecm_multicast_ipv6_retry_regen:
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_regeneration_failed(ci);
 	return;
 }
@@ -673,9 +676,8 @@ process_packet:
 		int vif;
 		int ret;
 		char dest_mac_addr[6];
-		enum ecm_front_end_type fe_type;
 		ecm_ae_classifier_result_t ae_result;
-		ecm_db_connection_defunct_callback_t defunct_callback;
+		ecm_ae_classifier_get_t ae_get;
 
 		DEBUG_TRACE("New UDP connection from " ECM_IP_ADDR_OCTAL_FMT ":%u to " ECM_IP_ADDR_OCTAL_FMT ":%u\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port);
@@ -696,74 +698,52 @@ process_packet:
 		spin_unlock_bh(&ecm_ipv6_lock);
 
 		/*
-		 * Connection must have a front end instance associated with it
+		 * Check if an external AE classifier is registered.
+		 * If it is not registered at all or unregistered at runtime
+		 * a dummy callback will return ECM_AE_CLASSIFIER_RESULT_DONT_CARE.
 		 */
-		fe_type = ecm_front_end_type_get();
-		switch (fe_type) {
-#if defined(ECM_FRONT_END_NSS_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-		case ECM_FRONT_END_TYPE_HYBRID:
-		{
-			ecm_ae_classifier_get_t ae_get;
+		rcu_read_lock();
+		ae_get = rcu_dereference(ae_ops.ae_get);
+		if (!ae_get) {
+			ae_result = ECM_AE_CLASSIFIER_RESULT_DONT_CARE;
+		} else {
 			struct ecm_ae_classifier_info ae_info;
-
 			ecm_ae_classifier_select_info_fill(ip_src_addr, ip_dest_addr,
-							  src_port, dest_port, protocol, 6,
-							  is_routed, true,
-							  &ae_info);
-
-			rcu_read_lock();
-			ae_get = rcu_dereference(ae_ops.ae_get);
+						  src_port, dest_port, protocol, 6,
+						  is_routed, true,
+						  &ae_info);
 			ae_result = ae_get(&ae_info);
-			rcu_read_unlock();
+		}
+		rcu_read_unlock();
 
-			DEBUG_TRACE("front end type hybrid, ae_result: %d\n", ae_result);
-			break;
-		}
-#endif
-#ifdef ECM_FRONT_END_NSS_ENABLE
-		case ECM_FRONT_END_TYPE_NSS:
-			DEBUG_TRACE("front end type NSS, ae_result: %d\n", ae_result);
-			ae_result = ECM_AE_CLASSIFIER_RESULT_NSS;
-			break;
-#endif
-#ifdef ECM_FRONT_END_SFE_ENABLE
-		case ECM_FRONT_END_TYPE_SFE:
-			/*
-			 * Fall through. Not supporting multicast acceleration yet.
-			 */
-#endif
-		default:
-			DEBUG_WARN("front end type: %d is not supported\n", fe_type);
-			goto done;
-		}
+		DEBUG_TRACE("front end type: %d ae_result: %d\n", ecm_front_end_type_get(), ae_result);
 
 		/*
-		 * Check the ae_result.
-		 * 1. If NSS, allocate NSS ipv6 multicast connection instance
-		 * 2. If NONE, allocate NSS ipv6 multicast connection instance with can_accel flag is set to false.
-		 *    By doing this ECM will not ask again and again to the external module. If external module wants to
-		 *    accelerate this flow later, the flow needs to be defuncted first.
-		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be asked again
-		 *    to the external module.
-		 * 4. If any other type is returned, ASSERT.
+		 * Which AE can be used for this flow.
+		 * 1. If NSS or DONT_CARE, allocate NSS ipv6 multicast connection instance
+		 * 2. If NONE, allocate NSS ipv4 multicast connection instance with
+		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
+		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be
+		 *    re-evaluated.
+		 * 4. If any other type, return NF_ACCEPT.
 		 */
 		switch (ae_result) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_NSS:
-			defunct_callback = ecm_nss_multicast_ipv6_connection_defunct_callback;
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv6_connection_instance_alloc(can_accel, &nci);
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+			feci = ecm_nss_multicast_ipv6_connection_instance_alloc(can_accel, &nci);
 			break;
 
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
-			defunct_callback = ecm_nss_multicast_ipv6_connection_defunct_callback;
-			feci = (struct ecm_front_end_connection_instance *)ecm_nss_multicast_ipv6_connection_instance_alloc(false, &nci);
+			feci = ecm_nss_multicast_ipv6_connection_instance_alloc(false, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
 			goto done;
 
 		default:
-			DEBUG_ASSERT(NULL, "unexpected ae_result: %d\n", ae_result);
+			DEBUG_WARN("unexpected ae_result: %d\n", ae_result);
+			return NF_ACCEPT;
 		}
 
 		if (!feci) {
@@ -776,7 +756,7 @@ process_packet:
 		 */
 		tuple_instance = ecm_db_multicast_tuple_instance_alloc(ip_src_addr, ip_dest_addr, src_port, dest_port);
 		if (!tuple_instance) {
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			DEBUG_WARN("Failed to allocate tuple instance\n");
 			goto done;
@@ -795,7 +775,7 @@ process_packet:
 		DEBUG_TRACE("%px: Create the 'from' interface heirarchy list\n", nci);
 		from_list_first = ecm_interface_multicast_from_heirarchy_construct(feci, from_list, ip_dest_addr, ip_src_addr, 6, IPPROTO_UDP, in_dev, is_routed, in_dev, src_node_addr, dest_node_addr, layer4hdr, skb);
 		if (from_list_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			DEBUG_WARN("Failed to obtain 'from' heirarchy list\n");
@@ -807,7 +787,7 @@ process_packet:
 		ni[ECM_DB_OBJ_DIR_FROM] = ecm_multicast_ipv6_node_establish_and_ref(feci, in_dev, ip_src_addr, from_list, from_list_first, src_node_addr, skb);
 		ecm_db_connection_interfaces_deref(from_list, from_list_first);
 		if (!ni[ECM_DB_OBJ_DIR_FROM]) {
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			DEBUG_WARN("Failed to establish source node\n");
@@ -819,7 +799,7 @@ process_packet:
 		mi[ECM_DB_OBJ_DIR_FROM] = ecm_ipv6_mapping_establish_and_ref(ip_src_addr, src_port);
 		if (!mi[ECM_DB_OBJ_DIR_FROM]) {
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			DEBUG_WARN("Failed to establish src mapping\n");
@@ -833,7 +813,7 @@ process_packet:
 		if (!to_list) {
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			goto done;
@@ -843,7 +823,7 @@ process_packet:
 		if (!to_list_first) {
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
@@ -865,7 +845,7 @@ process_packet:
 			DEBUG_WARN("Failed to obtain 'to' heirarchy list\n");
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
@@ -882,7 +862,7 @@ process_packet:
 				ecm_db_connection_interfaces_deref(to_list_temp, *to_first);
 			}
 
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_connection_deref(nci);
@@ -909,7 +889,7 @@ process_packet:
 		if (!ni[ECM_DB_OBJ_DIR_TO]) {
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
@@ -925,7 +905,7 @@ process_packet:
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
@@ -944,7 +924,7 @@ process_packet:
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 			ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 			ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			ecm_db_connection_deref(nci);
 			ecm_db_multicast_tuple_instance_deref(tuple_instance);
 			kfree(to_list);
@@ -968,7 +948,7 @@ process_packet:
 				ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 				ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 				ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-				feci->deref(feci);
+				ecm_front_end_connection_deref(feci);
 				ecm_db_connection_deref(nci);
 				ecm_db_multicast_tuple_instance_deref(tuple_instance);
 				kfree(to_list);
@@ -1017,7 +997,6 @@ process_packet:
 			ecm_db_connection_add(nci, mi, ni,
 					6, IPPROTO_UDP, ecm_dir,
 					NULL /* final callback */,
-					defunct_callback,
 					tg, is_routed, nci);
 
 			/*
@@ -1049,7 +1028,7 @@ process_packet:
 		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_TO]);
 		ecm_db_mapping_deref(mi[ECM_DB_OBJ_DIR_FROM]);
 		ecm_db_node_deref(ni[ECM_DB_OBJ_DIR_FROM]);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 		kfree(to_list);
 		kfree(to_list_first);
 
@@ -1110,7 +1089,7 @@ process_packet:
 					ip_src_addr, ip_dest_addr, mc_if_cnt,\
 					mc_dest_if, to_list_first, src_node_addr,
 					is_routed, skb);
-			feci->deref(feci);
+			ecm_front_end_connection_deref(feci);
 			if (interface_idx_cnt == 0) {
 				DEBUG_WARN("Failed to reconstruct 'to mc' heirarchy list\n");
 				ecm_db_connection_deref(ci);
@@ -1170,12 +1149,12 @@ process_packet:
 		if (feci->accel_engine == ECM_FRONT_END_ENGINE_NSS) {
 			if (!ecm_nss_common_igs_acceleration_is_allowed(feci, skb)) {
 				DEBUG_WARN("%px: Multicast IPv6 IGS acceleration denied.\n", ci);
-				feci->deref(feci);
+				ecm_front_end_connection_deref(feci);
 				ecm_db_connection_deref(ci);
 				goto done;
 			}
 		}
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 #endif
 
@@ -1448,7 +1427,7 @@ process_packet:
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 		feci->accelerate(feci, &prevalent_pr, false, NULL, NULL);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);
 

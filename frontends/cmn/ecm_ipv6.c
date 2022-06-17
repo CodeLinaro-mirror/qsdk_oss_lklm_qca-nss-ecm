@@ -2,9 +2,11 @@
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -76,7 +78,7 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_IPV6_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_CMN_IPV6_DEBUG_LEVEL
 
 #ifdef ECM_MULTICAST_ENABLE
 #include <mc_ecm.h>
@@ -883,7 +885,7 @@ void ecm_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_t
 
 	ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_list, to_list_first);
 
@@ -942,7 +944,7 @@ ecm_ipv6_regen_done:
 	return;
 
 ecm_ipv6_retry_regen:
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_regeneration_failed(ci);
 	return;
 }
@@ -1672,6 +1674,13 @@ int ecm_ipv6_init(struct dentry *dentry)
 		return result;
 	}
 #endif
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_IPV6_ENABLE)
+	result = ecm_ppe_ipv6_init(dentry);
+	if (result < 0) {
+		DEBUG_ERROR("Can't initialize PPE ipv6\n");
+		goto ppe_ipv6_failed;
+	}
+#endif
 	result = ecm_sfe_ipv6_init(dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Can't initialize SFE ipv6\n");
@@ -1726,9 +1735,14 @@ nf_register_failed_1:
 	ecm_sfe_ipv6_exit();
 
 sfe_ipv6_failed:
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_IPV6_ENABLE)
+	ecm_ppe_ipv6_exit();
+ppe_ipv6_failed:
+#endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv6_exit();
 #endif
+
 	return result;
 }
 
@@ -1767,7 +1781,11 @@ void ecm_ipv6_exit(void)
 		ovsmgr_dp_hook_unregister(&ecm_ipv6_dp_hooks);
 	}
 #endif
+
 	ecm_sfe_ipv6_exit();
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_IPV6_ENABLE)
+	ecm_ppe_ipv6_exit();
+#endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	ecm_nss_ipv6_exit();
 #endif

@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -203,7 +206,6 @@ struct ecm_db_connection_instance {
 
 	struct ecm_front_end_connection_instance *feci;		/* Front end instance specific to this connection */
 
-	ecm_db_connection_defunct_callback_t defunct;		/* Callback to be called when connection has become defunct */
 	ecm_db_connection_final_callback_t final;		/* Callback to owner when object is destroyed */
 	void *arg;						/* Argument returned to owner in callbacks */
 
@@ -348,7 +350,6 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 			   struct ecm_db_node_instance *node[],
 			   int ip_version, int protocol, ecm_db_direction_t dir,
 			   ecm_db_connection_final_callback_t final,
-			   ecm_db_connection_defunct_callback_t defunct,
 			   ecm_db_timer_group_t tg, bool is_routed, void *arg);
 
 #ifdef ECM_STATE_OUTPUT_ENABLE

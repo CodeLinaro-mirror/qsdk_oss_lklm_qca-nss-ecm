@@ -126,6 +126,11 @@ static int __init ecm_init(void)
 		return -1;
 	}
 
+	if (!ecm_front_end_set_ae_precendence_array(selected_front_end)) {
+		DEBUG_ERROR("Acceleration engine precedence array couldn't be set\n");
+		return -1;
+	}
+
 	ecm_dentry = debugfs_create_dir("ecm", NULL);
 	if (!ecm_dentry) {
 		DEBUG_ERROR("Failed to create ecm directory in debugfs\n");

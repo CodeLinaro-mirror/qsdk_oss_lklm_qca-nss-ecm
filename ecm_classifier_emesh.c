@@ -720,9 +720,9 @@ check_emesh_classifier:
 
 sawf_classifier_out:
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	accel_mode = feci->accel_state_get(feci);
+	accel_mode = ecm_front_end_connection_accel_state_get(feci);
 	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 	protocol = ecm_db_connection_protocol_get(ci);
 	ecm_db_connection_deref(ci);
 

@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -73,6 +76,7 @@
 #include "ecm_tracker_udp.h"
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
+#include "ecm_front_end_common.h"
 #include "ecm_classifier_pcc.h"
 #include "ecm_classifier_pcc_public.h"
 
@@ -432,7 +436,7 @@ void ecm_classifier_pcc_deny_accel_v4(uint8_t *src_mac, __be32 src_ip, int src_p
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	feci->decelerate(feci);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	classi->deref(classi);
 	ecm_db_connection_deref(ci);
@@ -510,7 +514,7 @@ void ecm_classifier_pcc_deny_accel_v6(uint8_t *src_mac, struct in6_addr *src_ip,
 	 */
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	feci->decelerate(feci);
-	feci->deref(feci);
+	ecm_front_end_connection_deref(feci);
 
 	classi->deref(classi);
 	ecm_db_connection_deref(ci);

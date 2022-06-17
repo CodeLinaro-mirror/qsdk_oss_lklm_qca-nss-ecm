@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -70,6 +73,8 @@
 #include "ecm_classifier_hyfi.h"
 #include "ecm_front_end_ipv4.h"
 #include "ecm_interface.h"
+#include "ecm_front_end_common.h"
+
 /*
  * Magic numbers
  */
@@ -255,8 +260,8 @@ static void ecm_classifier_hyfi_process(struct ecm_classifier_instance *aci, ecm
 		accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
 	} else {
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		accel_mode = feci->accel_state_get(feci);
-		feci->deref(feci);
+		accel_mode = ecm_front_end_connection_accel_state_get(feci);
+		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(ci);
 	}
 
@@ -608,7 +613,7 @@ static void ecm_classifier_hyfi_sync_to_v4(struct ecm_classifier_instance *aci, 
 				" %lu, end %lu (@%u)\n",
 				ci, chfi->flow.ecm_serial, start_time, end_time, time_now);
 		}
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 	}
 
 	ecm_db_connection_deref(ci);
@@ -1063,7 +1068,7 @@ static ssize_t ecm_classifier_hyfi_set_command(struct file *file,
 		chfi->flow.cmd_time_begun = feci->stats.cmd_time_begun;
 		chfi->flow.cmd_time_completed = feci->stats.cmd_time_completed;
 		feci->regenerate(feci, ci);
-		feci->deref(feci);
+		ecm_front_end_connection_deref(feci);
 
 		DEBUG_TRACE("%px: Force regeneration %u start_time %lu end_time"
 			" %lu (@%lu)\n", ci, serial,

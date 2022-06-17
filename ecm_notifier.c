@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -37,6 +40,7 @@
 #include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
 #include "ecm_db.h"
+#include "ecm_front_end_common.h"
 
 #include "ecm_notifier_pvt.h"
 #include "exports/ecm_notifier.h"
@@ -260,8 +264,8 @@ enum ecm_notifier_connection_state ecm_notifier_connection_state_get(struct ecm_
 		return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
 	}
 
-	accel_state = feci->accel_state_get(feci);
-	feci->deref(feci);
+	accel_state = ecm_front_end_connection_accel_state_get(feci);
+	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
 	switch (accel_state) {
