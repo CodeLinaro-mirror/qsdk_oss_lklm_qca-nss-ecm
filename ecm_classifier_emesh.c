@@ -582,10 +582,6 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		goto sawf_classifier_out;
 	}
 
-	if (skb->skb_iif == skb->dev->ifindex) {
-		goto sawf_classifier_out;
-	}
-
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		DEBUG_TRACE("%px: sender is SRC\n", aci);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
@@ -690,6 +686,13 @@ check_emesh_classifier:
 
 	if (ecm_classifier_emesh_enabled &&
 			(ecm_classifier_emesh_latency_config_enabled & ECM_CLASSIFIER_EMESH_ENABLE_SPM_RULE_LOOKUP)) {
+		/*
+		 * We will apply the SP rules if the incoming interface
+		 * of this packet is different and the outgoing interface in case of EMESH classifer.
+		 */
+		if (skb->skb_iif == skb->dev->ifindex) {
+			goto sawf_classifier_out;
+		}
 
 		/*
 		 * Update skb->priority with emesh SPM rule lookup if
