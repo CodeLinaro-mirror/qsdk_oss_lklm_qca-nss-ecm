@@ -371,7 +371,6 @@ ccflags-$(ECM_DB_CONNECTION_CROSS_REFERENCING_ENABLE) += -DECM_DB_XREF_ENABLE
 # Define ECM_TRACKER_DPI_SUPPORT_ENABLE=y in order to enable support for
 # deep packet inspection and tracking of data with the trackers.
 # #############################################################################
-ECM_TRACKER_DPI_SUPPORT_ENABLE=y
 ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
 
 # #############################################################################
