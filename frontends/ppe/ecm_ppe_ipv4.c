@@ -107,6 +107,7 @@ int ecm_ppe_ipv4_nack_limit_default = 250;			/* Default nack limit. */
 int ecm_ppe_ipv4_accelerated_count = 0;			/* Total offloads */
 int ecm_ppe_ipv4_pending_accel_count = 0;			/* Total pending offloads issued to the PPE / awaiting completion */
 int ecm_ppe_ipv4_pending_decel_count = 0;			/* Total pending deceleration requests issued to the PPE / awaiting completion */
+int ecm_ppe_ipv4_vlan_passthrough_enable = 0;           /* VLAN passthrough feature enable or disable flag */
 
 /*
  * Limiting the acceleration of connections.
@@ -873,6 +874,12 @@ int ecm_ppe_ipv4_init(struct dentry *dentry)
 	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_ppe_ipv4_dentry,
 					NULL, &ecm_ppe_ipv4_stats_request_counter_fops)) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 stats request counter file in debugfs\n");
+		goto task_cleanup_1;
+	}
+
+	if (!debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_ppe_ipv4_dentry,
+					(u32 *)&ecm_ppe_ipv4_vlan_passthrough_enable)) {
+		DEBUG_ERROR("Failed to create ecm ppe ipv4 vlan passthrough file in debugfs\n");
 		goto task_cleanup_1;
 	}
 

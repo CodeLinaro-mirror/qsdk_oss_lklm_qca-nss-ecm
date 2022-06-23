@@ -702,6 +702,37 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_DSCP_MARKING;
 	}
 #endif
+
+	if (ecm_ppe_ipv6_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
+		(pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
+		(pd6rc->vlan_rule.primary_vlan.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
+		int vlan_present = 0;
+		vlan_present = skb_vlan_tag_present(skb);
+		if (vlan_present) {
+			uint32_t vlan_value;
+			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
+			pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag = vlan_value;
+			pd6rc->vlan_rule.primary_vlan.egress_vlan_tag = vlan_value;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_VLAN;
+		}
+	}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	/*
+	 * Copy both primary and secondary (if exist) VLAN tags.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+		pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+		pd6rc->vlan_rule.primary_vlan.egress_vlan_tag = pr->egress_vlan_tag[0];
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_VLAN;
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+		pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+		pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
+	}
+#endif
+
 	/*
 	 * Set protocol
 	 */
