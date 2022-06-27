@@ -261,6 +261,16 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #endif
 			}
 
+#ifdef ECM_INTERFACE_RAWIP_ENABLE
+			/*
+			 * If the local dev is Rmnet device, no need to do a MAC lookup.
+			 */
+			if (local_dev->type == ARPHRD_RAWIP) {
+				dev_put(local_dev);
+				done = true;
+				break;
+			}
+#endif
 			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
 					DEBUG_WARN("%px: failed to obtain node address for " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(local_ip));
