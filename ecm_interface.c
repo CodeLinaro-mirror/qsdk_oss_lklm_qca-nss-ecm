@@ -7059,7 +7059,12 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 			 * FROM_NAT and TO_NAT have the same list of connections.
 			 */
 			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
-				ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version);
+				/*
+				 * If there is connection on this node, call the defunct function.
+				 */
+				if (ecm_db_node_get_connections_count(ni, dir)) {
+					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version);
+				}
 			}
 		}
 

@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2018, 2020-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -710,6 +713,17 @@ int ecm_db_node_hash_index_get_first(void)
 	return 0;
 }
 EXPORT_SYMBOL(ecm_db_node_hash_index_get_first);
+
+/*
+ * ecm_db_node_get_connections_count()
+ *	Returns the connections count on the node in the given direction.
+ */
+int ecm_db_node_get_connections_count(struct ecm_db_node_instance *ni, ecm_db_obj_dir_t dir)
+{
+	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
+
+	return ni->connections_count[dir];
+}
 
 /*
  * ecm_db_node_alloc()
