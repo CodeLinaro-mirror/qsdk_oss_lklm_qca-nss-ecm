@@ -480,6 +480,10 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ip_addr_t saddr;
 		ip_addr_t daddr;
 #endif
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	struct ecm_db_interface_info_vxlan vxlan_info;
+#endif
+
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
@@ -715,13 +719,15 @@ static void ecm_nss_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+
 			/*
 			 * For VxLAN device, a 5-tuple connection rule is added with the same src and dest ports in both the directions.
-			 * Source interface is a VxLAN interface for the routed flow which is the case for VxLAN->IPsec or VxLAN->WAN rule.
+			 * Source interface is a VxLAN interface for the outer flow which is the case for VxLAN->IPsec or VxLAN->WAN rule.
 			 * Override the flow MTU to MAX, to avoid fragmentation for flows coming in from WAN.
 			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
 			 */
-			if (ecm_db_connection_is_routed_get(feci->ci)) {
+			if (!vxlan_info.if_type) {
 				nircm->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
 				nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}

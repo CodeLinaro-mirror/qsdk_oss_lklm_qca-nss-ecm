@@ -97,7 +97,7 @@ static inline int32_t ecm_nss_common_get_interface_number_by_dev_type(struct net
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 	/*
-	 * Find VxLAN dev type based on type, 0 for outer & 1 for inner.
+	 * VxLAN outer packets are send to VxLAN base node.
 	 */
 	if (netif_is_vxlan(dev)) {
 		if (!type) {

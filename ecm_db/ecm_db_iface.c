@@ -1,9 +1,12 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
@@ -1749,6 +1752,20 @@ void ecm_db_iface_macvlan_address_get(struct ecm_db_iface_instance *ii, uint8_t 
 #endif
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_db_iface_vxlan_info_get()
+ *     Get vxlan interface specific information
+ */
+void ecm_db_iface_vxlan_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_vxlan *vxlan_info)
+{
+	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%p: magic failed", ii);
+	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_VXLAN, "%p: Bad type, expected vxlan, actual: %d\n", ii, ii->type);
+	spin_lock_bh(&ecm_db_lock);
+	vxlan_info->vni = ii->type_info.vxlan.vni;
+	vxlan_info->if_type = ii->type_info.vxlan.if_type;
+	spin_unlock_bh(&ecm_db_lock);
+}
+
 /*
  * ecm_db_iface_find_and_ref_vxlan()
  *	Lookup and return a iface reference if any
