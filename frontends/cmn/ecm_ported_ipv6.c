@@ -879,7 +879,7 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag
@@ -943,6 +943,17 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
 			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
+		}
+
+		/*
+		 * EMESH-SAWF has valid pcp remark to be updated in VLAN tag.
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, egress vlan pcp remark: %d, ingress vlan pcp remark: %d\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_vlan_pcp, aci_pr.return_vlan_pcp);
+			prevalent_pr.flow_vlan_pcp = aci_pr.flow_vlan_pcp;
+			prevalent_pr.return_vlan_pcp = aci_pr.return_vlan_pcp;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK;
 		}
 #endif
 

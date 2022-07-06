@@ -106,15 +106,16 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 #define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW 0x00000400	/* Mark the E-MESH Service Prioritization flow */
 #define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG 0x00000800		/* Mark the E-MESH SAWF tag */
+#define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK 0x00001000	/* Contains E-MESH SAWF VLAN pcp remark */
 #endif
 
-#define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00001000	/* Do not update CI time */
+#define ECM_CLASSIFIER_PROCESS_ACTION_TIMER_GROUP_NO_TOUCH 0x00002000	/* Do not update CI time */
 
 #ifdef ECM_CLASSIFIER_PCC_ENABLE
-#define ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED 0x00002000	/* Contains mirror dynamic interface number */
+#define ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED 0x00004000	/* Contains mirror dynamic interface number */
 #endif
 
-#define ECM_CLASSIFIER_PROCESS_ACTION_MARK 0x00004000	/* Contains flow & return skb mark */
+#define ECM_CLASSIFIER_PROCESS_ACTION_MARK 0x00008000	/* Contains flow & return skb mark */
 
 /*
  * struct ecm_classifier_process_response
@@ -132,7 +133,7 @@ struct ecm_classifier_process_response {
 	bool drop;					/* Drop packet at hand */
 	uint32_t flow_qos_tag;				/* QoS tag to use for the packet */
 	uint32_t return_qos_tag;			/* QoS tag to use for the packet */
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	uint16_t igs_flow_qos_tag;			/* Ingress QoS tag to use for the packet */
 	uint16_t igs_return_qos_tag;			/* Ingress QoS tag to use for the return packet */
@@ -157,6 +158,8 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 	uint32_t flow_sawf_metadata;			/* Flow SAWF metadata value */
 	uint32_t return_sawf_metadata;			/* Return SAWF metadata value */
+	uint8_t flow_vlan_pcp;				/* Flow VLAN pcp remark value */
+	uint8_t return_vlan_pcp;			/* Return VLAN pcp remark value */
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */
