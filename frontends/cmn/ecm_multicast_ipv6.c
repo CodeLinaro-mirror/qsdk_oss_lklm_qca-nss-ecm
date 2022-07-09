@@ -739,11 +739,12 @@ process_packet:
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
+			DEBUG_TRACE("AE classifier hasn't decided yet for the acceleration engine\n");
 			goto done;
 
 		default:
 			DEBUG_WARN("unexpected ae_result: %d\n", ae_result);
-			return NF_ACCEPT;
+			goto done;
 		}
 
 		if (!feci) {
