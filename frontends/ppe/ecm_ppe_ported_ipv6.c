@@ -213,7 +213,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Test if acceleration is permitted
 	 */
 	if (!ecm_ppe_ipv6_accel_pending_set(feci)) {
-		DEBUG_TRACE("%px: Acceleration not permitted: %px\n", feci, feci->ci);
+		DEBUG_TRACE("%px: Acceleration not permitted: %px accel_mode=%d\n", feci, feci->ci, feci->accel_mode);
 		return;
 	}
 
@@ -303,7 +303,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: The lists may contain a complex heirarchy of similar type of interface e.g. multiple vlans or tunnels within tunnels.
 	 * This PPE cannot handle that - there is no way to describe this in the rule - if we see multiple types that would conflict we have to abort.
 	 */
-	DEBUG_TRACE("%px: Examine from/src heirarchy list\n", feci);
+	DEBUG_TRACE("%px: Examine from/src heirarchy list. skb=%px\n", feci, skb);
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
 	for (list_index = from_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
@@ -325,8 +325,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
 		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(ii));
-		DEBUG_TRACE("%px: list_index: %d, ii: %px(%d), type: %d (%s), ae_iface_id(%d)\n",
-				feci, list_index, ii, iface_id, ii_type, ii_name, ae_iface_id);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
+				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
 		if (ae_iface_id < 0) {
 			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
@@ -354,6 +354,26 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
+			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, from_ppe_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_ppe_iface_address);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
+#endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
@@ -526,8 +546,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
 		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(ii));
-		DEBUG_TRACE("%px: list_index: %d, ii: %px(%d), type: %d (%s), ae_iface_id(%d)\n",
-				feci, list_index, ii, iface_id, ii_type, ii_name, ae_iface_id);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
+				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
 		if (ae_iface_id < 0) {
 			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
@@ -555,6 +575,26 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 			ecm_db_iface_bridge_address_get(ii, to_ppe_iface_address);
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
+			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, to_ppe_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_ppe_iface_address);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
+#endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
@@ -705,21 +745,36 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
-#ifdef ECM_CLASSIFIER_OVS_ENABLE
-		/*
-		 * Copy the both primary and secondary (if exist) VLAN tags.
-		 */
-		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
-			pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[0];
-			pd6rc->vlan_rule.primary_vlan.egress_vlan_tag = pr->egress_vlan_tag[0];
+	if (ecm_ppe_ipv6_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
+		(pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
+		(pd6rc->vlan_rule.primary_vlan.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
+		int vlan_present = 0;
+		vlan_present = skb_vlan_tag_present(skb);
+		if (vlan_present) {
+			uint32_t vlan_value;
+			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
+			pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag = vlan_value;
+			pd6rc->vlan_rule.primary_vlan.egress_vlan_tag = vlan_value;
 			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_VLAN;
 		}
+	}
 
-		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
-			pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
-			pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
-		}
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	/*
+	 * Copy both primary and secondary (if exist) VLAN tags.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+		pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+		pd6rc->vlan_rule.primary_vlan.egress_vlan_tag = pr->egress_vlan_tag[0];
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_VLAN;
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+		pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+		pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
+	}
 #endif
+
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
 	/*

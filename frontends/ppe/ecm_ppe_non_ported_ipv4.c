@@ -374,8 +374,23 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			break;
 
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, from_ppe_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_ppe_iface_address);
+#else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: OVS Bridge - Not Supported \n", feci);
+#endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
@@ -573,8 +588,23 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			break;
 
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Bridge\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade bridges
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
+				break;
+			}
+
+			ecm_db_iface_ovs_bridge_address_get(ii, to_ppe_iface_address);
+			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_ppe_iface_address);
+#else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
+#endif
 			break;
 
 		case ECM_DB_IFACE_TYPE_ETHERNET:
@@ -708,6 +738,37 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_DSCP_MARKING;
 	}
 #endif
+
+	if (ecm_ppe_ipv4_vlan_passthrough_enable && !ecm_db_connection_is_routed_get(feci->ci) &&
+		(pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) &&
+		(pd4rc->vlan_rule.primary_vlan.egress_vlan_tag == ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED)) {
+		int vlan_present = 0;
+		vlan_present = skb_vlan_tag_present(skb);
+		if (vlan_present) {
+			uint32_t vlan_value;
+			vlan_value = (ETH_P_8021Q << 16) | skb_vlan_tag_get(skb);
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag = vlan_value;
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag = vlan_value;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
+		}
+	}
+
+#ifdef ECM_CLASSIFIER_OVS_ENABLE
+	/*
+	 * Copy both primary and secondary (if exist) VLAN tags.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
+		pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+		pd4rc->vlan_rule.primary_vlan.egress_vlan_tag = pr->egress_vlan_tag[0];
+		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
+	}
+
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
+		pd4rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
+		pd4rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
+	}
+#endif
+
 	/*
 	 * Set protocol
 	 */
