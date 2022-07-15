@@ -282,6 +282,11 @@ ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
 ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
 
 # #############################################################################
+# Define ECM_CLASSIFIER_MSCS_SCS_ENABLE=y in order to enable SCS classifier.
+# #############################################################################
+ccflags-$(ECM_CLASSIFIER_MSCS_SCS_ENABLE) += -DECM_CLASSIFIER_MSCS_SCS_ENABLE
+
+# #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
 # #############################################################################
 ecm-$(ECM_CLASSIFIER_NL_ENABLE) += ecm_classifier_nl.o
