@@ -34,6 +34,7 @@
 #include <linux/in.h>
 #include <linux/udp.h>
 #include <linux/tcp.h>
+#include <net/esp.h>
 
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_bridge.h>
@@ -76,6 +77,7 @@
  */
 #define ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC 0x1234
 #define ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS 0x4
+#define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
 /*
  * struct ecm_classifier_mscs_instance
  * 	State to allow tracking of MSCS QoS tag for a connection
@@ -211,9 +213,12 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 	struct ipv6hdr *ip6h;
 	struct tcphdr *tcphdr;
 	struct udphdr *udphdr;
+	struct ip_esp_hdr *esp;
 	uint16_t dscp;
+	uint16_t version;
 
 	if (skb->protocol == ntohs(ETH_P_IP)) {
+		version = ntohs(ETH_P_IP);
 		if (unlikely(!pskb_may_pull(skb, sizeof(*iph)))) {
 			/*
 			 * Check for ip header
@@ -230,6 +235,7 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
 		flow_input_params->dscp = dscp;
         } else if (skb->protocol == ntohs(ETH_P_IPV6)) {
+		version = ntohs(ETH_P_IPV6);
 		if (unlikely(!pskb_may_pull(skb, sizeof(*ip6h)))) {
 			/*
 			 * Check for ipv6 header
@@ -250,6 +256,7 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		return false;
 	}
 
+	flow_input_params->spi = ECM_CLASSIFIER_MSCS_INVALID_SPI;
 	if (flow_input_params->protocol == IPPROTO_TCP) {
 		/*
 		 * Check for tcp header
@@ -274,6 +281,17 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		udphdr = udp_hdr(skb);
 		flow_input_params->src.port = ntohs(udphdr->source);
 		flow_input_params->dst.port = ntohs(udphdr->dest);
+	} else if (flow_input_params->protocol == IPPROTO_ESP) {
+		/*
+		 * Get the SPI for IPSEC packets.
+		 */
+		if (version == ntohs(ETH_P_IP)) {
+			esp = (struct ip_esp_hdr *)((uint8_t *)iph + sizeof(*iph));
+			flow_input_params->spi = ntohl(esp->spi);
+		} else {
+			esp = (struct ip_esp_hdr *)((uint8_t *)ip6h + sizeof(*ip6h));
+			flow_input_params->spi = ntohl(esp->spi);
+		}
 	} else {
 		DEBUG_INFO("Not a ported protocol \n");
 		return false;
@@ -448,7 +466,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 		 * not relevent and check the MSCS classifier. If we do not get a DL packet in
 		 * specific time or even if we do get but SCS turns out to be false, we accelerate.
 		 */
-		if (protocol == IPPROTO_UDP) {
+		if (protocol == IPPROTO_UDP || protocol == IPPROTO_ESP) {
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
 			accel_mode = ecm_front_end_connection_accel_state_get(feci);
 			slow_pkts = ecm_front_end_get_slow_packet_count(feci);
