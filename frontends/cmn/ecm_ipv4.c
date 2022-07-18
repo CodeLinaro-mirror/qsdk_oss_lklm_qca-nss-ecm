@@ -1115,7 +1115,8 @@ vxlan_done:
 	 * Check if we can accelerate the GRE protocol.
 	 */
 	if (ip_hdr.protocol == IPPROTO_GRE) {
-		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 4)) {
+		uint16_t offset = ip_hdr.headers[ECM_TRACKER_IP_PROTOCOL_TYPE_GRE].offset;
+		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 4, offset)) {
 			DEBUG_WARN("%px: GRE protocol is not allowed\n", skb);
 			return NF_ACCEPT;
 		}

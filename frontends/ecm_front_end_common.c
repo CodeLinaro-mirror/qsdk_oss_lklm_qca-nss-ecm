@@ -352,14 +352,14 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 							     struct net_device *outdev,
 							     struct sk_buff *skb,
 							     struct nf_conntrack_tuple *tuple,
-							     int ip_version)
+							     int ip_version, uint16_t offset)
 {
 	struct net_device *dev;
 	struct gre_base_hdr *greh;
 
-	skb_pull(skb, sizeof(struct iphdr));
+	skb_pull(skb, offset);
 	greh = (struct gre_base_hdr *)(skb->data);
-	skb_push(skb, sizeof(struct iphdr));
+	skb_push(skb, offset);
 
 	if ((greh->flags & GRE_VERSION) == ECM_GRE_VERSION_1) {
 		/*
