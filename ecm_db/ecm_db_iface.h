@@ -192,7 +192,7 @@ void ecm_db_iface_vlan_info_get(struct ecm_db_iface_instance *ii,
 #endif
 
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_by_interface_identifier(int32_t interface_id);
-struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t idx);
+struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t idx, int32_t ae_interface_num);
 
 #ifdef ECM_INTERFACE_RAWIP_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_rawip(uint8_t *address);

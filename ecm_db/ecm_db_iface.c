@@ -1601,7 +1601,7 @@ EXPORT_SYMBOL(ecm_db_iface_find_and_ref_by_interface_identifier);
  * ecm_db_iface_ifidx_find_and_ref_ethernet()
  *	Return an interface based on a MAC address and interface hlos interface identifier
  */
-struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t ifidx)
+struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t ifidx, int32_t ae_interface_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1621,7 +1621,8 @@ struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_ETHERNET)
 		    || memcmp(ii->type_info.ethernet.address, address, ETH_ALEN)
-		    || ii->interface_identifier != ifidx) {
+		    || (ii->interface_identifier != ifidx)
+		    || (ii->ae_interface_identifier != ae_interface_num)) {
 			ii = ii->hash_next;
 			continue;
 		}
