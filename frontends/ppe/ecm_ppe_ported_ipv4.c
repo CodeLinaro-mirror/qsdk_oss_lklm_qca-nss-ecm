@@ -1154,10 +1154,10 @@ static bool ecm_ppe_ported_ipv4_connection_decelerate_send(struct ecm_front_end_
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_HIN4_ADDR(pd4rd.tuple.flow_ip, src_ip);
-	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_HIN4_ADDR(pd4rd.tuple.return_ip, dest_ip);
 	pd4rd.tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	pd4rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	pd4rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
 
 	/*
 	 * Take a ref to the feci->ci so that it will persist until we get a response from the PPE.

@@ -1090,10 +1090,10 @@ static bool ecm_ppe_non_ported_ipv6_connection_decelerate_send(struct ecm_front_
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rd.tuple.flow_ip, src_ip);
-	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rd.tuple.return_ip, dest_ip);
 	pd6rd.tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	pd6rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	pd6rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
 
 	/*
 	 * Take a ref to the feci->ci so that it will persist until we get a response from the PPE.
