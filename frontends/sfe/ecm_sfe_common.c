@@ -187,6 +187,14 @@ bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
 
 	BUG_ON(!rcu_read_lock_bh_held());
 
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
+		DEBUG_INFO("Fast xmit is not enabled for ipsec device[%s]\n", dev->name);
+		dev_put(dev);
+		return false;
+	}
+#endif
+
 	/*
 	 * It assume that the qdisc attribute won't change after traffic
 	 * running, if the qdisc changed, we need flush all of the rule.
