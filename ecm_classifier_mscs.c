@@ -78,6 +78,8 @@
 #define ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC 0x1234
 #define ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS 0x4
 #define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
+#define ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT 4500
+
 /*
  * struct ecm_classifier_mscs_instance
  * 	State to allow tracking of MSCS QoS tag for a connection
@@ -278,9 +280,26 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 			return false;
 		}
 
-		udphdr = udp_hdr(skb);
+		/*
+		 * TODO : Fetch UDP header using standard functions.
+		 */
+		if (version == ntohs(ETH_P_IP)) {
+			udphdr = (struct udphdr*)((uint8_t *)iph + sizeof(*iph));
+		} else {
+			udphdr = (struct udphdr*)((uint8_t *)ip6h + sizeof(*ip6h));
+		}
+
 		flow_input_params->src.port = ntohs(udphdr->source);
 		flow_input_params->dst.port = ntohs(udphdr->dest);
+
+		/*
+		 * Check for UDP encapsulated IPSEC packet.
+		 */
+		if (flow_input_params->dst.port == ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT) {
+			esp = (struct ip_esp_hdr *)((uint8_t *)udphdr + sizeof(*udphdr));
+			flow_input_params->spi = ntohl(esp->spi);
+		}
+
 	} else if (flow_input_params->protocol == IPPROTO_ESP) {
 		/*
 		 * Get the SPI for IPSEC packets.
