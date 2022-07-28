@@ -31,6 +31,9 @@
  */
 static struct ecm_classifier_mscs_callbacks ecm_wifi_plugin_mscs = {
 	.get_peer_priority = qca_mscs_peer_lookup_n_get_priority,
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+	.update_skb_priority = qca_scs_peer_lookup_n_rule_match,
+#endif
 };
 
 /*

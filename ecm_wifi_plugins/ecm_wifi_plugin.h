@@ -29,6 +29,10 @@
 #include <ecm_classifier_mscs_public.h>
 #include <ecm_classifier_emesh_public.h>
 
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+#include <qca_scs_if.h>
+#endif
+
 #if defined(CONFIG_DYNAMIC_DEBUG)
 
 /*
