@@ -117,24 +117,25 @@ static inline void ecm_ppe_common_connection_regenerate(struct ecm_front_end_con
 }
 
 /*
- * ecm_ppe_common_is_xfrm_flow()
- *	Check if the flow is an xfrm flow.
+ * ecm_ppe_feature_check()
+ *	Check some specific features for PPE acceleration
  */
-static inline bool ecm_ppe_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+static inline bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
 {
+	/*
+	 * Check if this is xfrm flow and can be accelerated via PPE.
+	 */
 #ifdef CONFIG_XFRM
-	struct dst_entry *dst;
-	struct net *net;
-
-	net = dev_net(skb->dev);
-	if (likely(!net->xfrm.policy_count[XFRM_POLICY_OUT])) {
-		return false;
+	if (!dev_net(skb->dev)->xfrm.policy_count[XFRM_POLICY_OUT]) {
+		goto not_xfrm;
 	}
 
 	/*
 	 * Packet seen after output transformation. We use the IPCB(skb) to check
 	 * for this condition. No custom code should mangle the IPCB: skb->cb area,
 	 * while the packet is traversing through the INET layer.
+	 *
+	 * Accelerate outer flow through PPE.
 	 */
 	if (ip_hdr->is_v4) {
 		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
@@ -148,43 +149,31 @@ static inline bool ecm_ppe_common_is_xfrm_flow(struct sk_buff *skb, struct ecm_t
 
 	if (ip_hdr->protocol == IPPROTO_ESP) {
 		DEBUG_TRACE("%px: ESP Passthrough packet\n", skb);
-		return false;
+		goto not_xfrm;
 	}
 
 	/*
-	 * skb's sp is set for decapsulated packet
+	 * skb's sp is set for decapsulated packet.
+	 * Dont accelerate inner flow.
 	 */
 	if (secpath_exists(skb)) {
 		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
-		return true;
+		return false;
 	}
 
 	/*
 	 * dst->xfrm is valid for lan to wan plain packet
 	 */
-	dst = skb_dst(skb);
-	if (dst && dst->xfrm) {
+	if (skb_dst(skb) && skb_dst(skb)->xfrm) {
 		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
-		return true;
-	}
-#endif
-	return false;
-}
-
-/*
- * ecm_ppe_feature_check()
- *	Check some specific features for PPE acceleration
- */
-static inline bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
-{
-	if (ecm_ppe_common_is_xfrm_flow(skb, ip_hdr)) {
-		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
 		return false;
 	}
 
+not_xfrm:
+#endif
+
 	/*
 	 * TODO: Should we add some features to be rejected in PPE frontend?
-	 * Currently it accepts all except IPsec.
 	 */
 
 	return true;

@@ -82,6 +82,19 @@ uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_front_end_connection_instanc
 }
 
 /*
+ * ecm_sfe_feature_check()
+ *	Check some specific features for SFE acceleration
+ */
+bool ecm_sfe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool is_routed)
+{
+	if (!is_routed && !sfe_is_l2_feature_enabled()) {
+		return false;
+	}
+
+	return ecm_front_end_feature_check(skb, ip_hdr);
+}
+
+/*
  * ecm_sfe_common_set_stats_bitmap()
  *	Set bit map
  */

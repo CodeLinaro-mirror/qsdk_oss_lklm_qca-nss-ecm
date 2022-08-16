@@ -729,7 +729,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", feci);
 				break;
 			}
-			nircm->conn_rule.flow_interface_num = SFE_SPECIAL_INTERFACE_IPSEC;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
@@ -1019,7 +1018,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%px: IPSEC - additional unsupported\n", feci);
 				break;
 			}
-			nircm->conn_rule.return_interface_num = SFE_SPECIAL_INTERFACE_IPSEC;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);

@@ -3191,6 +3191,9 @@ identifier_update:
 			dev_put(ipsec_dev);
 			return NULL;
 		}
+
+		DEBUG_TRACE("Obtained IPSec device is %s, and it's interface num is %d\n", ipsec_dev->name,
+				ae_interface_num);
 		dev_put(ipsec_dev);
 
 		/*

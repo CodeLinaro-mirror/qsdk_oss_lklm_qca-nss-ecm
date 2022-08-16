@@ -34,6 +34,7 @@
 #include <net/ipv6.h>
 #include <net/addrconf.h>
 #include <net/gre.h>
+#include <net/xfrm.h>
 
 /*
  * Debug output levels
@@ -188,6 +189,92 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	return !!(ecm_fe_feature_list[type] & feature);
+}
+
+/*
+ * ecm_front_end_is_xfrm_flow()
+ *	Check if the flow is an xfrm flow.
+ */
+static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+#ifdef CONFIG_XFRM
+	struct dst_entry *dst;
+	struct net *net;
+
+	net = dev_net(skb->dev);
+	if (likely(!net->xfrm.policy_count[XFRM_POLICY_OUT])) {
+		return false;
+	}
+
+	/*
+	 * Packet seen after output transformation. We use the IPCB(skb) to check
+	 * for this condition. No custom code should mangle the IPCB: skb->cb area,
+	 * while the packet is traversing through the INET layer.
+	 */
+	if (ip_hdr->is_v4) {
+		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+			DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
+			return true;
+		}
+	} else if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
+		DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
+		return true;
+	}
+
+	if (ip_hdr->protocol == IPPROTO_ESP) {
+		DEBUG_TRACE("%px: ESP Passthrough packet\n", skb);
+		return false;
+	}
+
+	/*
+	 * skb's sp is set for decapsulated packet
+	 */
+	if (secpath_exists(skb)) {
+		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
+		return true;
+	}
+
+	/*
+	 * dst->xfrm is valid for lan to wan plain packet
+	 */
+	dst = skb_dst(skb);
+	if (dst && dst->xfrm) {
+		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+/*
+ * ecm_front_end_feature_check()
+ *	Check some specific features for front end acceleration
+ */
+bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr)) {
+#ifdef ECM_XFRM_ENABLE
+		struct net_device *ipsec_dev;
+		int32_t interface_type;
+
+		/*
+		 * Check if the transformation for this flow
+		 * is done by AE. If yes, then try to accelerate.
+		 */
+		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
+		if (!ipsec_dev) {
+			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
+			return false;
+		}
+		dev_put(ipsec_dev);
+#else
+		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
+		return false;
+#endif
+	}
+
+	return true;
 }
 
 /*

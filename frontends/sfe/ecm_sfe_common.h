@@ -60,31 +60,11 @@ enum ecm_sfe_ipsec_state {
 	}
 
 /*
- * ecm_sfe_feature_check()
- *	Check some specific features for SFE acceleration
- */
-static inline bool ecm_sfe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool is_routed)
-{
-	if (!is_routed && !sfe_is_l2_feature_enabled()) {
-		return false;
-	}
-
-	return true;
-}
-
-/*
  * ecm_sfe_common_get_interface_number_by_dev()
  *	Returns the acceleration engine interface number based on the net_device object.
  */
 static inline int32_t ecm_sfe_common_get_interface_number_by_dev(struct net_device *dev)
 {
-	/*
-	 * sfe_interface_num for all IPsec tunnels will always be the one specific to acceleration engine.
-	 */
-	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
-		return SFE_SPECIAL_INTERFACE_IPSEC;
-	}
-
 	return dev->ifindex;
 }
 
@@ -150,3 +130,4 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 void ecm_sfe_common_tuple_set(struct ecm_front_end_connection_instance *feci,
 			      int32_t from_iface_id, int32_t to_iface_id,
 			      struct ecm_sfe_common_tuple *tuple);
+bool ecm_sfe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool is_routed);

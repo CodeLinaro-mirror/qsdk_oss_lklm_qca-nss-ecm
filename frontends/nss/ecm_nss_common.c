@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -68,6 +68,29 @@ bool ecm_nss_ipv6_is_conn_limit_reached(void)
 	return false;
 }
 #endif
+
+/*
+ * ecm_nss_feature_check()
+ *	Check some specific features for NSS acceleration
+ */
+bool ecm_nss_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+	/*
+	 * If the DSCP value of the packet maps to the NOT accel action type,
+	 * do not accelerate the packet and let it go through the
+	 * slow path.
+	 */
+	if (ip_hdr->protocol == IPPROTO_UDP) {
+		uint8_t action = ip_hdr->is_v4 ?
+			nss_ipv4_dscp_action_get(ip_hdr->dscp) : nss_ipv6_dscp_action_get(ip_hdr->dscp);
+		if (action == NSS_IPV4_DSCP_MAP_ACTION_DONT_ACCEL || action == NSS_IPV6_DSCP_MAP_ACTION_DONT_ACCEL) {
+			DEBUG_TRACE("%px: dscp: %d maps to action not accel type, skip acceleration\n", skb, ip_hdr->dscp);
+			return false;
+		}
+	}
+
+	return ecm_front_end_feature_check(skb, ip_hdr);
+}
 
 /*
  * ecm_nss_ipv4_is_conn_limit_reached()
