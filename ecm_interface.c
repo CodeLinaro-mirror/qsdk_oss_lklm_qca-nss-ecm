@@ -4184,7 +4184,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 #endif
 		   ) {
 			br_dev_src = ecm_interface_get_and_hold_dev_master(in_dev);
-			DEBUG_ASSERT(br_dev_src, "Expected a master\n");
+			if (!br_dev_src) {
+				DEBUG_WARN("Expected a master\n");
+				return 0;
+			}
 
 			/*
 			 * Source netdev is part of a bridge. First make sure that this bridge

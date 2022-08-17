@@ -529,7 +529,10 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 				if (ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
-					DEBUG_ASSERT(master, "%px: Expected a master\n", feci);
+					if (!master) {
+						DEBUG_WARN("%px: Expected a master for bridge port %s\n", feci, dev->name);
+						return NULL;
+					}
 					ecm_interface_send_neighbour_solicitation(master, gw_addr);
 					dev_put(master);
 				} else {
@@ -1452,7 +1455,11 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out interface's master is the 'bridge'.
 	 */
 	bridge = ecm_interface_get_and_hold_dev_master((struct net_device *)out);
-	DEBUG_ASSERT(bridge, "Expected bridge\n");
+	if (!bridge) {
+		DEBUG_WARN("Expected a master for bridge port %s\n", out->name);
+		return NF_ACCEPT;
+	}
+
 	in = dev_get_by_index(&init_net, skb->skb_iif);
 	if (!in) {
 		/*
