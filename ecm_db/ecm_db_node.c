@@ -810,27 +810,31 @@ ecm_db_node_connection_get_and_ref_next(struct ecm_db_connection_instance *ci,
  *	be kept
  */
 static bool ecm_db_should_keep_connection(
-	struct ecm_db_connection_instance *ci, uint8_t *mac)
+	struct ecm_db_connection_instance *ci, struct ecm_db_connection_defunct_info *info)
 {
-	bool should_keep_connection = false;
 	int assignment_count;
 	int aci_index;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+
+	/*
+	 * In case of STA join event, we need to keep all connections apart from
+	 * the connections with SAWF classifier. So we will make should_keep_connection
+	 * flag true by default, and let the relevent classifier take the decision.
+	 */
+	info->should_keep_connection = (info->type == ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN) ? true : false;
 
 	assignment_count =
 		ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
 		struct ecm_classifier_instance *aci;
 		aci = assignments[aci_index];
-		if (aci->should_keep_connection &&
-			aci->should_keep_connection(aci, mac)) {
-			should_keep_connection = true;
-			break;
+		if (aci->should_keep_connection) {
+			aci->should_keep_connection(aci, info);
 		}
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
-	return should_keep_connection;
+	return info->should_keep_connection;
 }
 
 /*
@@ -840,9 +844,14 @@ static bool ecm_db_should_keep_connection(
  *	connections matching version.
  */
 void ecm_db_traverse_node_connection_list_and_defunct(
-	struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version)
+	struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version,
+	ecm_db_connection_defunct_type_t type)
 {
 	struct ecm_db_connection_instance *ci = NULL;
+	struct ecm_db_connection_defunct_info info;
+
+	memcpy(info.mac, node->address, ETH_ALEN);
+	info.type = type;
 
 	/*
 	 * Iterate all from connections
@@ -851,7 +860,7 @@ void ecm_db_traverse_node_connection_list_and_defunct(
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
 
-		if (!ecm_db_should_keep_connection(ci, node->address)) {
+		if (!ecm_db_should_keep_connection(ci, &info)) {
 			if (ip_version != ECM_DB_IP_VERSION_IGNORE && (ecm_db_connection_ip_version_get(ci) != ip_version)) {
 				DEBUG_TRACE("%px: keeping connection, ip_version mismatch %d\n", ci, ci->serial);
 				goto keep_node_conn;

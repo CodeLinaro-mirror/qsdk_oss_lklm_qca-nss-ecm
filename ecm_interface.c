@@ -7077,10 +7077,10 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 }
 
 /*
- * ecm_interface_node_connections_defunct()
- *	Defunct the connections on this node.
+ * ecm_interface_node_connections_defunct_by_type()
+ *	Defunct the connections on this node based on the specific event.
  */
-void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
+void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type)
 {
 	struct ecm_db_node_instance *ni = NULL;
 
@@ -7111,7 +7111,7 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 				 * If there is connection on this node, call the defunct function.
 				 */
 				if (ecm_db_node_get_connections_count(ni, dir)) {
-					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version);
+					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version, type);
 				}
 			}
 			/*
@@ -7137,7 +7137,15 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 	ecm_front_end_ipv6_stop(0);
 #endif
 }
-EXPORT_SYMBOL(ecm_interface_node_connections_defunct);
+
+/*
+ * ecm_interface_node_connections_defunct()
+ *	Defunct the connections on this node.
+ */
+void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
+{
+	ecm_interface_node_connections_defunct_by_type(mac, ip_version, ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE);
+}
 
 /*
  * struct notifier_block ecm_interface_netdev_notifier
@@ -7597,6 +7605,8 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 
 		if (iwe->cmd == IWEVREGISTERED) {
 			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
+			ecm_interface_node_connections_defunct_by_type((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE,
+								ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
 		} else if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
 			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);

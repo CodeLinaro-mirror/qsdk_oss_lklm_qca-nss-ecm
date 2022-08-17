@@ -90,7 +90,8 @@ void ecm_db_node_ref(struct ecm_db_node_instance *ni);
 int ecm_db_node_deref(struct ecm_db_node_instance *ni);
 
 #ifdef ECM_DB_XREF_ENABLE
-void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir, int ip_version);
+void ecm_db_traverse_node_connection_list_and_defunct(struct ecm_db_node_instance *node, ecm_db_obj_dir_t dir,
+							int ip_version, ecm_db_connection_defunct_type_t event);
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 void ecm_db_node_ovs_routed_connections_defunct(uint8_t *node_mac,

@@ -763,10 +763,17 @@ static int ecm_classifier_hyfi_state_get(struct ecm_classifier_instance *ci, str
 }
 #endif
 
-static bool ecm_classifier_hyfi_should_keep_connection(
-	struct ecm_classifier_instance *aci, uint8_t *mac)
+static void ecm_classifier_hyfi_should_keep_connection(
+	struct ecm_classifier_instance *aci, struct ecm_db_connection_defunct_info *info)
 {
 	struct ecm_classifier_hyfi_instance *chfi;
+	/*
+	 * If the event is STA join, classifer does not care about the
+	 * the connection defunct, so we return.
+	 */
+	if (info->type == ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN) {
+		return;
+	}
 
 	chfi = (struct ecm_classifier_hyfi_instance *)aci;
 	DEBUG_CHECK_MAGIC(chfi, ECM_CLASSIFIER_HYFI_INSTANCE_MAGIC,
@@ -775,10 +782,10 @@ static bool ecm_classifier_hyfi_should_keep_connection(
 	if (chfi->hyfi_state &
 			(ECM_CLASSIFIER_HYFI_STATE_IGNORE)) {
 		/* HyFi doesn't care if connection deleted */
-		return false;
+		return;
 	}
 
-	return hyfi_ecm_should_keep(&chfi->flow, mac, chfi->bridge_name);
+	info->should_keep_connection = hyfi_ecm_should_keep(&chfi->flow, info->mac, chfi->bridge_name);
 }
 
 /*
