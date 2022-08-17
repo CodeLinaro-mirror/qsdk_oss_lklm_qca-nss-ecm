@@ -223,8 +223,8 @@ typedef void (*ecm_classifier_update_t)(struct ecm_classifier_instance *ci, enum
 /*
  * Determines if a connection should be kept.
  */
-typedef bool (*ecm_classifier_should_keep_connection_t)
-	(struct ecm_classifier_instance *ci, uint8_t *mac);
+typedef void (*ecm_classifier_should_keep_connection_t)
+	(struct ecm_classifier_instance *ci, struct ecm_db_connection_defunct_info *info);
 
 /*
  * Base class for all types of classifiers

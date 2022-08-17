@@ -1459,6 +1459,32 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 #endif
 
 /*
+ * ecm_classifier_emesh_sawf_should_keep_connection()
+ *	In case of SAWF, we defunct the connection based on MAC at the time of STA join event
+ *	as well, so will return false in case if the event is STA join and the connection is SAWF.
+ */
+static void ecm_classifier_emesh_sawf_should_keep_connection(struct ecm_classifier_instance *aci,
+								struct ecm_db_connection_defunct_info *info)
+{
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	if (info->type != ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN) {
+		/*
+		 * Classifier does not care about the connection deletion.
+		 */
+		return;
+	}
+
+	/*
+	 * In case of STA join event, we will let only SAWF connections be defuncted
+	 * and not the EMESH connections.
+	 */
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
+	if (cemi->type == ECM_CLASSIFIER_SAWF) {
+		info->should_keep_connection = false;
+	}
+}
+
+/*
  * ecm_classifier_emesh_sawf_instance_alloc()
  *	Allocate an instance of the EMESH classifier
  */
@@ -1491,6 +1517,7 @@ struct ecm_classifier_emesh_sawf_instance *ecm_classifier_emesh_sawf_instance_al
 #endif
 	cemi->base.ref = ecm_classifier_emesh_sawf_ref;
 	cemi->base.deref = ecm_classifier_emesh_sawf_deref;
+	cemi->base.should_keep_connection = ecm_classifier_emesh_sawf_should_keep_connection;
 	cemi->ci_serial = ecm_db_connection_serial_get(ci);
 	cemi->process_response.process_actions = 0;
 	cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;
