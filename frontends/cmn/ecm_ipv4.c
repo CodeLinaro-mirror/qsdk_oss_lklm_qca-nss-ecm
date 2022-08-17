@@ -454,9 +454,12 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			 * If dev is a bridge port, we should use the bridge device for the MAC lookup and ARP request.
 			 */
 			if (ecm_front_end_is_bridge_port(dev)) {
-				mac_dev = ecm_interface_get_and_hold_dev_master(dev);
-				DEBUG_ASSERT(mac_dev, "%px: Expected a master mac_dev\n", feci);
 				DEBUG_TRACE("%s is a bridge port\n", dev->name);
+				mac_dev = ecm_interface_get_and_hold_dev_master(dev);
+				if(!mac_dev) {
+					DEBUG_WARN("%px: No master for %s, failed to obtain any node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, dev->name, ECM_IP_ADDR_TO_DOT(addr));
+					return NULL;
+				}
 			} else {
 				dev_hold(dev);
 				mac_dev = dev;
@@ -1710,7 +1713,11 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 	 * NOTE: We are given 'out' (which we implicitly know is a bridge port) so out interface's master is the 'bridge'.
 	 */
 	bridge = ecm_interface_get_and_hold_dev_master((struct net_device *)out);
-	DEBUG_ASSERT(bridge, "Expected bridge\n");
+	if (!bridge) {
+		DEBUG_WARN("Expected bridge\n");
+		return NF_ACCEPT;
+	}
+
 	in = dev_get_by_index(&init_net, skb->skb_iif);
 	if  (!in) {
 		/*
