@@ -6487,14 +6487,39 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			 * Note: A bridge port can be of different interface type, e.g VLAN, ethernet.
 			 * This check, therefore, should be performed for all interface types.
 			 */
-			if ((is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) &&
-				is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+			if (is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+
+				if (is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) {
+					DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
+					/*
+					 * Update the existing fdb entry's timestamp only.
+					 */
+					br_fdb_entry_refresh(dev, mac_addr, 0);
+				}
 
 				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
 				/*
-				 * Update the existing fdb entry's timestamp only.
+				 * Update the VxLAN bridge fdb entries.
+				 * The VxLAN fdb entries need to be updated only when the acceleration engine is PPE.
+				 * When the acceleration engine is NSS, the refresh is done by the Vxlanmgr with the help of NSS firmware.
+				 * When the acceleration engine is SFE, the refresh is done by the host itself.
 				 */
-				br_fdb_entry_refresh(dev, mac_addr, 0);
+				if (is_ported && (stats_bitmap & BIT(ECM_DB_IFACE_TYPE_VXLAN))) {
+					struct ecm_db_interface_info_vxlan vxlan_info;
+					struct vxlan_dev *priv;
+
+					ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+					priv = netdev_priv(dev);
+					DEBUG_TRACE("Update VXLAN bridge fdb entry for mac: %pM\n", mac_addr);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 5, 7))
+					vxlan_fdb_update_mac(priv, mac_addr);
+#else
+					vxlan_fdb_update_mac(priv, mac_addr, vxlan_info.vni);
+#endif
+				}
+#endif
 			}
 		}
 
