@@ -487,10 +487,11 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VXLAN);
+
 			/*
 			 * For VxLAN device, a 5-tuple connection rule is added with the same src and dest ports in both the directions.
 			 * Source interface is a VxLAN interface for the routed flow which is the case for VxLAN->IPsec or VxLAN->WAN rule.
-			 * Override the flow MTU to MAX, to avoid fragmentation for flows coming in from WAN.
 			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
 			 */
 			rule_invalid = false;
@@ -690,6 +691,15 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
 			rule_invalid = true;
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VXLAN);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 			break;
 
