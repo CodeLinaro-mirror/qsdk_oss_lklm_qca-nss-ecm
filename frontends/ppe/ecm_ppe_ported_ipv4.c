@@ -1437,8 +1437,8 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
 	feci->regenerate = ecm_ppe_common_connection_regenerate;
 	feci->defunct = ecm_ppe_ported_ipv4_connection_defunct_callback;
 
-	feci->get_stats_bitmap = ecm_ppe_common_dummy_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_ppe_common_dummy_set_stats_bitmap;
+	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
 
 	if (protocol == IPPROTO_TCP) {
 		feci->ported_accelerated_count_index = ECM_FRONT_END_PORTED_PROTO_TCP;

@@ -1902,8 +1902,8 @@ void ecm_sfe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance
 
 	ecm_sfe_common_init_fe_info(&feci->fe_info);
 
-	feci->get_stats_bitmap = ecm_sfe_common_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_sfe_common_set_stats_bitmap;
+	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
 
 	/*
 	 * Just in case this function is called while switching AE to SFE
@@ -1969,8 +1969,6 @@ struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv4_connection_instanc
 
 	feci->protocol = protocol;
 
-	feci->get_stats_bitmap = ecm_sfe_common_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_sfe_common_set_stats_bitmap;
 	feci->update_rule = ecm_sfe_common_update_rule;
 	ecm_sfe_ported_ipv4_connection_set(feci);
 
