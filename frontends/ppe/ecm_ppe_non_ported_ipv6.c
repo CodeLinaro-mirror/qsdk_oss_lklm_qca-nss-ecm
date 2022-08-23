@@ -306,6 +306,9 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		uint32_t iface_id, ae_iface_id;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan_info;
 		uint32_t vlan_value = 0;
@@ -412,7 +415,18 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
-			pd6rc->valid_flags |= PPE_DRV_V6_RULE_FLAG_PPPOE_VALID;
+			/*
+			 * Copy pppoe session info to the creation structure.
+			 */
+			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
+			pd6rc->pppoe_rule.flow_session.session_id = pppoe_info.pppoe_session_id;
+			memcpy(pd6rc->pppoe_rule.flow_session.server_mac, pppoe_info.remote_mac, ETH_ALEN);
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_PPPOE_FLOW;
+
+
+			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
+					pd6rc->pppoe_rule.flow_session.session_id,
+					pd6rc->pppoe_rule.flow_session.server_mac);
 #else
 			rule_invalid = true;
 #endif
@@ -508,6 +522,9 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		uint32_t iface_id, ae_iface_id;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan_info;
 		uint32_t vlan_value = 0;
@@ -599,7 +616,17 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
-			pd6rc->valid_flags |= PPE_DRV_V6_RULE_FLAG_PPPOE_VALID;
+			/*
+			 * Copy pppoe session info to the creation structure.
+			 */
+			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
+			pd6rc->pppoe_rule.return_session.session_id = pppoe_info.pppoe_session_id;
+			memcpy(pd6rc->pppoe_rule.return_session.server_mac, pppoe_info.remote_mac, ETH_ALEN);
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_PPPOE_RETURN;
+
+			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
+					pd6rc->pppoe_rule.return_session.session_id,
+					pd6rc->pppoe_rule.return_session.server_mac);
 #else
 			rule_invalid = true;
 #endif
@@ -810,6 +837,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"egress_outer_vlan_tag: %x\n"
 			"rule_flags: %x\n"
 			"valid_flags: %x\n"
+			"flow_pppoe_session_id: %u\n"
+			"flow_pppoe_remote_mac: %pM\n"
+			"return_pppoe_session_id: %u\n"
+			"return_pppoe_remote_mac: %pM\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
@@ -835,6 +866,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag,
 			pd6rc->rule_flags,
 			pd6rc->valid_flags,
+			pd6rc->pppoe_rule.flow_session.session_id,
+			pd6rc->pppoe_rule.flow_session.server_mac,
+			pd6rc->pppoe_rule.return_session.session_id,
+			pd6rc->pppoe_rule.return_session.server_mac,
 			pd6rc->qos_rule.flow_qos_tag, pd6rc->qos_rule.flow_qos_tag,
 			pd6rc->qos_rule.return_qos_tag, pd6rc->qos_rule.return_qos_tag,
 			pd6rc->dscp_rule.flow_dscp,
