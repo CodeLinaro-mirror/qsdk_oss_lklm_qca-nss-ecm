@@ -78,7 +78,6 @@
 #define ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC 0x1234
 #define ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS 0x4
 #define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
-#define ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT 4500
 #define ECM_CLASSIFIER_MSCS_INVALID_RULE_ID 0xffff
 
 /*
@@ -110,6 +109,13 @@ static int ecm_classifier_mscs_enabled = 0;			/* Operational behaviour */
  * Operational control
  */
 static int ecm_classifier_scs_enabled = 0;			/* Operational behaviour */
+
+/*
+ * Operational control
+ */
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+static int ecm_classifier_mscs_scs_udp_ipsec_port = 4500;	/* Operational behaviour */
+#endif
 
 /*
  * Management thread control
@@ -297,7 +303,7 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		/*
 		 * Check for UDP encapsulated IPSEC packet.
 		 */
-		if (flow_input_params->dst.port == ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT) {
+		if (flow_input_params->dst.port == ecm_classifier_mscs_scs_udp_ipsec_port) {
 			esp = (struct ip_esp_hdr *)((uint8_t *)udphdr + sizeof(*udphdr));
 			flow_input_params->spi = ntohl(esp->spi);
 		}
@@ -483,6 +489,17 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			 * Update skb priority.
 			 */
 			skb->priority = flow_output_params.priority;
+			if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
+						flow_input_params.dst.port == ecm_classifier_mscs_scs_udp_ipsec_port)) {
+				spin_lock_bh(&ecm_classifier_mscs_lock);
+				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				cmscsi->process_response.flow_qos_tag = skb->priority;
+				cmscsi->process_response.return_qos_tag = skb->priority;
+				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+				goto mscs_classifier_out;
+			}
+
 			goto update_qos_tags;
 		}
 
@@ -926,6 +943,33 @@ static int ecm_classifier_mscs_scs_rule_set_enabled(void *data, u64 val)
 
 	return 0;
 }
+
+/*
+ * ecm_classifier_mscs_scs_get_udp_ipsec_port()
+ */
+static int ecm_classifier_mscs_scs_get_udp_ipsec_port(void *data, u64 *val)
+{
+	*val = ecm_classifier_mscs_scs_udp_ipsec_port;
+
+	return 0;
+}
+
+/*
+ * ecm_classifier_mscs_scs_set_udp_ipsec_port()
+ */
+static int ecm_classifier_mscs_scs_set_udp_ipsec_port(void *data, u64 val)
+{
+	DEBUG_TRACE("ecm_classifier_scs_udp_ipsec_port = %u\n", (uint32_t)val);
+
+	if (val != 5200) {
+		DEBUG_WARN("Invalid value: %u. Valid value is 5200.\n", (uint32_t)val);
+		return -EINVAL;
+	}
+
+	ecm_classifier_mscs_scs_udp_ipsec_port = (uint32_t)val;
+
+	return 0;
+}
 #endif
 
 /*
@@ -935,6 +979,8 @@ DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_mscs_enabled_fops, ecm_classifier_mscs_ru
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_scs_enabled_fops, ecm_classifier_mscs_scs_rule_get_enabled, ecm_classifier_mscs_scs_rule_set_enabled, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_scs_udp_ipsec_port_fops, ecm_classifier_mscs_scs_get_udp_ipsec_port, ecm_classifier_mscs_scs_set_udp_ipsec_port, "%llu\n");
 #endif
 
 /*
@@ -1005,7 +1051,7 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 
 	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_mscs_enabled_fops)) {
-		DEBUG_ERROR("Failed to create ecm nl classifier enabled file in debugfs\n");
+		DEBUG_ERROR("Failed to create ecm mscs classifier enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 		return -1;
 	}
@@ -1013,7 +1059,14 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	if (!debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_enabled_fops)) {
-		DEBUG_ERROR("Failed to create ecm nl classifier enabled file in debugfs for scs\n");
+		DEBUG_ERROR("Failed to create ecm scs classifier enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+		return -1;
+	}
+
+	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+				NULL, &ecm_classifier_scs_udp_ipsec_port_fops)) {
+		DEBUG_ERROR("Failed to create ecm scs udp ipsec port file in debugfs for adding port number\n");
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 		return -1;
 	}
