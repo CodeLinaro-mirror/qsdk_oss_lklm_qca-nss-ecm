@@ -766,6 +766,13 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		}
 	}
 
+#ifdef ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE
+	if (ecm_interface_src_check) {
+		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_SRC_INTERFACE_CHECK;
+		DEBUG_INFO("%px: Source interface check is enabled\n", feci);
+	}
+#endif
+
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	/*
 	 * Copy both primary and secondary (if exist) VLAN tags.

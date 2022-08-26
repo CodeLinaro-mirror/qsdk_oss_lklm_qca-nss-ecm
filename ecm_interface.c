@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -7962,6 +7962,7 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 		return -EINVAL;
 	}
 
+	DEBUG_TRACE("Source interface check new value = %d\n", ecm_interface_src_check);
 	return ret;
 }
 
