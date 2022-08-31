@@ -73,7 +73,8 @@ enum ecm_front_end_engine {
  * which front end should be selected. Its possible values are 0, 1 and 2.
  * They are mapped to following definition.
  * ECM_FRONT_END_TYPE_AUTO: select NSS front end if hardware support it,
- *			    otherwise select SFE front end.
+ *			    otherwise select SFE or PPE_SFE front end based on the
+ *			    underlying SoC.
  * ECM_FRONT_END_TYPE_NSS: select NSS front end if hardware support it,
  *			   otherwise abort initailization.
  * ECM_FRONT_END_TYPE_SFE: select SFE front end.
@@ -360,7 +361,7 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
  * hardware support it, then the others.
  *
  * We check device tree to see if NSS is supported by hardware.
- * Currenly all ipq8064, ipq8062 and ipq807x  ipq60xx platforms support NSS.
+ * Currenly all ipq8064, ipq8062, ipq807x, ipq60xx platforms support NSS.
  * Since SFE is a pure software acceleration engine, so all platforms
  * support it.
  */
@@ -386,6 +387,13 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 	}
 #endif
 
+#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	if ((front_end_selection == ECM_FRONT_END_TYPE_PPE_SFE)
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq9574"))) {
+		return ECM_FRONT_END_TYPE_PPE_SFE;
+	}
+#endif
+
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	if ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) ||
 	    (front_end_selection == ECM_FRONT_END_TYPE_SFE)) {
@@ -396,12 +404,6 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	if (front_end_selection == ECM_FRONT_END_TYPE_PPE){
 		return ECM_FRONT_END_TYPE_PPE;
-	}
-#endif
-
-#if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
-	if (front_end_selection == ECM_FRONT_END_TYPE_PPE_SFE){
-		return ECM_FRONT_END_TYPE_PPE_SFE;
 	}
 #endif
 
