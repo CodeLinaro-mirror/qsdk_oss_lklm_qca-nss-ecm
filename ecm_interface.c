@@ -6928,6 +6928,8 @@ void ecm_interface_dev_defunct_connections(struct net_device *dev)
 		if (dev->ifindex == ecm_db_iface_interface_identifier_get(ii)) {
 			ecm_interface_defunct_connections(ii);
 			DEBUG_TRACE("%px: defunct for %px: COMPLETE\n", dev, ii);
+			ecm_db_iface_deref(ii);
+			return;
 		}
 
 		/*
