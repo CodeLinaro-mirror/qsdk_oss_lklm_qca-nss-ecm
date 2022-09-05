@@ -109,7 +109,7 @@
 
 int ecm_ppe_ipv6_no_action_limit_default = 250;		/* Default no-action limit. */
 int ecm_ppe_ipv6_driver_fail_limit_default = 250;		/* Default driver fail limit. */
-int ecm_ppe_ipv6_nack_limit_default = 250;			/* Default nack limit. */
+int ecm_ppe_ipv6_nack_limit_default = 1;			/* Default nack limit. */
 int ecm_ppe_ipv6_accelerated_count = 0;			/* Total offloads */
 int ecm_ppe_ipv6_pending_accel_count = 0;			/* Total pending offloads issued to the PPE / awaiting completion */
 int ecm_ppe_ipv6_pending_decel_count = 0;			/* Total pending deceleration requests issued to the PPE / awaiting completion */
