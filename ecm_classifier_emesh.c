@@ -1563,27 +1563,35 @@ next_ci:
 }
 
 /*
- * ecm_classifier_emesh_sawf_rule_update_cb()
+ * ecm_classifier_emesh_sawf_spm_notifier_callback()
  *	Callback for service prioritization notification update.
  */
-static void ecm_classifier_emesh_sawf_rule_update_cb(uint8_t add_rm_md,
-		         uint32_t valid_flag, struct sp_rule *r)
+static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block *nb, unsigned long event, void *data)
 {
 	ip_addr_t ip_addr;
 	struct in6_addr ipv6addr = IN6ADDR_ANY_INIT;
+	struct sp_rule *r = (struct sp_rule *)data;
+	uint32_t valid_flag = r->inner.flags;
 
 	/*
-	 * Return if E-Mesh or SAWF functionality is not enabled.
+	 * Return if E-Mesh or SAWF functionality is not enabled or the rule
+	 * classifier type is SCS.
 	 */
+	if (r->classifier_type == SP_RULE_TYPE_SCS) {
+		DEBUG_INFO("Not an EMESH / SAWF rule notification !\n");
+		return NOTIFY_DONE;
+	}
+
 	if (!ecm_classifier_emesh_enabled && !ecm_classifier_sawf_enabled) {
-		return;
+		return NOTIFY_DONE;
 	}
 
 	DEBUG_INFO("SP rule update notification received\n");
 	if (ecm_classifier_sawf_enabled || r->classifier_type == SP_RULE_TYPE_SAWF) {
 		ecm_db_connection_make_defunct_sawf_connections(r->id);
-		return;
+		return NOTIFY_DONE;
 	}
+
 	/*
 	 * Order of priority of rule fields to match and flush connections:
 	 * Port ---> IP address ---> Mac Address ---> Protocol
@@ -1593,27 +1601,27 @@ static void ecm_classifier_emesh_sawf_rule_update_cb(uint8_t add_rm_md,
 	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_PORT) {
 		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_DST_PORT) {
 		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV4) {
 		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.src_ipv4_addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV4) {
 		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.dst_ipv4_addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV6) {
@@ -1621,7 +1629,7 @@ static void ecm_classifier_emesh_sawf_rule_update_cb(uint8_t add_rm_md,
 		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV6) {
@@ -1629,22 +1637,22 @@ static void ecm_classifier_emesh_sawf_rule_update_cb(uint8_t add_rm_md,
 		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_SOURCE_MAC) {
 		ecm_interface_node_connections_defunct((uint8_t *)r->inner.sa, ECM_DB_IP_VERSION_IGNORE);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_DST_MAC) {
 		ecm_interface_node_connections_defunct((uint8_t *)r->inner.da, ECM_DB_IP_VERSION_IGNORE);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	if (valid_flag & SP_RULE_FLAG_MATCH_PROTOCOL) {
 		ecm_db_connection_defunct_by_protocol(r->inner.protocol_number);
-		return;
+		return NOTIFY_DONE;
 	}
 
 	/*
@@ -1654,6 +1662,7 @@ static void ecm_classifier_emesh_sawf_rule_update_cb(uint8_t add_rm_md,
 	 * connections.
 	 */
 	ecm_db_connection_make_defunct_by_assignment_type(ECM_CLASSIFIER_TYPE_EMESH);
+	return NOTIFY_DONE;
 }
 
 /*
@@ -1744,12 +1753,18 @@ void ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister(void)
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister);
 
 /*
+ * ecm_classifier_emesh_sawf_spm_notifier
+ *	Registration for SPM rule update events
+ */
+static struct notifier_block ecm_classifier_emesh_sawf_spm_notifier __read_mostly = {
+	.notifier_call = ecm_classifier_emesh_sawf_spm_notifier_callback,
+};
+
+/*
  * ecm_classifier_emesh_sawf_init()
  */
 int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 {
-	int ret;
-
 	DEBUG_INFO("SAWF EMESH classifier Module init\n");
 
 	ecm_classifier_emesh_sawf_dentry = debugfs_create_dir("ecm_classifier_emesh", dentry);
@@ -1789,12 +1804,7 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	/*
 	 * Register for service prioritization notification update.
 	 */
-	ret = sp_mapdb_rule_update_register_notify(ecm_classifier_emesh_sawf_rule_update_cb);
-	if (ret) {
-		DEBUG_ERROR("SP update registration failed: %d\n", ret);
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
-	}
+	sp_mapdb_notifier_register(&ecm_classifier_emesh_sawf_spm_notifier);
 
 	return 0;
 }
@@ -1819,8 +1829,8 @@ void ecm_classifier_emesh_sawf_exit(void)
 	}
 
 	/*
-	 * De-register service prioritization notification update.
+	 * Unregister service prioritization notification update.
 	 */
-	sp_mapdb_rule_update_unregister_notify();
+	sp_mapdb_notifier_unregister(&ecm_classifier_emesh_sawf_spm_notifier);
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_exit);
