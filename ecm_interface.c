@@ -4900,7 +4900,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 		switch (ip_version) {
 		case 4:
-			if ((protocol == IPPROTO_IPV6) || (protocol == IPPROTO_ESP)) {
+			/*
+			 * For bridge flow we may hit this condition, and we will fail to create
+			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
+			 * the check specific to routed flow in case of IPSEC passthrough traffic.
+			 */
+			if ((protocol == IPPROTO_IPV6) || ((protocol == IPPROTO_ESP) && is_routed)) {
 				skip = true;
 				break;
 			}
@@ -4912,7 +4917,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				break;
 			}
 #else
-			if ((protocol == IPPROTO_UDP) && (udp_hdr(skb)->dest == htons(4500))) {
+			if (is_routed && ((protocol == IPPROTO_UDP) && (udp_hdr(skb)->dest == htons(4500)))) {
 				skip = true;
 				break;
 			}
@@ -4920,7 +4925,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			break;
 
 		case 6:
-			if ((protocol == IPPROTO_IPIP) || (protocol == IPPROTO_ESP)) {
+			/*
+			 * For bridge flow we may hit this condition, and we will fail to create
+			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
+			 * the check specific to routed flow in case of IPSEC passthrough traffic.
+			 */
+			if ((protocol == IPPROTO_IPIP) || ((protocol == IPPROTO_ESP) && is_routed)) {
 				skip = true;
 				break;
 			}
