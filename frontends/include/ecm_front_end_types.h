@@ -105,9 +105,9 @@ enum ecm_ae_precedence_order {
  * Features supported in ECM's frontends.
  */
 enum ecm_fe_feature {
-	ECM_FE_FEATURE_NSS 		= (1 << 0),
-	ECM_FE_FEATURE_SFE 		= (1 << 1),
-	ECM_FE_FEATURE_NON_PORTED 	= (1 << 2),
+	ECM_FE_FEATURE_NSS		= (1 << 0),
+	ECM_FE_FEATURE_SFE		= (1 << 1),
+	ECM_FE_FEATURE_NON_PORTED	= (1 << 2),
 	ECM_FE_FEATURE_BRIDGE		= (1 << 3),
 	ECM_FE_FEATURE_MULTICAST	= (1 << 4),
 	ECM_FE_FEATURE_BONDING		= (1 << 5),
@@ -118,7 +118,7 @@ enum ecm_fe_feature {
 	ECM_FE_FEATURE_XFRM		= (1 << 10),
 	ECM_FE_FEATURE_OVS_BRIDGE	= (1 << 11),
 	ECM_FE_FEATURE_OVS_VLAN		= (1 << 12),
-	ECM_FE_FEATURE_PPE 		= (1 << 13),
+	ECM_FE_FEATURE_PPE		= (1 << 13),
 };
 
 /*
@@ -160,8 +160,8 @@ typedef enum ecm_front_end_acceleration_modes ecm_front_end_acceleration_mode_t;
  */
 struct ecm_front_end_connection_instance;
 typedef void (*ecm_front_end_connection_accelerate_method_t)(struct ecm_front_end_connection_instance *feci,
-                                                                        struct ecm_classifier_process_response *pr, bool is_l2_encap,
-                                                                        struct nf_conn *ct, struct sk_buff *skb);
+									struct ecm_classifier_process_response *pr, bool is_l2_encap,
+									struct nf_conn *ct, struct sk_buff *skb);
 
 typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_accel_ceased_method_t)(struct ecm_front_end_connection_instance *feci);
@@ -197,8 +197,10 @@ struct ecm_ae_precedence {
 	int ae_type;
 	ecm_front_end_connection_alloc_method_t ported_ipv4_alloc;
 	ecm_front_end_connection_alloc_method_t ported_ipv6_alloc;
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 	ecm_front_end_connection_alloc_method_t non_ported_ipv4_alloc;
 	ecm_front_end_connection_alloc_method_t non_ported_ipv6_alloc;
+#endif
 };
 
 extern struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
@@ -333,9 +335,9 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature);
 
 void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence);
 bool ecm_front_end_common_feature_check(enum ecm_front_end_engine ae_type,
-                                        struct sk_buff *skb,
-                                        struct ecm_tracker_ip_header *iph,
-                                        bool is_routed);
+					struct sk_buff *skb,
+					struct ecm_tracker_ip_header *iph,
+					bool is_routed);
 
 
 /*
@@ -349,7 +351,7 @@ static inline enum ecm_front_end_type ecm_front_end_type_get(void)
 
 /*
  * ecm_front_end_type_select()
- * 	Detects and sets which front end to run
+ *	Detects and sets which front end to run
  *
  * User can select front end explicitly by passing the AE type
  * to kernel module parameter "front_end_selection". Or let ECM make

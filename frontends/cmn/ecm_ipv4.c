@@ -98,7 +98,9 @@
 #include <ovsmgr.h>
 #endif
 #include "ecm_ported_ipv4.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_non_ported_ipv4.h"
+#endif
 #include "ecm_multicast_ipv4.h"
 
 /*
@@ -974,8 +976,8 @@ unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *
 							bool can_accel, bool is_routed, bool is_l2_encap, struct sk_buff *skb, uint16_t l2_encap_proto)
 {
 	struct ecm_tracker_ip_header ip_hdr;
-        struct nf_conn *ct;
-        enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
 	struct nf_conntrack_tuple orig_tuple;
 	struct nf_conntrack_tuple reply_tuple;
 	ecm_db_direction_t ecm_dir;
@@ -1014,7 +1016,7 @@ unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *
 	/*
 	 * Extract information, if we have conntrack then use that info as far as we can.
 	 */
-        ct = nf_ct_get(skb, &ctinfo);
+	ct = nf_ct_get(skb, &ctinfo);
 	if (unlikely(!ct)) {
 		DEBUG_TRACE("%px: no ct\n", skb);
 		ECM_IP_ADDR_TO_NIN4_ADDR(orig_tuple.src.u3.ip, ip_hdr.src_addr);
@@ -1768,7 +1770,7 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 		/*
 		 * Process the packet, if we have this mac address in the fdb table.
 		 * TODO: For the kernel versions later than 3.6.x, the API needs vlan id.
-		 * 	 For now, we are passing 0, but this needs to be handled later.
+		 *	 For now, we are passing 0, but this needs to be handled later.
 		 */
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
 			DEBUG_WARN("skb: %px, No fdb entry for this mac address %pM in the bridge: %px (%s)\n",
