@@ -66,8 +66,10 @@
 #include "ecm_nss_common.h"
 #include "ecm_nss_ported_ipv4.h"
 #include "ecm_nss_ported_ipv6.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_nss_non_ported_ipv4.h"
 #include "ecm_nss_non_ported_ipv6.h"
+#endif
 #endif
 
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -77,8 +79,10 @@
 #include "ecm_sfe_common.h"
 #include "ecm_sfe_ported_ipv4.h"
 #include "ecm_sfe_ported_ipv6.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_sfe_non_ported_ipv4.h"
 #include "ecm_sfe_non_ported_ipv6.h"
+#endif
 #endif
 
 #ifdef ECM_FRONT_END_PPE_ENABLE
@@ -87,8 +91,10 @@
 #include "ecm_ppe_common.h"
 #include "ecm_ppe_ported_ipv4.h"
 #include "ecm_ppe_ported_ipv6.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_ppe_non_ported_ipv4.h"
 #include "ecm_ppe_non_ported_ipv6.h"
+#endif
 #endif
 
 /*
@@ -155,24 +161,30 @@ void ecm_front_end_set_ae_alloc_methods(struct ecm_ae_precedence *precedence)
 	case ECM_FRONT_END_ENGINE_SFE:
 		precedence->ported_ipv4_alloc = ecm_sfe_ported_ipv4_connection_instance_alloc;
 		precedence->ported_ipv6_alloc = ecm_sfe_ported_ipv6_connection_instance_alloc;
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 		precedence->non_ported_ipv4_alloc = ecm_sfe_non_ported_ipv4_connection_instance_alloc;
 		precedence->non_ported_ipv6_alloc = ecm_sfe_non_ported_ipv6_connection_instance_alloc;
+#endif
 		break;
 #endif
 #ifdef ECM_FRONT_END_NSS_ENABLE
 	case ECM_FRONT_END_ENGINE_NSS:
 		precedence->ported_ipv4_alloc = ecm_nss_ported_ipv4_connection_instance_alloc;
 		precedence->ported_ipv6_alloc = ecm_nss_ported_ipv6_connection_instance_alloc;
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 		precedence->non_ported_ipv4_alloc = ecm_nss_non_ported_ipv4_connection_instance_alloc;
 		precedence->non_ported_ipv6_alloc = ecm_nss_non_ported_ipv6_connection_instance_alloc;
+#endif
 		break;
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
 		precedence->ported_ipv4_alloc = ecm_ppe_ported_ipv4_connection_instance_alloc;
 		precedence->ported_ipv6_alloc = ecm_ppe_ported_ipv6_connection_instance_alloc;
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 		precedence->non_ported_ipv4_alloc = ecm_ppe_non_ported_ipv4_connection_instance_alloc;
 		precedence->non_ported_ipv6_alloc = ecm_ppe_non_ported_ipv6_connection_instance_alloc;
+#endif
 		break;
 #endif
 	default:
@@ -425,7 +437,7 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 
 /*
  * ecm_front_end_gre_proto_is_accel_allowed()
- * 	Handle the following GRE cases:
+ *	Handle the following GRE cases:
  *
  * 1. PPTP locally terminated - allow acceleration
  * 2. PPTP pass through - do not allow acceleration
@@ -901,6 +913,7 @@ int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *fec
 	return 0;
 }
 
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 /*
  * ecm_front_end_non_ported_ipv6_connection_update()
  *	Update the non-ported IPv6 feci instance fields.
@@ -962,6 +975,7 @@ static void ecm_front_end_non_ported_ipv4_connection_update(struct ecm_front_end
 		break;
 	}
 }
+#endif
 
 /*
  * ecm_front_end_ported_ipv6_connection_update()
@@ -1129,7 +1143,13 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
 			ecm_front_end_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
 		} else {
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 			ecm_front_end_non_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
+#else
+			spin_unlock_bh(&feci->lock);
+			DEBUG_ERROR("%px: ECM non ported support is disabled\n", feci);
+			return false;
+#endif
 		}
 		break;
 
@@ -1137,7 +1157,13 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
 			ecm_front_end_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
 		} else {
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 			ecm_front_end_non_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
+#else
+			spin_unlock_bh(&feci->lock);
+			DEBUG_ERROR("%px: ECM non ported support is disabled\n", feci);
+			return false;
+#endif
 		}
 		break;
 
