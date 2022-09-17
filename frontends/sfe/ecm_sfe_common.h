@@ -124,8 +124,6 @@ bool ecm_sfe_ipv6_is_conn_limit_reached(void);
 bool ecm_sfe_common_is_l2_iface_supported(ecm_db_iface_type_t ii_type, int cur_heirarchy_index, int first_heirarchy_index);
 
 void ecm_sfe_common_init_fe_info(struct ecm_front_end_common_fe_info *info);
-uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
-void ecm_sfe_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
 void ecm_sfe_common_tuple_set(struct ecm_front_end_connection_instance *feci,
 			      int32_t from_iface_id, int32_t to_iface_id,

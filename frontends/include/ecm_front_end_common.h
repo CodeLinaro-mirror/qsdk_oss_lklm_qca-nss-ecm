@@ -387,4 +387,6 @@ void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci
 int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci);
 
 bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci);
+void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
+uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
 #endif  /* __ECM_FRONT_END_COMMON_H */
