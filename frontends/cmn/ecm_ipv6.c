@@ -104,7 +104,9 @@
 #include <ovsmgr.h>
 #endif
 #include "ecm_ported_ipv6.h"
+#ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_non_ported_ipv6.h"
+#endif
 #include "ecm_multicast_ipv6.h"
 
 /*
@@ -1510,7 +1512,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		/*
 		 * Process the packet, if we have this mac address in the fdb table.
 		 * TODO: For the kernel versions later than 3.6.x, the API needs vlan id.
-		 * 	 For now, we are passing 0, but this needs to be handled later.
+		 *	 For now, we are passing 0, but this needs to be handled later.
 		 */
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
 			DEBUG_WARN("skb: %px, No fdb entry for this mac address %pM in the bridge: %px (%s)\n",
