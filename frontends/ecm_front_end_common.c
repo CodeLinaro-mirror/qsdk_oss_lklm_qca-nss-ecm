@@ -1178,3 +1178,48 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 	DEBUG_TRACE("%px: Frontend switch to AE type %d\n", feci, feci->accel_engine);
 	return true;
 }
+
+/*
+ * ecm_front_end_common_get_stats_bitmap()
+ *	Get bit map
+ */
+uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	switch (dir) {
+	case ECM_DB_OBJ_DIR_FROM:
+		return feci->fe_info.from_stats_bitmap;
+
+	case ECM_DB_OBJ_DIR_TO:
+		return feci->fe_info.to_stats_bitmap;
+
+	default:
+		DEBUG_WARN("Direction not handled dir=%d for get stats bitmap\n", dir);
+		break;
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_front_end_common_set_stats_bitmap()
+ *	Set bit map
+ */
+void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit)
+{
+	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	switch (dir) {
+	case ECM_DB_OBJ_DIR_FROM:
+		feci->fe_info.from_stats_bitmap |= BIT(bit);
+		break;
+
+	case ECM_DB_OBJ_DIR_TO:
+		feci->fe_info.to_stats_bitmap |= BIT(bit);
+		break;
+	default:
+		DEBUG_WARN("Direction not handled dir=%d for set stats bitmap\n", dir);
+		break;
+	}
+}
