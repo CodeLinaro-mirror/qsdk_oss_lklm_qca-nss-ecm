@@ -2756,7 +2756,6 @@ port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
 	if (dev) {
 		DEBUG_TRACE("OVS egress port dev: %s\n", dev->name);
-		dev_hold(dev);
 		return dev;
 	}
 
@@ -2770,7 +2769,6 @@ port_find:
 			return NULL;
 		}
 
-		dev_hold(dev);
 		return dev;
 	}
 
@@ -2811,7 +2809,6 @@ port_find:
 		return NULL;
 	}
 
-	dev_hold(dev);
 	return dev;
 }
 #endif
