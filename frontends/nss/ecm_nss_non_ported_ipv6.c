@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1574,11 +1574,13 @@ static int ecm_nss_non_ported_ipv6_connection_state_get(struct ecm_front_end_con
  *	Create a front end instance specific for non-ported connection
  */
 struct ecm_front_end_connection_instance *ecm_nss_non_ported_ipv6_connection_instance_alloc(
-									bool can_accel, int protocol,
-								struct ecm_db_connection_instance **nci)
+									uint32_t flags,
+									int protocol,
+									struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
+	bool can_accel = (flags & ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL);
 
 	if (ecm_nss_ipv6_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");

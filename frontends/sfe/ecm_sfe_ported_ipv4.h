@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -20,7 +20,7 @@
 extern bool ecm_sfe_ported_ipv4_debugfs_init(struct dentry *dentry);
 
 extern struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv4_connection_instance_alloc(
-								bool can_accel,
+								uint32_t accel_flags,
 								int protocol,
 								struct ecm_db_connection_instance **ci);
-extern void ecm_sfe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance *feci);
+extern void ecm_sfe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance *feci, uint32_t flags);

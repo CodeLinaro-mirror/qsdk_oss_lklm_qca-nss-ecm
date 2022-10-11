@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1610,7 +1610,7 @@ static int ecm_sfe_non_ported_ipv6_connection_state_get(struct ecm_front_end_con
  * ecm_sfe_non_ported_ipv6_connection_set();
  *	Sets the SFE IPv6 non-ported connection's fields.
  */
-void ecm_sfe_non_ported_ipv6_connection_set(struct ecm_front_end_connection_instance *feci)
+void ecm_sfe_non_ported_ipv6_connection_set(struct ecm_front_end_connection_instance *feci, uint32_t flags)
 {
 	feci->accel_engine = ECM_FRONT_END_ENGINE_SFE;
 	feci->stats.no_action_seen_limit = ecm_sfe_ipv6_no_action_limit_default;
@@ -1632,6 +1632,7 @@ void ecm_sfe_non_ported_ipv6_connection_set(struct ecm_front_end_connection_inst
 
 	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
+	feci->fe_info.front_end_flags = flags;
 
 	/*
 	 * Just in case this function is called while switching AE to SFE
@@ -1647,12 +1648,14 @@ void ecm_sfe_non_ported_ipv6_connection_set(struct ecm_front_end_connection_inst
  * ecm_sfe_non_ported_ipv6_connection_instance_alloc()
  *	Create a front end instance specific for non-ported connection
  */
-struct ecm_front_end_connection_instance *ecm_sfe_non_ported_ipv6_connection_instance_alloc(bool can_accel,
+struct ecm_front_end_connection_instance *ecm_sfe_non_ported_ipv6_connection_instance_alloc(
+								uint32_t accel_flags,
 								int protocol,
 								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
+	bool can_accel = (accel_flags & ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL);
 
 	if (ecm_sfe_ipv6_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");
@@ -1714,7 +1717,7 @@ struct ecm_front_end_connection_instance *ecm_sfe_non_ported_ipv6_connection_ins
 
 	feci->update_rule = ecm_sfe_common_update_rule;
 
-	ecm_sfe_non_ported_ipv6_connection_set(feci);
+	ecm_sfe_non_ported_ipv6_connection_set(feci, accel_flags);
 	return feci;
 }
 

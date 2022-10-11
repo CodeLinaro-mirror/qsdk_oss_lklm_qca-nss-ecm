@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -144,6 +144,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 	struct ecm_classifier_process_response prevalent_pr;
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
+	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
 
 	if (protocol == IPPROTO_TCP) {
 		if (likely(ct)) {
@@ -249,7 +250,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 		 */
 		if ((in_dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(in_dev)) {
 			DEBUG_TRACE("Skip packets for L2TP tunnel in skb %px\n", skb);
-			can_accel = false;
+			flags &= ~ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL;
 		}
 #endif
 		/*
@@ -296,7 +297,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 #endif
 		if (ct && nfct_help(ct) && (dest_port == TFTP_PORT)) {
 			DEBUG_TRACE("%px: Connection has helper but protocol is TFTP, it can be accelerated\n", ct);
-			can_accel = true;
+			flags |= ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL;
 		}
 
 		DEBUG_TRACE("UDP src: " ECM_IP_ADDR_OCTAL_FMT ":%d, dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, dir %d\n",
@@ -391,7 +392,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 		 * Which AE can be used for this flow.
 		 * 1. If NSS, allocate NSS ipv6 ported connection instance
 		 * 2. If SFE, allocate SFE ipv6 ported connection instance
-		 * 3. If PPE, allocate PPE ipv6 ported connection instance
+		 * 3. If PPE/PPE-VP/PPE-DS, allocate PPE ipv6 ported connection instance
 		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be
 		 *    re-evaluated.
 		 * 5. If NONE, allocate ported connection instance based on the precedence array with
@@ -407,7 +408,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 				return NF_ACCEPT;
 			}
 
-			feci = ecm_nss_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_nss_ported_ipv6_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -417,17 +418,37 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 				return NF_ACCEPT;
 			}
 
-			feci = ecm_sfe_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_sfe_ported_ipv6_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+			if (!ecm_ppe_feature_check(skb, iph)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
+			}
+
+			flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_DS;
+			feci = ecm_ppe_ported_ipv6_connection_instance_alloc(flags, protocol, &nci);
+			goto feci_alloc_check;
+
+		case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+			if (!ecm_ppe_feature_check(skb, iph)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
+			}
+
+			flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+			feci = ecm_ppe_ported_ipv6_connection_instance_alloc(flags, protocol, &nci);
+			goto feci_alloc_check;
+
 		case ECM_AE_CLASSIFIER_RESULT_PPE:
 			if (!ecm_ppe_feature_check(skb, iph)) {
 				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
 				return NF_ACCEPT;
 			}
 
-			feci = ecm_ppe_ported_ipv6_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_ppe_ported_ipv6_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
@@ -438,7 +459,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 			 * Let the precedence array select the AE type and add it
 			 * to the database without accelerating the flow.
 			 */
-			can_accel = false;
+			flags &= ~ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL;
 			goto precedence_alloc;
 
 		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
@@ -472,7 +493,7 @@ precedence_alloc:
 			/*
 			 * If allocation fails for the selected AE, try the next one.
 			 */
-			feci = ae_precedence[i].ported_ipv6_alloc(can_accel, protocol, &nci);
+			feci = ae_precedence[i].ported_ipv6_alloc(flags, protocol, &nci);
 			if (!feci) {
 				DEBUG_WARN("Failed to allocate front end instance\n");
 				continue;
