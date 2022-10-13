@@ -46,18 +46,14 @@ typedef enum /** @cond */ ecm_classifier_mscs_results /** @endcond */ ecm_classi
  * Callback to which MSCS clients will register.
  */
 typedef int (*ecm_classifier_mscs_process_callback_t)(uint8_t src_mac[], uint8_t dst_mac[], struct sk_buff* skb);
-#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 typedef bool (*ecm_classifier_mscs_scs_priority_callback_t)(uint32_t rule_id, uint8_t *dst_mac_addr);
-#endif
 
 /**
  * Data structure for MSCS classifier callbacks.
  */
 struct ecm_classifier_mscs_callbacks {
 	ecm_classifier_mscs_process_callback_t get_peer_priority;	/**< Callback to get the peer priority. */
-#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	ecm_classifier_mscs_scs_priority_callback_t update_skb_priority;/**< Callback to update the skb priority. */
-#endif
 };
 
 /**

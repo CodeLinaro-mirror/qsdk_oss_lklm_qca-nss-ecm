@@ -81,6 +81,14 @@
 #define ECM_CLASSIFIER_MSCS_INVALID_RULE_ID 0xffff
 
 /*
+ * MSCS-SCS classifier type.
+ */
+enum ecm_classifier_mscs_scs_types {
+	ECM_CLASSIFIER_MSCS = 1,
+	ECM_CLASSIFIER_SCS,
+};
+
+/*
  * struct ecm_classifier_mscs_instance
  * 	State to allow tracking of MSCS QoS tag for a connection
  */
@@ -92,8 +100,13 @@ struct ecm_classifier_mscs_instance {
 
 	uint32_t ci_serial;					/* RO: Serial of the connection */
 	struct ecm_classifier_process_response process_response;/* Last process response computed */
+	uint32_t priority[ECM_CONN_DIR_MAX];			/* Priority values for the connections */
+	uint8_t packet_seen[ECM_CONN_DIR_MAX];			/* Per direction packet seen flag */
+	bool scs_priority_update;				/* SCS rule match flag*/
+	bool mscs_priority_update;				/* MSCS rule match flag*/
 
 	int refs;						/* Integer to trap we never go negative */
+	enum ecm_classifier_mscs_scs_types classifier_type;	/* Flag for which type of classifier classified the connection */
 	uint32_t rule_id;					/* Rule id of the SCS rule match in SPM db */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -104,6 +117,11 @@ struct ecm_classifier_mscs_instance {
  * Operational control
  */
 static int ecm_classifier_mscs_enabled = 0;			/* Operational behaviour */
+
+/*
+ * Operational control
+ */
+static int ecm_classifier_mscs_scs_multi_ap_enabled = 0;	/* Operational behaviour */
 
 /*
  * Operational control
@@ -212,12 +230,64 @@ static int ecm_classifier_mscs_deref(struct ecm_classifier_instance *ci)
 	return 0;
 }
 
+/*
+ * ecm_classifier_mscs_scs_is_bidi_packet_seen()
+ *      Return true if both direction packets are seen.
+ */
+static inline bool ecm_classifier_mscs_scs_is_bidi_packet_seen(struct ecm_classifier_mscs_instance *cmscsi)
+{
+	return ((cmscsi->packet_seen[ECM_CONN_DIR_FLOW] == true) && (cmscsi->packet_seen[ECM_CONN_DIR_RETURN] == true));
+}
+
+/*
+ * ecm_classifier_mscs_scs_fill_priority()
+ *      Save the priority value in the classifier instance.
+ */
+static void ecm_classifier_mscs_scs_fill_priority(struct ecm_classifier_mscs_instance *cmscsi,
+					ecm_tracker_sender_type_t sender, struct sk_buff *skb,
+					bool scs_priority_update, bool mscs_rule_match,
+					bool mscs_priority_update, bool scs_rule_match)
+{
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		/*
+		 * we update flow qos tag when scs rule match happens (as scs has precedence over mscs) or mscs has not applied,
+		 * in case of mscs rule match we update bidirectional priority if scs has not updated reverse direction priority.
+		 */
+		if (scs_rule_match || !mscs_priority_update) {
+			cmscsi->priority[ECM_CONN_DIR_FLOW] = skb->priority;
+		} else if (mscs_rule_match) {
+			cmscsi->priority[ECM_CONN_DIR_FLOW] = skb->priority;
+			if (!scs_priority_update) {
+				cmscsi->priority[ECM_CONN_DIR_RETURN] = skb->priority;
+			}
+		}
+
+		cmscsi->packet_seen[ECM_CONN_DIR_FLOW] = true;
+	} else {
+		/*
+		 * we update flow qos tag when scs rule match happens (as scs has precedence over mscs) or mscs has not applied,
+		 * in case of mscs rule match we update bidirectional priority if scs has not updated reverse direction priority.
+		 */
+		if (scs_rule_match || !mscs_priority_update) {
+			cmscsi->priority[ECM_CONN_DIR_RETURN] = skb->priority;
+		} else if (mscs_rule_match) {
+			cmscsi->priority[ECM_CONN_DIR_RETURN] = skb->priority;
+			if (!scs_priority_update) {
+				cmscsi->priority[ECM_CONN_DIR_FLOW] = skb->priority;
+			}
+		}
+
+		cmscsi->packet_seen[ECM_CONN_DIR_RETURN] = true;
+	}
+}
+
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 /*
  * ecm_classifier_mscs_scs_fill_input_params()
  *	Fills input params for SPM
  */
 static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
+						uint8_t *smac, uint8_t *dmac,
 						struct sp_rule_input_params *flow_input_params) {
 	struct iphdr *iph;
 	struct ipv6hdr *ip6h;
@@ -323,6 +393,8 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		DEBUG_INFO("Not a ported protocol \n");
 		return false;
 	}
+	ether_addr_copy(flow_input_params->src.mac, smac);
+	ether_addr_copy(flow_input_params->dst.mac, dmac);
 
 	return true;
 }
@@ -347,8 +419,10 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	ecm_classifier_mscs_result_t result = 0;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
-#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+	bool mscs_rule_match = false;
+	bool scs_rule_match = false;
 	uint64_t slow_pkts;
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	struct sp_rule_input_params flow_input_params;
 	struct sp_rule_output_params flow_output_params;
 	ecm_classifier_mscs_scs_priority_callback_t scs_cb = NULL;
@@ -430,7 +504,6 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
 	}
-	ecm_db_connection_deref(ci);
 
 	/*
 	 * Set the invalid SCS rule id, in case if we do not find any SCS rule.
@@ -443,18 +516,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	if (ecm_classifier_scs_enabled) {
 
-		/*
-		 * Get the WiFi datapath callback registered with MSCS client to check
-		 * if SCS priority is valid for WiFi peer corresponding to
-		 * destination mac address.
-		 */
-		scs_cb = ecm_mscs.update_skb_priority;
-		if (!scs_cb) {
-			DEBUG_TRACE("%px: No SCS callback is registered\n", ci);
-			goto check_mscs_classifier;
-		}
-
-		if (!ecm_classifier_mscs_scs_fill_input_params(skb, &flow_input_params)) {
+		if (!ecm_classifier_mscs_scs_fill_input_params(skb, smac, dmac, &flow_input_params)) {
 			DEBUG_TRACE("%px: failed to fill in SCS input params\n", ci);
 			goto check_mscs_classifier;
 		}
@@ -467,11 +529,24 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 
 		if (flow_output_params.priority != SP_RULE_INVALID_PRIORITY) {
 			DEBUG_INFO("%px: Found SCS rule in SPM\n", ci);
-
 			/*
-			 * Invoke callback registered to classifier for SCS peer look up
+			 * Set result true for Multi AP mode.
 			 */
-			result = scs_cb(flow_output_params.rule_id, dmac);
+			result = true;
+			/*
+			 * Invoke the WiFi datapath callback registered with MSCS client to check
+			 * if SCS priority is valid for WiFi peer corresponding to
+			 * destination mac address for Single AP mode.
+			 */
+			if (!ecm_classifier_mscs_scs_multi_ap_enabled) {
+				scs_cb = ecm_mscs.update_skb_priority;
+				if (!scs_cb) {
+					DEBUG_TRACE("%px: No SCS callback is registered\n", ci);
+					goto check_mscs_classifier;
+				}
+
+				result = scs_cb(flow_output_params.rule_id, dmac);
+			}
 		}
 
 		/*
@@ -479,18 +554,20 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 		 * capable, we set the priority (we do not check MSCS as SCS have higher precedence).
 		 */
 		if (result) {
-			spin_lock_bh(&ecm_classifier_mscs_lock);
-			cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-			cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
-			cmscsi->rule_id = flow_output_params.rule_id;
-			spin_unlock_bh(&ecm_classifier_mscs_lock);
-
 			/*
 			 * Update skb priority.
 			 */
 			skb->priority = flow_output_params.priority;
+			cmscsi->scs_priority_update = true;
+			cmscsi->classifier_type = ECM_CLASSIFIER_SCS;
+			scs_rule_match = true;
+
+			/*
+			 * For IPSEC protocol, we update both side priority values and let it go via slow path.
+			 * TODO: FIx the IPSEC acceleration issue.
+			 */
 			if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
-						flow_input_params.dst.port == ecm_classifier_mscs_scs_udp_ipsec_port)) {
+				flow_input_params.dst.port == ecm_classifier_mscs_scs_udp_ipsec_port)) {
 				spin_lock_bh(&ecm_classifier_mscs_lock);
 				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
@@ -500,83 +577,97 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 				goto mscs_classifier_out;
 			}
 
-			goto update_qos_tags;
+			/*
+			 * No need to check MSCS classifier if SCS result is true as SCS
+			 * has higher precedence.
+			 */
+			goto mscs_classifier_exit;
 		}
 
-
-		/*
-		 * In case of UDP bi-di traffic is being run, we cannot accel based on the first packet
-		 * that is received as it can be a UL packet. We wait to get a DL packet, else we decide SCS is
-		 * not relevent and check the MSCS classifier. If we do not get a DL packet in
-		 * specific time or even if we do get but SCS turns out to be false, we accelerate.
-		 */
-		if (protocol == IPPROTO_UDP || protocol == IPPROTO_ESP) {
-			feci = ecm_db_connection_front_end_get_and_ref(ci);
-			accel_mode = ecm_front_end_connection_accel_state_get(feci);
-			slow_pkts = ecm_front_end_get_slow_packet_count(feci);
-			ecm_front_end_connection_deref(feci);
-
-			if (slow_pkts <= ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS) {
-				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %llu accel is not allowed yet\n",
-						cmscsi, ecm_classifier_accel_delay_pkts, slow_pkts);
-				spin_lock_bh(&ecm_classifier_mscs_lock);
-				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-				goto mscs_classifier_out;
-                        }
-		}
 
 	}
-check_mscs_classifier:
+
+	check_mscs_classifier:
 #endif
 
-	spin_lock_bh(&ecm_classifier_mscs_lock);
-
 	/*
-	 * Set relevance false if MSCS is not enabled.
+	 * Check MSCS classifer.
 	 */
-	if (!ecm_classifier_mscs_enabled) {
-		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto mscs_classifier_out;
-	}
+	if (ecm_classifier_mscs_enabled) {
+		result =  false;
+		/*
+		 * Check if MSCS multi AP mode is enabled or not -
+		 * If yes, we need to query SPM database for rule match.
+		 * Else legacy MSCS should work for single AP mode.
+		 */
+		if (!ecm_classifier_mscs_scs_multi_ap_enabled) {
+			/*
+			 * Get the WiFi datapath callback registered with MSCS client to check
+			 * if MSCS QoS tag is valid for WiFi peer corresponding to
+			 * skb->src_mac_addr
+			 */
+			cb = ecm_mscs.get_peer_priority;
+			if (!cb) {
+				DEBUG_TRACE("%px: No MSCS callback is registered\n", ci);
+				goto mscs_classifier_exit;
+			}
 
-	/*
-	 * Get the WiFi datapath callback registered with MSCS client to check
-	 * if MSCS QoS tag is valid for WiFi peer corresponding to
-	 * skb->src_mac_addr
-	 */
-	cb = ecm_mscs.get_peer_priority;
-	if (!cb) {
-		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto mscs_classifier_out;
-	}
+			/*
+			 * Invoke callback registered to classifier for peer look up
+			 */
+			result = cb(smac, dmac, skb);
 
-	spin_unlock_bh(&ecm_classifier_mscs_lock);
-
-	/*
-	 * Invoke callback registered to classifier for peer look up
-	 */
-	result = cb(smac, dmac, skb);
-
-	/*
-	 * check the result of callback
-	 */
-	if (result == ECM_CLASSIFIER_MSCS_RESULT_DENY_PRIORITY) {
-		spin_lock_bh(&ecm_classifier_mscs_lock);
-		cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-		cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-		goto mscs_classifier_out;
-	}
+			if (result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
+				cmscsi->mscs_priority_update = true;
+				mscs_rule_match = true;
+				if (!cmscsi->scs_priority_update) {
+					cmscsi->classifier_type = ECM_CLASSIFIER_MSCS;
+				}
+			}
+		}
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
-update_qos_tags:
+		else {
+			/*
+			 * Invoke SPM rule lookup callback for the flow parameters for Multi AP mode.
+			 */
+			ether_addr_copy(flow_input_params.src.mac, smac);
+			ether_addr_copy(flow_input_params.dst.mac, dmac);
+
+			sp_mapdb_apply_mscs(skb, &flow_input_params, &flow_output_params);
+
+			if (flow_output_params.priority != SP_RULE_INVALID_PRIORITY) {
+				DEBUG_INFO("%px: Found MSCS rule in SPM\n", ci);
+				skb->priority = flow_output_params.priority;
+				cmscsi->mscs_priority_update = true;
+				mscs_rule_match = true;
+				if (!cmscsi->scs_priority_update) {
+					cmscsi->classifier_type = ECM_CLASSIFIER_MSCS;
+				}
+			}
+		}
 #endif
+	}
+
+mscs_classifier_exit:
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	accel_mode = ecm_front_end_connection_accel_state_get(feci);
+	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
+	ecm_front_end_connection_deref(feci);
+	ecm_db_connection_deref(ci);
+
+	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
+		spin_lock_bh(&ecm_classifier_mscs_lock);
+		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		goto mscs_classifier_out;
+	}
+
 	/*
-	 * We are relevant to the connection
+	 * We are relevant to the connection.
+	 * Set the process response to its default value, that is, to
+	 * allow the acceleration.
 	 */
 	became_relevant = ecm_db_time_get();
-	DEBUG_TRACE("Flow Priority: Flow priority: %d, Return priority: %d sender: %d\n",
-			skb->priority, skb->priority, sender);
 
 	spin_lock_bh(&ecm_classifier_mscs_lock);
 	cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
@@ -584,17 +675,28 @@ update_qos_tags:
 
 	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+	spin_unlock_bh(&ecm_classifier_mscs_lock);
 
-	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+	/*
+	 * Store the priority value in the classifier instance. Wait until
+	 * seeing ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS and deny the
+	 * acceleration if both side priority value is not yet available.
+	 */
+	ecm_classifier_mscs_scs_fill_priority(cmscsi, sender, skb, cmscsi->scs_priority_update, mscs_rule_match, cmscsi->mscs_priority_update, scs_rule_match);
 
-	if ((ecm_classifier_scs_enabled && result) ||
-			(ecm_classifier_mscs_enabled && result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY)) {
-		cmscsi->process_response.flow_qos_tag = skb->priority;
-		cmscsi->process_response.return_qos_tag = skb->priority;
-	} else if (ecm_classifier_mscs_enabled && result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_INVALID_TAG) {
-		cmscsi->process_response.flow_qos_tag = ECM_CLASSIFIER_MSCS_INVALID_QOS_TAG;
-		cmscsi->process_response.return_qos_tag = ECM_CLASSIFIER_MSCS_INVALID_QOS_TAG;
+	if ((ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS == 1) || (slow_pkts < ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS)) {
+			spin_lock_bh(&ecm_classifier_mscs_lock);
+			cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			goto mscs_classifier_out;
 	}
+
+	DEBUG_TRACE("Protocol: %d, Flow Priority: %d, Return priority: %d, sender: %d\n",
+			protocol, cmscsi->priority[ECM_CONN_DIR_FLOW],
+			cmscsi->priority[ECM_CONN_DIR_RETURN], sender);
+	spin_lock_bh(&ecm_classifier_mscs_lock);
+	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+	cmscsi->process_response.flow_qos_tag = cmscsi->priority[ECM_CONN_DIR_FLOW];
+	cmscsi->process_response.return_qos_tag = cmscsi->priority[ECM_CONN_DIR_RETURN];
 
 mscs_classifier_out:
 
@@ -856,8 +958,8 @@ static int ecm_classifier_mscs_spm_notifier_callback(struct notifier_block *nb, 
 	uint32_t valid_flag = r->inner.flags_sawf;
 
 	DEBUG_INFO("SP rule update notification received\n");
-	if (r->classifier_type != SP_RULE_TYPE_SCS) {
-		DEBUG_INFO("Not an SCS rule notification !\n");
+	if (r->classifier_type != SP_RULE_TYPE_SCS && r->classifier_type != SP_RULE_TYPE_MSCS) {
+		DEBUG_INFO("Not an MSCS/SCS rule notification !\n");
 		return NOTIFY_DONE;
 	}
 
@@ -912,6 +1014,33 @@ static int ecm_classifier_mscs_rule_set_enabled(void *data, u64 val)
 	}
 
 	ecm_classifier_mscs_enabled = (uint32_t)val;
+
+	return 0;
+}
+
+/*
+ * ecm_classifier_mscs_scs_multi_ap_rule_get_enabled()
+ */
+static int ecm_classifier_mscs_scs_multi_ap_rule_get_enabled(void *data, u64 *val)
+{
+	*val = ecm_classifier_mscs_scs_multi_ap_enabled;
+
+	return 0;
+}
+
+/*
+ * ecm_classifier_mscs_scs_multi_ap_rule_set_enabled(()
+ */
+static int ecm_classifier_mscs_scs_multi_ap_rule_set_enabled(void *data, u64 val)
+{
+	DEBUG_TRACE("ecm_classifier_mscs_scs_multi_ap_enabled = %u\n", (uint32_t)val);
+
+	if ((val != 0) && (val != 1)) {
+		DEBUG_WARN("Invalid value: %u. Valid values are 0 and 1.\n", (uint32_t)val);
+		return -EINVAL;
+	}
+
+	ecm_classifier_mscs_scs_multi_ap_enabled = (uint32_t)val;
 
 	return 0;
 }
@@ -976,6 +1105,7 @@ static int ecm_classifier_mscs_scs_set_udp_ipsec_port(void *data, u64 val)
  * Debugfs attribute for Emesh Enabled parameter.
  */
 DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_mscs_enabled_fops, ecm_classifier_mscs_rule_get_enabled, ecm_classifier_mscs_rule_set_enabled, "%llu\n");
+DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_mscs_scs_multi_ap_enabled_fops, ecm_classifier_mscs_scs_multi_ap_rule_get_enabled, ecm_classifier_mscs_scs_multi_ap_rule_set_enabled, "%llu\n");
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_scs_enabled_fops, ecm_classifier_mscs_scs_rule_get_enabled, ecm_classifier_mscs_scs_rule_set_enabled, "%llu\n");
@@ -1052,6 +1182,13 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_mscs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm mscs classifier enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+		return -1;
+	}
+
+	if (!debugfs_create_file("multi_ap_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+			NULL, &ecm_classifier_mscs_scs_multi_ap_enabled_fops)) {
+		DEBUG_ERROR("Failed to create multi ap enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 		return -1;
 	}
