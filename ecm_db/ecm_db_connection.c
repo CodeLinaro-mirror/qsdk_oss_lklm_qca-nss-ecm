@@ -273,7 +273,6 @@ EXPORT_SYMBOL(ecm_db_connection_front_end_get_and_ref);
 static void ecm_db_connection_defunct_callback(void *arg)
 {
 	int accel_mode;
-	bool ret;
 
 	struct ecm_db_connection_instance *ci = (struct ecm_db_connection_instance *)arg;
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
@@ -281,27 +280,15 @@ static void ecm_db_connection_defunct_callback(void *arg)
 	DEBUG_INFO("%px: defunct timer expired\n", ci);
 
 	/*
-	 * If defunct fails, return. Do not remove the last ref count. This failure means
-	 * it will be re-tried later with the ecm_db_connection_make_defunct function
-	 * until the total failure count reaches to the max limit which is 250.
-	 * When the limit is reached, defunct process will return true and let
-	 * the connection goes off.
+	 * call the front end defunct to destroy the rule.
 	 */
-	ret = ci->feci->defunct(ci->feci, &accel_mode);
+	(void)ci->feci->defunct(ci->feci, &accel_mode);
 
 	/*
-	 * If the returned 'ret' is success, this means this callback succeeded to
-	 * defunct the connection and it can release the last reference.
-	 * If it fails, this means that another defunct process defuncted the connection
-	 * before this callback. In that case, we will check the accel_mode of the connection.
-	 * If the other call defuncted the connection successfully, it will set the accel_mode to
-	 * ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT_SHORT for s short amount of time to avoid
-	 * further accel/decel attempts. So, in this accel_mode, this callback shouldn't release the
-	 * last reference. It will be released by the ecm_db_connection_make_defunct() function.
+	 * when it was expired, it has been removed from  the timer list,
+	 * we need release the ref when it was added to the timer list.
 	 */
-	if (ret || (ECM_FRONT_END_ACCELERATION_FAILED(accel_mode) && (accel_mode != ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT_SHORT))) {
-		ecm_db_connection_deref(ci);
-	}
+	ecm_db_connection_deref(ci);
 }
 
 /*
@@ -1027,6 +1014,13 @@ void ecm_db_connection_defunct_timer_remove_and_set(struct ecm_db_connection_ins
 
 	if (tge->group != ECM_DB_TIMER_GROUPS_MAX) {
 		_ecm_db_timer_group_entry_remove(tge);
+	} else {
+		/*
+		 * if group is ECM_DB_TIMER_GROUPS_MAX, its ref to ci was decreased
+		 * need ref it again, otherwise, the ci could be free before the
+		 * timer was expired
+		 */
+		_ecm_db_connection_ref(ci);
 	}
 
 	/*
