@@ -505,7 +505,9 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_in_dev = NULL;
 #endif
-
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		struct ecm_db_interface_info_vxlan vxlan_info;
+#endif
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
@@ -757,6 +759,23 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: LAG - unsupported\n", feci);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+
+			/*
+			 * For VxLAN device, 4-tuple connection rule is added only for outer flow,
+			 * where source port is set to zero.
+			 */
+			if (!vxlan_info.if_type) {
+				nircm->rule_flags |= SFE_RULE_CREATE_NO_SRC_IDENT;
+			}
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 			break;
 
