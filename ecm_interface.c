@@ -2756,7 +2756,6 @@ port_find:
 	dev = ovsmgr_port_find(skb, br_dev, &flow);
 	if (dev) {
 		DEBUG_TRACE("OVS egress port dev: %s\n", dev->name);
-		dev_hold(dev);
 		return dev;
 	}
 
@@ -2770,7 +2769,6 @@ port_find:
 			return NULL;
 		}
 
-		dev_hold(dev);
 		return dev;
 	}
 
@@ -2811,7 +2809,6 @@ port_find:
 		return NULL;
 	}
 
-	dev_hold(dev);
 	return dev;
 }
 #endif
@@ -4187,7 +4184,10 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 #endif
 		   ) {
 			br_dev_src = ecm_interface_get_and_hold_dev_master(in_dev);
-			DEBUG_ASSERT(br_dev_src, "Expected a master\n");
+			if (!br_dev_src) {
+				DEBUG_WARN("Expected a master\n");
+				return 0;
+			}
 
 			/*
 			 * Source netdev is part of a bridge. First make sure that this bridge
@@ -4900,7 +4900,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 		switch (ip_version) {
 		case 4:
-			if ((protocol == IPPROTO_IPV6) || (protocol == IPPROTO_ESP)) {
+			/*
+			 * For bridge flow we may hit this condition, and we will fail to create
+			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
+			 * the check specific to routed flow in case of IPSEC passthrough traffic.
+			 */
+			if ((protocol == IPPROTO_IPV6) || ((protocol == IPPROTO_ESP) && is_routed)) {
 				skip = true;
 				break;
 			}
@@ -4912,7 +4917,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				break;
 			}
 #else
-			if ((protocol == IPPROTO_UDP) && (udp_hdr(skb)->dest == htons(4500))) {
+			if (is_routed && ((protocol == IPPROTO_UDP) && (udp_hdr(skb)->dest == htons(4500)))) {
 				skip = true;
 				break;
 			}
@@ -4920,7 +4925,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			break;
 
 		case 6:
-			if ((protocol == IPPROTO_IPIP) || (protocol == IPPROTO_ESP)) {
+			/*
+			 * For bridge flow we may hit this condition, and we will fail to create
+			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
+			 * the check specific to routed flow in case of IPSEC passthrough traffic.
+			 */
+			if ((protocol == IPPROTO_IPIP) || ((protocol == IPPROTO_ESP) && is_routed)) {
 				skip = true;
 				break;
 			}
@@ -6477,14 +6487,39 @@ static void ecm_interface_list_stats_update(int iface_list_first, struct ecm_db_
 			 * Note: A bridge port can be of different interface type, e.g VLAN, ethernet.
 			 * This check, therefore, should be performed for all interface types.
 			 */
-			if ((is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) &&
-				is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+			if (is_valid_ether_addr(mac_addr) && ecm_front_end_is_bridge_port(dev) && rx_packets) {
+
+				if (is_ported || ecm_db_connection_is_pppoe_bridged_get(ci)) {
+					DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
+					/*
+					 * Update the existing fdb entry's timestamp only.
+					 */
+					br_fdb_entry_refresh(dev, mac_addr, 0);
+				}
 
 				DEBUG_TRACE("Update bridge fdb entry for mac: %pM\n", mac_addr);
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
 				/*
-				 * Update the existing fdb entry's timestamp only.
+				 * Update the VxLAN bridge fdb entries.
+				 * The VxLAN fdb entries need to be updated only when the acceleration engine is PPE.
+				 * When the acceleration engine is NSS, the refresh is done by the Vxlanmgr with the help of NSS firmware.
+				 * When the acceleration engine is SFE, the refresh is done by the host itself.
 				 */
-				br_fdb_entry_refresh(dev, mac_addr, 0);
+				if (is_ported && (stats_bitmap & BIT(ECM_DB_IFACE_TYPE_VXLAN))) {
+					struct ecm_db_interface_info_vxlan vxlan_info;
+					struct vxlan_dev *priv;
+
+					ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+					priv = netdev_priv(dev);
+					DEBUG_TRACE("Update VXLAN bridge fdb entry for mac: %pM\n", mac_addr);
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 5, 7))
+					vxlan_fdb_update_mac(priv, mac_addr);
+#else
+					vxlan_fdb_update_mac(priv, mac_addr, vxlan_info.vni);
+#endif
+				}
+#endif
 			}
 		}
 
@@ -6928,6 +6963,8 @@ void ecm_interface_dev_defunct_connections(struct net_device *dev)
 		if (dev->ifindex == ecm_db_iface_interface_identifier_get(ii)) {
 			ecm_interface_defunct_connections(ii);
 			DEBUG_TRACE("%px: defunct for %px: COMPLETE\n", dev, ii);
+			ecm_db_iface_deref(ii);
+			return;
 		}
 
 		/*
@@ -7042,10 +7079,10 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 }
 
 /*
- * ecm_interface_node_connections_defunct()
- *	Defunct the connections on this node.
+ * ecm_interface_node_connections_defunct_by_type()
+ *	Defunct the connections on this node based on the specific event.
  */
-void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
+void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type)
 {
 	struct ecm_db_node_instance *ni = NULL;
 
@@ -7076,7 +7113,7 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 				 * If there is connection on this node, call the defunct function.
 				 */
 				if (ecm_db_node_get_connections_count(ni, dir)) {
-					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version);
+					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version, type);
 				}
 			}
 			/*
@@ -7102,7 +7139,15 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 	ecm_front_end_ipv6_stop(0);
 #endif
 }
-EXPORT_SYMBOL(ecm_interface_node_connections_defunct);
+
+/*
+ * ecm_interface_node_connections_defunct()
+ *	Defunct the connections on this node.
+ */
+void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
+{
+	ecm_interface_node_connections_defunct_by_type(mac, ip_version, ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE);
+}
 
 /*
  * struct notifier_block ecm_interface_netdev_notifier
@@ -7562,6 +7607,8 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 
 		if (iwe->cmd == IWEVREGISTERED) {
 			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
+			ecm_interface_node_connections_defunct_by_type((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE,
+								ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
 		} else if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
 			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);

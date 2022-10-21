@@ -30,6 +30,18 @@
 typedef uint32_t ecm_db_connection_hash_t;
 typedef uint32_t ecm_db_connection_serial_hash_t;
 
+/*
+ * Events triggering a connection defunct.
+ * This gives flexibillity to handle connection defunct process according to
+ * the event that is triggering the defunct.
+ */
+enum ecm_db_connection_defunct_type {
+	ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN,		/* Defunct connection on STA join notification */
+	ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE,			/* Ignore the defunct type while defuncting the connection */
+	ECM_DB_CONNECTION_DEFUNCT_TYPE_MAX,
+};
+typedef enum ecm_db_connection_defunct_type ecm_db_connection_defunct_type_t;
+
 #ifdef ECM_DB_CTA_TRACK_ENABLE
 /*
  * struct ecm_db_connection_classifier_type_assignment
@@ -45,6 +57,19 @@ struct ecm_db_connection_classifier_type_assignment {
 #endif
 };
 #endif
+
+/*
+ * struct ecm_db_connection_defunct_info
+ *	Information about event causing connection defunct based
+ *	on a node.
+ *	TODO: can be further expanded with more fields based on event causing
+ *	node connection defunct.
+ */
+struct ecm_db_connection_defunct_info {
+	ecm_db_connection_defunct_type_t type;			/* Connection defunct event type */
+	uint8_t mac[ETH_ALEN];					/* MAC address */
+	bool should_keep_connection;				/* should keep connection decision of classifer */
+};
 
 /*
  * struct ecm_db_connection_instance

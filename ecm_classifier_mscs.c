@@ -78,7 +78,7 @@
 #define ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC 0x1234
 #define ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS 0x4
 #define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
-#define ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT 4500
+#define ECM_CLASSIFIER_MSCS_INVALID_RULE_ID 0xffff
 
 /*
  * struct ecm_classifier_mscs_instance
@@ -94,6 +94,7 @@ struct ecm_classifier_mscs_instance {
 	struct ecm_classifier_process_response process_response;/* Last process response computed */
 
 	int refs;						/* Integer to trap we never go negative */
+	uint32_t rule_id;					/* Rule id of the SCS rule match in SPM db */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -108,6 +109,13 @@ static int ecm_classifier_mscs_enabled = 0;			/* Operational behaviour */
  * Operational control
  */
 static int ecm_classifier_scs_enabled = 0;			/* Operational behaviour */
+
+/*
+ * Operational control
+ */
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+static int ecm_classifier_mscs_scs_udp_ipsec_port = 4500;	/* Operational behaviour */
+#endif
 
 /*
  * Management thread control
@@ -295,7 +303,7 @@ static bool ecm_classifier_mscs_scs_fill_input_params(struct sk_buff *skb,
 		/*
 		 * Check for UDP encapsulated IPSEC packet.
 		 */
-		if (flow_input_params->dst.port == ECM_CLASSIFIER_MSCS_UDP_IPSEC_PORT) {
+		if (flow_input_params->dst.port == ecm_classifier_mscs_scs_udp_ipsec_port) {
 			esp = (struct ip_esp_hdr *)((uint8_t *)udphdr + sizeof(*udphdr));
 			flow_input_params->spi = ntohl(esp->spi);
 		}
@@ -424,6 +432,11 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	}
 	ecm_db_connection_deref(ci);
 
+	/*
+	 * Set the invalid SCS rule id, in case if we do not find any SCS rule.
+	 */
+	cmscsi->rule_id = ECM_CLASSIFIER_MSCS_INVALID_RULE_ID;
+
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	/*
 	 * Check if SCS classifier is enabled or not.
@@ -469,12 +482,24 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			spin_lock_bh(&ecm_classifier_mscs_lock);
 			cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 			cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+			cmscsi->rule_id = flow_output_params.rule_id;
 			spin_unlock_bh(&ecm_classifier_mscs_lock);
 
 			/*
 			 * Update skb priority.
 			 */
 			skb->priority = flow_output_params.priority;
+			if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
+						flow_input_params.dst.port == ecm_classifier_mscs_scs_udp_ipsec_port)) {
+				spin_lock_bh(&ecm_classifier_mscs_lock);
+				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				cmscsi->process_response.flow_qos_tag = skb->priority;
+				cmscsi->process_response.return_qos_tag = skb->priority;
+				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+				goto mscs_classifier_out;
+			}
+
 			goto update_qos_tags;
 		}
 
@@ -786,6 +811,84 @@ struct ecm_classifier_mscs_instance *ecm_classifier_mscs_instance_alloc(struct e
 }
 EXPORT_SYMBOL(ecm_classifier_mscs_instance_alloc);
 
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+/*
+ * ecm_classifier_mscs_make_defunct_scs_connections()
+ *	Defunct the SCS connections with the given rule id as the rule is being updated/
+ *	deleted in the SPM db.
+ */
+static void ecm_classifier_mscs_make_defunct_scs_connections(uint32_t rule_id)
+{
+	struct ecm_db_connection_instance *ci;
+	DEBUG_INFO("Make defunct all connections assigned to SCS\n");
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		struct ecm_classifier_instance *eci;
+		struct ecm_classifier_mscs_instance *cmscsi;
+
+		eci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_MSCS);
+		if (!eci) {
+			goto next_ci;
+		}
+
+		cmscsi = (struct ecm_classifier_mscs_instance *)eci;
+		if (cmscsi->rule_id == rule_id) {
+			DEBUG_INFO("%px Defuncting the connection\n", ci);
+			ecm_db_connection_make_defunct(ci);
+		}
+
+		eci->deref(eci);
+next_ci:
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+}
+
+/*
+ * ecm_classifier_mscs_spm_notifier_callback()
+ *	Callback for Service prioritization notification update for SCS classifier.
+ */
+static int ecm_classifier_mscs_spm_notifier_callback(struct notifier_block *nb, unsigned long event, void *data)
+{
+	struct sp_rule *r = (struct sp_rule *)data;
+	uint32_t valid_flag = r->inner.flags_sawf;
+
+	DEBUG_INFO("SP rule update notification received\n");
+	if (r->classifier_type != SP_RULE_TYPE_SCS) {
+		DEBUG_INFO("Not an SCS rule notification !\n");
+		return NOTIFY_DONE;
+	}
+
+	switch(event) {
+		case SP_MAPDB_REMOVE_RULE:
+		case SP_MAPDB_MODIFY_RULE:
+			ecm_classifier_mscs_make_defunct_scs_connections(r->id);
+			break;
+		case SP_MAPDB_ADD_RULE:
+			/*
+			 * At add rule notification, defunct already exsisting connections having the
+			 * matching ports as the new rule added.
+			 */
+			if (valid_flag & SP_RULE_FLAG_MATCH_SAWF_SRC_PORT) {
+				ecm_db_connection_defunct_by_port(htons(r->inner.src_port), ECM_DB_OBJ_DIR_FROM);
+				ecm_db_connection_defunct_by_port(htons(r->inner.src_port), ECM_DB_OBJ_DIR_TO);
+				return NOTIFY_DONE;
+			}
+
+			if (valid_flag & SP_RULE_FLAG_MATCH_SAWF_DST_PORT) {
+				ecm_db_connection_defunct_by_port(htons(r->inner.dst_port), ECM_DB_OBJ_DIR_FROM);
+				ecm_db_connection_defunct_by_port(htons(r->inner.dst_port), ECM_DB_OBJ_DIR_TO);
+				return NOTIFY_DONE;
+			}
+			break;
+	}
+
+	return NOTIFY_DONE;
+}
+#endif
+
 /*
  * ecm_classifier_mscs_rul_get_enabled()
  */
@@ -840,6 +943,33 @@ static int ecm_classifier_mscs_scs_rule_set_enabled(void *data, u64 val)
 
 	return 0;
 }
+
+/*
+ * ecm_classifier_mscs_scs_get_udp_ipsec_port()
+ */
+static int ecm_classifier_mscs_scs_get_udp_ipsec_port(void *data, u64 *val)
+{
+	*val = ecm_classifier_mscs_scs_udp_ipsec_port;
+
+	return 0;
+}
+
+/*
+ * ecm_classifier_mscs_scs_set_udp_ipsec_port()
+ */
+static int ecm_classifier_mscs_scs_set_udp_ipsec_port(void *data, u64 val)
+{
+	DEBUG_TRACE("ecm_classifier_scs_udp_ipsec_port = %u\n", (uint32_t)val);
+
+	if (val != 5200) {
+		DEBUG_WARN("Invalid value: %u. Valid value is 5200.\n", (uint32_t)val);
+		return -EINVAL;
+	}
+
+	ecm_classifier_mscs_scs_udp_ipsec_port = (uint32_t)val;
+
+	return 0;
+}
 #endif
 
 /*
@@ -849,6 +979,8 @@ DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_mscs_enabled_fops, ecm_classifier_mscs_ru
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_scs_enabled_fops, ecm_classifier_mscs_scs_rule_get_enabled, ecm_classifier_mscs_scs_rule_set_enabled, "%llu\n");
+
+DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_scs_udp_ipsec_port_fops, ecm_classifier_mscs_scs_get_udp_ipsec_port, ecm_classifier_mscs_scs_set_udp_ipsec_port, "%llu\n");
 #endif
 
 /*
@@ -894,6 +1026,16 @@ void ecm_classifier_mscs_callback_unregister (void)
 }
 EXPORT_SYMBOL(ecm_classifier_mscs_callback_unregister);
 
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+/*
+ * ecm_classifier_mscs_spm_notifier
+ *	Registration for SPM rule update events
+ */
+static struct notifier_block ecm_classifier_mscs_spm_notifier __read_mostly = {
+	.notifier_call = ecm_classifier_mscs_spm_notifier_callback,
+};
+#endif
+
 /*
  * ecm_classifier_mscs_init()
  */
@@ -909,7 +1051,7 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 
 	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_mscs_enabled_fops)) {
-		DEBUG_ERROR("Failed to create ecm nl classifier enabled file in debugfs\n");
+		DEBUG_ERROR("Failed to create ecm mscs classifier enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 		return -1;
 	}
@@ -917,10 +1059,22 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	if (!debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_enabled_fops)) {
-		DEBUG_ERROR("Failed to create ecm nl classifier enabled file in debugfs for scs\n");
+		DEBUG_ERROR("Failed to create ecm scs classifier enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 		return -1;
 	}
+
+	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+				NULL, &ecm_classifier_scs_udp_ipsec_port_fops)) {
+		DEBUG_ERROR("Failed to create ecm scs udp ipsec port file in debugfs for adding port number\n");
+		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+		return -1;
+	}
+
+	/*
+	 * Register for service prioritization notification update.
+	 */
+	sp_mapdb_notifier_register(&ecm_classifier_mscs_spm_notifier);
 #endif
 	return 0;
 }
@@ -943,5 +1097,12 @@ void ecm_classifier_mscs_exit(void)
 	if (ecm_classifier_mscs_dentry) {
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 	}
+
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+	/*
+	 * Unregister service prioritization notification update.
+	 */
+	sp_mapdb_notifier_unregister(&ecm_classifier_mscs_spm_notifier);
+#endif
 }
 EXPORT_SYMBOL(ecm_classifier_mscs_exit);

@@ -369,7 +369,11 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 				if (ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
-					DEBUG_ASSERT(master, "Expected a master\n");
+					if (!master) {
+						DEBUG_WARN("Expected a master\n");
+						return NULL;
+					}
+
 					ecm_interface_send_neighbour_solicitation(master, addr);
 					dev_put(master);
 				} else {

@@ -687,7 +687,11 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 	 * interface list
 	 */
 	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
-	DEBUG_ASSERT(out_dev_master, "Expected a master\n");
+	if (!out_dev_master) {
+		DEBUG_WARN("Expected a master\n");
+		goto done;
+	}
+
 	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
 	if (if_cnt <= 0) {
 		DEBUG_WARN("Not found a valid MCS if count %d\n", if_cnt);

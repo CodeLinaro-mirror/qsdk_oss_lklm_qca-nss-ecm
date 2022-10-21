@@ -59,29 +59,6 @@ static struct ctl_table_header *ecm_sfe_ctl_tbl_hdr;
 static bool ecm_sfe_fast_xmit_enable = true;
 
 /*
- * ecm_sfe_common_get_stats_bitmap()
- *	Get bit map
- */
-uint32_t ecm_sfe_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
-{
-	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
-
-	switch (dir) {
-	case ECM_DB_OBJ_DIR_FROM:
-		return feci->fe_info.from_stats_bitmap;
-
-	case ECM_DB_OBJ_DIR_TO:
-		return feci->fe_info.to_stats_bitmap;
-
-	default:
-		DEBUG_WARN("Direction not handled dir=%d for get stats bitmap\n", dir);
-		break;
-	}
-
-	return 0;
-}
-
-/*
  * ecm_sfe_feature_check()
  *	Check some specific features for SFE acceleration
  */
@@ -92,28 +69,6 @@ bool ecm_sfe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 	}
 
 	return ecm_front_end_feature_check(skb, ip_hdr);
-}
-
-/*
- * ecm_sfe_common_set_stats_bitmap()
- *	Set bit map
- */
-void ecm_sfe_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit)
-{
-	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
-
-	switch (dir) {
-	case ECM_DB_OBJ_DIR_FROM:
-		feci->fe_info.from_stats_bitmap |= BIT(bit);
-		break;
-
-	case ECM_DB_OBJ_DIR_TO:
-		feci->fe_info.to_stats_bitmap |= BIT(bit);
-		break;
-	default:
-		DEBUG_WARN("Direction not handled dir=%d for set stats bitmap\n", dir);
-		break;
-	}
 }
 
 /*
@@ -186,6 +141,14 @@ bool ecm_sfe_common_fast_xmit_check(s32 interface_num)
 	}
 
 	BUG_ON(!rcu_read_lock_bh_held());
+
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE) {
+		DEBUG_INFO("Fast xmit is not enabled for ipsec device[%s]\n", dev->name);
+		dev_put(dev);
+		return false;
+	}
+#endif
 
 	/*
 	 * It assume that the qdisc attribute won't change after traffic
