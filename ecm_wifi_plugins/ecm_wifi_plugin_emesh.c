@@ -32,6 +32,7 @@
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
 	.update_service_id_get_msduq = qca_sawf_get_msduq,
+	.update_sawf_ul = qca_sawf_config_ul,
 };
 
 /*
@@ -51,9 +52,17 @@ int ecm_wifi_plugin_emesh_register(void)
 		return -1;
 	}
 
+	if (ecm_classifier_emesh_sawf_config_ul_callback_register(&ecm_wifi_plugin_emesh)) {
+		ecm_classifier_emesh_latency_config_callback_unregister();
+		ecm_classifier_emesh_sawf_msduq_callback_unregister();
+		ecm_wifi_plugin_warning("ecm emesh config sawf ul callback registration failed.\n");
+		return -1;
+	}
+
 	if (ecm_classifier_emesh_sawf_update_fse_flow_callback_register(&ecm_wifi_plugin_emesh)) {
 		ecm_classifier_emesh_latency_config_callback_unregister();
 		ecm_classifier_emesh_sawf_msduq_callback_unregister();
+		ecm_classifier_emesh_sawf_config_ul_callback_unregister();
 		ecm_wifi_plugin_warning("ecm emesh fse callback registration failed.\n");
 		return -1;
 	}
@@ -70,5 +79,6 @@ void ecm_wifi_plugin_emesh_unregister(void)
 	ecm_classifier_emesh_latency_config_callback_unregister();
 	ecm_classifier_emesh_sawf_msduq_callback_unregister();
 	ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister();
+	ecm_classifier_emesh_sawf_config_ul_callback_unregister();
 	ecm_wifi_plugin_info("EMESH classifier callbacks unregistered\n");
 }

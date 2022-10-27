@@ -201,6 +201,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
 	ecm_front_end_acceleration_mode_t result_mode;
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -849,22 +851,30 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: These are called in ascending order of priority and so the last classifier (highest) shall
 	 * override any preceding classifiers.
 	 * This also gives the classifiers a chance to see that acceleration is being attempted.
+	 *
+	 * sync_from_v4 is avoided for EMESH classifier as it has callbacks registered with WLAN driver.
+	 * Since the default accel mode is "auto" where PPE and SFE both are enabled, it may happen that ppe fails
+	 * to accelerate and it may fall back on SFE. In that case these WLAN callbacks will be triggered twice
+	 * from both PPE and SFE even if PPE rule create fails. So we sync from emesh classifier only when acceleration is
+	 * successfull either from PPE or SFE.
 	 */
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		struct ecm_classifier_rule_create ecrc;
 		/*
 		 * NOTE: The current classifiers do not sync anything to the underlying accel engines.
 		 * In the future, if any of the classifiers wants to pass any parameter, these parameters
 		 * should be received via this object and copied to the accel engine's create object (nircm).
 		 */
-#ifdef ECM_CLASSIFIER_EMESH_ENABLE
-		ecrc.skb = skb;
-#endif
 		aci = assignments[aci_index];
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		if ((aci->type_get(aci)) != ECM_CLASSIFIER_TYPE_EMESH) {
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v4(aci, &ecrc);
+		}
+#else
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v4(aci, &ecrc);
+#endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
@@ -1026,6 +1036,19 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ecm_db_connection_deref(feci->ci);
 		DEBUG_TRACE("%px: ppe_drv_v4_create() success with ret=%d\n", feci, pdrt);
 		kfree(pd4rc);
+
+		/*
+		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
+		 */
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (aci) {
+			ecrc.skb = skb;
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v4(aci, &ecrc);
+			aci->deref(aci);
+		}
+#endif
 		return;
 	}
 
