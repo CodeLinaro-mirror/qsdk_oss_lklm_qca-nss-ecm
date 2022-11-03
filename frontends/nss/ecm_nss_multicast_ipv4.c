@@ -64,11 +64,6 @@
 #endif
 
 /*
- * General operational control
- */
-int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not be processed */
-
-/*
  * Debug output levels
  * 0 = OFF
  * 1 = ASSERTS / ERRORS
@@ -97,6 +92,7 @@ int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not
 #include "ecm_nss_multicast_ipv4.h"
 #include "ecm_nss_common.h"
 #include "ecm_front_end_common.h"
+#include "ecm_front_end_ipv4.h"
 
 static int ecm_nss_multicast_ipv4_accelerated_count = 0;
 						/* Array of Number of TCP and UDP connections currently offloaded */

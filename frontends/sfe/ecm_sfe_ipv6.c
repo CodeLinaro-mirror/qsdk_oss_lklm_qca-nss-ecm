@@ -94,6 +94,11 @@
 #include "ecm_sfe_non_ported_ipv6.h"
 #endif
 #include "ecm_sfe_common.h"
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+#include "ecm_sfe_multicast_ipv6.h"
+#endif
+#endif
 #include "ecm_ipv6.h"
 #include "ecm_sfe_ported_ipv6.h"
 #include "ecm_front_end_common.h"
@@ -1000,6 +1005,16 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		DEBUG_ERROR("Failed to init queue\n");
 		goto task_cleanup;
 	}
+
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+	if (ecm_sfe_multicast_ipv6_init(ecm_sfe_ipv6_dentry)) {
+		DEBUG_ERROR("Failed to init sfe multicast\n");
+		goto task_cleanup;
+	}
+#endif
+#endif
+
 	ecm_sfe_ipv6_mgr = sfe_ipv6_notify_register(ecm_sfe_ipv6_stats_sync_callback, ecm_sfe_ipv6_connection_sync_many_callback, NULL);
 
 	return 0;
@@ -1022,6 +1037,12 @@ void ecm_sfe_ipv6_exit(void)
 	}
 
 	DEBUG_INFO("ECM SFE IPv6 Module exit\n");
+
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+	ecm_sfe_multicast_ipv6_exit();
+#endif
+#endif
 
 	/*
 	 * Unregister from the Linux SFE Network driver

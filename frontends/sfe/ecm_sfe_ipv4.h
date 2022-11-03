@@ -14,6 +14,8 @@
  **************************************************************************
  */
 
+#ifndef __ECM_SFE_IPV4_H
+#define __ECM_SFE_IPV4_H
 #include <sfe_api.h>
 
 extern int ecm_sfe_ipv4_no_action_limit_default;		/* Default no-action limit. */
@@ -162,3 +164,4 @@ extern void ecm_sfe_ipv4_accel_done_time_update(struct ecm_front_end_connection_
 extern void ecm_sfe_ipv4_decel_done_time_update(struct ecm_front_end_connection_instance *feci);
 extern int ecm_sfe_ipv4_init(struct dentry *dentry);
 extern void ecm_sfe_ipv4_exit(void);
+#endif //__ECM_SFE_IPV4_H

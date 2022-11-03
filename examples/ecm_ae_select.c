@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2021, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -37,10 +39,14 @@ ecm_ae_classifier_result_t ecm_ae_select(struct ecm_ae_classifier_info *info)
 	pr_debug("%px: Acceleration engine selection\n", info);
 
 	/*
-	 * Multicast flows can be accelerated by NSS only.
+	 * Multicast flows can be accelerated by NSS and SFE for now.
 	 */
 	if (info->flag & ECM_AE_CLASSIFIER_FLOW_MULTICAST) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
 		return ECM_AE_CLASSIFIER_RESULT_NSS;
+#else
+		return ECM_AE_CLASSIFIER_RESULT_SFE;
+#endif
 	}
 
 	/*

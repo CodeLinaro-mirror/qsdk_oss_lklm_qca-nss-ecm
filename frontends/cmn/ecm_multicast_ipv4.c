@@ -95,11 +95,18 @@
 #include "ecm_nss_ipv4.h"
 #include "ecm_nss_multicast_ipv4.h"
 #include "ecm_nss_common.h"
+#else
+#include "ecm_sfe_multicast_ipv4.h"
 #endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv4.h"
 #include "ecm_ae_classifier_public.h"
 #include "ecm_ae_classifier.h"
+
+/*
+ * General operational control
+ */
+int ecm_front_end_ipv4_mc_stopped = 0;	/* When non-zero further traffic will not be processed */
 
 /*
  * ecm_multicast_connection_to_interface_heirarchy_construct()
@@ -819,8 +826,9 @@ process_packet:
 
 		/*
 		 * Which AE can be used for this flow.
-		 * 1. If NSS or DONT_CARE, allocate NSS ipv4 multicast connection instance
-		 * 2. If NONE, allocate NSS ipv4 multicast connection instance with
+		 * When NSS enabled, use NSS only, otherwise use SFE instead
+		 * 1. If NSS/SFE or DONT_CARE, allocate NSS/SFE ipv4 multicast connection instance
+		 * 2. If NONE, allocate NSS/SFFE ipv4 multicast connection instance with
 		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
 		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be
 		 *    re-evaluated.
@@ -835,6 +843,14 @@ process_packet:
 
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
 			feci = ecm_nss_multicast_ipv4_connection_instance_alloc(false, &nci);
+			break;
+#else
+		case ECM_AE_CLASSIFIER_RESULT_SFE:
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+			feci = ecm_sfe_multicast_ipv4_connection_instance_alloc(can_accel, &nci);
+			break;
+		case ECM_AE_CLASSIFIER_RESULT_NONE:
+			feci = ecm_sfe_multicast_ipv4_connection_instance_alloc(false, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:

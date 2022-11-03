@@ -74,11 +74,11 @@ ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/cmn/ecm_non_ported_ipv4.o
 ifeq ($(ECM_NON_PORTED_SUPPORT_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_non_ported_ipv6.o
 endif
-ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
+
+#SFE Multicast is enabled in case NSS disabled
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
-endif
 endif
 
 # #############################################################################
@@ -205,14 +205,23 @@ ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
+# NSS is enabled, using NSS multicast acceleration, otherwise using SFE
+# multicast acceleration.
 # #############################################################################
+
+ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
+ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
+
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 endif
-ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
-ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
+else
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
+endif
 endif
 
 # #############################################################################
@@ -439,9 +448,11 @@ ccflags-y += -DECM_SFE_COMMON_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_PORTED_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_NON_PORTED_IPV4_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_MULTICAST_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_PORTED_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_NON_PORTED_IPV6_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_MULTICAST_IPV6_DEBUG_LEVEL=1
 ccflags-y += -DECM_PPE_COMMON_DEBUG_LEVEL=1
 ccflags-y += -DECM_PPE_IPV4_DEBUG_LEVEL=1
 ccflags-y += -DECM_PPE_PORTED_IPV4_DEBUG_LEVEL=1

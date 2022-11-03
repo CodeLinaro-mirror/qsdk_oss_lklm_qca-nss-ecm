@@ -88,6 +88,11 @@
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_sfe_non_ported_ipv4.h"
 #endif
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+#include "ecm_sfe_multicast_ipv4.h"
+#endif
+#endif
 #include "ecm_ipv4.h"
 #include "ecm_interface.h"
 #include "ecm_sfe_ported_ipv4.h"
@@ -1011,6 +1016,14 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	}
 	ecm_sfe_ipv4_mgr = sfe_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, ecm_sfe_ipv4_connection_sync_many_callback, NULL);
 
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+	if (ecm_sfe_multicast_ipv4_init(ecm_sfe_ipv4_dentry)) {
+		DEBUG_ERROR("Failed to init sfe multicast\n");
+		goto task_cleanup;
+	}
+#endif
+#endif
 	return 0;
 
 task_cleanup:
@@ -1030,6 +1043,11 @@ void ecm_sfe_ipv4_exit(void)
 		return;
 	}
 
+#ifdef ECM_MULTICAST_ENABLE
+#ifndef ECM_FRONT_END_NSS_ENABLE
+	ecm_sfe_multicast_ipv4_exit();
+#endif
+#endif
 	DEBUG_INFO("ECM SFE IPv4 Module exit\n");
 	sfe_ipv4_notify_unregister();
 	ecm_sfe_ipv4_sync_queue_exit();
