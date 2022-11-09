@@ -251,7 +251,7 @@ static void ecm_interface_ovpn_update_route(struct net_device *dev, uint32_t *fr
 
 /*
  * ecm_interface_get_and_hold_ipsec_tun_netdev()
- * 	Returns the nss tunnel interface net_dev
+ *	Returns the nss tunnel interface net_dev
  */
 struct net_device *ecm_interface_get_and_hold_ipsec_tun_netdev(struct net_device *dev, struct sk_buff *skb, int32_t *interface_type)
 {
@@ -861,11 +861,11 @@ EXPORT_SYMBOL(ecm_interface_mac_addr_get_no_route);
 
 /*
  * ecm_interface_multicast_dest_list_find_if()
- * 	Searches for a given device in a list of interface indices
+ *	Searches for a given device in a list of interface indices
  *
- * 	dev		Pointer to the net device to search for
- * 	max_if		Number of valid interfaces in the destination interface list
- * 	dest_if_list	The destination interface list
+ *	dev		Pointer to the net device to search for
+ *	max_if		Number of valid interfaces in the destination interface list
+ *	dest_if_list	The destination interface list
  */
 static bool ecm_interface_multicast_dest_list_find_if(struct net_device *dev, uint8_t max_if, uint32_t *dest_if_list)
 {
@@ -894,8 +894,8 @@ static bool ecm_interface_multicast_dest_list_find_if(struct net_device *dev, ui
 
 /*
  * ecm_interface_multicast_check_for_br_dev()
- * 	Find a bridge dev is present or not in an
- * 	array of Ifindexs
+ *	Find a bridge dev is present or not in an
+ *	array of Ifindexs
  */
 bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if)
 {
@@ -929,7 +929,7 @@ EXPORT_SYMBOL(ecm_interface_multicast_check_for_br_dev);
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
  * ecm_interface_multicast_check_for_ovs_br_dev()
- * 	Check if OVS bridge dev exists in given list of interfaces.
+ *	Check if OVS bridge dev exists in given list of interfaces.
  */
 bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t max_if)
 {
@@ -992,7 +992,7 @@ bool ecm_interface_multicast_is_iface_type(int32_t mc_if_index[], int32_t max_if
 
 /*
  * ecm_interface_multicast_filter_src_interface()
- * 	Filter the source interface from the list.
+ *	Filter the source interface from the list.
  */
 int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_instance *ci, uint32_t *mc_dst_if_index)
 {
@@ -1025,8 +1025,8 @@ int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_in
 
 /*
  * ecm_interface_multicast_check_for_src_if_index()
- * 	Find if a source netdev ifindex is matching with list of
- * 	multicast destination netdev ifindex. If find a match then
+ *	Find if a source netdev ifindex is matching with list of
+ *	multicast destination netdev ifindex. If find a match then
  *	returns a new list of destination netdev ifindex excluding
  *	the ifindex of source netdev.
  */
@@ -1058,10 +1058,14 @@ EXPORT_SYMBOL(ecm_interface_multicast_check_for_src_ifindex);
  *	Function to get VxLAN interface type i.e. inner/outer.
  *	Returns 0 for outer and 1 for inner.
  */
-uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb)
+uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxlan_tun)
 {
-	ip_addr_t saddr;
+	ip_addr_t saddr, daddr, vx_addr, packet_addr;
 	struct net_device *local_dev;
+	struct net_device *lower_dev = NULL;
+	union vxlan_addr *src_ip, *remote_ip;
+	bool packet_type_v4 = true;
+	bool tunnel_type_v4 = true;
 
 	if (!skb) {
 		return -1;
@@ -1070,22 +1074,89 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb)
 	switch (ntohs(skb->protocol)) {
 	case ETH_P_IP:
 		ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
+		ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
 		break;
 	case ETH_P_IPV6:
+		packet_type_v4 = false;
 		ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
+		ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
 		break;
 	default:
 		DEBUG_WARN("%px: Unknown skb protocol.\n", skb);
 		return -1;
 	}
 
-	local_dev = ecm_interface_dev_find_by_local_addr(saddr);
-	if (local_dev) {
-		dev_put(local_dev);
-		DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
+	lower_dev = dev_get_by_index(&init_net, vxlan_tun->default_dst.remote_ifindex);
+	if (lower_dev) {
+		local_dev = ecm_interface_dev_find_by_local_addr(saddr);
+		if (lower_dev == local_dev) {
+			dev_put(local_dev);
+			dev_put(lower_dev);
+			DEBUG_TRACE("%p: VxLAN outer interface type.\n", skb);
+			return 0;
+		}
+
+		if (local_dev) {
+			dev_put(local_dev);
+		}
+
+		dev_put(lower_dev);
+		DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
+		return 1;
+	}
+
+	/*
+	 * Need to verify packet vs tunnel even if the tunnel is v6 and packet is v4,
+	 * One may assume that the packet must be inner since their type doesn't match. However, we need to verify that the tunnel has valid IP address
+	 * So, we shouldn't accelerate traffic if tunnel doesn't have valid IP address.
+	 */
+	DEBUG_TRACE("%p: lower device is not set, check with source IP address.\n", skb);
+	src_ip = &vxlan_tun->cfg.saddr;
+	if (src_ip->sa.sa_family == AF_INET) {
+		if (src_ip->sin.sin_addr.s_addr != htonl(INADDR_ANY)) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(vx_addr, src_ip->sin.sin_addr.s_addr);
+			ECM_IP_ADDR_COPY(packet_addr, saddr);
+		} else {
+			DEBUG_TRACE("%p: Src IP addr is not set. Check with remote IP addr.\n", skb);
+			remote_ip = &vxlan_tun->cfg.remote_ip;
+			if (remote_ip->sin.sin_addr.s_addr == htonl(INADDR_ANY)) {
+				DEBUG_TRACE("%p: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
+				return -1;
+			}
+			ECM_NIN4_ADDR_TO_IP_ADDR(vx_addr, remote_ip->sin.sin_addr.s_addr);
+			ECM_IP_ADDR_COPY(packet_addr, daddr);
+		}
+	} else {
+		tunnel_type_v4 = false;
+		if (!ipv6_addr_any(&src_ip->sin6.sin6_addr)) {
+			ECM_NIN6_ADDR_TO_IP_ADDR(vx_addr, src_ip->sin6.sin6_addr);
+			ECM_IP_ADDR_COPY(packet_addr, saddr);
+		} else {
+			DEBUG_TRACE("%p: Src IP addr is not set. Check with remote IP addr.\n", skb);
+			remote_ip = &vxlan_tun->cfg.remote_ip;
+			if (ipv6_addr_any(&remote_ip->sin6.sin6_addr)) {
+				DEBUG_TRACE("%p: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
+				return -1;
+			}
+			ECM_NIN6_ADDR_TO_IP_ADDR(vx_addr, remote_ip->sin6.sin6_addr);
+			ECM_IP_ADDR_COPY(packet_addr, daddr);
+		}
+	}
+
+	/*
+	 * If packet and tunnel in different INET, it must be inner direction
+	 */
+	if (tunnel_type_v4 != packet_type_v4) {
+		DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
+		return 1;
+	}
+
+	if (ECM_IP_ADDR_MATCH(vx_addr, packet_addr)) {
+		DEBUG_TRACE("%p: VxLAN outer interface type.\n", skb);
 		return 0;
 	}
-	DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
+
+	DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
 	return 1;
 }
 #endif
@@ -1285,7 +1356,7 @@ EXPORT_SYMBOL(ecm_interface_send_arp_request);
 
 /*
  * ecm_interface_ipv4_neigh_get()
- * 	Returns neighbour reference for a given IP address which must be released when you are done with it.
+ *	Returns neighbour reference for a given IP address which must be released when you are done with it.
  *
  * Returns NULL on fail.
  */
@@ -1310,7 +1381,7 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
 #ifdef ECM_IPV6_ENABLE
 /*
  * ecm_interface_ipv6_neigh_get()
- * 	Returns neighbour reference for a given IP address which must be released when you are done with it.
+ *	Returns neighbour reference for a given IP address which must be released when you are done with it.
  *
  * Returns NULL on fail.
  */
@@ -2612,7 +2683,7 @@ done:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 /*
  * ecm_interface_ovs_bridge_port_dev_get_and_ref()
- * 	Looks up the slave port in the bridge devices port list.
+ *	Looks up the slave port in the bridge devices port list.
  */
 static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct sk_buff *skb, struct net_device *br_dev,
 								ip_addr_t src_ip, ip_addr_t dst_ip, int ip_version,
@@ -2816,7 +2887,7 @@ port_find:
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
 /*
  * ecm_interface_macvlan_mode_is_valid()
- * 	Check if the macvlan interface allowed for acceleration.
+ *	Check if the macvlan interface allowed for acceleration.
  */
 static bool ecm_interface_macvlan_mode_is_valid(struct net_device *dev)
 {
@@ -3015,7 +3086,12 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			vni = vxlan_get_vni(vxlan_tun);
 			DEBUG_TRACE("%px: Net device: %px is VxLAN, mac: %pM, vni: %d\n",
 					feci, dev, dev->dev_addr, vni);
-			interface_type = ecm_interface_vxlan_type_get(skb);
+			interface_type = ecm_interface_vxlan_type_get(skb, vxlan_tun);
+			if (interface_type < 0) {
+				DEBUG_TRACE("%p: VxLAN tunnel direction cannot be found: %d\n", feci, interface_type);
+				return NULL;
+			}
+
 			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
 			DEBUG_TRACE("%px: VxLAN netdevice interface ae_interface_num: %d, interface_type: %d\n",
 					feci, ae_interface_num, interface_type);
@@ -3387,13 +3463,13 @@ identifier_update:
 		 * Copy netdev address to the type info.
 		 */
 		ether_addr_copy(type_info.rawip.address, dev->dev_addr);
-                DEBUG_TRACE("%px: Net device: %px is RAWIP, MAC addr: %pM\n",
-                               feci, dev, type_info.rawip.address);
+		DEBUG_TRACE("%px: Net device: %px is RAWIP, MAC addr: %pM\n",
+			       feci, dev, type_info.rawip.address);
 
-                /*
-                 * Establish this type of interface
-                 */
-                ii = ecm_interface_rawip_interface_establish(&type_info.rawip, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		/*
+		 * Establish this type of interface
+		 */
+		ii = ecm_interface_rawip_interface_establish(&type_info.rawip, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 		return ii;
 	}
 #endif
@@ -3745,11 +3821,11 @@ EXPORT_SYMBOL(ecm_interface_establish_and_ref);
 #ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_heirarchy_construct_single()
- * 	Create and return an interface heirarchy for a single interface for a multicast connection
+ *	Create and return an interface heirarchy for a single interface for a multicast connection
  *
- * 	src_addr	IP source address
- * 	dest_addr	IP Destination address/Group Address
- * 	interface	Pointer to a single multicast interface heirarchy
+ *	src_addr	IP source address
+ *	dest_addr	IP Destination address/Group Address
+ *	interface	Pointer to a single multicast interface heirarchy
  *	given_dest_dev	Netdev pointer for destination interface
  *	br_slave_dev	Netdev pointer to a bridge slave device. It could be NULL in case of pure
  *			routed flow without any bridge interface in destination dev list.
@@ -3766,7 +3842,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 	struct net_device *dest_dev;
 	int32_t current_interface_index;
 	int32_t interfaces_cnt = 0;
-        int32_t dest_dev_type;
+	int32_t dest_dev_type;
 
 	dest_dev = given_dest_dev;
 	dev_hold(dest_dev);
@@ -4115,7 +4191,7 @@ fail:
 
 /*
  * ecm_interface_hierarchy_delete()
- * 	Delete hierarchy of the requested interfaces.
+ *	Delete hierarchy of the requested interfaces.
  */
 static inline void ecm_interface_hierarchy_delete(struct ecm_db_iface_instance *interfaces,
 							uint32_t *interface_first_base,
@@ -4134,7 +4210,7 @@ static inline void ecm_interface_hierarchy_delete(struct ecm_db_iface_instance *
 
 /*
  * ecm_interface_multicast_heirarchy_construct_routed()
- * 	Create destination interface heirarchy for a routed multicast connectiona
+ *	Create destination interface heirarchy for a routed multicast connectiona
  *
  *	interfaces	Pointer to the 2-D array of multicast interface heirarchies
  *	in_dev		Pointer to the source netdev
@@ -4387,8 +4463,8 @@ EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_routed);
 
 /*
  * ecm_interface_multicast_heirarchy_construct_bridged()
- * 	This function called when the Hyfi bridge snooper has IGMP/IMLD updates, this function
- * 	creates destination interface heirarchy for a bridged multicast connection.
+ *	This function called when the Hyfi bridge snooper has IGMP/IMLD updates, this function
+ *	creates destination interface heirarchy for a bridged multicast connection.
  *
  *	interfaces	Pointer to the 2-D array of multicast interface heirarchies
  *	dest_dev	Pointer to the destination dev, here dest_dev is always a bridge type
@@ -4411,8 +4487,8 @@ int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end
 	int *mc_dst_if_index;
 	int valid_if;
 	int ii_cnt = 0;
-        int br_if;
-        int total_ii_cnt = 0;
+	int br_if;
+	int total_ii_cnt = 0;
 
 	/*
 	 * Go through the newly joined interface index one by one and
@@ -7028,7 +7104,7 @@ next:
 
 /*
  * ecm_interface_netdev_notifier_callback()
- * 	Netdevice notifier callback to inform us of change of state of a netdevice
+ *	Netdevice notifier callback to inform us of change of state of a netdevice
  */
 static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, unsigned long event, void *ptr)
 {
@@ -7231,15 +7307,15 @@ static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
  *	in the DB connection, and extracts the list of those interfaces that have left
  *	the multicast group.
  *
- * 	ci		A DB connection instance.
- * 	mc_updates	Part of return Information. The function will mark the index of those
- * 			interfaces in the DB connection 'to_mcast_interfaces' array that have
- * 			left the group, in the mc_updates->if_leave_idx array. The caller uses this
- * 			information to delete those outdated interface heirarchies from the
- * 			connection.
- * 	is_bridged	True if the function called due to bridge multicast snooper update event.
- * 	dst_dev		Holds the netdevice ifindex number of the new list of interfaces as reported
- * 			by the update from MFC or Bridge snooper.
+ *	ci		A DB connection instance.
+ *	mc_updates	Part of return Information. The function will mark the index of those
+ *			interfaces in the DB connection 'to_mcast_interfaces' array that have
+ *			left the group, in the mc_updates->if_leave_idx array. The caller uses this
+ *			information to delete those outdated interface heirarchies from the
+ *			connection.
+ *	is_bridged	True if the function called due to bridge multicast snooper update event.
+ *	dst_dev		Holds the netdevice ifindex number of the new list of interfaces as reported
+ *			by the update from MFC or Bridge snooper.
  *	max_to_dev	Size of the array 'dst_dev'
  *
  *	Return true if outdated interfaces found
@@ -7380,13 +7456,13 @@ static bool ecm_interface_multicast_find_outdated_iface_instances(struct ecm_db_
  *	in the DB connection, and extracts the list of the new joinees for the multicast
  *	group.
  *
- * 	ci		A DB connection instance.
- * 	mc_updates	Part of return Information. The function will mark the index of those
- * 			interfaces in the 'dst_dev' array that have joined the group, in the
- * 			mc_updates->if_join_idx array. The caller uses this information to add the new
- * 			interface heirarchies into the connection.
- * 	dst_dev		Holds the netdevice ifindex number of the new list of interfaces as reported
- * 			by the update from MFC or Bridge snooper.
+ *	ci		A DB connection instance.
+ *	mc_updates	Part of return Information. The function will mark the index of those
+ *			interfaces in the 'dst_dev' array that have joined the group, in the
+ *			mc_updates->if_join_idx array. The caller uses this information to add the new
+ *			interface heirarchies into the connection.
+ *	dst_dev		Holds the netdevice ifindex number of the new list of interfaces as reported
+ *			by the update from MFC or Bridge snooper.
  *	max_to_dev	Size of the array 'dst_dev'
  *
  *	Return true if new joinees found
@@ -7495,8 +7571,8 @@ static bool ecm_interface_multicast_find_new_iface_instances(struct ecm_db_conne
 
 /*
  * ecm_interface_multicast_find_updates_to_iface_list()
- * 	Process IGMP/MLD updates either from MFC or bridge snooper. Identity the interfaces
- * 	that have left the group and new interfaces that have joined the group.
+ *	Process IGMP/MLD updates either from MFC or bridge snooper. Identity the interfaces
+ *	that have left the group and new interfaces that have joined the group.
  *
  * The function returns true if there was any update necessary to the current destination
  * interface list
@@ -7810,7 +7886,7 @@ int ecm_interface_wifi_event_stop(void)
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * ecm_interface_igs_enabled_handler()
- * 	IGS enabled check sysctl node handler.
+ *	IGS enabled check sysctl node handler.
  */
 static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, void __user *buffer,
 		 size_t *lenp, loff_t *ppos)
@@ -8014,7 +8090,7 @@ static void ecm_interface_ovs_defunct_masked_tuple(struct ovsmgr_dp_flow *flow)
 	 *		   smac in CI is ignored (any destination node address).
 	 *
 	 * 4. if either indev OR outdev is ovs_bridge: Then defunct connections through OVS classifier hash bucket by matching:
-	 *	            {ip_version, sip, dip, protocol, sport, dport}
+	 *		    {ip_version, sip, dip, protocol, sport, dport}
 	 *
 	 * 5. if SMAC is valid : Then delete bridge flows originating from SMAC by matching:
 	 *		   {ip_version, dmac, sip, dip, protocol, sport, dport}
@@ -8373,7 +8449,7 @@ static void ecm_interface_multicast_ovs_flow_update_connections(struct ovsmgr_dp
 
 /*
  * ecm_interface_ovs_notifier_callback()
- * 	Netdevice notifier callback to inform us of change of state of a netdevice
+ *	Netdevice notifier callback to inform us of change of state of a netdevice
  */
 static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsigned long event, void *data)
 {
