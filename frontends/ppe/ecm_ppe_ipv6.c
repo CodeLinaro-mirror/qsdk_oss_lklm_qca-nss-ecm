@@ -481,9 +481,9 @@ sync_conntrack:
 		/*
 		 * In Linux connection track, UDP flow has two timeout values:
 		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout:
-		 * 	this is for uni-direction UDP flow, normally its value is 60 seconds
+		 *	this is for uni-direction UDP flow, normally its value is 60 seconds
 		 * /proc/sys/net/netfilter/nf_conntrack_udp_timeout_stream:
-		 * 	this is for bi-direction UDP flow, normally its value is 180 seconds
+		 *	this is for bi-direction UDP flow, normally its value is 180 seconds
 		 *
 		 * Linux will update timer of UDP flow to stream timeout once it seen packets
 		 * in reply direction. But if flow is accelerated by PPE or SFE, Linux won't
@@ -495,6 +495,9 @@ sync_conntrack:
 			if (reply_pkts != 0) {
 				struct nf_conntrack_l4proto *l4proto __maybe_unused;
 				unsigned int *timeouts;
+
+				set_bit(IPS_SEEN_REPLY_BIT, &ct->status);
+				set_bit(IPS_ASSURED_BIT, &ct->status);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0))
 				l4proto = __nf_ct_l4proto_find(AF_INET6, IPPROTO_UDP);
 				timeouts = nf_ct_timeout_lookup(&init_net, ct, l4proto);
