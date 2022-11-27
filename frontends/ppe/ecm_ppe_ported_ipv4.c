@@ -715,7 +715,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_QOS;
 	}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 	/*
 	 * DSCP information?
 	 */
@@ -755,6 +755,37 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
 		pd4rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
 	}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+
+	/*
+	 * SAWF information
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+		pd4rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		pd4rc->sawf_rule.return_mark = pr->return_sawf_metadata;
+		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SAWF;
+        }
+
+	/*
+	 * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
+	 * and send the update VLAN tag to PPE.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+		if (pr->flow_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+				pd4rc->vlan_rule.primary_vlan.egress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag &= ~VLAN_PRIO_MASK;
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+
+		if (pr->return_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+				pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+	}
+
 #endif
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
@@ -902,6 +933,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
+			"sawf mark: %x\n"
+			"return sawf mark: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
 			"conn_rule.tx_if: %d (to iface first:%s)\n",
 			feci,
@@ -923,6 +956,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			pd4rc->qos_rule.return_qos_tag, pd4rc->qos_rule.return_qos_tag,
 			pd4rc->dscp_rule.flow_dscp,
 			pd4rc->dscp_rule.return_dscp,
+			pd4rc->sawf_rule.flow_mark,
+			pd4rc->sawf_rule.return_mark,
 			pd4rc->conn_rule.rx_if, (from_ifaces[from_ifaces_first])->name,
 			pd4rc->conn_rule.tx_if, (to_ifaces[to_ifaces_first])->name);
 
