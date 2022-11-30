@@ -199,6 +199,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	ip_addr_t dest_ip;
 	bool is_defunct = false;
 	ecm_front_end_acceleration_mode_t result_mode;
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -741,7 +743,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * DSCP information?
 	 */
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
 		pd6rc->dscp_rule.flow_dscp = pr->flow_dscp;
 		pd6rc->dscp_rule.return_dscp = pr->return_dscp;
@@ -778,6 +780,37 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
 		pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
 	}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+
+        /*
+         * SAWF information
+         */
+        if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+                pd6rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+                pd6rc->sawf_rule.return_mark = pr->return_sawf_metadata;
+                pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SAWF;
+        }
+
+        /*
+         * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
+         * and send the update VLAN tag to PPE.
+         */
+        if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+                if (pr->flow_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+                                pd6rc->vlan_rule.primary_vlan.egress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag &= ~VLAN_PRIO_MASK;
+                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
+                }
+
+                if (pr->return_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+                                pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
+                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
+                }
+        }
+
 #endif
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
@@ -830,19 +863,30 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: These are called in ascending order of priority and so the last classifier (highest) shall
 	 * override any preceding classifiers.
 	 * This also gives the classifiers a chance to see that acceleration is being attempted.
+	 *
+	 * sync_from_v6 is avoided for EMESH classifier as it has callbacks registered with WLAN driver.
+	 * Since the default accel mode is "auto" where PPE and SFE both are enabled, it may happen that ppe fails
+	 * to accelerate and it may fall back on SFE. In that case these WLAN callbacks will be triggered twice
+	 * from both PPE and SFE even if PPE rule create fails. So we sync from
+	 * emesh classifier only when acceleration is successfull either from PPE or SFE.
 	 */
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		struct ecm_classifier_rule_create ecrc;
 		/*
 		 * NOTE: The current classifiers do not sync anything to the underlying accel engines.
 		 * In the future, if any of the classifiers wants to pass any parameter, these parameters
 		 * should be received via this object and copied to the accel engine's create object (nircm).
 		*/
 		aci = assignments[aci_index];
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		if ((aci->type_get(aci)) != ECM_CLASSIFIER_TYPE_EMESH) {
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v6(aci, &ecrc);
+		}
+#else
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v6(aci, &ecrc);
+#endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
@@ -874,6 +918,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
+			"sawf mark: %x\n"
+			"return sawf mark: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
 			"conn_rule.tx_if: %d (to iface first:%s)\n",
 			feci,
@@ -899,6 +945,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			pd6rc->qos_rule.return_qos_tag, pd6rc->qos_rule.return_qos_tag,
 			pd6rc->dscp_rule.flow_dscp,
 			pd6rc->dscp_rule.return_dscp,
+			pd6rc->sawf_rule.flow_mark,
+			pd6rc->sawf_rule.return_mark,
 			pd6rc->conn_rule.rx_if, (from_ifaces[from_ifaces_first])->name,
 			pd6rc->conn_rule.tx_if, (to_ifaces[to_ifaces_first])->name);
 
@@ -1012,6 +1060,18 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		ecm_db_connection_deref(feci->ci);
 		DEBUG_TRACE("%px: ppe_drv_v6_create() success with ret=%d\n", feci, ppe_tx_status);
 		kfree(pd6rc);
+
+		/*
+		 * For emesh classifier sync_from_v6 to be called after rule is successfully created.
+		 */
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (aci) {
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v6(aci, &ecrc);
+			aci->deref(aci);
+		}
+#endif
 		return;
 	}
 

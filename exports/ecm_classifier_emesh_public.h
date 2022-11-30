@@ -75,6 +75,12 @@ typedef uint16_t (*ecm_classifier_emesh_msduq_callback_t)(struct net_device *out
 		uint8_t dest_mac[], uint32_t service_class_id);
 
 /**
+ * SAWF UL configuration update callback function pointer.
+ */
+typedef void (*ecm_classifier_emesh_sawf_config_ul_callback_t)(uint8_t dest_mac[],
+		uint8_t src_mac[], uint8_t fwd_service_id, uint8_t rev_service_id, uint8_t add_or_sub);
+
+/**
  * FSE flow update callback to which emesh-sawf will register.
  */
 typedef void (*ecm_classifier_emesh_fse_flow_callback_t)(void *appdata, ecm_classifier_fse_connection_state_t state);
@@ -89,6 +95,8 @@ struct ecm_classifier_emesh_sawf_callbacks {
 						/**< Get msduq for SAWF classifier. */
 	ecm_classifier_emesh_fse_flow_callback_t update_fse_flow_info;
 						/**< Update fse flow callback. */
+	ecm_classifier_emesh_sawf_config_ul_callback_t update_sawf_ul;
+						/**< Update SAWF uplink parameters. */
 };
 
 /**
@@ -126,6 +134,24 @@ int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emes
  * None.
  */
 void ecm_classifier_emesh_sawf_msduq_callback_unregister(void);
+
+/**
+ * Registers EMESH-SAWF config uplink callback.
+ *
+ * @param	mesh_cb	EMESH-SAWF callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
+int ecm_classifier_emesh_sawf_config_ul_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+
+/**
+ * Unregisters EMESH-SAWF config uplink callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_sawf_config_ul_callback_unregister(void);
 
 /**
  * Registers EMESH-SAWF fse flow update callback.

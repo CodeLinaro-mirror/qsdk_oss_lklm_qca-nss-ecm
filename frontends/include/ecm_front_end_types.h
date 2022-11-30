@@ -30,6 +30,7 @@
  * Constant used with constructing acceleration rules.
  */
 #define ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED 0xFFF
+#define ECM_FRONT_END_INVALID_VLAN_PCP 0xFF
 
 /*
  * Bridge device macros
