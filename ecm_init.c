@@ -25,6 +25,10 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include <ppe_drv.h>
+#endif
+
 /*
  * Debug output levels
  * 0 = OFF
@@ -238,6 +242,11 @@ static int __init ecm_init(void)
 	}
 #endif
 
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	if (ecm_front_end_ppe_fse_enable) {
+		ppe_drv_fse_feature_enable();
+	}
+#endif
 	ecm_front_end_common_sysctl_register();
 
 	printk(KERN_INFO "ECM init complete\n");
@@ -388,6 +397,11 @@ static void __exit ecm_exit(void)
 	}
 
 	ecm_front_end_common_sysctl_unregister();
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	if (ecm_front_end_ppe_fse_enable) {
+		ppe_drv_fse_feature_disable();
+	}
+#endif
 
 	printk(KERN_INFO "ECM exit complete\n");
 }

@@ -35,6 +35,9 @@
 #include <net/addrconf.h>
 #include <net/gre.h>
 #include <net/xfrm.h>
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include <ppe_drv.h>
+#endif
 
 /*
  * Debug output levels
@@ -108,6 +111,9 @@ static struct ctl_table_header *ecm_front_end_ctl_tbl_hdr;
  * platforms to control memory allocated by ECM databases.
  */
 unsigned int ecm_front_end_conn_limit = 0;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+unsigned int ecm_front_end_ppe_fse_enable = 1;
+#endif
 
 /*
  * Predefined frontend and feature support map.
@@ -742,6 +748,42 @@ uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_ins
 	return slow_pkts;
 }
 
+#ifdef ECM_FRONT_END_PPE_ENABLE
+/*
+ * ecm_front_end_ppe_fse_enable_limit_handler()
+ *	Sysctl to enable/disable FSE programming through PPE.
+ */
+int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+        if ((ecm_front_end_ppe_fse_enable != 0) &&
+			(ecm_front_end_ppe_fse_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	if (ecm_front_end_ppe_fse_enable == 0) {
+		ppe_drv_fse_feature_disable();
+		return ret;
+	}
+
+	ppe_drv_fse_feature_enable();
+	return ret;
+}
+#endif
+
 /*
  * ecm_front_end_db_conn_limit_handler()
  *	Database connection limit sysctl node handler.
@@ -785,6 +827,15 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_db_conn_limit_handler,
 	},
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	{
+		.procname	= "ppe_fse_enable",
+		.data		= &ecm_front_end_ppe_fse_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_ppe_fse_enable_handler,
+	},
+#endif
 	{}
 };
 
