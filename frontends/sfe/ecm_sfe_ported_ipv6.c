@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -742,7 +742,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * where source port is set to zero.
 			 */
 			if (!vxlan_info.if_type) {
-				nircm->rule_flags |= SFE_RULE_CREATE_NO_SRC_IDENT;
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
 #else
 			rule_invalid = true;
