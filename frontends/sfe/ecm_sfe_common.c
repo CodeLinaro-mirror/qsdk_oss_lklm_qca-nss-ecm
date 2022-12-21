@@ -56,7 +56,7 @@ struct ecm_sfe_common_callbacks ecm_sfe_cb;
  */
 static struct ctl_table_header *ecm_sfe_ctl_tbl_hdr;
 
-static bool ecm_sfe_fast_xmit_enable = true;
+static int ecm_sfe_fast_xmit_enable = 1;
 
 /*
  * ecm_sfe_feature_check()
