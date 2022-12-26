@@ -328,7 +328,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	int32_t to_sfe_iface_id;
 	uint8_t from_sfe_iface_address[ETH_ALEN];
 	uint8_t to_sfe_iface_address[ETH_ALEN];
-	struct sfe_ipv6_msg nim;
+	struct sfe_ipv6_msg *nim;
 	struct sfe_ipv6_rule_create_msg *nircm;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -362,19 +362,25 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		return;
 	}
 
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		return;
+	}
+
 	/*
 	 * Okay construct an accel command.
 	 * Initialise creation structure.
 	 * NOTE: We leverage the app_data void pointer to be our 32 bit connection serial number.
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
-	memset(&nim, 0, sizeof(struct sfe_ipv6_msg));
-	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_RULE_MSG,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_create_msg),
 			ecm_sfe_ported_ipv6_connection_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nircm = &nim.msg.rule_create;
+	nircm = &nim->msg.rule_create;
 	nircm->valid_flags = 0;
 	nircm->rule_flags = 0;
 
@@ -450,8 +456,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Set interface numbers involved in accelerating this connection.
 	 * These are the inner facing addresses from the heirarchy interface lists we got above.
 	 */
-	nim.msg.rule_create.conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
-	nim.msg.rule_create.conn_rule.return_top_interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+	nim->msg.rule_create.conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+	nim->msg.rule_create.conn_rule.return_top_interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
 
 	/*
 	 * We know that each outward facing interface is known to the SFE and so this connection could be accelerated.
@@ -1393,6 +1399,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		kfree(nim);
 		return;
 	}
 
@@ -1414,7 +1421,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * Call the rule create function
 	 */
-	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, &nim);
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1422,6 +1429,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
 
 		/*
 		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
@@ -1437,6 +1445,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #endif
 		return;
 	}
+
+	kfree(nim);
 
 	/*
 	 * Release that ref!
@@ -1472,6 +1482,7 @@ ported_accel_bad_rule:
 	 */
 	DEBUG_WARN("%px: Accel failed - bad rule\n", feci);
 	ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE);
+	kfree(nim);
 }
 
 /*
@@ -1596,7 +1607,7 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
  */
 static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct sfe_ipv6_msg nim;
+	struct sfe_ipv6_msg *nim;
 	struct sfe_ipv6_rule_destroy_msg *nirdm;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
@@ -1604,6 +1615,12 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	bool ret;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+		return false;
+	}
 
 	/*
 	 * Increment the decel pending counter
@@ -1615,12 +1632,12 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	/*
 	 * Prepare deceleration message
 	 */
-	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_destroy_msg),
 			ecm_sfe_ported_ipv6_connection_destroy_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nirdm = &nim.msg.rule_destroy;
+	nirdm = &nim->msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -1657,7 +1674,7 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, &nim);
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1665,8 +1682,11 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
 		return true;
 	}
+
+	kfree(nim);
 
 	/*
 	 * TX failed

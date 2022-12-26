@@ -1000,6 +1000,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 */
 	nim = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
+		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		return;
 	}
 
@@ -1882,7 +1883,7 @@ static void ecm_sfe_multicast_ipv4_connection_destroy_callback(void *app_data, s
  */
 static bool ecm_sfe_multicast_ipv4_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct sfe_ipv4_msg mccm;
+	struct sfe_ipv4_msg *mccm;
 	struct sfe_ipv4_mc_rule_destroy_msg *nirdm;
 	ip_addr_t src_addr;
 	ip_addr_t group_addr;
@@ -1890,6 +1891,11 @@ static bool ecm_sfe_multicast_ipv4_connection_decelerate_msg_send(struct ecm_fro
 	bool ret;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	mccm = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!mccm) {
+		return false;
+	}
 
 	/*
 	 * Increment the decel pending counter
@@ -1901,12 +1907,12 @@ static bool ecm_sfe_multicast_ipv4_connection_decelerate_msg_send(struct ecm_fro
 	/*
 	 * Prepare deceleration message
 	 */
-	sfe_ipv4_msg_init(&mccm, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_DESTROY_RULE_MSG,
+	sfe_ipv4_msg_init(mccm, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_DESTROY_RULE_MSG,
 			sizeof(struct sfe_ipv4_rule_destroy_msg),
 			ecm_sfe_multicast_ipv4_connection_destroy_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nirdm = &mccm.msg.mc_rule_destroy;
+	nirdm = &mccm->msg.mc_rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -1948,13 +1954,16 @@ static bool ecm_sfe_multicast_ipv4_connection_decelerate_msg_send(struct ecm_fro
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, &mccm);
+	sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, mccm);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;			/* Reset */
 		spin_unlock_bh(&feci->lock);
+		kfree(mccm);
 		return true;
 	}
+
+	kfree(mccm);
 
 	/*
 	 * TX failed

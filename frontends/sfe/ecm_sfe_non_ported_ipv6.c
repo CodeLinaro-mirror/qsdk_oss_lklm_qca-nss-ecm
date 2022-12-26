@@ -1356,7 +1356,7 @@ static void ecm_sfe_non_ported_ipv6_connection_destroy_callback(void *app_data, 
  */
 static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct sfe_ipv6_msg nim;
+	struct sfe_ipv6_msg *nim;
 	struct sfe_ipv6_rule_destroy_msg *nirdm;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
@@ -1364,6 +1364,12 @@ static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	bool ret;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+		return false;
+	}
 
 	/*
 	 * Increment the decel pending counter
@@ -1375,12 +1381,12 @@ static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	/*
 	 * Prepare deceleration message
 	 */
-	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_destroy_msg),
 			ecm_sfe_non_ported_ipv6_connection_destroy_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nirdm = &nim.msg.rule_destroy;
+	nirdm = &nim->msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -1416,7 +1422,7 @@ static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, &nim);
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1424,8 +1430,11 @@ static bool ecm_sfe_non_ported_ipv6_connection_decelerate_msg_send(struct ecm_fr
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
 		return true;
 	}
+
+	kfree(nim);
 
 	/*
 	 * TX failed
