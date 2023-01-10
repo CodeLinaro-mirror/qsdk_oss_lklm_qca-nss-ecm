@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1149,6 +1149,13 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 	DEBUG_TRACE("%px: Frontend switch from AE type %d\n", feci, feci->accel_engine);
 
 	spin_lock_bh(&feci->lock);
+
+	if (feci->is_defunct) {
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: AE switch can't be done for defuncted flow\n", feci);
+		return false;
+	}
+
 	/*
 	 * Check the accel_mode of the existing connection.
 	 * If it is set to one of the FAIL modes, this means that, we tried to accelerate
