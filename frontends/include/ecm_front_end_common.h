@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -304,7 +304,7 @@ static inline bool ecm_front_end_destroy_failure_handle(struct ecm_front_end_con
 static inline bool ecm_front_end_ppppoe_br_accel_disabled(void)
 {
 	enum ecm_front_end_type fe_type;
-	bool ret = true;
+	bool ret = false;
 
 	fe_type = ecm_front_end_type_get();
 	switch (fe_type) {
@@ -319,7 +319,7 @@ static inline bool ecm_front_end_ppppoe_br_accel_disabled(void)
 		break;
 #endif
 	default:
-		DEBUG_WARN("front end type: %d is not supported\n", fe_type);
+		DEBUG_TRACE("front end type: %d\n", fe_type);
 		break;
 	}
 
