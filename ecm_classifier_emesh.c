@@ -1,7 +1,7 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -833,10 +833,10 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
 			if (dest_dev) {
-				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id);
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_FLOW], flow_output_params.rule_id);
 			}
 			if (src_dev) {
-				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id);
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_RETURN], return_output_params.rule_id);
 			}
 		}
 

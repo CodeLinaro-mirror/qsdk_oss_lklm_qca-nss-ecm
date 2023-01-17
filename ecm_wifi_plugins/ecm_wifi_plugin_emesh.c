@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,7 +31,7 @@
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
-	.update_service_id_get_msduq = qca_sawf_get_msduq,
+	.update_service_id_get_msduq = qca_sawf_get_msdu_queue,
 	.update_sawf_ul = qca_sawf_config_ul,
 };
 
