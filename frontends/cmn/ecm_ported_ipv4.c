@@ -678,6 +678,16 @@ feci_alloc_done:
 			goto fail_9;
 		}
 
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+		/*
+		 * Add VLAN filter information in connection instance
+		 */
+		if (!ecm_db_connection_add_vlan_filter(nci, ni, skb, ECM_DB_OBJ_DIR_FROM_NAT, ECM_DB_OBJ_DIR_TO_NAT)) {
+			DEBUG_WARN("Failed to update bridge vlan filter information\n");
+			goto fail_10;
+		}
+#endif
+
 		/*
 		 * Every connection also needs a default classifier which is considered 'special' to be assigned
 		 */
