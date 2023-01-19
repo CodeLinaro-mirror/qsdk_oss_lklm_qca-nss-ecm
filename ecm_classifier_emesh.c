@@ -495,11 +495,10 @@ get_source_dev:
 }
 
 /*
- * ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec()
- * 	It is invoked for ipsec packet. It fills the metadata in skb->mark.
- * 	TODO : FIx the IPSEC acceleration issue.
+ * ecm_classifier_emesh_mark_sawf_metadata()
+ *	Fills the sawf metadata in skb->mark.
  */
-static void ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec (struct sk_buff *skb,
+static void ecm_classifier_emesh_mark_sawf_metadata(struct sk_buff *skb,
 		struct sp_rule_output_params *flow_output_params, uint32_t msduq_forward)
 {
 	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
@@ -886,6 +885,13 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		if (ecm_emesh.update_service_id_get_msduq) {
 			if (dest_dev) {
 				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_FLOW], flow_output_params.rule_id);
+
+				/*
+				 * Mark the skb with SAWF meta data for flow creation packet.
+				 */
+				ecm_classifier_emesh_mark_sawf_metadata(skb,
+									&flow_output_params,
+									msduq_forward);
 			}
 			if (src_dev) {
 				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_RETURN], return_output_params.rule_id);
@@ -929,7 +935,9 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			cemi->process_response.flow_qos_tag = skb->priority;
 			cemi->process_response.return_qos_tag = skb->priority;
 			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
-			ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec(skb, &flow_output_params, msduq_forward);
+			ecm_classifier_emesh_mark_sawf_metadata(skb,
+								&flow_output_params,
+								msduq_forward);
 			goto sawf_emesh_classifier_out;
 		}
 	}
