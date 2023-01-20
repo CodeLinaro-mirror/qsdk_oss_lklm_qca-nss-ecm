@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -155,6 +155,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
 	bool pppoe_bridged = false;
+	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
 
 	/*
 	 * Look up a connection.
@@ -265,7 +266,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 		 * Which AE can be used for this flow.
 		 * 1. If NSS, allocate NSS ipv4 non-ported connection instance
 		 * 2. If SFE, allocate SFE ipv4 non-ported connection instance
-		 * 3. If PPE, allocate PPE ipv4 non-ported connection instance
+		 * 3. If PPE/PPE-VP/PPE-DS, allocate PPE ipv4 non-ported connection instance
 		 * 4. If NOT_YET, the connection will not be allocated in the database and the next flow will be
 		 *    re-evaluated.
 		 * 5. If NONE, allocate non-ported connection instance based on the precedence array with
@@ -281,22 +282,42 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 				return NF_ACCEPT;
 			}
 
-			feci = ecm_nss_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_nss_non_ported_ipv4_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 		case ECM_AE_CLASSIFIER_RESULT_SFE:
-			feci = ecm_sfe_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_sfe_non_ported_ipv4_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
+		case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+			if (!ecm_ppe_feature_check(skb, ip_hdr)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
+			}
+
+			flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_DS;
+			feci = ecm_ppe_non_ported_ipv4_connection_instance_alloc(flags, protocol, &nci);
+			goto feci_alloc_check;
+
+		case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+			if (!ecm_ppe_feature_check(skb, ip_hdr)) {
+				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
+				return NF_ACCEPT;
+			}
+
+			flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+			feci = ecm_ppe_non_ported_ipv4_connection_instance_alloc(flags, protocol, &nci);
+			goto feci_alloc_check;
+
 		case ECM_AE_CLASSIFIER_RESULT_PPE:
 			if (!ecm_ppe_feature_check(skb, ip_hdr)) {
 				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
 				return NF_ACCEPT;
 			}
 
-			feci = ecm_ppe_non_ported_ipv4_connection_instance_alloc(can_accel, protocol, &nci);
+			feci = ecm_ppe_non_ported_ipv4_connection_instance_alloc(flags, protocol, &nci);
 			goto feci_alloc_check;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:
@@ -307,7 +328,7 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 			 * Let the precedence array select the AE type and add it
 			 * to the database without accelerating the flow.
 			 */
-			can_accel = false;
+			flags &= ~ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL;
 			goto precedence_alloc;
 
 		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
@@ -341,7 +362,7 @@ precedence_alloc:
 			/*
 			 * If allocation fails for the selected AE, try the next one.
 			 */
-			feci = ae_precedence[i].non_ported_ipv4_alloc(can_accel, protocol, &nci);
+			feci = ae_precedence[i].non_ported_ipv4_alloc(flags, protocol, &nci);
 			if (!feci) {
 				DEBUG_WARN("Failed to allocate front end instance\n");
 				continue;

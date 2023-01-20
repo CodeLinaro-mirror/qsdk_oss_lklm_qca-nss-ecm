@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -30,6 +30,7 @@
  * Constant used with constructing acceleration rules.
  */
 #define ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED 0xFFF
+#define ECM_FRONT_END_INVALID_VLAN_PCP 0xFF
 
 /*
  * Bridge device macros
@@ -68,6 +69,19 @@ enum ecm_front_end_engine {
 	ECM_FRONT_END_ENGINE_MAX
 };
 
+enum ecm_front_end_engine_flag {
+	ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL = 0x00000001,
+						/* If a front end can accelerate a connection */
+	ECM_FRONT_END_ENGINE_FLAG_PPE_DS = 0x00000002,
+						/* If a front end supports PPE DS datapath */
+	ECM_FRONT_END_ENGINE_FLAG_PPE_VP = 0x00000004,
+						/* If a front end supports PPE VP datapath */
+	ECM_FRONT_END_ENGINE_FLAG_AE_PRECEDENCE = 0x00000008,
+						/* If the front end enforces AE precedence selection */
+	ECM_FRONT_END_ENGINE_FLAG_MAX
+						/* Maximum front end engine flags */
+};
+
 /*
  * ECM kernel module parameter "front_end_selection" is used to determine
  * which front end should be selected. Its possible values are 0, 1 and 2.
@@ -81,7 +95,6 @@ enum ecm_front_end_engine {
  * ECM_FRONT_END_TYPE_PPE: select PPE front end.
  * ECM_FRONT_END_TYPE_NSS_SFE: Both NSS and SFE can be selected.
  * ECM_FRONT_END_TYPE_PPE_SFE: Both PPE and SFE can be selected.
- *
  */
 enum ecm_front_end_type {
 	ECM_FRONT_END_TYPE_AUTO,
@@ -192,7 +205,7 @@ typedef bool (*ecm_front_end_connection_defunct_method_t)(void *arg, int *accel_
 #define ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED 0x01	/* Fixed upper limit for connection acceleration based on information from driver */
 
 typedef struct ecm_front_end_connection_instance *
-	(*ecm_front_end_connection_alloc_method_t)(bool can_accel, int protocol, struct ecm_db_connection_instance **nci);
+	(*ecm_front_end_connection_alloc_method_t)(uint32_t flags, int protocol, struct ecm_db_connection_instance **nci);
 
 struct ecm_ae_precedence {
 	int ae_type;
@@ -233,6 +246,7 @@ struct ecm_front_end_connection_mode_stats {
 struct ecm_front_end_common_fe_info {
 	uint32_t from_stats_bitmap;     /* Bitmap of L2 features enabled for from direction */
 	uint32_t to_stats_bitmap;       /* Bitmap of L2 features enabled for to direction */
+	uint32_t front_end_flags;	/* Front end related flags */
 };
 
 /*
@@ -262,8 +276,8 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_get_stats_bitmap_t get_stats_bitmap;		/* Get bitmap of interface types to be updated during sync */
 	ecm_front_end_connection_update_rule_t update_rule;			/* Updates the frontend specific data */
 
-	enum ecm_front_end_engine accel_engine;	/* Acceleration engine type */
-	uint8_t ported_accelerated_count_index;                 /* Index value of accelerated count array (UDP or TCP) */
+	enum ecm_front_end_engine accel_engine;					/* Acceleration engine type */
+	uint8_t ported_accelerated_count_index;                 		/* Index value of accelerated count array (UDP or TCP) */
 
 	struct ecm_front_end_common_fe_info fe_info;          /* Front end information */
 
@@ -391,7 +405,8 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 
 #if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
 	if ((front_end_selection == ECM_FRONT_END_TYPE_PPE_SFE)
-		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq9574"))) {
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq9574"))
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq5332"))) {
 		return ECM_FRONT_END_TYPE_PPE_SFE;
 	}
 #endif

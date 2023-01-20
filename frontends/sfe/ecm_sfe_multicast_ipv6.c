@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
@@ -72,9 +72,8 @@
  * 3 = 2 + INFO
  * 4 = 3 + TRACE
  */
-#define DEBUG_LEVEL ECM_NSS_MULTICAST_IPV6_DEBUG_LEVEL
+#define DEBUG_LEVEL ECM_SFE_MULTICAST_IPV6_DEBUG_LEVEL
 
-#include <nss_api_if.h>
 #include <mc_ecm.h>
 
 #include "ecm_types.h"
@@ -89,22 +88,22 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
-#include "ecm_nss_ipv6.h"
-#include "ecm_nss_multicast_ipv6.h"
-#include "ecm_nss_common.h"
+#include "ecm_sfe_ipv6.h"
+#include "ecm_sfe_multicast_ipv6.h"
+#include "ecm_sfe_common.h"
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
 
-static int ecm_nss_multicast_ipv6_accelerated_count = 0;
+static int ecm_sfe_multicast_ipv6_accelerated_count = 0;
 						/* Number of IPv6 multicast connections currently offloaded */
 
 /*
- * ecm_nss_multicast_ipv6_connection_update_callback()
+ * ecm_sfe_multicast_ipv6_connection_update_callback()
  * 	Callback for handling Ack/Nack for update accelerate rules.
  */
-static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, struct nss_ipv6_msg *nim)
+static void ecm_sfe_multicast_ipv6_connection_update_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
-	struct nss_ipv6_mc_rule_create_msg *nircm = &nim->msg.mc_rule_create;
+	struct sfe_ipv6_mc_rule_create_msg *nircm = &nim->msg.mc_rule_create;
 	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
@@ -117,7 +116,7 @@ static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, st
 	/*
 	 * Is this a response to a create message?
 	 */
-	if (nim->cm.type != NSS_IPV6_TX_CREATE_MC_RULE_MSG) {
+	if (nim->cm.type != SFE_TX_CREATE_MULTICAST_RULE_MSG) {
 		DEBUG_ERROR("%px: multicast update callback with improper type: %d, serial: %u\n", nim, nim->cm.type, serial);
 		return;
 	}
@@ -125,7 +124,7 @@ static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, st
 	/*
 	 * Is this a response to a update rule message?
 	 */
-	if ( !(nircm->rule_flags & NSS_IPV6_MC_RULE_CREATE_FLAG_MC_UPDATE)) {
+	if ( !(nircm->rule_flags & SFE_MC_RULE_CREATE_FLAG_MC_UPDATE)) {
 		DEBUG_ERROR("%px: multicast update callback with improper type: %d, serial: %u\n", nim, nim->cm.type, serial);
 		return;
 	}
@@ -152,8 +151,8 @@ static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, st
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, nircm->tuple.flow_ip);
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, nircm->tuple.return_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(flow_ip, nircm->tuple.flow_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(return_ip, nircm->tuple.return_ip);
 
 	/*
 	 * Dump some useful trace information.
@@ -173,12 +172,12 @@ static void ecm_nss_multicast_ipv6_connection_update_callback(void *app_data, st
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_create_callback()
+ * ecm_sfe_multicast_ipv6_connection_create_callback()
  * 	callback for handling create ack/nack calls for multicast create commands.
  */
-static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, struct nss_ipv6_msg *nim)
+static void ecm_sfe_multicast_ipv6_connection_create_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
-	struct nss_ipv6_mc_rule_create_msg *__attribute__((unused))nircm = &nim->msg.mc_rule_create;
+	struct sfe_ipv6_mc_rule_create_msg *__attribute__((unused))nircm = &nim->msg.mc_rule_create;
 	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
@@ -190,7 +189,7 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 	/*
 	 * Is this a response to a create message?
 	 */
-	if (nim->cm.type != NSS_IPV6_TX_CREATE_MC_RULE_MSG) {
+	if (nim->cm.type != SFE_TX_CREATE_MULTICAST_RULE_MSG) {
 		DEBUG_ERROR("%px: udp create callback with improper type: %d, serial: %u\n", nim, nim->cm.type, serial);
 		return;
 	}
@@ -217,8 +216,8 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, nircm->tuple.flow_ip);
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, nircm->tuple.return_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(flow_ip, nircm->tuple.flow_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(return_ip, nircm->tuple.return_ip);
 
 	/*
 	 * Dump some useful trace information.
@@ -233,7 +232,7 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 	 * Handle the creation result code.
 	 */
 	DEBUG_TRACE("%px: response: %d\n", feci, nim->cm.response);
-	if (nim->cm.response != NSS_CMN_RESPONSE_ACK) {
+	if (nim->cm.response != SFE_CMN_RESPONSE_ACK) {
 		/*
 		 * Creation command failed (specific reason ignored).
 		 */
@@ -244,7 +243,7 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 		feci->stats.ae_nack_total++;
 		if (feci->stats.ae_nack >= feci->stats.ae_nack_limit) {
 			/*
-			 * Too many NSS rejections
+			 * Too many SFE rejections
 			 */
 			result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_ACCEL_ENGINE;
 		} else {
@@ -260,9 +259,9 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 		if (feci->is_defunct) {
 			result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
 		}
-		spin_lock_bh(&ecm_nss_ipv6_lock);
-		_ecm_nss_ipv6_accel_pending_clear(feci, result_mode);
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_lock_bh(&ecm_sfe_ipv6_lock);
+		_ecm_sfe_ipv6_accel_pending_clear(feci, result_mode);
+		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 		spin_unlock_bh(&feci->lock);
 
@@ -279,18 +278,18 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 
 	/*
 	 * If a flush occured before we got the ACK then our acceleration was effectively cancelled on us
-	 * GGG TODO This is a workaround for a NSS message OOO quirk, this should eventually be removed.
+	 * GGG TODO This is a workaround for a SFE message OOO quirk, this should eventually be removed.
 	 */
 	if (feci->stats.flush_happened) {
 		feci->stats.flush_happened = false;
 
 		/*
-		 * Increement the no-action counter.  Our connectin was decelerated on us with no action occurring.
+		 * Increment the no-action counter.  Our connectin was decelerated on us with no action occurring.
 		 */
 		feci->stats.no_action_seen++;
-		spin_lock_bh(&ecm_nss_ipv6_lock);
-		_ecm_nss_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_lock_bh(&ecm_sfe_ipv6_lock);
+		_ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 		spin_unlock_bh(&feci->lock);
 
@@ -318,18 +317,18 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 	 * Decelerate may have been attempted while we were accel pending.
 	 * If decelerate is pending then we need to begin deceleration :-(
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
 
-	ecm_nss_multicast_ipv6_accelerated_count++;	/* Protocol specific counter */
-	ecm_nss_ipv6_accelerated_count++;		/* General running counter */
+	ecm_sfe_multicast_ipv6_accelerated_count++;	/* Protocol specific counter */
+	ecm_sfe_ipv6_accelerated_count++;		/* General running counter */
 
-	if (!_ecm_nss_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_ACCEL)) {
+	if (!_ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_ACCEL)) {
 		/*
 		 * Increement the no-action counter, this is reset if offload action is seen
 		 */
 		feci->stats.no_action_seen++;
 
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 		spin_unlock_bh(&feci->lock);
 
 		/*
@@ -351,7 +350,7 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 		feci->is_defunct = false;
 	}
 
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 	spin_unlock_bh(&feci->lock);
 
 	/*
@@ -373,14 +372,14 @@ static void ecm_nss_multicast_ipv6_connection_create_callback(void *app_data, st
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_update_accelerate()
+ * ecm_sfe_multicast_ipv6_connection_update_accelerate()
  * 	Push destination interface list updates for a multicast connection
- * 	to NSS
+ * 	to SFE
  *
  * 	This function receives a list of interfaces that have either left or joined the connection,
- * 	and sends a 'multicast update' command to NSS to inform about these interface state changes.
+ * 	and sends a 'multicast update' command to SFE to inform about these interface state changes.
  */
-static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_end_connection_instance *feci,
+static int ecm_sfe_multicast_ipv6_connection_update_accelerate(struct ecm_front_end_connection_instance *feci,
 							       struct ecm_multicast_if_update *rp,
 							       struct ecm_classifier_process_response *pr)
 {
@@ -390,26 +389,26 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	struct ecm_db_iface_instance *ii_single;
 	struct ecm_db_iface_instance **ifaces;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-	struct ecm_db_iface_instance *from_nss_iface;
+	struct ecm_db_iface_instance *from_sfe_iface;
 	int32_t *to_ifaces_first;
 	int32_t *to_ii_first;
-	struct nss_ipv6_msg *nim;
-	struct nss_ipv6_mc_rule_create_msg *create;
+	struct sfe_ipv6_msg *nim;
+	struct sfe_ipv6_mc_rule_create_msg *create;
 	ip_addr_t addr;
 	int32_t ret, vif;
 	int32_t valid_vif_idx = 0;
 	int32_t from_ifaces_first;
-	int32_t to_nss_iface_id = 0;
-	int32_t from_nss_iface_id = 0;
-	uint8_t to_nss_iface_address[ETH_ALEN];
-	nss_tx_status_t nss_tx_status;
+	int32_t to_sfe_iface_id = 0;
+	int32_t from_sfe_iface_id = 0;
+	uint8_t to_sfe_iface_address[ETH_ALEN];
+	sfe_tx_status_t sfe_tx_status;
 	int32_t list_index;
 	int32_t to_mtu = 0;
 	int32_t interface_type_counts[ECM_DB_IFACE_TYPE_COUNT];
 	bool rule_invalid;
 	uint8_t dest_mac[ETH_ALEN];
-	int from_iface_identifier = 0;
-	int to_iface_bridge_identifier = 0;
+	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
+	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
 
 	DEBUG_INFO("%px: UPDATE Accel conn: %px\n", feci, feci->ci);
 
@@ -420,17 +419,84 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 */
 	regen_occurrances = ecm_db_connection_regeneration_occurrances_get(feci->ci);
 
-	nim = (struct nss_ipv6_msg *)kzalloc(sizeof(struct nss_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
 		return -1;
 	}
 
-	nss_ipv6_msg_init(nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_MC_RULE_MSG,
-			sizeof(struct nss_ipv6_mc_rule_create_msg),
-			ecm_nss_multicast_ipv6_connection_update_callback,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_MULTICAST_RULE_MSG,
+			sizeof(struct sfe_ipv6_mc_rule_create_msg),
+			ecm_sfe_multicast_ipv6_connection_update_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
+
+	create->valid_flags = 0;
+	create->rule_flags = 0;
+
+	/*
+	 * Initialize VLAN tag information
+	 */
+	create->vlan_primary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_secondary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+
+	/*
+	 * Populate the multicast creation structure
+	 */
+	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
+	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
+		kfree(nim);
+		return -1;
+	}
+
+	from_sfe_iface = from_ifaces[from_ifaces_first];
+	from_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(from_sfe_iface);
+	if (from_sfe_iface_id < 0) {
+                DEBUG_TRACE("%px: from_sfe_iface_id: %d\n", feci, from_sfe_iface_id);
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		kfree(nim);
+		return -1;
+        }
+
+	/*
+	 * New rule being created
+	 */
+	create->valid_flags |= SFE_RULE_CREATE_CONN_VALID;
+
+	/*
+	 * Check which side of the connection can support L2 acceleration.
+	 * The check is done only for the routed flows and if the L2 feature is enabled.
+	 */
+	if (sfe_is_l2_feature_enabled() && ecm_db_connection_is_routed_get(feci->ci)) {
+		rcu_read_lock();
+		l2_accel_check = rcu_dereference(ecm_sfe_cb.l2_accel_check);
+		if (l2_accel_check) {
+			struct ecm_sfe_common_tuple l2_accel_tuple;
+
+			ecm_sfe_common_tuple_set(feci, from_sfe_iface_id, 0, &l2_accel_tuple);
+
+			l2_accel_bits = l2_accel_check(&l2_accel_tuple);
+		}
+		rcu_read_unlock();
+	}
+
+	/*
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the outer facing addresses from the heirarchy interface lists we got above.
+	 * These may be overridden later if we detect special interface types e.g. ipsec.
+	 */
+	create->conn_rule.flow_interface_num = from_sfe_iface_id;
+
+	/*
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the inner facing addresses from the heirarchy interface lists we got above.
+	 */
+	create->conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+
+	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
 	 * Construct an accel command.
@@ -441,35 +507,6 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 		kfree(nim);
 		return -1;
 	}
-
-	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
-	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
-		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		kfree(nim);
-		return -1;
-	}
-
-	create->ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	create->ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-
-	/*
-	 * Set the source NSS interface identifier
-	 */
-	from_nss_iface = from_ifaces[from_ifaces_first];
-	from_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
-	if (from_nss_iface_id < 0) {
-                DEBUG_TRACE("%px: from_nss_iface_id: %d\n", feci, from_nss_iface_id);
-		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
-		ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
-		kfree(nim);
-		return -1;
-        }
-
-	create->src_interface_num = from_nss_iface_id;
-	from_nss_iface = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
-	from_iface_identifier = ecm_db_iface_interface_identifier_get(from_nss_iface);
-	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 
 	/*
 	 * Now examine the TO / DEST heirarchy list to construct the destination interface
@@ -499,7 +536,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 		/*
 		 * We have an update for this interface. Construct the interface information
 		 */
-		to_nss_iface_id = -1;
+		to_sfe_iface_id = -1;
 		memset(interface_type_counts, 0, sizeof(interface_type_counts));
 		to_ii_first = ecm_db_multicast_if_first_get_at_index(to_ifaces_first, vif);
 
@@ -507,6 +544,14 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 			struct ecm_db_iface_instance *ii;
 			ecm_db_iface_type_t ii_type;
 			char *ii_name;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+			struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			struct ecm_db_interface_info_vlan vlan_info;
+			uint32_t vlan_value = 0;
+			struct net_device *vlan_out_dev = NULL;
+#endif
 
 			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, list_index);
 			ifaces = (struct ecm_db_iface_instance **)ii_single;
@@ -520,10 +565,6 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 			 * Conflicting information may cause accel to be unsupported.
 			 */
 			switch (ii_type) {
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-				struct ecm_db_interface_info_vlan vlan_info;
-#endif
-
 			case ECM_DB_IFACE_TYPE_BRIDGE:
 				DEBUG_TRACE("%px: Bridge\n", feci);
 				if (interface_type_counts[ii_type] != 0) {
@@ -534,10 +575,18 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 					DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 					break;
 				}
+				if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, *to_ifaces_first)) {
+					create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_BRIDGE);
+				}
+				ecm_db_iface_bridge_address_get(ii, to_sfe_iface_address);
+				if (is_valid_ether_addr(to_sfe_iface_address)) {
+					ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac,	to_sfe_iface_address);
+					create->src_mac_rule.mac_valid_flags |=	SFE_SRC_MAC_RETURN_VALID;
+					create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+				DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_sfe_iface_address);
 
-				ecm_db_iface_bridge_address_get(ii, to_nss_iface_address);
-				to_iface_bridge_identifier = ecm_db_iface_interface_identifier_get(ii);
-				DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_nss_iface_address);
 				break;
 			case ECM_DB_IFACE_TYPE_ETHERNET:
 				 DEBUG_TRACE("%px: Ethernet\n", feci);
@@ -554,17 +603,17 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				/*
 				 * Can only handle one MAC, the first outermost mac.
 				 */
-				ecm_db_iface_ethernet_address_get(ii, to_nss_iface_address);
+				ecm_db_iface_ethernet_address_get(ii, to_sfe_iface_address);
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-				to_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
-				if (to_nss_iface_id < 0) {
-					DEBUG_TRACE("%px: to_nss_iface_id: %d\n", feci, to_nss_iface_id);
+				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (to_sfe_iface_id < 0) {
+					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
 					kfree(nim);
 					return -1;
 			        }
 
-				DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_nss_iface_address);
+				DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_sfe_iface_address);
 				break;
 			case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
@@ -576,20 +625,39 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 					rule_invalid = true;
 					break;
 				}
-
 				/*
-				 * Set the PPPoE rule creation structure.
+				 * PPPoE is supported only when L2 feature flag is enabled
 				 */
-				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
-				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
-					DEBUG_TRACE("%px: PPPoE - acceleration engine interface (%d) is not valid\n",
-							feci, create->if_rule[valid_vif_idx].pppoe_if_num);
-					rule_invalid = true;
+				if (!sfe_is_l2_feature_enabled()) {
+					DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
 					break;
 				}
-				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
-				DEBUG_TRACE("%px: PPPoE - exist pppoe_if_num: %d\n", feci,
-							create->if_rule[valid_vif_idx].pppoe_if_num);
+
+				/*
+				 * If external module decide that L2 acceleration is not allowed, we should return
+				 * without setting PPPoE parameters.
+				 */
+				if (!(l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					DEBUG_TRACE("%px: L2 acceleration is not allowed for the PPPoE interface\n", feci);
+					break;
+				}
+
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_PPPOE);
+
+				/*
+				 * Copy pppoe session info to the creation structure.
+				 */
+				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
+				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
+				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				DEBUG_TRACE("%px: PPPoE - session: %x, mac:%pM\n", feci,
+						create->if_rule[valid_vif_idx].pppoe_session_id,
+						create->if_rule[valid_vif_idx].pppoe_remote_mac);
+
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
+
 #else
 				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
 				rule_invalid = true;
@@ -599,7 +667,6 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 				DEBUG_TRACE("%px: VLAN\n", feci);
 				if (interface_type_counts[ii_type] > 1) {
-
 					/*
 					 * Can only support two vlans
 					 */
@@ -608,18 +675,40 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 					break;
 				}
 				ecm_db_iface_vlan_info_get(ii, &vlan_info);
-				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
-
+				vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
 				/*
-				 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+				 * Look up the vlan device and incorporate the vlan priority into the vlan_value
+				 */
+				vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+				if (vlan_out_dev) {
+					vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
+					dev_put(vlan_out_dev);
+					vlan_out_dev = NULL;
+				}
+				/*
+				 * Primary or secondary (QinQ) VLAN?
+				 */
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] = vlan_value;
+				create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+				if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
+					if (is_valid_ether_addr(vlan_info.address)) {
+						ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac, vlan_info.address);
+						create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+						create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+					}
+				}
+				/*
+				 * If we have not yet got an ethernet mac then take this one
+				 * (very unlikely as mac should have been propagated to the slave (outer) device)
 				 */
 				if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
-					memcpy(to_nss_iface_address, vlan_info.address, ETH_ALEN);
 					interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
-					DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, to_nss_iface_address);
+					DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, vlan_info.address);
 				}
-				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
-				DEBUG_TRACE("%px: vlan tag: %x\n", feci, create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]]);
+				DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
 #else
 				rule_invalid = true;
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
@@ -645,16 +734,16 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 		/*
 		 * Is this a valid interface?
 		 */
-		if (to_nss_iface_id != -1) {
+		if (to_sfe_iface_id != -1) {
 			bool is_bridge;
-			create->if_rule[valid_vif_idx].if_num = to_nss_iface_id;
+			create->if_rule[valid_vif_idx].if_num = to_sfe_iface_id;
 			create->if_rule[valid_vif_idx].if_mtu = to_mtu;
 			if (rp->if_join_idx[vif]) {
 
 				/*
 				 * The interface has joined the group
 				 */
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_JOIN;
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_JOIN;
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 				if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
 					/*
@@ -662,7 +751,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 					 */
 					if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 						create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
-						create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+						create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
 
 						/*
 						 * Set secondary egress VLAN tag
@@ -678,7 +767,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				/*
 				 * The interface has left the group
 				 */
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_LEAVE;
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_LEAVE;
 			}
 
 			is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
@@ -687,14 +776,20 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 			 * Do not set the ROUTED flag for pure bridged interfaces
 			 */
 			if (is_bridge) {
-				uint8_t from_nss_iface_address[ETH_ALEN];
-				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_nss_iface_address);
-				memcpy(create->if_rule[valid_vif_idx].if_mac, from_nss_iface_address, ETH_ALEN);
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
+				uint8_t from_sfe_iface_address[ETH_ALEN];
+				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_sfe_iface_address);
+				memcpy(create->if_rule[valid_vif_idx].if_mac, from_sfe_iface_address, ETH_ALEN);
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
 			} else {
-				memcpy(create->if_rule[valid_vif_idx].if_mac, to_nss_iface_address, ETH_ALEN);
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
+				memcpy(create->if_rule[valid_vif_idx].if_mac, to_sfe_iface_address, ETH_ALEN);
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
 			}
+
+			ecm_sfe_common_fast_xmit_set(&(create->if_rule[valid_vif_idx].rule_flags),
+					&(create->if_rule[valid_vif_idx].valid_flags),
+					&(create->if_rule[valid_vif_idx].qdisc_rule),
+					from_ifaces, (struct ecm_db_iface_instance **)ii_temp, from_ifaces_first, *to_ii_first);
 
 			valid_vif_idx++;
 		}
@@ -703,12 +798,12 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	/*
 	 * Set number of interface updates in the update rule
 	 */
-	create->if_count = valid_vif_idx;
+	create->if_cnt = valid_vif_idx;
 
 	/*
 	 * Set the UPDATE flag
 	 */
-	create->rule_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_MC_UPDATE;
+	create->rule_flags |= SFE_MC_RULE_CREATE_FLAG_MC_UPDATE;
 
 	/*
 	 * Set protocol
@@ -719,14 +814,14 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 * The src_ip is where the connection established from
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(create->tuple.flow_ip, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.flow_ip, addr);
 
 	/*
 	 * The destination address is what the destination IP is translated to as it is forwarded to the next interface.
 	 * For egress this would yield the normal wan host and for ingress this would correctly NAT back to the LAN host
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, addr);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(create->tuple.return_ip, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.return_ip, addr);
 
 	/*
 	 * Same approach as above for port information
@@ -774,7 +869,7 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	 * If there has been a change then we abort because the rule may have been created using
 	 * unstable data - especially if another thread has begun regeneration of the connection state.
 	 * NOTE: This does not prevent a regen from being flagged immediately after this line of code either,
-	 * or while the acceleration rule is in flight to the nss.
+	 * or while the acceleration rule is in flight to the sfe.
 	 * This is only to check for consistency of rule state - not that the state is stale.
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
@@ -784,8 +879,8 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	}
 
 	/*
-	 * Ref the connection before issuing an NSS rule
-	 * This ensures that when the NSS responds to the command - which may even be immediately -
+	 * Ref the connection before issuing an SFE rule
+	 * This ensures that when the SFE responds to the command - which may even be immediately -
 	 * the callback function can trust the correct ref was taken for its purpose.
 	 * NOTE: remember that this will also implicitly hold the feci.
 	 */
@@ -801,8 +896,8 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	/*
 	 * Call the rule create function
 	 */
-	nss_tx_status = nss_ipv6_tx(ecm_nss_ipv6_nss_ipv6_mgr, nim);
-	if (nss_tx_status == NSS_TX_SUCCESS) {
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
+	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;		/* Reset */
 		spin_unlock_bh(&feci->lock);
@@ -837,42 +932,43 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_accelerate()
+ * ecm_sfe_multicast_ipv6_connection_accelerate()
  * 	Accelerate a multicast UDP connection
  */
-static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
+static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
                                                                         struct ecm_classifier_process_response *pr, bool is_l2_encap,
                                                                         struct nf_conn *ct, struct sk_buff *skb)
 {
 	uint16_t regen_occurrances;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-	struct ecm_db_iface_instance *from_nss_iface;
+	struct ecm_db_iface_instance *from_sfe_iface;
 	int32_t from_ifaces_first;
 	struct ecm_db_iface_instance *to_ifaces;
 	struct ecm_db_iface_instance *ii_temp;
 	struct ecm_db_iface_instance *ii_single;
 	struct ecm_db_iface_instance **ifaces;
-	struct nss_ipv6_msg *nim;
+	struct sfe_ipv6_msg *nim;
 	int32_t *to_ifaces_first;
 	int32_t *to_ii_first;
-	int32_t from_nss_iface_id;
-	int32_t to_nss_iface_id;
-	uint8_t to_nss_iface_address[ETH_ALEN];
+	int32_t from_sfe_iface_id;
+	int32_t to_sfe_iface_id;
+	uint8_t from_sfe_iface_address[ETH_ALEN];
+	uint8_t to_sfe_iface_address[ETH_ALEN];
 	ip_addr_t addr;
-	struct nss_ipv6_mc_rule_create_msg *create;
+	struct sfe_ipv6_mc_rule_create_msg *create;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
 	int32_t vif, ret;
 	int assignment_count;
-	int from_iface_identifier = 0;
-	int to_iface_bridge_identifier = 0;
-	nss_tx_status_t nss_tx_status;
+	sfe_tx_status_t sfe_tx_status;
 	int32_t list_index;
 	int32_t valid_vif_idx = 0;
 	int32_t interface_type_counts[ECM_DB_IFACE_TYPE_COUNT];
 	uint8_t dest_mac[ETH_ALEN];
 	bool rule_invalid;
 	ecm_front_end_acceleration_mode_t result_mode;
+	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
+	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -886,7 +982,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	/*
 	 * Can this connection be accelerated at all?
 	 */
-	if (!ecm_nss_ipv6_accel_pending_set(feci)) {
+	if (!ecm_sfe_ipv6_accel_pending_set(feci)) {
 		DEBUG_TRACE("%px: Acceleration denied: %px\n", feci, feci->ci);
 		return;
 	}
@@ -897,17 +993,29 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	 * NOTE: We leverage the app_data void pointer to be our 32 bit connection serial number.
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
-	nim = (struct nss_ipv6_msg *)kzalloc(sizeof(struct nss_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
+		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		return;
 	}
 
-	nss_ipv6_msg_init(nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_CREATE_MC_RULE_MSG,
-			sizeof(struct nss_ipv6_mc_rule_create_msg),
-			 ecm_nss_multicast_ipv6_connection_create_callback,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_MULTICAST_RULE_MSG,
+			sizeof(struct sfe_ipv6_mc_rule_create_msg),
+			 ecm_sfe_multicast_ipv6_connection_create_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	create = &nim->msg.mc_rule_create;
+
+	create->valid_flags = 0;
+	create->rule_flags = 0;
+
+	/*
+	 * Initialize VLAN tag information
+	 */
+	create->vlan_primary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_secondary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	create->vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 
 	/*
 	 * Populate the multicast creation structure
@@ -919,17 +1027,49 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		return;
 	}
 
-	create->ingress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	create->ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
-	from_nss_iface = from_ifaces[from_ifaces_first];
-	from_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(from_nss_iface);
-
-	if (from_nss_iface_id < 0) {
-		DEBUG_TRACE("%px: from_nss_iface_id: %d\n", feci, from_nss_iface_id);
+	from_sfe_iface = from_ifaces[from_ifaces_first];
+	from_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(from_sfe_iface);
+	if (from_sfe_iface_id < 0) {
+                DEBUG_TRACE("%px: from_sfe_iface_id: %d\n", feci, from_sfe_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		kfree(nim);
 		return;
+        }
+
+	/*
+	 * New rule being created
+	 */
+	create->valid_flags |= SFE_RULE_CREATE_CONN_VALID;
+
+	/*
+	 * Check which side of the connection can support L2 acceleration.
+	 * The check is done only for the routed flows and if the L2 feature is enabled.
+	 */
+	if (sfe_is_l2_feature_enabled() && ecm_db_connection_is_routed_get(feci->ci)) {
+		rcu_read_lock();
+		l2_accel_check = rcu_dereference(ecm_sfe_cb.l2_accel_check);
+		if (l2_accel_check) {
+			struct ecm_sfe_common_tuple l2_accel_tuple;
+
+			ecm_sfe_common_tuple_set(feci, from_sfe_iface_id, 0, &l2_accel_tuple);
+
+			l2_accel_bits = l2_accel_check(&l2_accel_tuple);
+		}
+		rcu_read_unlock();
 	}
+
+	/*
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the outer facing addresses from the heirarchy interface lists we got above.
+	 * These may be overridden later if we detect special interface types e.g. ipsec.
+	 */
+	create->conn_rule.flow_interface_num = from_sfe_iface_id;
+
+	/*
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the inner facing addresses from the heirarchy interface lists we got above.
+	 */
+	create->conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
 
 	memset(interface_type_counts, 0, sizeof(interface_type_counts));
 	rule_invalid = false;
@@ -937,6 +1077,15 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		struct ecm_db_iface_instance *ii;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
+
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		struct ecm_db_interface_info_vlan vlan_info;
+		uint32_t vlan_value = 0;
+		struct net_device *vlan_in_dev = NULL;
+#endif
 
 		ii = from_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
@@ -948,18 +1097,25 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		 * Conflicting information may cause accel to be unsupported.
 		 */
 		switch (ii_type) {
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			struct ecm_db_interface_info_vlan vlan_info;
-#endif
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_TRACE("%px: Bridge\n", feci);
-			from_iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, from_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_BRIDGE);
+			}
+
+			ecm_db_iface_bridge_address_get(ii, from_sfe_iface_address);
+			if (is_valid_ether_addr(from_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)create->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+				create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+				create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_sfe_iface_address);
+
 			break;
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-			DEBUG_TRACE("%px: VLAN\n", feci);
 			if (interface_type_counts[ii_type] > 1) {
-
 				/*
 				 * Can only support two vlans
 				 */
@@ -968,14 +1124,102 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				break;
 			}
 			ecm_db_iface_vlan_info_get(ii, &vlan_info);
-			create->ingress_vlan_tag[interface_type_counts[ii_type]] = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
-			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_INGRESS_VLAN_VALID;
-			DEBUG_TRACE("%px: vlan tag: %x\n", feci, create->ingress_vlan_tag[interface_type_counts[ii_type]]);
+			vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
+
+			/*
+			 * Look up the vlan device and incorporate the vlan priority into the vlan_value
+			 */
+			vlan_in_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+			if (vlan_in_dev) {
+				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_in_dev, pr->return_qos_tag);
+				dev_put(vlan_in_dev);
+				vlan_in_dev = NULL;
+			}
+
+			/*
+			 * Primary or secondary (QinQ) VLAN?
+			 */
+			if (interface_type_counts[ii_type] == 0) {
+				create->vlan_primary_rule.ingress_vlan_tag = vlan_value;
+			} else {
+				create->vlan_secondary_rule.ingress_vlan_tag = vlan_value;
+			}
+			create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VLAN);
+
+				if (is_valid_ether_addr(vlan_info.address)) {
+					ether_addr_copy((uint8_t *)create->src_mac_rule.flow_src_mac, vlan_info.address);
+					create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one
+			 * (very unlikely as mac should have been propagated to the slave (outer) device)
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
+				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, vlan_info.address);
+			}
+			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+		case ECM_DB_IFACE_TYPE_PPPOE:
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+			/*
+			 * More than one PPPoE in the list is not valid!
+			 */
+			if (interface_type_counts[ii_type] != 0) {
+				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
+				rule_invalid = true;
+				break;
+			}
+
+			/*
+			 * PPPoE is supported only when L2 feature flag is enabled
+			 */
+			if (!sfe_is_l2_feature_enabled()) {
+				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
+				break;
+			}
+
+			/*
+			 * If external module decide that L2 acceleration is not allowed, we should return
+			 * without setting PPPoE parameters.
+			 */
+			if (!(l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				DEBUG_TRACE("%px: L2 acceleration is not allowed for the PPPoE interface\n", feci);
+				break;
+			}
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_PPPOE);
+
+			/*
+			 * Copy pppoe session info to the creation structure.
+			 */
+			ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
+
+			create->pppoe_rule.flow_pppoe_session_id = pppoe_info.pppoe_session_id;
+			memcpy(create->pppoe_rule.flow_pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+			create->valid_flags |= SFE_RULE_CREATE_PPPOE_DECAP_VALID;
+			create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+
+			DEBUG_TRACE("%px: PPPoE - session: %x, mac: %pM\n", feci,
+					create->pppoe_rule.flow_pppoe_session_id,
+					create->pppoe_rule.flow_pppoe_remote_mac);
+
+#else
+			rule_invalid = true;
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
@@ -998,7 +1242,17 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	rule_invalid = false;
 	for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
 		int32_t to_mtu = 0;
-		to_nss_iface_id = -1;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+		struct ecm_db_interface_info_pppoe pppoe_info;
+#endif
+
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+		struct ecm_db_interface_info_vlan vlan_info;
+		uint32_t vlan_value = 0;
+		struct net_device *vlan_out_dev = NULL;
+#endif
+		to_sfe_iface_id = -1;
+
 
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		create->if_rule[vif].egress_vlan_tag[0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
@@ -1013,11 +1267,6 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			struct ecm_db_iface_instance *ii;
 			ecm_db_iface_type_t ii_type;
 			char *ii_name;
-#ifdef ECM_INTERFACE_VLAN_ENABLE
-			struct ecm_db_interface_info_vlan vlan_info;
-			struct net_device *vlan_out_dev = NULL;
-			uint32_t vlan_prio = 0;
-#endif
 
 			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, list_index);
 			ifaces = (struct ecm_db_iface_instance **)ii_single;
@@ -1047,9 +1296,18 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 					DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 					break;
 				}
-				ecm_db_iface_bridge_address_get(ii, to_nss_iface_address);
-				to_iface_bridge_identifier = ecm_db_iface_interface_identifier_get(ii);
-				DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_nss_iface_address);
+
+				if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_BRIDGE, list_index, *to_ifaces_first)) {
+					create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_BRIDGE);
+				}
+				ecm_db_iface_bridge_address_get(ii, to_sfe_iface_address);
+				if (is_valid_ether_addr(to_sfe_iface_address)) {
+					ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac,	to_sfe_iface_address);
+					create->src_mac_rule.mac_valid_flags |=	SFE_SRC_MAC_RETURN_VALID;
+					create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+				DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_sfe_iface_address);
 				break;
 			case ECM_DB_IFACE_TYPE_ETHERNET:
 				DEBUG_TRACE("%px: Ethernet\n", feci);
@@ -1066,17 +1324,17 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				/*
 				 * Can only handle one MAC, the first outermost mac.
 				 */
-				ecm_db_iface_ethernet_address_get(ii, to_nss_iface_address);
+				ecm_db_iface_ethernet_address_get(ii, to_sfe_iface_address);
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-				to_nss_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
-				if (to_nss_iface_id < 0) {
-					DEBUG_TRACE("%px: to_nss_iface_id: %d\n", feci, to_nss_iface_id);
+				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (to_sfe_iface_id < 0) {
+					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
 					kfree(nim);
 					return;
 			        }
 
-				DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_nss_iface_address);
+				DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_sfe_iface_address);
 				break;
 			case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
@@ -1088,20 +1346,39 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 					rule_invalid = true;
 					break;
 				}
-
 				/*
-				 * Set the PPPoE rule creation structure.
+				 * PPPoE is supported only when L2 feature flag is enabled
 				 */
-				create->if_rule[valid_vif_idx].pppoe_if_num = ecm_db_iface_ae_interface_identifier_get(ii);
-				if (create->if_rule[valid_vif_idx].pppoe_if_num < 0) {
-					DEBUG_TRACE("%px: PPPoE - acceleration engine interface (%d) is not valid\n",
-							feci, create->if_rule[valid_vif_idx].pppoe_if_num);
-					rule_invalid = true;
+				if (!sfe_is_l2_feature_enabled()) {
+					DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
 					break;
 				}
-				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
-				DEBUG_TRACE("%px: PPPoE - exist if_num: %d\n", feci,
-							create->if_rule[valid_vif_idx].pppoe_if_num);
+
+				/*
+				 * If external module decide that L2 acceleration is not allowed, we should return
+				 * without setting PPPoE parameters.
+				 */
+				if (!(l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					DEBUG_TRACE("%px: L2 acceleration is not allowed for the PPPoE interface\n", feci);
+					break;
+				}
+
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_PPPOE);
+
+				/*
+				 * Copy pppoe session info to the creation structure.
+				 */
+				ecm_db_iface_pppoe_session_info_get(ii, &pppoe_info);
+				create->if_rule[valid_vif_idx].pppoe_session_id = pppoe_info.pppoe_session_id;
+				memcpy(create->if_rule[valid_vif_idx].pppoe_remote_mac, pppoe_info.remote_mac, ETH_ALEN);
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				DEBUG_TRACE("%px: PPPoE - session: %x, mac:%pM\n", feci,
+						create->if_rule[valid_vif_idx].pppoe_session_id,
+						create->if_rule[valid_vif_idx].pppoe_remote_mac);
+
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
+
 #else
 				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
 				rule_invalid = true;
@@ -1118,28 +1395,42 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 					DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 					break;
 				}
-
 				ecm_db_iface_vlan_info_get(ii, &vlan_info);
-				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
-
+				vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
+				/*
+				 * Look up the vlan device and incorporate the vlan priority into the vlan_value
+				 */
 				vlan_out_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 				if (vlan_out_dev) {
-					vlan_prio = vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
-					create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] |= vlan_prio;
+					vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 					dev_put(vlan_out_dev);
 					vlan_out_dev = NULL;
 				}
-
 				/*
-				 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+				 * Primary or secondary (QinQ) VLAN?
+				 */
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] = vlan_value;
+				create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+				if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
+					if (is_valid_ether_addr(vlan_info.address)) {
+						ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac, vlan_info.address);
+						create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+						create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+					}
+				}
+				/*
+				 * If we have not yet got an ethernet mac then take this one
+				 * (very unlikely as mac should have been propagated to the slave (outer) device)
 				 */
 				if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
-					memcpy(to_nss_iface_address, vlan_info.address, ETH_ALEN);
 					interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
-					DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, to_nss_iface_address);
+					DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, vlan_info.address);
 				}
-				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
-				DEBUG_TRACE("%px: vlan tag: %x\n", feci, create->if_rule[vif].egress_vlan_tag[interface_type_counts[ii_type]]);
+				DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+
 #else
 				rule_invalid = true;
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
@@ -1166,10 +1457,10 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		 * Populate the interface details for a valid interface in the multicast destination
 		 * interface list.
 		 */
-		if (to_nss_iface_id != -1) {
+		if (to_sfe_iface_id != -1) {
 			bool is_bridge;
-			create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_JOIN;
-			create->if_rule[valid_vif_idx].if_num = to_nss_iface_id;
+			create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_JOIN;
+			create->if_rule[valid_vif_idx].if_num = to_sfe_iface_id;
 			create->if_rule[valid_vif_idx].if_mtu = to_mtu;
 
 			is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
@@ -1178,14 +1469,21 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			 * Identify if the destination interface blongs to pure bridge or routed flow.
 			 */
 			if (is_bridge) {
-				uint8_t from_nss_iface_address[ETH_ALEN];
-				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_nss_iface_address);
-				memcpy(create->if_rule[valid_vif_idx].if_mac, from_nss_iface_address, ETH_ALEN);
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
+				uint8_t from_sfe_iface_address[ETH_ALEN];
+				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_sfe_iface_address);
+				memcpy(create->if_rule[valid_vif_idx].if_mac, from_sfe_iface_address, ETH_ALEN);
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
 			} else {
-				memcpy(create->if_rule[valid_vif_idx].if_mac, to_nss_iface_address, ETH_ALEN);
-				create->if_rule[valid_vif_idx].rule_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
+				memcpy(create->if_rule[valid_vif_idx].if_mac, to_sfe_iface_address, ETH_ALEN);
+				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
 			}
+
+			ecm_sfe_common_fast_xmit_set(&(create->if_rule[valid_vif_idx].rule_flags),
+					&(create->if_rule[valid_vif_idx].valid_flags),
+					&(create->if_rule[valid_vif_idx].qdisc_rule),
+					from_ifaces, (struct ecm_db_iface_instance **)ii_temp, from_ifaces_first, *to_ii_first);
+
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 			if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
 				/*
@@ -1193,7 +1491,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				 */
 				if (pr->egress_mc_vlan_tag[vif][0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
 					create->if_rule[valid_vif_idx].egress_vlan_tag[0] = pr->egress_mc_vlan_tag[vif][0];
-					create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+					create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
 
 					/*
 					 * Set secondary egress VLAN tag
@@ -1208,33 +1506,25 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		}
 	}
 
-	create->if_count = valid_vif_idx;
-	create->src_interface_num = from_nss_iface_id;
+	create->if_cnt = valid_vif_idx;
 
 	/*
-	 * Set up the flow qos tags
+	 * Set up the flow and return qos tags
 	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
-		create->qos_tag = (uint32_t)pr->flow_qos_tag;
-		create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_QOS_VALID;
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG)
+	{
+		create->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		create->qos_rule.return_qos_tag	= (uint32_t)pr->return_qos_tag;
+		create->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
-#ifdef ECM_CLASSIFIER_DSCP_IGS
-	/*
-	 * Set up ingress shaper flow qos tags.
-	 */
-	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_IGS_QOS_TAG) {
-		create->igs_qos_tag = (uint16_t)pr->igs_flow_qos_tag;
-		create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_IGS_VALID;
-	}
-#endif
 	/*
 	 * DSCP information?
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
-			create->egress_dscp = pr->flow_dscp;
-			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_DSCP_MARKING_VALID;
+		create->dscp_rule.flow_dscp = pr->flow_dscp;
+		create->valid_flags |= SFE_MC_RULE_CREATE_FLAG_DSCP_MARKING_VALID;
 	}
 #endif
 
@@ -1243,7 +1533,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	 * Mark the rule as E-MESH Service Prioritization valid.
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW) {
-		create->rule_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_MC_EMESH_SP;
+		create->rule_flags |= SFE_MC_RULE_CREATE_FLAG_MC_EMESH_SP;
 	}
 #endif
 
@@ -1253,8 +1543,8 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		 * Set ingress VLAN tag
 		 */
 		if (pr->ingress_vlan_tag[0] != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-			create->ingress_vlan_tag[0] = pr->ingress_vlan_tag[0];
-			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_INGRESS_VLAN_VALID;
+			create->vlan_primary_rule.ingress_vlan_tag = pr->ingress_vlan_tag[0];
+			create->valid_flags |= SFE_MC_RULE_CREATE_FLAG_INGRESS_VLAN_VALID;
 			ecm_db_multicast_tuple_set_ovs_ingress_vlan(feci->ci->ti, pr->ingress_vlan_tag);
 		}
 	}
@@ -1272,20 +1562,27 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	 * The src_ip is where the connection established from
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(create->tuple.flow_ip, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.flow_ip, addr);
 
 	/*
 	 * The destination address is what the destination IP is translated to as it is forwarded to the next interface.
 	 * For egress this would yield the normal wan host and for ingress this would correctly NAT back to the LAN host
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, addr);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(create->tuple.return_ip, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.return_ip, addr);
 
 	/*
 	 * Same approach as above for port information
 	 */
-	create->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	create->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	create->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	create->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci,	ECM_DB_OBJ_DIR_TO));
+
+	/*
+	 * Get mac addresses.
+	 * The src_mac is the mac address of the node that established the connection.
+	 * This will work whether the from_node is LAN (egress) or WAN (ingress).
+	 */
+	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)create->conn_rule.flow_mac);
 
 	/*
 	 * Sync our creation command from the assigned classifiers to get specific additional creation rules.
@@ -1314,7 +1611,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
 
 	for (vif = 0; vif < valid_vif_idx ; vif++){
-		DEBUG_TRACE("%px: UDP Accelerate connection %px\n"
+		DEBUG_TRACE("%px: Multicast Accelerate connection %px\n"
 			"Vif: %d\n"
 			"Protocol: %d\n"
 			"to_mtu: %u\n"
@@ -1335,8 +1632,8 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			ECM_IP_ADDR_TO_OCTAL(create->tuple.return_ip), create->tuple.return_ident,
 			create->if_rule[vif].if_mac,
 			create->if_rule[vif].if_num,
-			create->ingress_vlan_tag[0],
-			create->ingress_vlan_tag[1],
+			create->vlan_primary_rule.ingress_vlan_tag,
+			create->vlan_secondary_rule.ingress_vlan_tag,
 			create->if_rule[vif].egress_vlan_tag[0],
 			create->if_rule[vif].egress_vlan_tag[1]);
 	}
@@ -1346,21 +1643,21 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	 * If there has been a change then we abort because the rule may have been created using
 	 * unstable data - especially if another thread has begun regeneration of the connection state.
 	 * NOTE: This does not prevent a regen from being flagged immediately after this line of code either,
-	 * or while the acceleration rule is in flight to the nss.
+	 * or while the acceleration rule is in flight to the sfe.
 	 * This is only to check for consistency of rule state - not that the state is stale.
 	 * Remember that the connection is marked as "accel pending state" so if a regen is flagged immediately
 	 * after this check passes, the connection will be decelerated and refreshed very quickly.
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
-		ecm_nss_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		kfree(nim);
 		return;
 	}
 
 	/*
-	 * Ref the connection before issuing an NSS rule
-	 * This ensures that when the NSS responds to the command - which may even be immediately -
+	 * Ref the connection before issuing an SFE rule
+	 * This ensures that when the SFE responds to the command - which may even be immediately -
 	 * the callback function can trust the correct ref was taken for its purpose.
 	 * NOTE: remember that this will also implicitly hold the feci.
 	 */
@@ -1376,9 +1673,9 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	/*
 	 * Call the rule create function
 	 */
-	nss_tx_status = nss_ipv6_tx(ecm_nss_ipv6_nss_ipv6_mgr, nim);
-	if (nss_tx_status == NSS_TX_SUCCESS) {
-
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
+	if (sfe_tx_status == SFE_TX_SUCCESS) {
+		DEBUG_INFO("%px: Accel Tx Success\n", feci);
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
 		 */
@@ -1389,6 +1686,7 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		return;
 	}
 
+	DEBUG_INFO("%px: Accel Tx Failed\n", feci);
 	/*
 	 * Release that ref!
 	 */
@@ -1408,9 +1706,9 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		result_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
 	}
 
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	_ecm_nss_ipv6_accel_pending_clear(feci, result_mode);
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	_ecm_sfe_ipv6_accel_pending_clear(feci, result_mode);
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	spin_unlock_bh(&feci->lock);
 	kfree(nim);
@@ -1418,12 +1716,12 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_destroy_callback()
+ * ecm_sfe_multicast_ipv6_connection_destroy_callback()
  *	Callback for handling destroy ack/nack calls.
  */
-static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, struct nss_ipv6_msg *nim)
+static void ecm_sfe_multicast_ipv6_connection_destroy_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
-	struct nss_ipv6_rule_destroy_msg *nirdm = &nim->msg.rule_destroy;
+	struct sfe_ipv6_rule_destroy_msg *nirdm = &nim->msg.rule_destroy;
 	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
@@ -1433,7 +1731,7 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 	/*
 	 * Is this a response to a destroy message?
 	 */
-	if (nim->cm.type != NSS_IPV6_TX_DESTROY_RULE_MSG) {
+	if (nim->cm.type != SFE_TX_DESTROY_MULTICAST_RULE_MSG) {
 		DEBUG_ERROR("%px: multicast destroy callback with improper type: %d\n", nim, nim->cm.type);
 		return;
 	}
@@ -1460,13 +1758,13 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(flow_ip, nirdm->tuple.flow_ip);
-	ECM_NSS_IPV6_ADDR_TO_IP_ADDR(return_ip, nirdm->tuple.return_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(flow_ip, nirdm->tuple.flow_ip);
+	ECM_SFE_IPV6_ADDR_TO_IP_ADDR(return_ip, nirdm->tuple.return_ip);
 
 	/*
 	 * Record command duration
 	 */
-	ecm_nss_ipv6_decel_done_time_update(feci);
+	ecm_sfe_ipv6_decel_done_time_update(feci);
 
 	/*
 	 * Dump some useful trace information.
@@ -1479,15 +1777,15 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 	/*
 	 * Drop decel pending counter
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_ipv6_pending_decel_count--;
-	DEBUG_ASSERT(ecm_nss_ipv6_pending_decel_count >= 0, "Bad decel pending counter\n");
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_ipv6_pending_decel_count--;
+	DEBUG_ASSERT(ecm_sfe_ipv6_pending_decel_count >= 0, "Bad decel pending counter\n");
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	spin_lock_bh(&feci->lock);
 
 	/*
-	 * If decel is not still pending then it's possible that the NSS ended acceleration by some other reason e.g. flush
+	 * If decel is not still pending then it's possible that the SFE ended acceleration by some other reason e.g. flush
 	 * In which case we cannot rely on the response we get here.
 	 */
 	if (feci->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING) {
@@ -1502,7 +1800,7 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 	}
 
 	DEBUG_TRACE("%px: response: %d\n", feci, nim->cm.response);
-	if (nim->cm.response != NSS_CMN_RESPONSE_ACK) {
+	if (nim->cm.response != SFE_CMN_RESPONSE_ACK) {
 		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DECEL;
 	} else {
 		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
@@ -1520,12 +1818,12 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 	/*
 	 * Multicast acceleration ends
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_multicast_ipv6_accelerated_count--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_nss_multicast_ipv6_accelerated_count >= 0, "Bad udp accel counter\n");
-	ecm_nss_ipv6_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_nss_ipv6_accelerated_count >= 0, "Bad accel counter\n");
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_multicast_ipv6_accelerated_count--;	/* Protocol specific counter */
+	DEBUG_ASSERT(ecm_sfe_multicast_ipv6_accelerated_count >= 0, "Bad udp accel counter\n");
+	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
+	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	/*
 	 * Release the connections.
@@ -1535,47 +1833,52 @@ static void ecm_nss_multicast_ipv6_connection_destroy_callback(void *app_data, s
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_decelerate_msg_send()
+ * ecm_sfe_multicast_ipv6_connection_decelerate_msg_send()
  *	Prepares and sends a decelerate message to acceleration engine.
  */
-static bool ecm_nss_multicast_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
+static bool ecm_sfe_multicast_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct nss_ipv6_msg nim;
-	struct nss_ipv6_rule_destroy_msg *nirdm;
+	struct sfe_ipv6_msg *nim;
+	struct sfe_ipv6_rule_destroy_msg *nirdm;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
-	nss_tx_status_t nss_tx_status;
+	sfe_tx_status_t sfe_tx_status;
 	bool ret;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		return false;
+	}
+
 	/*
 	 * Increment the decel pending counter
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_ipv6_pending_decel_count++;
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_ipv6_pending_decel_count++;
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	/*
 	 * Prepare deceleration message
 	 */
-	nss_ipv6_msg_init(&nim, NSS_IPV6_RX_INTERFACE, NSS_IPV6_TX_DESTROY_RULE_MSG,
-			sizeof(struct nss_ipv6_rule_destroy_msg),
-			ecm_nss_multicast_ipv6_connection_destroy_callback,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_MULTICAST_RULE_MSG,
+			sizeof(struct sfe_ipv6_rule_destroy_msg),
+			ecm_sfe_multicast_ipv6_connection_destroy_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nirdm = &nim.msg.rule_destroy;
+	nirdm = &nim->msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
 	 * Get addressing information
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(nirdm->tuple.flow_ip, src_ip);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.flow_ip, src_ip);
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
-	ECM_IP_ADDR_TO_NSS_IPV6_ADDR(nirdm->tuple.return_ip, dest_ip);
-	nirdm->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	nirdm->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nirdm->tuple.return_ip, dest_ip);
+	nirdm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nirdm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO));
 
 	DEBUG_INFO("%px: Mcast Connection %px decelerate\n"
 			"src_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
@@ -1590,7 +1893,7 @@ static bool ecm_nss_multicast_ipv6_connection_decelerate_msg_send(struct ecm_fro
 	ecm_db_multicast_connection_to_interfaces_clear(feci->ci);
 
 	/*
-	 * Take a ref to the feci->ci so that it will persist until we get a response from the NSS.
+	 * Take a ref to the feci->ci so that it will persist until we get a response from the SFE.
 	 * NOTE: This will implicitly hold the feci too.
 	 */
 	ecm_db_connection_ref(feci->ci);
@@ -1603,18 +1906,21 @@ static bool ecm_nss_multicast_ipv6_connection_decelerate_msg_send(struct ecm_fro
 	spin_unlock_bh(&feci->lock);
 
 	/*
-	 * Destroy the NSS connection cache entry.
+	 * Destroy the SFE connection cache entry.
 	 */
-	nss_tx_status = nss_ipv6_tx(ecm_nss_ipv6_nss_ipv6_mgr, &nim);
-	if (nss_tx_status == NSS_TX_SUCCESS) {
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
+	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
 		 */
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
 		return true;
 	}
+
+	kfree(nim);
 
 	/*
 	 * TX failed
@@ -1622,26 +1928,26 @@ static bool ecm_nss_multicast_ipv6_connection_decelerate_msg_send(struct ecm_fro
 	ret = ecm_front_end_destroy_failure_handle(feci);
 
 	/*
-	 * Release the ref take, NSS driver did not accept our command.
+	 * Release the ref take, SFE driver did not accept our command.
 	 */
 	ecm_db_connection_deref(feci->ci);
 
 	/*
 	 * Could not send the request, decrement the decel pending counter
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_ipv6_pending_decel_count--;
-	DEBUG_ASSERT(ecm_nss_ipv6_pending_decel_count >= 0, "Bad decel pending counter\n");
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_ipv6_pending_decel_count--;
+	DEBUG_ASSERT(ecm_sfe_ipv6_pending_decel_count >= 0, "Bad decel pending counter\n");
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	return ret;
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_decelerate()
+ * ecm_sfe_multicast_ipv6_connection_decelerate()
  *     Decelerate a connection
  */
-static bool ecm_nss_multicast_ipv6_connection_decelerate(struct ecm_front_end_connection_instance *feci)
+static bool ecm_sfe_multicast_ipv6_connection_decelerate(struct ecm_front_end_connection_instance *feci)
 {
 	/*
 	 * Check if accel mode is OK for the deceleration.
@@ -1654,14 +1960,14 @@ static bool ecm_nss_multicast_ipv6_connection_decelerate(struct ecm_front_end_co
 	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
 	spin_unlock_bh(&feci->lock);
 
-	return ecm_nss_multicast_ipv6_connection_decelerate_msg_send(feci);
+	return ecm_sfe_multicast_ipv6_connection_decelerate_msg_send(feci);
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_defunct_callback()
+ * ecm_sfe_multicast_ipv6_connection_defunct_callback()
  *	Callback to be called when a Mcast connection has become defunct.
  */
-bool ecm_nss_multicast_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
+bool ecm_sfe_multicast_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
 {
 	bool ret;
 	struct ecm_front_end_connection_instance *feci = (struct ecm_front_end_connection_instance *)arg;
@@ -1691,7 +1997,7 @@ bool ecm_nss_multicast_ipv6_connection_defunct_callback(void *arg, int *accel_mo
 	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
 	spin_unlock_bh(&feci->lock);
 
-	ret = ecm_nss_multicast_ipv6_connection_decelerate_msg_send(feci);
+	ret = ecm_sfe_multicast_ipv6_connection_decelerate_msg_send(feci);
 
 	/*
 	 * Copy the accel_mode which is returned from the decelerate message function. This value
@@ -1709,13 +2015,13 @@ bool ecm_nss_multicast_ipv6_connection_defunct_callback(void *arg, int *accel_mo
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_accel_ceased()
- *	NSS has indicated that acceleration has stopped.
+ * ecm_sfe_multicast_ipv6_connection_accel_ceased()
+ *	SFE has indicated that acceleration has stopped.
  *
- * NOTE: This is called in response to an NSS self-initiated termination of acceleration.
+ * NOTE: This is called in response to an SFE self-initiated termination of acceleration.
  * This must NOT be called because the ECM terminated the acceleration.
  */
-static void ecm_nss_multicast_ipv6_connection_accel_ceased(struct ecm_front_end_connection_instance *feci)
+static void ecm_sfe_multicast_ipv6_connection_accel_ceased(struct ecm_front_end_connection_instance *feci)
 {
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -1724,10 +2030,10 @@ static void ecm_nss_multicast_ipv6_connection_accel_ceased(struct ecm_front_end_
 	spin_lock_bh(&feci->lock);
 
 	/*
-	 * If we are in accel-pending state then the NSS has issued a flush out-of-order
+	 * If we are in accel-pending state then the SFE has issued a flush out-of-order
 	 * with the ACK/NACK we are actually waiting for.
 	 * To work around this we record a "flush has already happened" and will action it when we finally get that ACK/NACK.
-	 * GGG TODO This should eventually be removed when the NSS honours messaging sequence.
+	 * GGG TODO This should eventually be removed when the SFE honours messaging sequence.
 	 */
 	if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL_PENDING) {
 		feci->stats.flush_happened = true;
@@ -1765,32 +2071,32 @@ static void ecm_nss_multicast_ipv6_connection_accel_ceased(struct ecm_front_end_
 	/*
 	 * Mcast acceleration ends
 	 */
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	ecm_nss_multicast_ipv6_accelerated_count--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_nss_multicast_ipv6_accelerated_count >= 0, "Bad Mcast accel counter\n");
-	ecm_nss_ipv6_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_nss_ipv6_accelerated_count >= 0, "Bad accel counter\n");
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_multicast_ipv6_accelerated_count--;	/* Protocol specific counter */
+	DEBUG_ASSERT(ecm_sfe_multicast_ipv6_accelerated_count >= 0, "Bad Mcast accel counter\n");
+	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
+	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 }
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
 /*
- * ecm_nss_multicast_ipv6_connection_state_get()
+ * ecm_sfe_multicast_ipv6_connection_state_get()
  *	Return state of this multicast front end instance
  */
-static int ecm_nss_multicast_ipv6_connection_state_get(struct ecm_front_end_connection_instance *feci, struct ecm_state_file_instance *sfi)
+static int ecm_sfe_multicast_ipv6_connection_state_get(struct ecm_front_end_connection_instance *feci, struct ecm_state_file_instance *sfi)
 {
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
-	return ecm_front_end_common_connection_state_get(feci, sfi, "nss_v6.multicast");
+	return ecm_front_end_common_connection_state_get(feci, sfi, "sfe_v6.multicast");
 }
 #endif
 
 /*
- * ecm_nss_multicast_ipv6_bridge_update_connections()
- * 	Update NSS with new multicast egress ports.
+ * ecm_sfe_multicast_ipv6_bridge_update_connections()
+ * 	Update SFE with new multicast egress ports.
  */
-static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
+static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_multicast_tuple_instance *ti;
@@ -1986,9 +2292,9 @@ process_packet:
 		 * that have left seperately.
 		 */
 		memset(&mc_sync, 0, sizeof(mc_sync));
-		spin_lock_bh(&ecm_nss_ipv6_lock);
+		spin_lock_bh(&ecm_sfe_ipv6_lock);
 		mc_update = ecm_interface_multicast_find_updates_to_iface_list(ci, &mc_sync, 0, true, mc_dst_dev, if_num, brdev);
-		spin_unlock_bh(&ecm_nss_ipv6_lock);
+		spin_unlock_bh(&ecm_sfe_ipv6_lock);
 		if (!mc_update) {
 			/*
 			 * No updates to this multicast flow. Move on to the next
@@ -2102,7 +2408,7 @@ process_packet:
 		}
 #endif
 		/*
-		 * Push the updates to NSS
+		 * Push the updates to SFE
 		 */
 		DEBUG_TRACE("%px: Update accel\n", ci);
 		if ((feci->accel_mode <= ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED) ||
@@ -2112,7 +2418,7 @@ process_packet:
 			goto find_next_tuple;
 		}
 
-		ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
+		ret = ecm_sfe_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
 		if (ret < 0) {
 			feci->decelerate(feci);
 			ecm_front_end_connection_deref(feci);
@@ -2135,17 +2441,17 @@ find_next_tuple:
 }
 
 /*
- * ecm_nss_multicast_ipv6_connection_instance_alloc()
+ * ecm_sfe_multicast_ipv6_connection_instance_alloc()
  *	Create a front end instance specific for Mcast connection
  */
-struct ecm_front_end_connection_instance *ecm_nss_multicast_ipv6_connection_instance_alloc(
+struct ecm_front_end_connection_instance *ecm_sfe_multicast_ipv6_connection_instance_alloc(
 								bool can_accel,
 								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
 
-	if (ecm_nss_ipv6_is_conn_limit_reached()) {
+	if (ecm_sfe_ipv6_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");
 		return NULL;
 	}
@@ -2177,12 +2483,12 @@ struct ecm_front_end_connection_instance *ecm_nss_multicast_ipv6_connection_inst
 
 	feci->can_accel = can_accel;
 	feci->accel_mode = (can_accel) ? ECM_FRONT_END_ACCELERATION_MODE_DECEL : ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
-	feci->accel_engine = ECM_FRONT_END_ENGINE_NSS;
-	spin_lock_bh(&ecm_nss_ipv6_lock);
-	feci->stats.no_action_seen_limit = ecm_nss_ipv6_no_action_limit_default;
-	feci->stats.driver_fail_limit = ecm_nss_ipv6_driver_fail_limit_default;
-	feci->stats.ae_nack_limit = ecm_nss_ipv6_nack_limit_default;
-	spin_unlock_bh(&ecm_nss_ipv6_lock);
+	feci->accel_engine = ECM_FRONT_END_ENGINE_SFE;
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	feci->stats.no_action_seen_limit = ecm_sfe_ipv6_no_action_limit_default;
+	feci->stats.driver_fail_limit = ecm_sfe_ipv6_driver_fail_limit_default;
+	feci->stats.ae_nack_limit = ecm_sfe_ipv6_nack_limit_default;
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	/*
 	 * Copy reference to connection - no need to ref ci as ci maintains a ref to this instance instead (this instance persists for as long as ci does)
@@ -2194,33 +2500,32 @@ struct ecm_front_end_connection_instance *ecm_nss_multicast_ipv6_connection_inst
 	/*
 	 * Populate the methods and callbacks
 	 */
-	feci->accelerate = ecm_nss_multicast_ipv6_connection_accelerate;
-	feci->decelerate = ecm_nss_multicast_ipv6_connection_decelerate;
-	feci->accel_ceased = ecm_nss_multicast_ipv6_connection_accel_ceased;
+	feci->accelerate = ecm_sfe_multicast_ipv6_connection_accelerate;
+	feci->decelerate = ecm_sfe_multicast_ipv6_connection_decelerate;
+	feci->accel_ceased = ecm_sfe_multicast_ipv6_connection_accel_ceased;
 #ifdef ECM_STATE_OUTPUT_ENABLE
-	feci->state_get = ecm_nss_multicast_ipv6_connection_state_get;
+	feci->state_get = ecm_sfe_multicast_ipv6_connection_state_get;
 #endif
-	feci->ae_interface_number_by_dev_get = ecm_nss_common_get_interface_number_by_dev;
-	feci->ae_interface_number_by_dev_type_get = ecm_nss_common_get_interface_number_by_dev_type;
-	feci->ae_interface_type_get = ecm_nss_common_get_interface_type;
-	feci->regenerate = ecm_nss_common_connection_regenerate;
-	feci->multicast_update = ecm_nss_multicast_ipv6_bridge_update_connections;
-	feci->defunct = ecm_nss_multicast_ipv6_connection_defunct_callback;
+	feci->ae_interface_number_by_dev_get = ecm_sfe_common_get_interface_number_by_dev;
+	feci->ae_interface_number_by_dev_type_get = ecm_sfe_common_get_interface_number_by_dev_type;
+	feci->ae_interface_type_get = ecm_sfe_common_get_interface_type;
+	feci->regenerate = ecm_sfe_common_connection_regenerate;
+	feci->multicast_update = ecm_sfe_multicast_ipv6_bridge_update_connections;
+	feci->defunct = ecm_sfe_multicast_ipv6_connection_defunct_callback;
 
-	feci->get_stats_bitmap = ecm_nss_common_dummy_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_nss_common_dummy_set_stats_bitmap;
+	feci->get_stats_bitmap = ecm_sfe_common_dummy_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_sfe_common_dummy_set_stats_bitmap;
 
 	return feci;
 }
 
 /*
- * ecm_nss_multicast_ipv6_br_update_event_callback()
- * 	Callback received from bridge multicast snooper module in the
- * 	following events:
- * 	a.) Updates to a muticast group due to IGMP JOIN/LEAVE.
- *
- * 	group: IP multicast group address
- * 	brdev: bridge netdevice
+ * ecm_sfe_multicast_ipv6_br_update_event_callback()
+ *	Callback received from bridge multicast snooper module in the
+ * following events:
+ * a.) Updates to a muticast group due to IGMP JOIN/LEAVE.
+ * brdev: bridge netdevice
+ * group: IP multicast group address
  *
  * This function does the following:
  * a.) Lookup the tuple_instance table to find any flows through the bridge for the group
@@ -2230,7 +2535,7 @@ struct ecm_front_end_connection_instance *ecm_nss_multicast_ipv6_connection_inst
  *     destination interfaces heirarchy for the CI, and decide whether to delete an
  *     exiting interface heirarchy or add a new heirarchy.
  */
-static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *brdev, struct in6_addr *group)
+static void ecm_sfe_multicast_ipv6_br_update_event_callback(struct net_device *brdev, struct in6_addr *group)
 {
 	ip_addr_t dest_ip;
 	struct in6_addr group6;
@@ -2240,22 +2545,22 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
 
 	DEBUG_TRACE("IP dst: " ECM_IP_ADDR_OCTAL_FMT , ECM_IP_ADDR_TO_OCTAL(dest_ip));
 
-	ecm_nss_multicast_ipv6_bridge_update_connections(dest_ip, brdev);
+	ecm_sfe_multicast_ipv6_bridge_update_connections(dest_ip, brdev);
 }
 
 /*
- * ecm_nss_multicast_ipv6_mfc_update_event_callback()
- * 	Callback called by Linux kernel multicast routing module in the
- * 	following events:
- * 	a.) Updates to destination interface lists for a multicast route due to
- * 	    IGMP JOIN/LEAVE
- * 	b.) Multicast route delete event
+ * ecm_sfe_multicast_ipv6_mfc_update_event_callback()
+ *	Callback called by Linux kernel multicast routing module in the
+ * following events:
+ * a.) Updates to destination interface lists for a multicast route due to
+ * IGMP JOIN/LEAVE
+ * b.) Multicast route delete event
  *
- * 	group: IP multicast group address
- *	origin: IP source for the multicast route
- *	to_dev_idx[]: Array of ifindex for destination interfaces for the route
- *	max_to_dev: size of the array
- *	op: UPDATE or DELETE event
+ * group: IP multicast group address
+ * origin: IP source for the multicast route
+ * to_dev_idx[]: Array of ifindex for destination interfaces for the route
+ * max_to_dev: size of the array
+ * op: UPDATE or DELETE event
  *
  * This function does the following:
  * a.) Lookup the tuple_instance table to find any accelerated flows for the group/source,
@@ -2264,7 +2569,7 @@ static void ecm_nss_multicast_ipv6_br_update_event_callback(struct net_device *b
  *     destination interfaces heirarchy for the CI, and decide whether to delete an
  *     exiting interface heirarchy or add a new heirarchy.
  */
-static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *group, struct in6_addr *origin, uint32_t max_to_dev, uint32_t to_dev_idx[], uint8_t op)
+static void ecm_sfe_multicast_ipv6_mfc_update_event_callback(struct in6_addr *group, struct in6_addr *origin, uint32_t max_to_dev, uint32_t to_dev_idx[], uint8_t op)
 {
 	struct ecm_db_connection_instance *ci;
 	struct ecm_db_multicast_tuple_instance *tuple_instance;
@@ -2322,7 +2627,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			/*
 			 * Get the source/group IP address for this multicast tuple and match
 			 * with the source and group IP received from the event handler. If
-			 * there is not match found jumps to the next multicast tuple.
+			 * there is no match found, jumping to the next multicast tuple.
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
@@ -2351,7 +2656,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			}
 
 			memset(&mc_sync, 0, sizeof(mc_sync));
-			spin_lock_bh(&ecm_nss_ipv6_lock);
+			spin_lock_bh(&ecm_sfe_ipv6_lock);
 
 			/*
 			 * Find out changes to the destination interfaces heirarchy
@@ -2362,7 +2667,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			mc_update = ecm_interface_multicast_find_updates_to_iface_list(ci, &mc_sync, mc_flags, false, to_dev_idx, max_to_dev, NULL);
 			if (!mc_update) {
 				DEBUG_TRACE("%px: no update, check next multicast tuple: %px\n", ci, tuple_instance);
-				spin_unlock_bh(&ecm_nss_ipv6_lock);
+				spin_unlock_bh(&ecm_sfe_ipv6_lock);
 				tuple_instance_next = ecm_db_multicast_connection_get_and_ref_next(tuple_instance);
 				ecm_db_multicast_connection_deref(tuple_instance);
 				tuple_instance = tuple_instance_next;
@@ -2374,7 +2679,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 				ecm_db_multicast_tuple_instance_flags_clear(tuple_instance, ECM_DB_MULTICAST_CONNECTION_BRIDGE_DEV_SET_FLAG);
 			}
 
-			spin_unlock_bh(&ecm_nss_ipv6_lock);
+			spin_unlock_bh(&ecm_sfe_ipv6_lock);
 			DEBUG_TRACE("%px: MFC update callback leave_cnt %d, join_cnt %d\n", ci, mc_sync.if_leave_cnt, mc_sync.if_join_cnt);
 
 			feci = ecm_db_connection_front_end_get_and_ref(ci);
@@ -2454,7 +2759,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			}
 #endif
 			/*
-			 * Push the updates to NSS
+			 * Push the updates to SFE
 			 */
 			DEBUG_TRACE("%px: Update accel %px\n", ci, tuple_instance);
 			if ((feci->accel_mode <= ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED) ||
@@ -2469,7 +2774,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			 * Update the new rules in FW. If returns error decelerate the connection
 			 * and flush the Multicast rules.
 			 */
-			ret = ecm_nss_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
+			ret = ecm_sfe_multicast_ipv6_connection_update_accelerate(feci, &mc_sync, &aci_pr);
 			if (ret < 0) {
 				feci->decelerate(feci);
 				ecm_front_end_connection_deref(feci);
@@ -2506,7 +2811,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 			/*
 			 * Get the source/group IP address for this multicast tuple and match
 			 * with the source and group IP received from the event handler. If
-			 * there is not match found jumps to the next multicast tuple.
+			 * there is not match found, jumping to the next multicast tuple.
 			 */
 			ecm_db_multicast_tuple_instance_source_ip_get(tuple_instance, src_addr);
 			ecm_db_multicast_tuple_instance_group_ip_get(tuple_instance, grp_addr);
@@ -2542,7 +2847,7 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 		break;
 	}
 	default:
-		DEBUG_TRACE("Wrong op, shouldn't be here\n");
+		DEBUG_TRACE("Unknow event notified from the kernel MFC module\n");
 		break;
 	}
 
@@ -2550,16 +2855,16 @@ static void ecm_nss_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 }
 
 /*
- * ecm_nss_multicast_ipv6_debugfs_init()
+ * ecm_sfe_multicast_ipv6_debugfs_init()
  */
-bool ecm_nss_multicast_ipv6_debugfs_init(struct dentry *dentry)
+bool ecm_sfe_multicast_ipv6_debugfs_init(struct dentry *dentry)
 {
 	struct dentry *multicast_dentry;
 
 	multicast_dentry = debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
-						&ecm_nss_multicast_ipv6_accelerated_count);
+						&ecm_sfe_multicast_ipv6_accelerated_count);
 	if (!multicast_dentry) {
-		DEBUG_ERROR("Failed to create ecm nss ipv6 multicast_accelerated_count file in debugfs\n");
+		DEBUG_ERROR("Failed to create ecm sfe ipv6 multicast_accelerated_count file in debugfs\n");
 		return false;
 	}
 
@@ -2567,20 +2872,20 @@ bool ecm_nss_multicast_ipv6_debugfs_init(struct dentry *dentry)
 }
 
 /*
- * ecm_nss_multicast_ipv6_stop()
+ * ecm_sfe_multicast_ipv6_stop()
  */
-void ecm_nss_multicast_ipv6_stop(int num)
+void ecm_sfe_multicast_ipv6_stop(int num)
 {
-	ecm_front_end_ipv6_mc_stopped = num;
+	ecm_front_end_ipv6_mc_stopped = !!num;
 }
 
 /*
- * ecm_nss_multicast_ipv6_init()
+ * ecm_sfe_multicast_ipv6_init()
  * 	Register the callbacks for MCS snooper and MFC update
  */
-int ecm_nss_multicast_ipv6_init(struct dentry *dentry)
+int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("ecm_nss_multicast_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
+	if (!debugfs_create_u32("ecm_sfe_multicast_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
 					(u32 *)&ecm_front_end_ipv6_mc_stopped)) {
 		DEBUG_ERROR("Failed to create ecm front end ipv6 mc stop file in debugfs\n");
 		return -1;
@@ -2589,23 +2894,23 @@ int ecm_nss_multicast_ipv6_init(struct dentry *dentry)
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
-	mc_bridge_ipv6_update_callback_register(ecm_nss_multicast_ipv6_br_update_event_callback);
+	mc_bridge_ipv6_update_callback_register(ecm_sfe_multicast_ipv6_br_update_event_callback);
 
 	/*
 	 * Register multicast update callbacks to MFC
 	 */
-	ip6mr_register_mfc_event_offload_callback(ecm_nss_multicast_ipv6_mfc_update_event_callback);
+	ip6mr_register_mfc_event_offload_callback(ecm_sfe_multicast_ipv6_mfc_update_event_callback);
 	return 0;
 }
 
 /*
- * ecm_nss_multicast_ipv6_exit()
- * 	De-register the callbacks for MCS snooper and MFC update
+ * ecm_sfe_multicast_ipv6_exit()
+ *	Unregister the callbacks for MCS snooper and MFC update
  */
-void ecm_nss_multicast_ipv6_exit(void)
+void ecm_sfe_multicast_ipv6_exit(void)
 {
 	/*
-	 * De-register multicast update callbacks to
+	 * Unregister multicast update callbacks to
 	 * MFC and MCS snooper
 	 */
 	ip6mr_unregister_mfc_event_offload_callback();

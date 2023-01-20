@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -201,6 +201,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
 	ecm_front_end_acceleration_mode_t result_mode;
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -713,7 +715,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_QOS;
 	}
 
-#ifdef ECM_CLASSIFIER_DSCP_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 	/*
 	 * DSCP information?
 	 */
@@ -753,6 +755,37 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
 		pd4rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
 	}
+#endif
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+
+	/*
+	 * SAWF information
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+		pd4rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		pd4rc->sawf_rule.return_mark = pr->return_sawf_metadata;
+		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SAWF;
+        }
+
+	/*
+	 * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
+	 * and send the update VLAN tag to PPE.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+		if (pr->flow_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+				pd4rc->vlan_rule.primary_vlan.egress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag &= ~VLAN_PRIO_MASK;
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+
+		if (pr->return_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+				pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
+		}
+	}
+
 #endif
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
@@ -849,22 +882,30 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: These are called in ascending order of priority and so the last classifier (highest) shall
 	 * override any preceding classifiers.
 	 * This also gives the classifiers a chance to see that acceleration is being attempted.
+	 *
+	 * sync_from_v4 is avoided for EMESH classifier as it has callbacks registered with WLAN driver.
+	 * Since the default accel mode is "auto" where PPE and SFE both are enabled, it may happen that ppe fails
+	 * to accelerate and it may fall back on SFE. In that case these WLAN callbacks will be triggered twice
+	 * from both PPE and SFE even if PPE rule create fails. So we sync from emesh classifier only when acceleration is
+	 * successfull either from PPE or SFE.
 	 */
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		struct ecm_classifier_rule_create ecrc;
 		/*
 		 * NOTE: The current classifiers do not sync anything to the underlying accel engines.
 		 * In the future, if any of the classifiers wants to pass any parameter, these parameters
 		 * should be received via this object and copied to the accel engine's create object (nircm).
 		 */
-#ifdef ECM_CLASSIFIER_EMESH_ENABLE
-		ecrc.skb = skb;
-#endif
 		aci = assignments[aci_index];
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		if ((aci->type_get(aci)) != ECM_CLASSIFIER_TYPE_EMESH) {
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v4(aci, &ecrc);
+		}
+#else
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v4(aci, &ecrc);
+#endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
@@ -892,6 +933,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
+			"sawf mark: %x\n"
+			"return sawf mark: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
 			"conn_rule.tx_if: %d (to iface first:%s)\n",
 			feci,
@@ -913,6 +956,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			pd4rc->qos_rule.return_qos_tag, pd4rc->qos_rule.return_qos_tag,
 			pd4rc->dscp_rule.flow_dscp,
 			pd4rc->dscp_rule.return_dscp,
+			pd4rc->sawf_rule.flow_mark,
+			pd4rc->sawf_rule.return_mark,
 			pd4rc->conn_rule.rx_if, (from_ifaces[from_ifaces_first])->name,
 			pd4rc->conn_rule.tx_if, (to_ifaces[to_ifaces_first])->name);
 
@@ -947,6 +992,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	spin_unlock_bh(&feci->lock);
 
 	pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_RETURN_VALID | PPE_DRV_V4_RULE_FLAG_FLOW_VALID;
+
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_PPE_DS) {
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_DS_FLOW;
+	}
+
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_PPE_VP) {
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_VP_FLOW;
+	}
 
 	DEBUG_TRACE("%px: ECM IPv4 Ported Rule ready to be pushed in PPE:%px\n", feci, feci->ci);
 
@@ -1026,6 +1079,19 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ecm_db_connection_deref(feci->ci);
 		DEBUG_TRACE("%px: ppe_drv_v4_create() success with ret=%d\n", feci, pdrt);
 		kfree(pd4rc);
+
+		/*
+		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
+		 */
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (aci) {
+			ecrc.skb = skb;
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v4(aci, &ecrc);
+			aci->deref(aci);
+		}
+#endif
 		return;
 	}
 
@@ -1379,12 +1445,13 @@ static int ecm_ppe_ported_ipv4_connection_state_get(struct ecm_front_end_connect
  *	Create a front end instance specific for ported connection
  */
 struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instance_alloc(
-								bool can_accel,
+								uint32_t accel_flags,
 								int protocol,
 								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
+	bool can_accel = (accel_flags & ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL);
 
 	if (ecm_ppe_ipv4_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");
@@ -1449,6 +1516,7 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
 
 	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
+	feci->fe_info.front_end_flags = accel_flags;
 
 	if (protocol == IPPROTO_TCP) {
 		feci->ported_accelerated_count_index = ECM_FRONT_END_PORTED_PROTO_TCP;

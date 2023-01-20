@@ -14,6 +14,8 @@
  **************************************************************************
  */
 
+#ifndef __ECM_NSS_IPV4_H
+#define __ECM_NSS_IPV4_H
 #include <nss_api_if.h>
 
 extern int ecm_nss_ipv4_no_action_limit_default;		/* Default no-action limit. */
@@ -168,3 +170,4 @@ extern void ecm_nss_ipv4_accel_done_time_update(struct ecm_front_end_connection_
 extern void ecm_nss_ipv4_decel_done_time_update(struct ecm_front_end_connection_instance *feci);
 extern int ecm_nss_ipv4_init(struct dentry *dentry);
 extern void ecm_nss_ipv4_exit(void);
+#endif //__ECM_NSS_IPV4_H

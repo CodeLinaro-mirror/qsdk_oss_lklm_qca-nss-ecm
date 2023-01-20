@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,6 +35,9 @@
 #include <net/addrconf.h>
 #include <net/gre.h>
 #include <net/xfrm.h>
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include <ppe_drv.h>
+#endif
 
 /*
  * Debug output levels
@@ -58,6 +61,7 @@
 #include "ecm_db.h"
 #include "ecm_front_end_common.h"
 #include "ecm_interface.h"
+#include "ecm_ae_classifier.h"
 
 #ifdef ECM_FRONT_END_NSS_ENABLE
 #include <nss_api_if.h>
@@ -108,6 +112,9 @@ static struct ctl_table_header *ecm_front_end_ctl_tbl_hdr;
  * platforms to control memory allocated by ECM databases.
  */
 unsigned int ecm_front_end_conn_limit = 0;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+unsigned int ecm_front_end_ppe_fse_enable = 1;
+#endif
 
 /*
  * Predefined frontend and feature support map.
@@ -126,7 +133,7 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	/* SFE type */
 	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
-	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_SRC_IF_CHECK,
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_SRC_IF_CHECK | ECM_FE_FEATURE_MULTICAST,
 
 	/* PPE */
 	ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_BRIDGE | ECM_FE_FEATURE_NON_PORTED |
@@ -145,7 +152,7 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	 */
 	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
-	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE,
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_MULTICAST,
 };
 
 struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
@@ -742,6 +749,42 @@ uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_ins
 	return slow_pkts;
 }
 
+#ifdef ECM_FRONT_END_PPE_ENABLE
+/*
+ * ecm_front_end_ppe_fse_enable_limit_handler()
+ *	Sysctl to enable/disable FSE programming through PPE.
+ */
+int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+        if ((ecm_front_end_ppe_fse_enable != 0) &&
+			(ecm_front_end_ppe_fse_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	if (ecm_front_end_ppe_fse_enable == 0) {
+		ppe_drv_fse_feature_disable();
+		return ret;
+	}
+
+	ppe_drv_fse_feature_enable();
+	return ret;
+}
+#endif
+
 /*
  * ecm_front_end_db_conn_limit_handler()
  *	Database connection limit sysctl node handler.
@@ -785,6 +828,15 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_db_conn_limit_handler,
 	},
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	{
+		.procname	= "ppe_fse_enable",
+		.data		= &ecm_front_end_ppe_fse_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_ppe_fse_enable_handler,
+	},
+#endif
 	{}
 };
 
@@ -936,7 +988,7 @@ static void ecm_front_end_non_ported_ipv6_connection_update(struct ecm_front_end
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_non_ported_ipv6_connection_set(feci);
+		ecm_sfe_non_ported_ipv6_connection_set(feci, 0);
 		break;
 #endif
 	default:
@@ -967,7 +1019,7 @@ static void ecm_front_end_non_ported_ipv4_connection_update(struct ecm_front_end
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_non_ported_ipv4_connection_set(feci);
+		ecm_sfe_non_ported_ipv4_connection_set(feci, 0);
 		break;
 #endif
 	default:
@@ -999,7 +1051,7 @@ static void ecm_front_end_ported_ipv6_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv6_connection_set(feci);
+		ecm_sfe_ported_ipv6_connection_set(feci, 0);
 		break;
 #endif
 	default:
@@ -1030,7 +1082,7 @@ static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv4_connection_set(feci);
+		ecm_sfe_ported_ipv4_connection_set(feci, 0);
 		break;
 #endif
 	default:
@@ -1093,12 +1145,20 @@ static bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_
 bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci)
 {
 	int i;
+	int new_ae_type = ECM_AE_PRECEDENCE_MAX;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
 	DEBUG_TRACE("%px: Frontend switch from AE type %d\n", feci, feci->accel_engine);
 
 	spin_lock_bh(&feci->lock);
+
+	if (feci->is_defunct) {
+		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: AE switch can't be done for defuncted flow\n", feci);
+		return false;
+	}
+
 	/*
 	 * Check the accel_mode of the existing connection.
 	 * If it is set to one of the FAIL modes, this means that, we tried to accelerate
@@ -1108,8 +1168,33 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 	if (!ECM_FRONT_END_ACCELERATION_FAILED(feci->accel_mode)
 			|| (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED)) {
 		spin_unlock_bh(&feci->lock);
-		DEBUG_TRACE("%px: AE switch is not possible yet\n", feci);
+		DEBUG_TRACE("%px: AE switch is not possible yet, accel mode %d\n", feci, feci->accel_mode);
 		return false;
+	}
+
+	/*
+	 * If an external AE classifier is registered, we may not want to dependent on the
+	 * precedence array for our next AE selection. SFE is the default option if fallback
+	 * is enabled. Registrant may have requested fallback to be disabled, in case of a
+	 * flow acceleration failure to PPE. Hence query the AE classifier for the fallback setting first
+	 */
+	if (ecm_ae_classifier_is_external(&ae_ops) &&
+		!(feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_AE_PRECEDENCE)) {
+		if (ecm_ae_classifier_is_fallback_enabled(&ae_ops)) {
+			if (feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				spin_unlock_bh(&feci->lock);
+				DEBUG_TRACE("%px: Already trying in SFE mode. Not falling back to any other AE.\n", feci);
+				return false;
+			}
+
+			new_ae_type = ECM_FRONT_END_ENGINE_SFE;
+			DEBUG_TRACE("%px: Fallback to SFE in AE classifier mode.\n", feci);
+			goto change_ae;
+		} else {
+			spin_unlock_bh(&feci->lock);
+			DEBUG_TRACE("%px: Not falling back to any other AE in AE classifier mode.\n", feci);
+			return false;
+		}
 	}
 
 	/*
@@ -1118,9 +1203,10 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 	for (i = 0; i < ECM_AE_PRECEDENCE_MAX; i++) {
 		if (ae_precedence[i].ae_type == feci->accel_engine) {
 			/*
-			 * Check if the next AE in he precedence array is valid.
+			 * Check if the next AE in the precedence array is valid.
 			 */
-			if (ae_precedence[++i].ae_type == ECM_FRONT_END_ENGINE_MAX) {
+			new_ae_type = ae_precedence[++i].ae_type;
+			if (new_ae_type == ECM_FRONT_END_ENGINE_MAX) {
 				spin_unlock_bh(&feci->lock);
 				DEBUG_TRACE("%px: There is no next AE to switch\n", feci);
 				return false;
@@ -1129,22 +1215,23 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		}
 	}
 
+change_ae:
 	/*
 	 * Check if this new AE has space for a new connection.
 	 */
-	if (ecm_front_end_connection_limit_reached(ae_precedence[i].ae_type, feci->ip_version)) {
+	if (ecm_front_end_connection_limit_reached(new_ae_type, feci->ip_version)) {
 		spin_unlock_bh(&feci->lock);
-		DEBUG_TRACE("%px: AE type: %d reached its connection limit\n", feci, ae_precedence[i].ae_type);
+		DEBUG_TRACE("%px: AE type: %d reached its connection limit\n", feci, new_ae_type);
 		return false;
 	}
 
 	switch (feci->ip_version) {
 	case 4:
 		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
-			ecm_front_end_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
+			ecm_front_end_ported_ipv4_connection_update(feci, new_ae_type);
 		} else {
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-			ecm_front_end_non_ported_ipv4_connection_update(feci, ae_precedence[i].ae_type);
+			ecm_front_end_non_ported_ipv4_connection_update(feci, new_ae_type);
 #else
 			spin_unlock_bh(&feci->lock);
 			DEBUG_ERROR("%px: ECM non ported support is disabled\n", feci);
@@ -1155,10 +1242,10 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 
 	case 6:
 		if ((feci->protocol == IPPROTO_UDP) || (feci->protocol == IPPROTO_TCP)) {
-			ecm_front_end_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
+			ecm_front_end_ported_ipv6_connection_update(feci, new_ae_type);
 		} else {
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-			ecm_front_end_non_ported_ipv6_connection_update(feci, ae_precedence[i].ae_type);
+			ecm_front_end_non_ported_ipv6_connection_update(feci, new_ae_type);
 #else
 			spin_unlock_bh(&feci->lock);
 			DEBUG_ERROR("%px: ECM non ported support is disabled\n", feci);

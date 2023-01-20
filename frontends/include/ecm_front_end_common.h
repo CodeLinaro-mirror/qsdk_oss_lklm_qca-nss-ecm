@@ -41,6 +41,13 @@
 extern unsigned int ecm_front_end_conn_limit;
 
 /*
+ * Flag to enable/disable Wi-FI FSE block programming through PPE driver
+ */
+#ifdef ECM_FRONT_END_PPE_ENABLE
+extern unsigned int ecm_front_end_ppe_fse_enable;
+#endif
+
+/*
  * ecm_front_end_l2_encap_header_len()
  *      Return length of encapsulating L2 header
  */

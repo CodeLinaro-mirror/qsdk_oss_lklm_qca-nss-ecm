@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -309,35 +309,6 @@ static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_i
 }
 
 /*
- * ecm_sfe_ipv6_fast_xmit_set()
- *	set the fast_xmit in the create message
- */
-static void ecm_sfe_ipv6_fast_xmit_set(struct sfe_ipv6_rule_create_msg *msg)
-{
-	s32 interface_num;
-
-	rcu_read_lock_bh();
-
-	interface_num = msg->conn_rule.flow_top_interface_num;
-	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE) {
-		interface_num = msg->conn_rule.flow_interface_num;
-	}
-	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
-	}
-
-	interface_num = msg->conn_rule.return_top_interface_num;
-	if (msg->rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE) {
-		interface_num = msg->conn_rule.return_interface_num;
-	}
-	if (ecm_sfe_common_fast_xmit_check(interface_num)) {
-		msg->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
-	}
-
-	rcu_read_unlock_bh();
-}
-
-/*
  * ecm_sfe_ported_ipv6_connection_accelerate()
  *	Accelerate a connection
  */
@@ -357,7 +328,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	int32_t to_sfe_iface_id;
 	uint8_t from_sfe_iface_address[ETH_ALEN];
 	uint8_t to_sfe_iface_address[ETH_ALEN];
-	struct sfe_ipv6_msg nim;
+	struct sfe_ipv6_msg *nim;
 	struct sfe_ipv6_rule_create_msg *nircm;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -368,6 +339,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	bool rule_invalid;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc;
 	ecm_front_end_acceleration_mode_t result_mode;
 	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
 	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
@@ -389,19 +362,25 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		return;
 	}
 
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		return;
+	}
+
 	/*
 	 * Okay construct an accel command.
 	 * Initialise creation structure.
 	 * NOTE: We leverage the app_data void pointer to be our 32 bit connection serial number.
 	 * When we get it back we re-cast it to a uint32 and do a faster connection lookup.
 	 */
-	memset(&nim, 0, sizeof(struct sfe_ipv6_msg));
-	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_RULE_MSG,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_CREATE_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_create_msg),
 			ecm_sfe_ported_ipv6_connection_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nircm = &nim.msg.rule_create;
+	nircm = &nim->msg.rule_create;
 	nircm->valid_flags = 0;
 	nircm->rule_flags = 0;
 
@@ -477,8 +456,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Set interface numbers involved in accelerating this connection.
 	 * These are the inner facing addresses from the heirarchy interface lists we got above.
 	 */
-	nim.msg.rule_create.conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
-	nim.msg.rule_create.conn_rule.return_top_interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+	nim->msg.rule_create.conn_rule.flow_top_interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
+	nim->msg.rule_create.conn_rule.return_top_interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX-1]);
 
 	/*
 	 * We know that each outward facing interface is known to the SFE and so this connection could be accelerated.
@@ -1288,24 +1267,37 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * NOTE: These are called in ascending order of priority and so the last classifier (highest) shall
 	 * override any preceding classifiers.
 	 * This also gives the classifiers a chance to see that acceleration is being attempted.
+	 *
+	 * sync_from_v6 is avoided before accelerating a connection for EMESH classifier as it has
+	 * callbacks registered with WLAN driver. If SFE fails to create a rule, EMESH
+	 * classifier should not trigger these callbacks.
 	 */
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-		struct ecm_classifier_instance *aci;
-		struct ecm_classifier_rule_create ecrc;
 		/*
 		 * NOTE: The current classifiers do not sync anything to the underlying accel engines.
 		 * In the future, if any of the classifiers wants to pass any parameter, these parameters
 		 * should be received via this object and copied to the accel engine's create object (nircm).
-		*/
-#ifdef ECM_CLASSIFIER_EMESH_ENABLE
-		ecrc.skb = skb;
-#endif
+		 */
 		aci = assignments[aci_index];
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		if ((aci->type_get(aci)) != ECM_CLASSIFIER_TYPE_EMESH) {
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v6(aci, &ecrc);
+		}
+#else
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v6(aci, &ecrc);
+#endif
 	}
 	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	/*
+	 * Configure qdisc rule and fast xmit settings in the rule
+	 */
+	if (sfe_is_l2_feature_enabled()) {
+		ecm_sfe_common_fast_xmit_set(&nircm->rule_flags, &nircm->valid_flags, &nircm->qdisc_rule, from_ifaces, to_ifaces, from_ifaces_first, to_ifaces_first);
+	}
 
 	/*
 	 * Release the interface lists
@@ -1407,6 +1399,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_INFO("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		kfree(nim);
 		return;
 	}
 
@@ -1426,14 +1419,9 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	spin_unlock_bh(&feci->lock);
 
 	/*
-	 * Set fast xmit flags if connection can fast xmit
-	 */
-	ecm_sfe_ipv6_fast_xmit_set(nircm);
-
-	/*
 	 * Call the rule create function
 	 */
-	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, &nim);
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1441,8 +1429,24 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
+
+		/*
+		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
+		 */
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (aci) {
+			ecrc.skb = skb;
+			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
+			aci->sync_from_v4(aci, &ecrc);
+			aci->deref(aci);
+		}
+#endif
 		return;
 	}
+
+	kfree(nim);
 
 	/*
 	 * Release that ref!
@@ -1478,6 +1482,7 @@ ported_accel_bad_rule:
 	 */
 	DEBUG_WARN("%px: Accel failed - bad rule\n", feci);
 	ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE);
+	kfree(nim);
 }
 
 /*
@@ -1602,7 +1607,7 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
  */
 static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_end_connection_instance *feci)
 {
-	struct sfe_ipv6_msg nim;
+	struct sfe_ipv6_msg *nim;
 	struct sfe_ipv6_rule_destroy_msg *nirdm;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
@@ -1610,6 +1615,12 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	bool ret;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
+
+	nim = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!nim) {
+		DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+		return false;
+	}
 
 	/*
 	 * Increment the decel pending counter
@@ -1621,12 +1632,12 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	/*
 	 * Prepare deceleration message
 	 */
-	sfe_ipv6_msg_init(&nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
+	sfe_ipv6_msg_init(nim, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_DESTROY_RULE_MSG,
 			sizeof(struct sfe_ipv6_rule_destroy_msg),
 			ecm_sfe_ported_ipv6_connection_destroy_callback,
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
-	nirdm = &nim.msg.rule_destroy;
+	nirdm = &nim->msg.rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*
@@ -1663,7 +1674,7 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, &nim);
+	sfe_tx_status = sfe_ipv6_tx(ecm_sfe_ipv6_mgr, nim);
 	if (sfe_tx_status == SFE_TX_SUCCESS) {
 		/*
 		 * Reset the driver_fail count - transmission was okay here.
@@ -1671,8 +1682,11 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 		spin_lock_bh(&feci->lock);
 		feci->stats.driver_fail = 0;
 		spin_unlock_bh(&feci->lock);
+		kfree(nim);
 		return true;
 	}
+
+	kfree(nim);
 
 	/*
 	 * TX failed
@@ -1847,7 +1861,7 @@ static int ecm_sfe_ported_ipv6_connection_state_get(struct ecm_front_end_connect
  * ecm_sfe_ported_ipv6_connection_set();
  *	Sets the SFE IPv6 ported connection's fields.
  */
-void ecm_sfe_ported_ipv6_connection_set(struct ecm_front_end_connection_instance *feci)
+void ecm_sfe_ported_ipv6_connection_set(struct ecm_front_end_connection_instance *feci, uint32_t flags)
 {
 	feci->accel_engine = ECM_FRONT_END_ENGINE_SFE;
 	feci->stats.no_action_seen_limit = ecm_sfe_ipv6_no_action_limit_default;
@@ -1869,6 +1883,7 @@ void ecm_sfe_ported_ipv6_connection_set(struct ecm_front_end_connection_instance
 
 	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
+	feci->fe_info.front_end_flags = flags;
 
 	/*
 	 * Just in case this function is called while switching AE to SFE
@@ -1885,12 +1900,13 @@ void ecm_sfe_ported_ipv6_connection_set(struct ecm_front_end_connection_instance
  *	Create a front end instance specific for ported connection
  */
 struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv6_connection_instance_alloc(
-								bool can_accel,
+								uint32_t accel_flags,
 								int protocol,
 								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
+	bool can_accel = (accel_flags & ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL);
 
 	if (ecm_sfe_ipv6_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");
@@ -1935,7 +1951,7 @@ struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv6_connection_instanc
 	feci->protocol = protocol;
 
 	feci->update_rule = ecm_sfe_common_update_rule;
-	ecm_sfe_ported_ipv6_connection_set(feci);
+	ecm_sfe_ported_ipv6_connection_set(feci, accel_flags);
 
 	if (protocol == IPPROTO_TCP) {
 		feci->ported_accelerated_count_index = ECM_FRONT_END_PORTED_PROTO_TCP;
