@@ -7146,6 +7146,13 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		ecm_interface_mtu_change(dev);
 		break;
 
+	case NETDEV_CHANGEADDR:
+		DEBUG_INFO("Net device: %px, MACADDR CHANGE\n", dev);
+		if (!netif_is_bond_slave(dev) && !netif_is_bridge_port(dev)) {
+			ecm_interface_dev_defunct_connections(dev);
+		}
+		break;
+
 	default:
 		DEBUG_TRACE("Net device: %px, UNHANDLED: %lx\n", dev, event);
 		break;
