@@ -561,6 +561,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			cmscsi->scs_priority_update = true;
 			cmscsi->classifier_type = ECM_CLASSIFIER_SCS;
 			scs_rule_match = true;
+			cmscsi->rule_id = flow_output_params.rule_id;
 
 			/*
 			 * For IPSEC protocol, we update both side priority values and let it go via slow path.
@@ -643,6 +644,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 				mscs_rule_match = true;
 				if (!cmscsi->scs_priority_update) {
 					cmscsi->classifier_type = ECM_CLASSIFIER_MSCS;
+					cmscsi->rule_id = flow_output_params.rule_id;
 				}
 			}
 		}
