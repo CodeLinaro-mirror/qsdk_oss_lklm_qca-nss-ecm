@@ -866,6 +866,12 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		memcpy(dest_mac_xlate, (uint8_t *)pd4rc->conn_rule.return_mac, ETH_ALEN);
 	}
 
+#ifdef ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE
+	if (ecm_interface_src_check) {
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_SRC_INTERFACE_CHECK;
+		DEBUG_INFO("%px: Source interface check is enabled\n", feci);
+	}
+#endif
 	/*
 	 * Refer to the Example 2 and 3 in ecm_ppe_ipv4_ip_process() function for egress
 	 * and ingress NAT'ed cases. In these cases, the destination node is the one which has the

@@ -711,9 +711,12 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_BRIDGE_FLOW;
 	}
 
-	if (ecm_interface_src_check || ecm_db_connection_is_pppoe_bridged_get(feci->ci)) {
-		DEBUG_INFO("%px: Source interface check is done\n", feci);
+#ifdef ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE
+	if (ecm_interface_src_check) {
+		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_SRC_INTERFACE_CHECK;
+		DEBUG_INFO("%px: Source interface check is enabled\n", feci);
 	}
+#endif
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 	/*

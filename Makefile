@@ -1,6 +1,6 @@
 ##########################################################################
 # Copyright (c) 2014-2016, 2018-2021, The Linux Foundation. All rights reserved.
-# Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
 #
 # Permission to use, copy, modify, and/or distribute this software for
 # any purpose with or without fee is hereby granted, provided that the
@@ -476,6 +476,13 @@ ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/front
 
 ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
 	ccflags-y += -I$(obj)/frontends/ppe
+ifeq ($(SoC),$(filter $(SoC), ipq53xx_32 ipq53xx))
+# #############################################################################
+# Define ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE=y in order
+# to enable support for source interface check in PPE.
+# #############################################################################
+ccflags-y += -DECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE=1
+endif
 endif
 
 ccflags-y += -Wall -Werror
