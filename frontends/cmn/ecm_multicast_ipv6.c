@@ -74,7 +74,6 @@
  */
 #define DEBUG_LEVEL ECM_CMN_MULTICAST_IPV6_DEBUG_LEVEL
 
-#include <nss_api_if.h>
 #include <mc_ecm.h>
 
 #include "ecm_types.h"
@@ -89,13 +88,24 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+
+#ifdef ECM_FRONT_END_NSS_ENABLE
+#include <nss_api_if.h>
 #include "ecm_nss_ipv6.h"
 #include "ecm_nss_multicast_ipv6.h"
 #include "ecm_nss_common.h"
+#else
+#include "ecm_sfe_multicast_ipv6.h"
+#endif
 #include "ecm_front_end_common.h"
 #include "ecm_ipv6.h"
 #include "ecm_ae_classifier_public.h"
 #include "ecm_ae_classifier.h"
+
+/*
+ * General operational control
+ */
+int ecm_front_end_ipv6_mc_stopped = 0;	/* When non-zero further traffic will not be processed */
 
 /*
  * ecm_multicast_ipv6_interface_heirarchy_construct()
@@ -724,8 +734,9 @@ process_packet:
 
 		/*
 		 * Which AE can be used for this flow.
-		 * 1. If NSS or DONT_CARE, allocate NSS ipv6 multicast connection instance
-		 * 2. If NONE, allocate NSS ipv4 multicast connection instance with
+		 * When NSS enabled, use NSS only, otherwise use SFE instead
+		 * 1. If NSS/SFE or DONT_CARE, allocate NSS/SFE ipv6 multicast connection instance
+		 * 2. If NONE, allocate NSS/SFE ipv4 multicast connection instance with
 		 *    can_accel flag set to false. By doing this we will not try to re-evaluate this flow again.
 		 * 3. If NOT_YET, the connection will not be allocated in the database and the next flow will be
 		 *    re-evaluated.
@@ -740,6 +751,15 @@ process_packet:
 
 		case ECM_AE_CLASSIFIER_RESULT_NONE:
 			feci = ecm_nss_multicast_ipv6_connection_instance_alloc(false, &nci);
+			break;
+#else
+		case ECM_AE_CLASSIFIER_RESULT_SFE:
+		case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+			feci = ecm_sfe_multicast_ipv6_connection_instance_alloc(can_accel, &nci);
+			break;
+
+		case ECM_AE_CLASSIFIER_RESULT_NONE:
+			feci = ecm_sfe_multicast_ipv6_connection_instance_alloc(false, &nci);
 			break;
 #endif
 		case ECM_AE_CLASSIFIER_RESULT_NOT_YET:

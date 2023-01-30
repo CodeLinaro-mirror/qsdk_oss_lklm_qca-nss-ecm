@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -34,12 +34,21 @@
 #define ECM_AE_CLASSIFIER_FLOW_MULTICAST	(1 << 1)	/**< Flow is multicast. */
 
 /**
+ * @brief External AE classifier flags.
+ *
+ */
+#define ECM_AE_CLASSIFIER_FLAG_EXTERNAL_AE_REGISTERED	(1 << 0)	/**< External AE is registered flag. */
+#define ECM_AE_CLASSIFIER_FLAG_FALLBACK_ENABLE		(1 << 1)	/**< AE fallback enable flag. */
+
+/**
  *	External AE classifier returns these types to ECM per flow.
  */
 typedef enum /** @cond */ ecm_ae_classifier_result /** @endcond */ {
 	ECM_AE_CLASSIFIER_RESULT_NSS,		/**< Accelerate the flow in NSS */
 	ECM_AE_CLASSIFIER_RESULT_PPE,		/**< Accelerate the flow in PPE */
 	ECM_AE_CLASSIFIER_RESULT_SFE,		/**< Accelerate the flow in SFE */
+	ECM_AE_CLASSIFIER_RESULT_PPE_VP,	/**< Accelerate the WIFI-flow in PPE with VP path */
+	ECM_AE_CLASSIFIER_RESULT_PPE_DS,	/**< Accelerate the WIFI-flow in PPE with DS path */
 	ECM_AE_CLASSIFIER_RESULT_NONE,		/**< Do not accelerate the flow */
 	ECM_AE_CLASSIFIER_RESULT_NOT_YET,	/**< Acceleration engine hasn't been decided yet */
 	ECM_AE_CLASSIFIER_RESULT_DONT_CARE,	/**< External module doesn't care about the selected AE */
@@ -75,6 +84,7 @@ typedef ecm_ae_classifier_result_t (*ecm_ae_classifier_get_t)(struct ecm_ae_clas
  */
 struct ecm_ae_classifier_ops {
 	ecm_ae_classifier_get_t ae_get;	/**< Get the acceleration engine classifier. */
+	uint32_t ae_flags;			/**< AE flags */
 };
 
 /**

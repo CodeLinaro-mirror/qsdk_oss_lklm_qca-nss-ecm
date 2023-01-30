@@ -20,3 +20,5 @@ extern void ecm_ae_classifier_select_info_fill(ip_addr_t src_ip, ip_addr_t dest_
 					int sport, int dport, int protocol, int ip_version,
 					bool is_routed, bool is_multicast,
 					struct ecm_ae_classifier_info *info);
+extern bool ecm_ae_classifier_is_external(struct ecm_ae_classifier_ops *ops);
+extern bool ecm_ae_classifier_is_fallback_enabled(struct ecm_ae_classifier_ops *ops);

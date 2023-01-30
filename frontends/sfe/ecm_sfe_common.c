@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -438,6 +438,7 @@ void ecm_sfe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
 {
 	info->from_stats_bitmap = 0;
 	info->to_stats_bitmap = 0;
+	info->front_end_flags = 0;
 }
 
 /*

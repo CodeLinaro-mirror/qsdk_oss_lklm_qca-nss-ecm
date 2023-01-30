@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,6 +19,7 @@
 extern bool ecm_ppe_non_ported_ipv4_debugfs_init(struct dentry *dentry);
 
 extern struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_instance_alloc(
-								bool can_accel, int protocol,
+								uint32_t accel_flags,
+								int protocol,
 								struct ecm_db_connection_instance **nci);
 extern void ecm_ppe_non_ported_ipv4_sit_set_peer(struct ecm_front_end_connection_instance *feci, struct sk_buff *skb);

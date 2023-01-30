@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -943,6 +943,14 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 
 	pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_RETURN_VALID | PPE_DRV_V4_RULE_FLAG_FLOW_VALID;
 
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_PPE_DS) {
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_DS_FLOW;
+	}
+
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_PPE_VP) {
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_VP_FLOW;
+	}
+
 	DEBUG_TRACE("%px: ECM IPv4 Non-Ported Rule ready to be pushed in PPE:%px\n", feci, feci->ci);
 
 	/*
@@ -1370,12 +1378,14 @@ static int ecm_ppe_non_ported_ipv4_connection_state_get(struct ecm_front_end_con
  * ecm_ppe_non_ported_ipv4_connection_instance_alloc()
  *	Create a front end instance specific for non-ported connection
  */
-struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_instance_alloc(bool can_accel,
+struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_instance_alloc(
+								uint32_t accel_flags,
 								int protocol,
 								struct ecm_db_connection_instance **nci)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
+	bool can_accel = (accel_flags & ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL);
 
 	if (ecm_ppe_ipv4_is_conn_limit_reached()) {
 		DEBUG_TRACE("Reached connection limit\n");
@@ -1440,6 +1450,7 @@ struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_ins
 
 	feci->get_stats_bitmap = ecm_ppe_common_dummy_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_ppe_common_dummy_set_stats_bitmap;
+	feci->fe_info.front_end_flags = accel_flags;
 	return feci;
 }
 

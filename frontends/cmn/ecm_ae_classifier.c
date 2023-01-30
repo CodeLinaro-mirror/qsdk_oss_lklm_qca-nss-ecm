@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -69,7 +69,8 @@ ecm_ae_classifier_result_t ecm_ae_classifier_dummy_get(struct ecm_ae_classifier_
  * Acceleration engine operations object
  */
 struct ecm_ae_classifier_ops ae_ops = {
-	.ae_get = ecm_ae_classifier_dummy_get
+	.ae_get = ecm_ae_classifier_dummy_get,
+	.ae_flags = 0
 };
 
 /*
@@ -93,6 +94,7 @@ void ecm_ae_classifier_select_info_fill(ip_addr_t src_ip, ip_addr_t dest_ip,
 	info->dst_port = dport;
 	info->protocol = protocol;
 	info->flag = 0;
+	info->ip_ver = ip_version;
 
 	if (is_routed) {
 		info->flag |= ECM_AE_CLASSIFIER_FLOW_ROUTED;
@@ -101,6 +103,24 @@ void ecm_ae_classifier_select_info_fill(ip_addr_t src_ip, ip_addr_t dest_ip,
 	if (is_multicast) {
 		info->flag |= ECM_AE_CLASSIFIER_FLOW_MULTICAST;
 	}
+}
+
+/*
+ * ecm_ae_classifier_is_external()
+ *	Check if the AE is external.
+ */
+bool ecm_ae_classifier_is_external(struct ecm_ae_classifier_ops *ops)
+{
+	return (ops->ae_flags & ECM_AE_CLASSIFIER_FLAG_EXTERNAL_AE_REGISTERED);
+}
+
+/*
+ * ecm_ae_classifier_is_fallback_enabled
+ *	Check if fallback to another AE is enabled.
+ */
+bool ecm_ae_classifier_is_fallback_enabled(struct ecm_ae_classifier_ops *ops)
+{
+	return (ops->ae_flags & ECM_AE_CLASSIFIER_FLAG_FALLBACK_ENABLE);
 }
 
 /*
@@ -131,6 +151,7 @@ EXPORT_SYMBOL(ecm_ae_classifier_decelerate_v6_connection);
 void ecm_ae_classifier_ops_register(struct ecm_ae_classifier_ops *ops)
 {
 	xchg(&ae_ops.ae_get, ops->ae_get);
+	xchg(&ae_ops.ae_flags, ops->ae_flags);
 }
 EXPORT_SYMBOL(ecm_ae_classifier_ops_register);
 
@@ -140,6 +161,7 @@ EXPORT_SYMBOL(ecm_ae_classifier_ops_register);
 void ecm_ae_classifier_ops_unregister(void)
 {
 	xchg(&ae_ops.ae_get, ecm_ae_classifier_dummy_get);
+	xchg(&ae_ops.ae_flags, 0);
 	synchronize_net();
 }
 EXPORT_SYMBOL(ecm_ae_classifier_ops_unregister);
