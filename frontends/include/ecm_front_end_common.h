@@ -30,6 +30,10 @@
 #ifdef ECM_FRONT_END_SFE_ENABLE
 #include <sfe_api.h>
 #endif
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+#include <ppe_drv.h>
+#include <ppe_drv_qos.h>
+#endif
 
 #define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
 
@@ -398,4 +402,5 @@ void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_insta
 uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
 bool ecm_front_end_check_udp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port);
+bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
 #endif  /* __ECM_FRONT_END_COMMON_H */

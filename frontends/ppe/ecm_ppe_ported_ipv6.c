@@ -198,6 +198,9 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
 	bool is_defunct = false;
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+	bool is_ppeq = false;
+#endif
 	ecm_front_end_acceleration_mode_t result_mode;
 	struct ecm_classifier_instance *aci;
 	struct ecm_classifier_rule_create ecrc;
@@ -735,6 +738,22 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Set up the flow and return qos tags
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		int32_t to_ppe_qos_intf = ecm_db_iface_interface_identifier_get(to_ifaces[to_ifaces_first]);
+		int32_t from_ppe_qos_intf = ecm_db_iface_interface_identifier_get(from_ifaces[from_ifaces_first]);
+
+		if (ecm_front_end_common_intf_qdisc_check(to_ppe_qos_intf, &is_ppeq) && is_ppeq) {
+			pd6rc->qos_rule.flow_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, to_ppe_qos_intf), pr->flow_qos_tag);
+			pd6rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		}
+
+		if (ecm_front_end_common_intf_qdisc_check(from_ppe_qos_intf, &is_ppeq) && is_ppeq) {
+			pd6rc->qos_rule.return_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net,from_ppe_qos_intf), pr->return_qos_tag);
+			pd6rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
+		}
+#endif
+
 		pd6rc->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		pd6rc->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
 		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_QOS;
