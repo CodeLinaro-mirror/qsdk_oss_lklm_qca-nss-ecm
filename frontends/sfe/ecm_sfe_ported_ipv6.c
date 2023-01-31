@@ -371,6 +371,9 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	int32_t list_index;
 	int32_t interface_type_counts[ECM_DB_IFACE_TYPE_COUNT];
 	bool rule_invalid;
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+	bool is_ppeq = false;
+#endif
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
 	ip_addr_t src_nat_ip;
@@ -1143,6 +1146,21 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		if (ecm_front_end_common_intf_qdisc_check(to_sfe_iface_id, &is_ppeq)
+				&& is_ppeq) {
+			nircm->qos_rule.flow_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, to_sfe_iface_id),
+				       pr->flow_qos_tag);
+		}
+
+		if (ecm_front_end_common_intf_qdisc_check(from_sfe_iface_id, &is_ppeq)
+				&& is_ppeq) {
+			nircm->qos_rule.return_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, from_sfe_iface_id),
+					pr->return_qos_tag);
+		}
+#endif
+
 		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
