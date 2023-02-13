@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -281,10 +281,29 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 				}
 
 			} else {
+				/*
+				 * Try to get the host mac address from the
+				 * neigbour list.
+				 */
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, remote_ip, node_addr))) {
-					DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
-					dev_put(local_dev);
-					return NULL;
+					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
+
+					/*
+					 * If the host is behind a route device, use the gateway's mac
+					 * address instead.
+					 */
+					if (ecm_interface_find_gateway(remote_ip, gw_addr)) {
+						DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
+						if (!ecm_interface_mac_addr_get_no_route(local_dev, gw_addr, node_addr)) {
+							DEBUG_TRACE("%px: Failed to find the mac address for gateway\n", feci);
+							dev_put(local_dev);
+							return NULL;
+						}
+					} else {
+						DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
+						dev_put(local_dev);
+						return NULL;
+					}
 				}
 			}
 

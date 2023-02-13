@@ -1,7 +1,7 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -57,6 +57,7 @@
  * Magic numbers
  */
 #define ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC 0xFECA
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SPI 0xff
 
 /*
  * Latency parameter operation
@@ -141,6 +142,7 @@ static uint32_t ecm_classifier_emesh_enabled;			/* Operational behaviour */
 static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency profile enable flag */
 static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
 static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
+static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
 
 /*
  * Management thread control
@@ -493,6 +495,23 @@ get_source_dev:
 }
 
 /*
+ * ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec()
+ * 	It is invoked for ipsec packet. It fills the metadata in skb->mark.
+ * 	TODO : FIx the IPSEC acceleration issue.
+ */
+static void ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec (struct sk_buff *skb,
+		struct sp_rule_output_params *flow_output_params, uint32_t msduq_forward)
+{
+	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
+		skb->mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
+		skb->mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
+		skb->mark |= flow_output_params->service_class_id;
+		skb->mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
+		skb->mark |= msduq_forward;
+	}
+}
+
+/*
  * ecm_classifier_emesh_sawf_fill_sawf_metadata()
  *	Save the sawf metadata in the classifier instance.
  */
@@ -582,15 +601,19 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 							ecm_tracker_sender_type_t sender,
 							uint8_t *smac, uint8_t *dmac,
 							struct sp_rule_input_params *flow_input_params,
-							struct sp_rule_input_params *return_input_params)
+							struct sp_rule_input_params *return_input_params,
+							struct net_device *src_dev, struct net_device *dest_dev)
 {
 	struct iphdr *iph;
 	struct ipv6hdr *ip6h;
 	struct tcphdr *tcphdr;
 	struct udphdr *udphdr;
 	uint16_t dscp;
+	struct ip_esp_hdr *esp;
+	uint16_t version;
 
 	if (skb->protocol == ntohs(ETH_P_IP)) {
+		version = ntohs(ETH_P_IP);
 		if (unlikely(!pskb_may_pull(skb, sizeof(*iph)))) {
 			/*
 			 * Check for ip header
@@ -604,9 +627,11 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		return_input_params->protocol = iph->protocol;
 		flow_input_params->src.ip.ipv4_addr = return_input_params->dst.ip.ipv4_addr = iph->saddr;
 		flow_input_params->dst.ip.ipv4_addr = return_input_params->src.ip.ipv4_addr = iph->daddr;
+		flow_input_params->ip_version_type = return_input_params->ip_version_type = 4;
 		dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
 		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
 	} else if (skb->protocol == ntohs(ETH_P_IPV6)) {
+		version = ntohs(ETH_P_IPV6);
 		if (unlikely(!pskb_may_pull(skb, sizeof(*ip6h)))) {
 			/*
 			 * Check for ipv6 header
@@ -622,6 +647,7 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		memcpy(&flow_input_params->dst.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
 		memcpy(&return_input_params->src.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
 		memcpy(&return_input_params->dst.ip.ipv6_addr, &ip6h->saddr, sizeof(struct in6_addr));
+		flow_input_params->ip_version_type = return_input_params->ip_version_type = 6;
 		dscp = ipv6_get_dsfield(ip6h) >> XT_DSCP_SHIFT;
 		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
 	} else {
@@ -629,6 +655,7 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		return false;
 	}
 
+	flow_input_params->spi = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SPI;
 	if (flow_input_params->protocol == IPPROTO_TCP) {
 		/*
 		 * Check for tcp header
@@ -653,6 +680,26 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		udphdr = udp_hdr(skb);
 		flow_input_params->src.port = return_input_params->dst.port = ntohs(udphdr->source);
 		flow_input_params->dst.port = return_input_params->src.port = ntohs(udphdr->dest);
+
+		/*
+		 * Check for UDP encapsulated IPSEC packet.
+		 */
+		if (flow_input_params->dst.port == ecm_classifier_sawf_emesh_udp_ipsec_port) {
+			esp = (struct ip_esp_hdr *)((uint8_t *)udphdr + sizeof(*udphdr));
+			flow_input_params->spi = ntohl(esp->spi);
+		}
+	} else if (flow_input_params->protocol == IPPROTO_ESP) {
+
+		/*
+		 * Get the SPI for IPSEC packets.
+		 */
+		if (version == ntohs(ETH_P_IP)) {
+			esp = (struct ip_esp_hdr *)((uint8_t *)iph + sizeof(*iph));
+			flow_input_params->spi = ntohl(esp->spi);
+		} else {
+			esp = (struct ip_esp_hdr *)((uint8_t *)ip6h + sizeof(*ip6h));
+			flow_input_params->spi = ntohl(esp->spi);
+		}
 	} else {
 		DEBUG_INFO("Not a ported protocol \n");
 		return false;
@@ -665,6 +712,11 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 	 */
 	ecm_classifier_emesh_sawf_fill_vlan_info(ci, sender, flow_input_params, return_input_params);
 
+	flow_input_params->ifindex = dest_dev->ifindex;
+	/*
+	 *  Get the netdevice addres in case of wds repeater cases.
+	 */
+	ether_addr_copy((uint8_t *)flow_input_params->dev_addr, (uint8_t *)dest_dev->dev_addr);
 	ether_addr_copy(flow_input_params->src.mac, smac);
 	ether_addr_copy(flow_input_params->dst.mac, dmac);
 	ether_addr_copy(return_input_params->src.mac, dmac);
@@ -806,7 +858,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 
 		DEBUG_INFO("ecm classifier sawf is enabled\n");
 		if (!ecm_classifier_sawf_fill_input_params(skb, ci, cemi, sender, smac, dmac,
-								&flow_input_params, &return_input_params)) {
+								&flow_input_params, &return_input_params, src_dev, dest_dev)) {
 			DEBUG_TRACE("%px: failed to fill in sawf input params\n", ci);
 			/*
 			 * If SAWF fails to fill input parameters,
@@ -864,6 +916,22 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		}
 
 		is_sawf_relevant = true;
+
+		/*
+		 * For IPSEC protocol, we update both side priority values and let it go via slow path.
+		 * TODO: FIx the IPSEC acceleration issue.
+		 */
+		if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
+			flow_input_params.dst.port == ecm_classifier_sawf_emesh_udp_ipsec_port)) {
+			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
+			cemi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			cemi->process_response.flow_qos_tag = skb->priority;
+			cemi->process_response.return_qos_tag = skb->priority;
+			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+			ecm_classifier_emesh_sawf_fill_sawf_metadata_ipsec(skb, &flow_output_params, msduq_forward);
+			goto sawf_emesh_classifier_out;
+		}
 	}
 
 	/*
@@ -1715,6 +1783,35 @@ next_ci:
 }
 
 /*
+ * ecm_classifier_sawf_emesh_get_udp_ipsec_port()
+ */
+static int ecm_classifier_sawf_emesh_get_udp_ipsec_port(void *data, u64 *val)
+{
+	*val = ecm_classifier_sawf_emesh_udp_ipsec_port;
+
+	return 0;
+}
+
+/*
+ * ecm_classifier_mscs_scs_set_udp_ipsec_port()
+ */
+static int ecm_classifier_sawf_emesh_set_udp_ipsec_port(void *data, u64 val)
+{
+	DEBUG_TRACE("ecm_classifier_sawf_emesh_udp_ipsec_port = %u\n", (uint32_t)val);
+
+	if (val != 5200) {
+		DEBUG_WARN("Invalid value: %u. Valid value is 5200.\n", (uint32_t)val);
+		return -EINVAL;
+	}
+
+	ecm_classifier_sawf_emesh_udp_ipsec_port = (uint32_t)val;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_sawf_emesh_udp_ipsec_port_fops, ecm_classifier_sawf_emesh_get_udp_ipsec_port, ecm_classifier_sawf_emesh_set_udp_ipsec_port, "%llu\n");
+
+/*
  * ecm_classifier_emesh_sawf_spm_notifier_callback()
  *	Callback for service prioritization notification update.
  */
@@ -1981,6 +2078,14 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
+
+	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				NULL, &ecm_classifier_sawf_emesh_udp_ipsec_port_fops)) {
+		DEBUG_ERROR("Failed to create ecm sawf udp ipsec port file in debugfs for adding port number\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+		return -1;
+	}
+
 
 	/*
 	 * Register for service prioritization notification update.
