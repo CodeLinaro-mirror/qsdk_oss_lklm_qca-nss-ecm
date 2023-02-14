@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -72,7 +72,7 @@ typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
  * MSDUQ callback to which emesh-sawf will register.
  */
 typedef uint16_t (*ecm_classifier_emesh_msduq_callback_t)(struct net_device *out_dev,
-		uint8_t dest_mac[], uint32_t service_class_id);
+		uint8_t dest_mac[], uint32_t service_class_id, uint32_t dscp, uint32_t rule_id);
 
 /**
  * SAWF UL configuration update callback function pointer.
