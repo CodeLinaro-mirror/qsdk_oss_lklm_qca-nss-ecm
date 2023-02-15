@@ -223,6 +223,14 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 
 		DEBUG_TRACE("TCP src: " ECM_IP_ADDR_OCTAL_FMT ":%d, dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, dir %d\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port, ecm_dir);
+
+		/*
+		 * Check if any of the ports are in the acceleration denied list.
+		 */
+		if (ecm_front_end_check_tcp_denied_ports(src_port, dest_port)) {
+			DEBUG_TRACE("src/dest port is in the TCP denied port list\n");
+			return NF_ACCEPT;
+		}
 	} else if (protocol == IPPROTO_UDP) {
 		/*
 		 * Unconfirmed connection may be dropped by Linux at the final step,
@@ -302,6 +310,14 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev,
 
 		DEBUG_TRACE("UDP src: " ECM_IP_ADDR_OCTAL_FMT ":%d, dest: " ECM_IP_ADDR_OCTAL_FMT ":%d, dir %d\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), src_port, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr), dest_port, ecm_dir);
+
+		/*
+		 * Check if any of the ports are in the acceleration denied list.
+		 */
+		if (ecm_front_end_check_udp_denied_ports(src_port, dest_port)) {
+			DEBUG_TRACE("src/dest port is in the UDP denied port list\n");
+			return NF_ACCEPT;
+		}
 	} else {
 		DEBUG_WARN("Wrong protocol: %d\n", protocol);
 		return NF_ACCEPT;
