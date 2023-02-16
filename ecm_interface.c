@@ -4783,6 +4783,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	char *dest_dev_name;
 	int32_t dest_dev_type;
 	struct net_device *src_dev;
+#ifdef ECM_INTERFACE_BOND_ENABLE
+	struct net_device *dest_dev_lag = NULL;
+#endif
 	char *src_dev_name;
 	int32_t src_dev_type;
 	int32_t current_interface_index;
@@ -5135,6 +5138,19 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
 						top_dev = dest_dev;
 					}
+
+#ifdef ECM_INTERFACE_BOND_ENABLE
+					/*
+					 * Get reference of dest_dev if next_dev is LAG device
+					 * to get correct neighbour lookup in routing case.
+					 */
+					if (ecm_front_end_is_lag_master(next_dev)) {
+						DEBUG_TRACE("if next dev is lag master; %s dest_dev: %s\n",
+							    next_dev->name, dest_dev->name);
+						dest_dev_lag = dest_dev;
+						dev_hold(dest_dev_lag);
+					}
+#endif
 					break;
 				}
 #endif
@@ -5304,23 +5320,37 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						memcpy(dest_mac_addr, dest_node_addr, ETH_ALEN);
 					} else {
 						struct net_device *master_dev;
+						struct net_device *dest_dev_found;
 
 						/*
 						 * Use appropriate source MAC address for routed packets and
 						 * find proper interface to find the destination mac address and
 						 * from which to issue ARP or neighbour solicitation packet.
 						 */
-						master_dev = ecm_interface_get_and_hold_dev_master(dest_dev);
+						if (!dest_dev_lag) {
+							dest_dev_found = dest_dev;
+						} else {
+							DEBUG_TRACE("dest_dev_lag: %s dest_dev: %s\n", dest_dev_lag->name, dest_dev->name);
+							dest_dev_found = dest_dev_lag;
+						}
+
+						master_dev = ecm_interface_get_and_hold_dev_master(dest_dev_found);
 						if (master_dev) {
 							memcpy(src_mac_addr, master_dev->dev_addr, ETH_ALEN);
 						} else {
-							master_dev = dest_dev;
+							master_dev = dest_dev_found;
 							if (top_dev) {
 								master_dev = top_dev;
 							}
+							DEBUG_TRACE("master_dev: %s dest_dev_found: %s, top_dev: %s, dest_dev: %s\n",
+								    master_dev->name, dest_dev_found->name, top_dev->name, dest_dev->name);
+
 							memcpy(src_mac_addr, master_dev->dev_addr, ETH_ALEN);
 							dev_hold(master_dev);
 						}
+
+						if (dest_dev_lag)
+							dev_put(dest_dev_lag);
 
 						/*
 						 * Determine destination MAC address for this routed packet
