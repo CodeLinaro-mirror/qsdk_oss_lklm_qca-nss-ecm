@@ -2984,7 +2984,6 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	uint8_t *dest_mac_addr;
 	uint16_t vid_flow = 0;
 	uint16_t vid_ret = 0;
-	int16_t ret;
 	bool result = false;
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
@@ -3019,7 +3018,7 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for FROM heirarcy for FLOW direction.\n", ci);
 	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, src_mac_addr,
 				ECM_VLAN_FILTER_RULE_FLOW_DIR, &vid_flow)) {
-		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_FLOW_DIR ret=%d\n", ci, ret);
+		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_FLOW_DIR\n", ci);
 		goto fail;
 	}
 
@@ -3031,7 +3030,7 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for TO heirarcy for FLOW direction.\n", ci);
 	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, dest_mac_addr,
 				ECM_VLAN_FILTER_RULE_FLOW_DIR, &vid_flow)) {
-		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_FLOW_DIR ret=%d\n", ci, ret);
+		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_FLOW_DIR\n", ci);
 		goto fail;
 	}
 
@@ -3043,7 +3042,7 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for TO heirarcy for RET direction.\n", ci);
 	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, dest_mac_addr,
 				ECM_VLAN_FILTER_RULE_RET_DIR, &vid_ret)) {
-		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_RET_DIR ret=%d\n", ci, ret);
+		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_RET_DIR\n", ci);
 		goto fail;
 	}
 
@@ -3055,7 +3054,7 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for FROM heirarcy for RET direction.\n", ci);
 	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, src_mac_addr,
 				ECM_VLAN_FILTER_RULE_RET_DIR, &vid_ret)) {
-		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_RET_DIR ret=%d\n", ci, ret);
+		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_RET_DIR\n", ci);
 		goto fail;
 	}
 
