@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2015, 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -50,6 +50,7 @@ enum ecm_conn_dir {
  */
 enum ecm_rule_update_type {
 	ECM_RULE_UPDATE_TYPE_CONNMARK,
+	ECM_RULE_UPDATE_TYPE_SAWFMARK,
 	ECM_RULE_UPDATE_TYPE_MAX
 };
 
@@ -253,6 +254,32 @@ static inline void ecm_type_check_ae_ipv6(uint32_t ip6[4]){}
 		hin6.in6_u.u6_addr32[1] = ipaddrt[2]; \
 		hin6.in6_u.u6_addr32[2] = ipaddrt[1]; \
 		hin6.in6_u.u6_addr32[3] = ipaddrt[0]; \
+	}
+
+/*
+ * This macro converts from network order IPv6 address to host order IPv6 address
+ */
+#define ECM_NET_IPV6_ADDR_TO_IP_ADDR(ipaddrt, nin6) \
+	{ \
+		ecm_type_check_ecm_ip_addr(ipaddrt); \
+		ecm_type_check_ae_ipv6(nin6); \
+		ipaddrt[0] = ntohl(nin6[3]); \
+		ipaddrt[1] = ntohl(nin6[2]); \
+		ipaddrt[2] = ntohl(nin6[1]); \
+		ipaddrt[3] = ntohl(nin6[0]); \
+	}
+
+/*
+ * This macro converts from host order IPv6 address to network order IPv6 address
+ */
+#define ECM_IP_ADDR_TO_NET_IPV6_ADDR(nin6, ipaddrt) \
+	{ \
+		ecm_type_check_ae_ipv6(nin6); \
+		ecm_type_check_ecm_ip_addr(ipaddrt); \
+		nin6[0] = htonl(ipaddrt[3]); \
+		nin6[1] = htonl(ipaddrt[2]); \
+		nin6[2] = htonl(ipaddrt[1]); \
+		nin6[3] = htonl(ipaddrt[0]); \
 	}
 
 /*
