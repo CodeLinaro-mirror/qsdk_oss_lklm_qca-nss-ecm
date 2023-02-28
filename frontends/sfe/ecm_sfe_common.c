@@ -24,6 +24,15 @@
 #include <net/ipv6.h>
 #include <linux/etherdevice.h>
 #include <net/sch_generic.h>
+
+/*
+ * Debug output levels
+ * 0 = OFF
+ * 1 = ASSERTS / ERRORS
+ * 2 = 1 + WARN
+ * 3 = 2 + INFO
+ * 4 = 3 + TRACE
+ */
 #define DEBUG_LEVEL ECM_SFE_COMMON_DEBUG_LEVEL
 
 #include <sfe_api.h>
@@ -711,12 +720,14 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		/*
 		 * Get connection information
 		 */
+		mark.type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
 		mark.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 		mark.src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
 		mark.dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
 		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_addr);
 		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_addr);
-		mark.mark = ct->mark;
+		mark.flow_mark = ct->mark;
+		mark.return_mark = ct->mark;
 
 		DEBUG_TRACE("%px: Update the mark value for the SFE connection\n", feci);
 
@@ -753,6 +764,69 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 
 		break;
 	}
+
+	case ECM_RULE_UPDATE_TYPE_SAWFMARK:
+	{
+		struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
+		struct sfe_connection_mark mark;
+		int aci_index;
+		int assignment_count;
+		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+
+		memset(&mark, 0, sizeof(mark));
+		mark.type = SFE_CONNECTION_MARK_TYPE_SAWFMARK;
+		mark.flow_mark = msg->flow_mark;
+		if (SFE_GET_SAWF_TAG(mark.flow_mark) == SFE_SAWF_VALID_TAG) {
+			mark.flags |= SFE_SAWF_MARK_FLOW_VALID;
+		}
+		mark.return_mark = msg->return_mark;
+		if (SFE_GET_SAWF_TAG(mark.return_mark) == SFE_SAWF_VALID_TAG) {
+			mark.flags |= SFE_SAWF_MARK_RETURN_VALID;
+		}
+		mark.protocol = msg->protocol;
+		mark.src_port = msg->flow_src_port;
+		mark.dest_port = msg->flow_dest_port;
+		if (msg->ip_version == 4) {
+			mark.src_ip[0] = msg->flow_src_ip[0];
+			mark.dest_ip[0] = msg->flow_dest_ip[0];
+
+			sfe_ipv4_mark_rule_update(&mark);
+
+			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
+					feci, mark.flow_mark, mark.return_mark,
+					mark.src_ip, ntohs(mark.src_port),
+					mark.dest_ip, ntohs(mark.dest_port),
+					mark.protocol);
+		} else {
+			ECM_IP_ADDR_COPY(mark.src_ip, msg->flow_src_ip);
+			ECM_IP_ADDR_COPY(mark.dest_ip, msg->flow_dest_ip);
+
+			sfe_ipv6_mark_rule_update(&mark);
+
+			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6c@%u -> %pI6c@%u protocol=%u\n",
+					feci, mark.flow_mark, mark.return_mark,
+					mark.src_ip, ntohs(mark.src_port),
+					mark.dest_ip, ntohs(mark.dest_port),
+					mark.protocol);
+		}
+
+		/*
+		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+		 * update, they will handle the event.
+		 */
+		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+			struct ecm_classifier_instance *aci;
+			aci = assignments[aci_index];
+			if (aci->update) {
+				aci->update(aci, type, msg);
+			}
+		}
+		ecm_db_connection_assignments_release(assignment_count, assignments);
+
+		break;
+	}
+
 	default:
 		DEBUG_WARN("%px: unsupported update rule type: %d\n", feci, type);
 		break;
