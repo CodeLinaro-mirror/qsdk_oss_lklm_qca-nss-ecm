@@ -245,6 +245,14 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		DEBUG_TRACE("TCP src: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dest: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dir %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), src_port, src_port_nat, ECM_IP_ADDR_TO_DOT(ip_dest_addr),
 				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), dest_port, dest_port_nat, ecm_dir);
+
+		/*
+		 * Check if any of the ports are in the acceleration denied list.
+		 */
+		if (ecm_front_end_check_tcp_denied_ports(src_port, dest_port)) {
+			DEBUG_TRACE("src/dest port is in the TCP denied port list\n");
+			return NF_ACCEPT;
+		}
 	} else if (protocol == IPPROTO_UDP) {
 		/*
 		 * Unconfirmed connection may be dropped by Linux at the final step,
@@ -334,6 +342,14 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		DEBUG_TRACE("UDP src: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dest: " ECM_IP_ADDR_DOT_FMT "(" ECM_IP_ADDR_DOT_FMT "):%d(%d), dir %d\n",
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), src_port, src_port_nat, ECM_IP_ADDR_TO_DOT(ip_dest_addr),
 				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), dest_port, dest_port_nat, ecm_dir);
+
+		/*
+		 * Check if any of the ports are in the acceleration denied list.
+		 */
+		if (ecm_front_end_check_udp_denied_ports(src_port, dest_port)) {
+			DEBUG_TRACE("src/dest port is in the UDP denied port list\n");
+			return NF_ACCEPT;
+		}
 	} else {
 		DEBUG_WARN("Wrong protocol: %d\n", protocol);
 		return NF_ACCEPT;
