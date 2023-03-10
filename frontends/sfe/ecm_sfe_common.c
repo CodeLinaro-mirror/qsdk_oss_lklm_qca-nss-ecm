@@ -250,6 +250,10 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 	 */
 	if (qdisc_found && qdisc_rule->flow_qdisc_interface == -1) {
 		*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+
+		/*
+		 * TODO: Handle this case for clearing bridge_vlan_filter configuration.
+		 */
 	}
 
 	/*
@@ -440,6 +444,244 @@ void ecm_sfe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
 	info->to_stats_bitmap = 0;
 	info->front_end_flags = 0;
 }
+
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+/*
+ * TODO: Add a common sub-function for v4 and v6 to set VLAN filter information in rule.
+ */
+#ifdef ECM_IPV6_ENABLE
+/*
+ * ecm_sfe_common_ipv6_vlan_filter_set()
+ * 	Initialize IPv6 rule create structure with Bridge VLAN Filter information in connection instance.
+ */
+void ecm_sfe_common_ipv6_vlan_filter_set(struct ecm_db_connection_instance *ci, struct sfe_ipv6_rule_create_msg *nircm)
+{
+	uint16_t index;
+	DEBUG_INFO("%px: Bridge vlan filter is valid. Updating the create rule\n", ci);
+
+	/*
+	 * Bridge VLAN Filter offload can only be achieved when l2_feature is enabled in SFE.
+	 */
+	if (!sfe_is_l2_feature_enabled()) {
+		DEBUG_TRACE("%px: Bridge VLAN filter rule is not programmed as SFE L2 Feature Flag is disabled\n", ci);
+	}
+
+	/*
+	 * Bridge VLAN Filter Offload is valid for all bridged traffic and
+	 * selectively allowed for routed flows only when SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE is set.
+	 */
+	if (ecm_db_connection_is_routed_get(ci) && !(nircm->rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE)) {
+		DEBUG_TRACE("%px: Bridge VLAN filter rule is routed and using bottom interface is NOT allowed\n", ci);
+	}
+
+	/*
+	 * Fill the rule in FLOW direction
+	 */
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_INGRESS1].is_valid) {
+		DEBUG_INFO("%px: Bridge vlan filter FLOW_INGRESS1 is valid.\n", ci);
+		/*
+		 * Fill ingress rule w.r.t last first seen bridge vlan filter rule in heirarchy
+		 * in FLOW direction.
+		 */
+		index = ECM_VLAN_FILTER_RULE_FLOW_INGRESS1;
+		nircm->flow_vlan_filter_rule.ingress_vlan_tag = (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->flow_vlan_filter_rule.ingress_flags = ci->vlan_filter[index].flags;
+	} else {
+		nircm->flow_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	}
+
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_EGRESS1].is_valid) {
+		DEBUG_INFO("%px: Bridge vlan filter FLOW_EGRESS1 is valid.\n", ci);
+		/*
+		 * Fill egress rule w.r.t last seen bridge vlan filter rule in heirarchy
+		 * in FLOW direction.
+		 */
+		index = ECM_VLAN_FILTER_RULE_FLOW_EGRESS1;
+		if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_EGRESS2].is_valid) {
+			index = ECM_VLAN_FILTER_RULE_FLOW_EGRESS2;
+			DEBUG_INFO("%px: Bridge vlan filter FLOW_EGRESS2 is valid.\n", ci);
+		}
+
+		nircm->flow_vlan_filter_rule.egress_vlan_tag= (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->flow_vlan_filter_rule.egress_flags = ci->vlan_filter[index].flags;
+	} else {
+		nircm->flow_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	}
+
+	/*
+	 * Fill the rule in RETURN direction:
+	 */
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_INGRESS1].is_valid) {
+		DEBUG_INFO("%px: Bridge vlan filter RET_INGRESS1 is valid.\n", ci);
+		/*
+		 * Fill ingress rule w.r.t last first seen bridge vlan filter rule in heirarchy
+		 * in RETURN direction.
+		 */
+		index = ECM_VLAN_FILTER_RULE_RET_INGRESS1;
+		nircm->return_vlan_filter_rule.ingress_vlan_tag= (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->return_vlan_filter_rule.ingress_flags = ci->vlan_filter[index].flags;
+	} else {
+		nircm->return_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	}
+
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_EGRESS1].is_valid) {
+		DEBUG_INFO("%px: Bridge vlan filter RET_EGRESS1 is valid.\n", ci);
+		/*
+		 * Fill egress rule w.r.t last seen bridge vlan filter rule in heirarchy
+		 * in RETURN direction.
+		 */
+		index = ECM_VLAN_FILTER_RULE_RET_EGRESS1;
+		if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_EGRESS2].is_valid) {
+			index = ECM_VLAN_FILTER_RULE_RET_EGRESS2;
+			DEBUG_INFO("%px: Bridge vlan filter RET_EGRESS2 is valid.\n", ci);
+		}
+
+		nircm->return_vlan_filter_rule.egress_vlan_tag= (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->return_vlan_filter_rule.egress_flags = ci->vlan_filter[index].flags;
+	} else {
+		nircm->return_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	}
+
+	nircm->valid_flags |= SFE_RULE_CREATE_VLAN_FILTER_VALID;
+}
+#endif
+
+/*
+ * ecm_sfe_common_ipv4_vlan_filter_set()
+ * 	Initialize IPv4 rule create structure with Bridge VLAN Filter information in connection instance.
+ */
+void ecm_sfe_common_ipv4_vlan_filter_set(struct ecm_db_connection_instance *ci, struct sfe_ipv4_rule_create_msg *nircm)
+{
+	uint16_t index;
+	DEBUG_INFO("%px: Bridge vlan filter is valid. Updating the create rule\n", ci);
+
+	/*
+	 * Bridge VLAN Filter offload can only be achieved when l2_feature is enabled in SFE.
+	 */
+	if (!sfe_is_l2_feature_enabled()) {
+		DEBUG_TRACE("%px: Bridge VLAN filter rule is not programmed as SFE L2 Feature Flag is disabled\n", ci);
+		goto no_rule;
+	}
+
+	/*
+	 * Bridge VLAN Filter Offload is valid for all bridged traffic and
+	 * selectively allowed for routed flows only when SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE is set.
+	 */
+	if (ecm_db_connection_is_routed_get(ci) && !(nircm->rule_flags & SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE)) {
+		DEBUG_TRACE("%px: Bridge VLAN filter rule is routed and using bottom interface is NOT allowed\n", ci);
+		goto no_rule;
+	}
+
+	/*
+	 * FLOW Direction: Ingress
+	 */
+	index = ECM_VLAN_FILTER_RULE_MAX;
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_INGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_FLOW_INGRESS1;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_EGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_FLOW_EGRESS1;
+	} else {
+		goto no_rule;
+	}
+
+	if (index != ECM_VLAN_FILTER_RULE_MAX) {
+		DEBUG_TRACE("FLOW Ingress Rule selected: for index %d %s\n", index, ecm_db_connection_vlan_filter_type_strings[index]);
+		nircm->flow_vlan_filter_rule.ingress_vlan_tag = (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->flow_vlan_filter_rule.ingress_flags = ci->vlan_filter[index].flags;
+	}
+
+	/*
+	 * FLOW Direction: Egress
+	 */
+	index = ECM_VLAN_FILTER_RULE_MAX;
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_EGRESS2].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_FLOW_EGRESS2;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_EGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_FLOW_EGRESS1;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_FLOW_INGRESS2].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_FLOW_INGRESS2;
+	} else {
+		goto no_rule;
+	}
+
+	if (index != ECM_VLAN_FILTER_RULE_MAX) {
+		DEBUG_TRACE("FLOW Egress Rule selected: for index %d %s", index, ecm_db_connection_vlan_filter_type_strings[index]);
+		nircm->flow_vlan_filter_rule.egress_vlan_tag = (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->flow_vlan_filter_rule.egress_flags = ci->vlan_filter[index].flags;
+	}
+
+	/*
+	 * RETURN direction: Ingress
+	 */
+	index = ECM_VLAN_FILTER_RULE_MAX;
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_INGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_RET_INGRESS1;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_EGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_RET_EGRESS1;
+	} else {
+		goto no_rule;
+	}
+
+	if (index != ECM_VLAN_FILTER_RULE_MAX) {
+		DEBUG_TRACE("RETURN Ingress Rule selected: for index %d %s", index, ecm_db_connection_vlan_filter_type_strings[index]);
+		nircm->return_vlan_filter_rule.ingress_vlan_tag = (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->return_vlan_filter_rule.ingress_flags = ci->vlan_filter[index].flags;
+	}
+
+	/*
+	 * RETURN Direction: Egress
+	 */
+	index = ECM_VLAN_FILTER_RULE_MAX;
+	if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_EGRESS2].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_RET_EGRESS2;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_EGRESS1].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_RET_EGRESS1;
+	} else if (ci->vlan_filter[ECM_VLAN_FILTER_RULE_RET_INGRESS2].is_valid) {
+		index = ECM_VLAN_FILTER_RULE_RET_INGRESS2;
+	} else {
+		goto no_rule;
+	}
+
+	if (index != ECM_VLAN_FILTER_RULE_MAX) {
+		DEBUG_TRACE("RETURN Egress Rule selected: for index %d %s", index, ecm_db_connection_vlan_filter_type_strings[index]);
+		nircm->return_vlan_filter_rule.egress_vlan_tag = (
+				((ci->vlan_filter[index].vlan_tpid) << 16) |
+				ci->vlan_filter[index].vlan_tag);
+		nircm->return_vlan_filter_rule.egress_flags = ci->vlan_filter[index].flags;
+		nircm->valid_flags |= SFE_RULE_CREATE_VLAN_FILTER_VALID;
+	}
+
+	DEBUG_WARN("Filling sfe rule for FLOW: ingress_vlan_tag: 0x%x : ingress_vlan_flags: %d , egress_vlan_tag: 0x%x : egress_vlan_flags: %d",
+			nircm->flow_vlan_filter_rule.ingress_vlan_tag, nircm->flow_vlan_filter_rule.ingress_flags,
+			nircm->flow_vlan_filter_rule.egress_vlan_tag, nircm->flow_vlan_filter_rule.egress_flags);
+
+	DEBUG_WARN("Filling sfe rule for RETURN: ingress_vlan_tag: 0x%x : ingress_vlan_flags: %d , egress_vlan_tag: 0x%x : egress_vlan_flags: %d",
+			nircm->return_vlan_filter_rule.ingress_vlan_tag, nircm->return_vlan_filter_rule.ingress_flags,
+			nircm->return_vlan_filter_rule.egress_vlan_tag, nircm->return_vlan_filter_rule.egress_flags);
+	return;
+
+no_rule:
+	nircm->flow_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->flow_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->return_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->return_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->valid_flags &= ~SFE_RULE_CREATE_VLAN_FILTER_VALID;
+}
+#endif
 
 /*
  * ecm_sfe_common_update_rule()

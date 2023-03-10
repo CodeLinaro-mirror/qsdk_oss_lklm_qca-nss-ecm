@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2016-2017, 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -446,6 +446,26 @@ int ecm_conntrack_notifier_init(struct dentry *dentry)
 		debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
 		return result;
 	}
+
+	/*
+	 * Hold netns reference to keep the basic conntrack alive and
+	 * track conntrack even when firewall stopped.
+	 */
+	result = nf_ct_netns_get(&init_net, NFPROTO_IPV4);
+	if (result < 0) {
+		DEBUG_ERROR("Can't hold ipv4 netns.\n");
+		debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
+		return result;
+	}
+#ifdef ECM_IPV6_ENABLE
+	result = nf_ct_netns_get(&init_net, NFPROTO_IPV6);
+	if (result < 0) {
+		DEBUG_ERROR("Can't hold ipv6 netns.\n");
+		nf_ct_netns_put(&init_net, NFPROTO_IPV4);
+		debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
+		return result;
+	}
+#endif
 #endif
 
 	return 0;
@@ -458,7 +478,15 @@ EXPORT_SYMBOL(ecm_conntrack_notifier_init);
 void ecm_conntrack_notifier_exit(void)
 {
 	DEBUG_INFO("ECM Conntrack Notifier exit\n");
+
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
+	/*
+	 * Release netns reference.
+	 */
+	nf_ct_netns_put(&init_net, NFPROTO_IPV4);
+#ifdef ECM_IPV6_ENABLE
+	nf_ct_netns_put(&init_net, NFPROTO_IPV6);
+#endif
 	nf_conntrack_unregister_notifier(&init_net, &ecm_conntrack_notifier);
 #endif
 	/*

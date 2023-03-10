@@ -101,6 +101,8 @@
 #endif
 #endif
 
+#define ECM_FRONT_END_DENIED_PORTS_MAX 64
+
 /*
  * Sysctl table header
  */
@@ -115,6 +117,12 @@ unsigned int ecm_front_end_conn_limit = 0;
 #ifdef ECM_FRONT_END_PPE_ENABLE
 unsigned int ecm_front_end_ppe_fse_enable = 1;
 #endif
+
+/*
+ * Denied acceleration port lists.
+ */
+static int ecm_front_end_udp_denied_ports[ECM_FRONT_END_DENIED_PORTS_MAX];
+static int ecm_front_end_tcp_denied_ports[ECM_FRONT_END_DENIED_PORTS_MAX];
 
 /*
  * Predefined frontend and feature support map.
@@ -831,6 +839,218 @@ int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void _
 	return ret;
 }
 
+/*
+ * ecm_front_end_denied_ports_read()
+ *	Reads the denied ports from the denied ports array and prints.
+ */
+static void ecm_front_end_denied_ports_read(void __user *buffer, size_t *lenp, loff_t *ppos, int *denied_ports)
+{
+	char *read_buf;
+	int i, len;
+	size_t bytes = 0;
+
+	/*
+	 * (64 * 8) bytes for the buffer size is sufficient to write
+	 * the array including the spaces and new line characters.
+	 */
+	read_buf = kzalloc(ECM_FRONT_END_DENIED_PORTS_MAX * 8 * sizeof(char), GFP_KERNEL);
+	if (!read_buf) {
+		DEBUG_ERROR("Failed to alloc buffer to print denied port array\n");
+		return;
+	}
+
+	for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+		if (denied_ports[i] == -1) {
+			continue;
+		}
+		len = scnprintf(read_buf + bytes, 8, "%d ", denied_ports[i]);
+		if (!len) {
+			DEBUG_ERROR("failed to read from buffer %d\n", denied_ports[i]);
+			kfree(read_buf);
+			return;
+		}
+		bytes += len;
+	}
+
+	/*
+	 * Add new line character at the end.
+	 */
+	len = scnprintf(read_buf + bytes, 4, "\n");
+	bytes += len;
+
+	bytes = simple_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	*lenp = bytes;
+	kfree(read_buf);
+}
+
+/*
+ * ecm_front_end_is_port_in_denied_list()
+ *	Checks if the port is in the given port list.
+ */
+static inline bool ecm_front_end_is_port_in_denied_list(int port, int *denied_ports)
+{
+	uint16_t i;
+
+	for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+		if (port == denied_ports[i]) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * ecm_front_end_denied_ports_handler()
+ *	Proc handler function for denied ports read/write operation.
+ */
+static int ecm_front_end_denied_ports_handler(int write, void __user *buffer, size_t *lenp, loff_t *ppos, int *denied_ports)
+{
+
+	char *buf;
+	char *pfree;
+	char *token;
+	int count, port, i;
+	long int val;
+
+	if (!write) {
+		ecm_front_end_denied_ports_read(buffer, lenp, ppos, denied_ports);
+		return 0;
+	}
+
+	buf = kzalloc((ECM_FRONT_END_DENIED_PORTS_MAX * 8) * sizeof(char), GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	pfree = buf;
+	count = *lenp;
+	if (count > (ECM_FRONT_END_DENIED_PORTS_MAX * 8 * sizeof(char))) {
+		count = ECM_FRONT_END_DENIED_PORTS_MAX * 8 * sizeof(char);
+	}
+
+	if (copy_from_user(buf, buffer, count)) {
+		kfree(pfree);
+		return -EFAULT;
+	}
+
+	token = strsep(&buf, " ");
+	if (strlen(token) != 3) {
+		DEBUG_ERROR("cmd should be add or del\n");
+		kfree(pfree);
+		return -EINVAL;
+	}
+
+	if (!strncmp(token, "add", 3)) {
+		while (buf) {
+			token = strsep(&buf, " ");
+			if (kstrtol(token, 10, &val)) {
+				DEBUG_ERROR("%s is not a number\n", token);
+				kfree(pfree);
+				return -EINVAL;
+			}
+			if (sscanf(token, "%d", &port)) {
+				if (port < 0 || port > 65535) {
+					DEBUG_ERROR("port %d is not between (0-65535)\n", port);
+					kfree(pfree);
+					return -EINVAL;
+				}
+				if (ecm_front_end_is_port_in_denied_list(port, denied_ports)) {
+					DEBUG_WARN("port: %d is already in the port list\n", port);
+					continue;
+				}
+				for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+					if (denied_ports[i] == -1) {
+						denied_ports[i] = port;
+						break;
+					}
+				}
+			}
+		}
+	} else if (!strncmp(token, "del", 3)) {
+		while (buf) {
+			token = strsep(&buf, " ");
+			if (kstrtol(token, 10, &val)) {
+				DEBUG_ERROR("%s is not a number\n", token);
+				kfree(pfree);
+				return -EINVAL;
+			}
+			if (sscanf(token, "%d", &port)) {
+				if (port < 0 || port > 65535) {
+					DEBUG_ERROR("port %d is not between (0-65535)\n", port);
+					kfree(pfree);
+					return -EINVAL;
+				}
+				for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+					if (denied_ports[i] == port) {
+						denied_ports[i] = -1;
+						break;
+					}
+				}
+			}
+		}
+	} else {
+		DEBUG_ERROR("invalid command: %s\n", token);
+	}
+
+	kfree(pfree);
+	return count;
+}
+
+/*
+ * ecm_front_end_udp_denied_ports_handler()
+ *	Proc handler function for UDP denied ports read/write operation.
+ */
+static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *	Add ports to the list:
+	 *	echo add 53 67 146 > /proc/sys/net/ecm/udp_denied_ports
+	 *
+	 *	Delete ports from the list:
+	 *	echo del 67 > /proc/sys/net/ecm/udp_denied_ports
+	 *
+	 *	Dump the list to the console:
+	 *	cat /proc/sys/net/ecm/udp_denied_ports
+	 */
+	return ecm_front_end_denied_ports_handler(write, buffer, lenp, ppos, ecm_front_end_udp_denied_ports);
+}
+
+/*
+ * ecm_front_end_tcp_denied_ports_handler()
+ *	Proc handler function for TCP denied ports read/write operation.
+ */
+static int ecm_front_end_tcp_denied_ports_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *	Add ports to the list:
+	 *	echo add 53 67 146 > /proc/sys/net/ecm/tcp_denied_ports
+	 *
+	 *	Delete ports from the list:
+	 *	echo del 67 > /proc/sys/net/ecm/tcp_denied_ports
+	 *
+	 *	Dump the list to the console:
+	 *	cat /proc/sys/net/ecm/tcp_denied_ports
+	 */
+	return ecm_front_end_denied_ports_handler(write, buffer, lenp, ppos, ecm_front_end_tcp_denied_ports);
+}
+
+/*
+ * ecm_front_end_init_denied_ports()
+ *	Initalize the denied ports list with value of -1
+ */
+static void ecm_front_end_init_denied_ports(void)
+{
+	int i;
+
+	for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+		ecm_front_end_udp_denied_ports[i] = -1;
+		ecm_front_end_tcp_denied_ports[i] = -1;
+	}
+}
+
 static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 	{
 		.procname	= "front_end_conn_limit",
@@ -848,6 +1068,21 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.proc_handler	= &ecm_front_end_ppe_fse_enable_handler,
 	},
 #endif
+	{
+		.procname	= "udp_denied_ports",
+		.data		= &ecm_front_end_udp_denied_ports,
+		.maxlen		= sizeof(int) * ECM_FRONT_END_DENIED_PORTS_MAX,
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_udp_denied_ports_handler,
+	},
+	{
+		.procname	= "tcp_denied_ports",
+		.data		= &ecm_front_end_tcp_denied_ports,
+		.maxlen		= sizeof(int) * ECM_FRONT_END_DENIED_PORTS_MAX,
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_tcp_denied_ports_handler,
+	},
+
 	{}
 };
 
@@ -884,6 +1119,7 @@ void ecm_front_end_common_sysctl_register()
 		ecm_sfe_sysctl_tbl_init();
 	}
 #endif
+	ecm_front_end_init_denied_ports();
 }
 
 /*
@@ -1320,4 +1556,38 @@ void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_insta
 		DEBUG_WARN("Direction not handled dir=%d for set stats bitmap\n", dir);
 		break;
 	}
+}
+
+/*
+ * ecm_front_end_check_udp_denied_ports()
+ *	Checks if any given UDP port number is in the acceleration denied list.
+ */
+bool ecm_front_end_check_udp_denied_ports(uint16_t src_port, uint16_t dest_port)
+{
+	uint16_t i;
+
+	for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+		if (src_port == ecm_front_end_udp_denied_ports[i] || dest_port == ecm_front_end_udp_denied_ports[i]) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * ecm_front_end_check_tcp_denied_ports()
+ *	Checks if any given TCP port number is in the acceleration denied list.
+ */
+bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
+{
+	uint16_t i;
+
+	for (i = 0; i < ECM_FRONT_END_DENIED_PORTS_MAX; i++) {
+		if (src_port == ecm_front_end_tcp_denied_ports[i] || dest_port == ecm_front_end_tcp_denied_ports[i]) {
+			return true;
+		}
+	}
+
+	return false;
 }

@@ -1714,6 +1714,8 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 	struct net_device *in;
 	bool can_accel = true;
 	unsigned int result = NF_ACCEPT;
+	struct net_device *dest_dev __maybe_unused;
+	uint16_t vid __maybe_unused;
 
 	DEBUG_TRACE("%px: IPv4 CMN Bridge: %s\n", out, out->name);
 
@@ -1833,16 +1835,31 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 
 	if (!is_multicast_ether_addr(skb_eth_hdr->h_dest)) {
 		/*
-		 * Process the packet, if we have this mac address in the fdb table.
-		 * TODO: For the kernel versions later than 3.6.x, the API needs vlan id.
-		 *	 For now, we are passing 0, but this needs to be handled later.
+		 * Process the packet, if we have this destination mac address in the fdb table.
 		 */
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+		/*
+		 * TODO: Enhance br_fdb_has_entry() to make it VLAN filter aware.
+		 */
+		rcu_read_lock();
+		dest_dev = br_fdb_find_vid_by_mac(bridge, skb_eth_hdr->h_dest, &vid);
+		if (!dest_dev) {
+			DEBUG_TRACE("skb: %px, br_fdb_find_vid_by_mac() returned NULL dest_dev for dest_mac(%pM) %px (%s) vid=%d\n",
+					skb, skb_eth_hdr->h_dest, bridge, bridge->name, vid);
+			rcu_read_unlock();
+			goto skip_ipv4_bridge_flow;
+		}
+		dev_put(dest_dev);
+		rcu_read_unlock();
+#else
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
 			DEBUG_WARN("skb: %px, No fdb entry for this mac address %pM in the bridge: %px (%s)\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name);
 			goto skip_ipv4_bridge_flow;
 		}
+#endif
 	}
+
 	DEBUG_TRACE("CMN Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
 

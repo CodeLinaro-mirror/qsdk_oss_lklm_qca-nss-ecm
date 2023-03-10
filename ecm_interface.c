@@ -4783,6 +4783,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 	char *dest_dev_name;
 	int32_t dest_dev_type;
 	struct net_device *src_dev;
+#ifdef ECM_INTERFACE_BOND_ENABLE
+	struct net_device *dest_dev_lag = NULL;
+#endif
 	char *src_dev_name;
 	int32_t src_dev_type;
 	int32_t current_interface_index;
@@ -5135,6 +5138,19 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					if (current_interface_index == (ECM_DB_IFACE_HEIRARCHY_MAX - 1)) {
 						top_dev = dest_dev;
 					}
+
+#ifdef ECM_INTERFACE_BOND_ENABLE
+					/*
+					 * Get reference of dest_dev if next_dev is LAG device
+					 * to get correct neighbour lookup in routing case.
+					 */
+					if (ecm_front_end_is_lag_master(next_dev)) {
+						DEBUG_TRACE("if next dev is lag master; %s dest_dev: %s\n",
+							    next_dev->name, dest_dev->name);
+						dest_dev_lag = dest_dev;
+						dev_hold(dest_dev_lag);
+					}
+#endif
 					break;
 				}
 #endif
@@ -5304,23 +5320,37 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						memcpy(dest_mac_addr, dest_node_addr, ETH_ALEN);
 					} else {
 						struct net_device *master_dev;
+						struct net_device *dest_dev_found;
 
 						/*
 						 * Use appropriate source MAC address for routed packets and
 						 * find proper interface to find the destination mac address and
 						 * from which to issue ARP or neighbour solicitation packet.
 						 */
-						master_dev = ecm_interface_get_and_hold_dev_master(dest_dev);
+						if (!dest_dev_lag) {
+							dest_dev_found = dest_dev;
+						} else {
+							DEBUG_TRACE("dest_dev_lag: %s dest_dev: %s\n", dest_dev_lag->name, dest_dev->name);
+							dest_dev_found = dest_dev_lag;
+						}
+
+						master_dev = ecm_interface_get_and_hold_dev_master(dest_dev_found);
 						if (master_dev) {
 							memcpy(src_mac_addr, master_dev->dev_addr, ETH_ALEN);
 						} else {
-							master_dev = dest_dev;
+							master_dev = dest_dev_found;
 							if (top_dev) {
 								master_dev = top_dev;
 							}
+							DEBUG_TRACE("master_dev: %s dest_dev_found: %s, top_dev: %s, dest_dev: %s\n",
+								    master_dev->name, dest_dev_found->name, top_dev->name, dest_dev->name);
+
 							memcpy(src_mac_addr, master_dev->dev_addr, ETH_ALEN);
 							dev_hold(master_dev);
 						}
+
+						if (dest_dev_lag)
+							dev_put(dest_dev_lag);
 
 						/*
 						 * Determine destination MAC address for this routed packet
@@ -6739,6 +6769,14 @@ skip_bridge_refresh:
 		}
 		dev_put(dev);
 	}
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+	/*
+	 * Update bridge vlan filter interface stats
+	 */
+	if (ci->vlan_filter_valid) {
+		ecm_interface_vlan_filter_stats_update(ci, dir, tx_packets, tx_bytes, rx_packets, rx_bytes);
+	}
+#endif
 }
 
 /*
@@ -6788,8 +6826,130 @@ void ecm_interface_stats_update(struct ecm_db_connection_instance *ci,
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, mac_addr);
 	ecm_interface_list_stats_update(to_ifaces_first, to_ifaces, mac_addr, false, to_tx_packets, to_tx_bytes, to_rx_packets, to_rx_bytes, is_ported, ci, ECM_DB_OBJ_DIR_TO);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+
 }
 EXPORT_SYMBOL(ecm_interface_stats_update);
+
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+/*
+ * ecm_interface_vlan_filter_stats_update()
+ *	Using the interface lists for the given connection, update the interface statistics for each.
+ *
+ * 'from' here is wrt the connection 'from' side.  Likewise with 'to'.
+ * Both RX and TX are incremented for packets in each direction.
+ * TX is wrt what the interface has transmitted.  RX is what the interface has received.
+ */
+void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir,
+						uint32_t tx_packets, uint32_t tx_bytes,
+						uint32_t rx_packets, uint32_t rx_bytes)
+{
+	int list_index;
+	int ingress_start_idx;
+	int ingress_end_idx;
+	int egress_start_idx;
+	int egress_end_idx;
+
+	if (dir == ECM_DB_OBJ_DIR_FROM) {
+		ingress_start_idx = ECM_VLAN_FILTER_RULE_FLOW_INGRESS1;
+		ingress_end_idx = ECM_VLAN_FILTER_RULE_FLOW_INGRESS2;
+		egress_start_idx = ECM_VLAN_FILTER_RULE_FLOW_EGRESS1;
+		egress_end_idx = ECM_VLAN_FILTER_RULE_FLOW_EGRESS2;
+	} else {
+		ingress_start_idx = ECM_VLAN_FILTER_RULE_RET_INGRESS1;
+		ingress_end_idx = ECM_VLAN_FILTER_RULE_RET_INGRESS2;
+		egress_start_idx = ECM_VLAN_FILTER_RULE_RET_EGRESS1;
+		egress_end_idx = ECM_VLAN_FILTER_RULE_RET_EGRESS2;
+	}
+
+	/*
+	 * Update stats for ingress interfaces
+	 */
+	for (list_index = ingress_start_idx; list_index <= ingress_end_idx; list_index++) {
+		struct ecm_db_iface_instance *ii;
+		ecm_db_iface_type_t ii_type;
+		char *ii_name;
+		struct net_device *dev;
+		uint16_t vid;
+		int ret;
+
+		if (!ci->vlan_filter[list_index].is_valid) {
+			continue;
+		}
+
+		ii = ci->vlan_filter[list_index].ii;
+		ii_type = ecm_db_iface_type_get(ii);
+		ii_name = ecm_db_interface_type_to_string(ii_type);
+		vid = ci->vlan_filter[list_index].vlan_tag;
+
+		/*
+		 * Locate real device in system
+		 */
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+		if (!dev) {
+			DEBUG_WARN("Could not locate interface for vlan filer: list_index: %d, ii: %px, type: %d (%s), vid: %d\n",
+					list_index, ii, ii_type, ii_name, vid);
+			continue;
+		}
+
+		/*
+		 * Update stats
+		 */
+		ret = br_vlan_update_stats(dev, vid, rx_bytes, rx_packets, 0, 0);
+		if (ret) {
+			DEBUG_WARN("Stats update failed for vlan filter with error=%d\n", ret);
+			dev_put(dev);
+			return;
+		}
+
+		DEBUG_WARN("Stats update for dev->%s : tx=%d  rx=%d dir=%d\n", dev->name, tx_packets, rx_packets, dir);
+		dev_put(dev);
+	}
+
+	/*
+	 * Update stats for egress interfaces
+	 */
+	for (list_index = egress_start_idx; list_index <= egress_end_idx; list_index++) {
+		struct ecm_db_iface_instance *ii;
+		ecm_db_iface_type_t ii_type;
+		char *ii_name;
+		struct net_device *dev;
+		uint16_t vid;
+		int ret;
+
+		if (!ci->vlan_filter[list_index].is_valid) {
+			continue;
+		}
+
+		ii = ci->vlan_filter[list_index].ii;
+		ii_type = ecm_db_iface_type_get(ii);
+		ii_name = ecm_db_interface_type_to_string(ii_type);
+		vid = ci->vlan_filter[list_index].vlan_tag;
+
+		/*
+		 * Locate real device in system
+		 */
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+		if (!dev) {
+			DEBUG_WARN("Could not locate interface for vlan filer: list_index: %d, ii: %px, type: %d (%s), vid: %d\n",
+					list_index, ii, ii_type, ii_name, vid);
+			continue;
+		}
+
+		/*
+		 * Update stats
+		 */
+		ret = br_vlan_update_stats(dev, vid, 0, 0, tx_bytes, tx_packets);
+		if (ret) {
+			DEBUG_WARN("Stats update failed for vlan filter with error=%d\n", ret);
+			dev_put(dev);
+			return;
+		}
+
+		DEBUG_WARN("Stats update for dev->%s : tx=%d  rx=%d dir=%d\n", dev->name, tx_packets, rx_packets, dir);
+		dev_put(dev);
+	}
+}
+#endif
 
 #ifdef ECM_MULTICAST_ENABLE
 /*
