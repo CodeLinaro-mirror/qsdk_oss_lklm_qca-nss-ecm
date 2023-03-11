@@ -1162,6 +1162,23 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 #endif
 
 /*
+ * ecm_interface_has_multiple_ae_iface_type
+ *	Returns true if a given net device has multiple interface instances.
+ *
+ * Tunnel interfaces with inner/outer processing have two interface instances
+ * associated with it.
+ */
+static bool ecm_interface_has_multiple_ae_iface_type(struct net_device *dev)
+{
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	if (netif_is_vxlan(dev)) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+/*
  * ecm_interface_addr_find_route_by_addr_ipv4()
  *	Return the route for the given IP address.  Returns NULL on failure.
  */
@@ -7200,8 +7217,16 @@ void ecm_interface_dev_defunct_connections(struct net_device *dev)
 		if (dev->ifindex == ecm_db_iface_interface_identifier_get(ii)) {
 			ecm_interface_defunct_connections(ii);
 			DEBUG_TRACE("%px: defunct for %px: COMPLETE\n", dev, ii);
-			ecm_db_iface_deref(ii);
-			return;
+
+			/*
+			 * Tunnel netdevices with Inner/Outer processing have two
+			 * interface instances assocaited with it and hence the
+			 * connections on both the interfaces should be cleared.
+			 */
+			if (!ecm_interface_has_multiple_ae_iface_type(dev)) {
+				ecm_db_iface_deref(ii);
+				return;
+			}
 		}
 
 		/*
