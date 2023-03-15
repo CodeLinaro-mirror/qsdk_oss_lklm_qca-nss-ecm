@@ -5144,7 +5144,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					 * Get reference of dest_dev if next_dev is LAG device
 					 * to get correct neighbour lookup in routing case.
 					 */
-					if (ecm_front_end_is_lag_master(next_dev)) {
+					if (ecm_front_end_is_lag_master(next_dev) && is_routed) {
 						DEBUG_TRACE("if next dev is lag master; %s dest_dev: %s\n",
 							    next_dev->name, dest_dev->name);
 						dest_dev_lag = dest_dev;
@@ -5349,8 +5349,9 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 							dev_hold(master_dev);
 						}
 
-						if (dest_dev_lag)
+						if (dest_dev_lag) {
 							dev_put(dest_dev_lag);
+						}
 
 						/*
 						 * Determine destination MAC address for this routed packet
