@@ -163,6 +163,14 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	dest_port = 0;
 
 	/*
+	 * NAT acceleration is not supported for 3-tuple
+	 */
+	if (unlikely(ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || unlikely(ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT)) {
+		DEBUG_TRACE("%px: Non-ported ipv6 NAT acceleration is not supported\n", skb);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * 3-tuple acceleration for PPPoE bridged flow?
 	 */
 	if (unlikely(!is_routed &&
@@ -366,9 +374,15 @@ feci_alloc_check:
 		}
 
 feci_alloc_done:
+		/*
+		 * NAT is not supported for IPv6 non-ported cases,
+		 * using ip_src_addr for ip_src_addr_nat and
+		 * ip_dest_addr for ip_dest_addr_nat.
+		 */
 		if (!ecm_front_end_ipv6_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
-							ip_src_addr, ip_dest_addr,
+							ip_src_addr, ip_src_addr,
+							ip_dest_addr, ip_dest_addr,
 							&efeici)) {
 			DEBUG_WARN("ECM front end ipv6 interface construct set failed\n");
 			goto fail_1;
