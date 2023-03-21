@@ -6678,6 +6678,7 @@ skip_bridge_refresh:
 			update_mcast_rx_stats = (!is_mcast_to_if &&
 						ecm_db_multicast_connection_to_interfaces_set_check(ci));
 #endif
+			DEBUG_INFO("macvlan call to update status:rx pkt:%u tx pkg: %u mcast_rx:%s\n", rx_packets, tx_packets, update_mcast_rx_stats?"Yes":"No");
 			macvlan_offload_stats_update(dev, &stats, update_mcast_rx_stats);
 
 			/*
@@ -6735,6 +6736,7 @@ skip_bridge_refresh:
 			stats.rx_bytes = rx_bytes;
 			stats.tx_packets = tx_packets;
 			stats.tx_bytes = tx_bytes;
+			DEBUG_INFO("vlan call to update status:rx pkt:%u tx pkt:%u", rx_packets, tx_packets);
 			__vlan_dev_update_accel_stats(dev, &stats);
 			dev_put(dev);
 			continue;
@@ -7032,7 +7034,7 @@ void ecm_interface_multicast_stats_update(struct ecm_db_connection_instance *ci,
 		if (to_ifaces_first[if_index] < ECM_DB_IFACE_HEIRARCHY_MAX) {
 			ii_temp = ecm_db_multicast_if_heirarchy_get(to_ifaces, if_index);
 			ecm_db_multicast_copy_if_heirarchy(to_list_single, ii_temp);
-			ecm_interface_list_stats_update(to_ifaces_first[if_index], to_list_single, mac_addr, true, from_tx_packets, from_tx_bytes, 0, 0, is_ported, ci, ECM_DB_OBJ_DIR_TO);
+			ecm_interface_list_stats_update(to_ifaces_first[if_index],to_list_single, mac_addr, true, to_tx_packets, to_tx_bytes, 0, 0, is_ported, ci, ECM_DB_OBJ_DIR_TO);
 		}
 	}
 
