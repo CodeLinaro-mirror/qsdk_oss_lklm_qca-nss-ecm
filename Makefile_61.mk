@@ -8,9 +8,9 @@ endif
 obj-m +=examples/ecm_ae_select.o
 
 obj-m += ecm.o
-ifeq ($(BUILD_ECM_WIFI_PLUGIN),y)
-obj-m += ecm_wifi_plugins/
-endif
+#ifeq ($(BUILD_ECM_WIFI_PLUGIN),y)
+#obj-m += ecm_wifi_plugins/
+#endif
 
 # #####################################################
 # Example builds.
@@ -22,9 +22,9 @@ endif
 ifeq ($(EXAMPLES_BUILD_MARK),y)
 obj-m += examples/ecm_mark_test.o
 endif
-ifeq ($(EXAMPLES_BUILD_OVS),y)
-obj-m += examples/ecm_ovs.o
-endif
+#ifeq ($(EXAMPLES_BUILD_OVS),y)
+#obj-m += examples/ecm_ovs.o
+#endif
 
 ecm-y := \
 	 frontends/cmn/ecm_ae_classifier.o \
@@ -60,10 +60,10 @@ ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_non_ported_ipv6.o
 endif
 
 #SFE Multicast is enabled in case NSS disabled
-ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
-ifeq ($(ECM_IPV6_ENABLE), y)
-ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
-endif
+#ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
+#ifeq ($(ECM_IPV6_ENABLE), y)
+#ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
+#endif
 
 # #############################################################################
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
@@ -102,8 +102,8 @@ ccflags-$(ECM_FRONT_END_CONN_LIMIT_ENABLE) += -DECM_FRONT_END_CONN_LIMIT_ENABLE
 # Define ECM_INTERFACE_BOND_ENABLE=y in order to enable
 # Bonding / Link Aggregation support.
 # #############################################################################
-ecm-$(ECM_INTERFACE_BOND_ENABLE) += frontends/cmn/ecm_bond_notifier.o
-ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
+#ecm-$(ECM_INTERFACE_BOND_ENABLE) += frontends/cmn/ecm_bond_notifier.o
+#ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_PPPOE_ENABLE=y in order
@@ -116,13 +116,13 @@ ccflags-$(ECM_INTERFACE_PPPOE_ENABLE) += -DECM_INTERFACE_PPPOE_ENABLE
 # Define ECM_INTERFACE_L2TPV2_ENABLE=y in order
 # to enable support for l2tpv2 acceleration.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_L2TPV2_ENABLE) += -DECM_INTERFACE_L2TPV2_ENABLE
+#ccflags-$(ECM_INTERFACE_L2TPV2_ENABLE) += -DECM_INTERFACE_L2TPV2_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_PPTP_ENABLE=y in order
 # to enable support for pptp acceleration.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_PPTP_ENABLE) += -DECM_INTERFACE_PPTP_ENABLE
+#ccflags-$(ECM_INTERFACE_PPTP_ENABLE) += -DECM_INTERFACE_PPTP_ENABLE
 
 # #############################################################################
 # if pppoe, l2tpv2, pptp acceleration is enabled, ppp should
@@ -142,45 +142,45 @@ ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 # Define ECM_INTERFACE_GRE_TAP_ENABLE=y in order
 # to enable support for GRE TAP interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
+#ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_GRE_TUN_ENABLE=y in order
 # to enable support for GRE TUN interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
+#ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 
 ifeq ($(ECM_IPV6_ENABLE), y)
 # #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
 # to enable support for SIT interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
+#ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_TUNIPIP6_ENABLE=y in order
 # to enable support for TUNIPIP6 interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
+#ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_MAP_T_ENABLE=y in order
 # to enable support for MAP-T interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
+#ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 endif
 
 # #############################################################################
 # Define ECM_INTERFACE_RAWIP_ENABLE=y in order
 # to enable support for RAWIP interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
+#ccflags-$(ECM_INTERFACE_RAWIP_ENABLE) += -DECM_INTERFACE_RAWIP_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_VXLAN_ENABLE=y in order
 # to enable support for VxLAN interface.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
+#ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 
 # #############################################################################
 # Define ECM_IPV6_ENABLE=y in order to enable IPv6 support in the ECM.
@@ -194,7 +194,7 @@ ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 # #############################################################################
 
 ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
-ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
+#ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
@@ -202,21 +202,21 @@ ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 endif
 else
-ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
+#ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
-ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
+#ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
 endif
 endif
 
 # #############################################################################
 # Define ECM_XFRM_ENABLE=y in order to enable
 # #############################################################################
-ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
+#ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
 # #############################################################################
-ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
+#ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
@@ -227,18 +227,18 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 # #############################################################################
 # Define ECM_INTERFACE_MACVLAN_ENABLE=y in order to enable support for MACVLAN
 # #############################################################################
-ccflags-$(ECM_INTERFACE_MACVLAN_ENABLE) += -DECM_INTERFACE_MACVLAN_ENABLE
+#ccflags-$(ECM_INTERFACE_MACVLAN_ENABLE) += -DECM_INTERFACE_MACVLAN_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_IPSEC_ENABLE=y in order to enable support for IPSEC
 # #############################################################################
-ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
+#ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
 ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx \
 	     ipq50xx_64 ipq95xx_32 ipq95xx ipq53xx_32 ipq53xx))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
-ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+#ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
@@ -257,8 +257,8 @@ endif
 # #############################################################################
 # Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
 # #############################################################################
-ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
-ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
+#ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
+#ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
@@ -270,19 +270,19 @@ ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
 # #############################################################################
 # Define ECM_CLASSIFIER_MSCS_ENABLE=y in order to enable mscs flow classifier.
 # #############################################################################
-ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
-ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
+#ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
+#ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MSCS_SCS_ENABLE=y in order to enable SCS classifier.
 # #############################################################################
-ccflags-$(ECM_CLASSIFIER_MSCS_SCS_ENABLE) += -DECM_CLASSIFIER_MSCS_SCS_ENABLE
+#ccflags-$(ECM_CLASSIFIER_MSCS_SCS_ENABLE) += -DECM_CLASSIFIER_MSCS_SCS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
 # #############################################################################
-ecm-$(ECM_CLASSIFIER_NL_ENABLE) += ecm_classifier_nl.o
-ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
+#ecm-$(ECM_CLASSIFIER_NL_ENABLE) += ecm_classifier_nl.o
+#ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_DSCP_ENABLE=y in order to enable DSCP classifier.
@@ -290,7 +290,7 @@ ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
 ECM_CLASSIFIER_DSCP_ENABLE=y
 ecm-$(ECM_CLASSIFIER_DSCP_ENABLE) += ecm_classifier_dscp.o
 ccflags-$(ECM_CLASSIFIER_DSCP_ENABLE) += -DECM_CLASSIFIER_DSCP_ENABLE
-ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
+#ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
 
 # #############################################################################
 # Define ECM_CLASSIFIER_HYFI_ENABLE=y in order to enable
@@ -298,8 +298,8 @@ ccflags-$(ECM_CLASSIFIER_DSCP_IGS) += -DECM_CLASSIFIER_DSCP_IGS
 # with Hy-Fi is completed.
 # #############################################################################
 #
-ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
-ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
+#ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
+#ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_PCC_ENABLE=y in order to enable
@@ -313,8 +313,8 @@ ccflags-$(ECM_CLASSIFIER_PCC_ENABLE) += -DECM_CLASSIFIER_PCC_ENABLE
 # #############################################################################
 # Define ECM_CLASSIFIER_EMESH_ENABLE=y in order to enable E-Mesh classifier.
 # #############################################################################
-ecm-$(ECM_CLASSIFIER_EMESH_ENABLE) += ecm_classifier_emesh.o
-ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
+#ecm-$(ECM_CLASSIFIER_EMESH_ENABLE) += ecm_classifier_emesh.o
+#ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
 
 # #############################################################################
 # Define ECM_NON_PORTED_SUPPORT_ENABLE=y in order to enable non-ported protocol.
@@ -389,7 +389,7 @@ ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 # Define ECM_INTERFACE_OVPN_ENABLE=y in order
 # to enable support for OVPN acceleration.
 # #############################################################################
-ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
+#ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
 
 # #############################################################################
 # Define ECM_BRIDGE_VLAN_FILTERING_ENABLE=y in order
