@@ -764,6 +764,37 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #endif
 
 	/*
+	 * Policer/ACL info
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_ACL;
+
+			if (pr->rule_id.acl.flow_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.flow_acl_id = pr->rule_id.acl.flow_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_FLOW_ACL;
+			}
+
+			if (pr->rule_id.acl.return_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.return_acl_id = pr->rule_id.acl.return_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_RETURN_ACL;
+			}
+	} else if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_POLICER;
+
+			if (pr->rule_id.policer.flow_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.flow_policer_id = pr->rule_id.policer.flow_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_FLOW_POLICER;
+			}
+
+			if (pr->rule_id.policer.return_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.return_policer_id = pr->rule_id.policer.return_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_RETURN_POLICER;
+			}
+	}
+
+	/*
 	 * Set protocol
 	 */
 	pd4rc->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
