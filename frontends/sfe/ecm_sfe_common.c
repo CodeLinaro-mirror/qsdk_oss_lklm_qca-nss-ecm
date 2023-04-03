@@ -95,56 +95,6 @@ static bool ecm_sfe_common_fast_xmit_check(s32 interface_num) {
 }
 
 /*
- * ecm_sfe_common_qdisc_check()
- * 	Check whether the ifindex has a qdisc attached
- */
-static bool ecm_sfe_common_qdisc_check(s32 interface_num)
-{
-	struct net_device *dev;
-	struct netdev_queue *txq;
-	int i;
-	struct Qdisc *q;
-#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
-	struct mini_Qdisc *miniq;
-#endif
-
-	dev = dev_get_by_index(&init_net, interface_num);
-	if (!dev) {
-		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
-		return false;
-	}
-
-	BUG_ON(!rcu_read_lock_bh_held());
-
-	/*
-	 * It assume that the qdisc attribute won't change after traffic
-	 * running, if the qdisc changed, we need flush all of the rule.
-	 */
-	for (i = 0; i < dev->real_num_tx_queues; i++) {
-		txq = netdev_get_tx_queue(dev, i);
-		q = rcu_dereference_bh(txq->qdisc);
-		if (q->enqueue) {
-			DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
-			dev_put(dev);
-			return true;
-		}
-	}
-
-#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
-	miniq = rcu_dereference_bh(dev->miniq_egress);
-	if (miniq) {
-		DEBUG_INFO("Egress needed\n");
-		dev_put(dev);
-		return true;
-	}
-#endif
-
-	dev_put(dev);
-
-	return false;
-}
-
-/*
  * ecm_sfe_feature_check()
  *	Check some specific features for SFE acceleration
  */
@@ -219,7 +169,7 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 {
 	s32 interface_num;
 	bool qdisc_found = false;
-	bool status;
+	bool is_ppeq = false;
 	int list_index;
 
 	rcu_read_lock_bh();
@@ -230,30 +180,31 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 	qdisc_rule->flow_qdisc_interface = -1;
 	for (list_index = from_interfaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
 		interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[list_index]);
-		status = ecm_sfe_common_qdisc_check(interface_num);
-		if (status) {
-			if (!qdisc_found) {
-				qdisc_found = true;
-				qdisc_rule->valid_flags |= SFE_QDISC_RULE_FLOW_VALID;
-				qdisc_rule->flow_qdisc_interface = interface_num;
-			} else {
+		if (ecm_front_end_common_intf_qdisc_check(interface_num, &is_ppeq)) {
+			if (qdisc_found) {
 				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_FLOW_VALID;
 				qdisc_rule->flow_qdisc_interface = -1;
+				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT;
+
+				/*
+				 * We have found more than one qdisc enabled in the interface heirarchy.
+				 * So strip the bottom interface flag for this case.
+				 */
+				*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 				break;
 			}
+
+			qdisc_found = true;
+			qdisc_rule->valid_flags |= SFE_QDISC_RULE_FLOW_VALID;
+			qdisc_rule->flow_qdisc_interface = interface_num;
+			if (is_ppeq) {
+				/*
+				 * Set SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT to identify PPE Qdisc is
+				 * configured for the flow direction and packets can be fast transmitted
+				 */
+				qdisc_rule->valid_flags |= SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT;
+			}
 		}
-	}
-
-	/*
-	 * We have found more than one qdisc enabled in the interface heirarchy.
-	 * So strip the bottom interface flag for this case.
-	 */
-	if (qdisc_found && qdisc_rule->flow_qdisc_interface == -1) {
-		*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
-
-		/*
-		 * TODO: Handle this case for clearing bridge_vlan_filter configuration.
-		 */
 	}
 
 	/*
@@ -264,11 +215,12 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 		interface_num = ecm_db_iface_interface_identifier_get(from_ifaces[from_interfaces_first]);
 	}
 
-	if (!qdisc_found && ecm_sfe_common_fast_xmit_check(interface_num)) {
+	if ((!qdisc_found || (qdisc_rule->valid_flags & SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT))
+		&& ecm_sfe_common_fast_xmit_check(interface_num)) {
 		*rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
 	}
-
 	qdisc_found = false;
+	is_ppeq = false;
 
 	/*
 	 * Check if a single qdisc is enabled in the interface heirarchy. If yes, configure qdisc rule
@@ -276,26 +228,30 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 	qdisc_rule->return_qdisc_interface = -1;
 	for (list_index = to_interfaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
 		interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[list_index]);
-		status = ecm_sfe_common_qdisc_check(interface_num);
-		if (status) {
-			if (!qdisc_found) {
-				qdisc_found = true;
-				qdisc_rule->return_qdisc_interface = interface_num;
-				qdisc_rule->valid_flags |= SFE_QDISC_RULE_RETURN_VALID;
-			} else {
+		if (ecm_front_end_common_intf_qdisc_check(interface_num, &is_ppeq)) {
+			if (qdisc_found) {
 				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_RETURN_VALID;
 				qdisc_rule->return_qdisc_interface = -1;
+				qdisc_rule->valid_flags &= ~SFE_QDISC_RULE_RETURN_PPE_QDISC_FAST_XMIT;
+
+				/*
+				 * We have found more than one qdisc enabled in the interface heirarchy.
+				 * So strip the bottom interface flag for this case.
+				 */
+				*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 				break;
 			}
+			qdisc_found = true;
+			qdisc_rule->return_qdisc_interface = interface_num;
+			qdisc_rule->valid_flags |= SFE_QDISC_RULE_RETURN_VALID;
+			if (is_ppeq) {
+				/*
+				 * Set SFE_QDISC_RULE_RETURN_PPE_QDISC_FAST_XMIT to identify PPE Qdisc is
+				 * configured for the return direction and packets can be fast transmitted
+				 */
+				qdisc_rule->valid_flags |= SFE_QDISC_RULE_RETURN_PPE_QDISC_FAST_XMIT;
+			}
 		}
-	}
-
-	/*
-	 * We have found more than one qdisc enabled in the interface heirarchy.
-	 * So strip the bottom interface flag for this case.
-	 */
-	if (qdisc_found && qdisc_rule->return_qdisc_interface == -1) {
-		*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 	}
 
 	/*
@@ -306,7 +262,8 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 		interface_num = ecm_db_iface_interface_identifier_get(to_ifaces[to_interfaces_first]);
 	}
 
-	if (!qdisc_found && ecm_sfe_common_fast_xmit_check(interface_num)) {
+	if ((!qdisc_found || (qdisc_rule->valid_flags & SFE_QDISC_RULE_RETURN_PPE_QDISC_FAST_XMIT))
+		&& ecm_sfe_common_fast_xmit_check(interface_num)) {
 		*rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
 	}
 

@@ -1628,3 +1628,56 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 	 */
 	return ecm_front_end_is_port_in_denied_list(dest_port, ecm_front_end_tcp_denied_ports);
 }
+
+/*
+ * ecm_front_end_common_intf_qdisc_check()
+ *      Checks if qdisc is configured on the given interface
+ */
+bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
+{
+	struct net_device *dev;
+        struct netdev_queue *txq;
+        struct Qdisc *q;
+        int i;
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	struct mini_Qdisc *miniq;
+#endif
+
+	*is_ppeq = false;
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+	for (i = 0; i < dev->real_num_tx_queues; i++) {
+		txq = netdev_get_tx_queue(dev, i);
+		q = rcu_dereference_bh(txq->qdisc);
+		if ((!q) || (!q->enqueue)) {
+			continue;
+		}
+
+		if (q->flags & TCQ_F_NSS) {
+			DEBUG_INFO("PPE Qdisc is present for device[%s]\n", dev->name);
+			*is_ppeq = true;
+                }
+
+		DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
+		dev_put(dev);
+		return true;
+	}
+
+#if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+	miniq = rcu_dereference_bh(dev->miniq_egress);
+	if (miniq) {
+		DEBUG_INFO("Egress needed\n");
+		dev_put(dev);
+		return true;
+	}
+#endif
+
+	DEBUG_WARN("%px Qdisc is not present for device[%s]\n", dev, dev->name);
+	dev_put(dev);
+	return false;
+}
