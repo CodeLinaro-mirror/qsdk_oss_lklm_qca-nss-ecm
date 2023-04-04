@@ -20,6 +20,7 @@
 #define ECM_TYPES_H_
 
 #include <linux/printk.h>
+#include <net/bonding.h>
 
 /*
  * Common ECM macro to handle the kernel macro name change from kernel version 4.9 and above.
