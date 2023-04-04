@@ -68,6 +68,11 @@ static struct ctl_table_header *ecm_sfe_ctl_tbl_hdr;
 static int ecm_sfe_fast_xmit_enable = 1;
 
 /*
+ * Flag to indicate FSE rule push from ECM SFE frontend.
+ */
+unsigned int ecm_sfe_fse_enable = 1;
+
+/*
  * ecm_sfe_common_fast_xmit_check()
  *	Check the fast transmit feasibility.
  *
@@ -354,6 +359,36 @@ int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __us
 }
 
 /*
+ * ecm_sfe_fse_enable_handler()
+ *	Sysctl to enable/disable FSE programming through ECM SFE frontend.
+ */
+int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the variable with user input
+	 */
+	current_val = ecm_sfe_fse_enable;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if ((ecm_sfe_fse_enable != 0) && (ecm_sfe_fse_enable != 1)) {
+		ecm_sfe_fse_enable = current_val;
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
  * ecm_sfe_ipv4_is_conn_limit_reached()
  *	Connection limit is reached or not ?
  */
@@ -413,6 +448,13 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &ecm_sfe_fast_xmit_enable_handler,
+	},
+	{
+		.procname       = "sfe_fse_enable",
+		.data           = &ecm_sfe_fse_enable,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &ecm_sfe_fse_enable_handler,
 	},
 	{}
 };
