@@ -30,6 +30,9 @@
 #ifdef ECM_FRONT_END_SFE_ENABLE
 #include <sfe_api.h>
 #endif
+#ifdef ECM_FRONT_END_FSE_ENABLE
+#include "ecm_front_end_common_public.h"
+#endif
 
 #define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
 
