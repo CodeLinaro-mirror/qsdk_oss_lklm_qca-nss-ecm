@@ -2530,6 +2530,31 @@ void ecm_db_connection_interfaces_deref(struct ecm_db_iface_instance *interfaces
 EXPORT_SYMBOL(ecm_db_connection_interfaces_deref);
 
 /*
+ * ecm_db_connection_first_iface_dev_get_and_ref()
+ *	Returns the netdev of the first interface in interface heirarchy in the
+ *	specified direction which this connection is established.
+ */
+struct net_device *ecm_db_connection_first_iface_dev_get_and_ref(struct ecm_db_connection_instance *ci,
+								 ecm_db_obj_dir_t dir)
+{
+	int32_t n;
+	struct ecm_db_iface_instance *ii = NULL;
+	struct net_device *dev = NULL;
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	n = ci->interface_first[dir];
+	ii = ci->interfaces[dir][n];
+	_ecm_db_iface_ref(ii);
+	spin_unlock_bh(&ecm_db_lock);
+
+	dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+	ecm_db_iface_deref(ii);
+
+	return dev;
+}
+
+/*
  * ecm_db_connection_interfaces_reset()
  *	Reset the interfaces heirarchy in the specified direction with a new set of interfaces
  *

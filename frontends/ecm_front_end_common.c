@@ -1650,6 +1650,58 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 
 #ifdef ECM_FRONT_END_FSE_ENABLE
 /*
+ * ecm_front_end_fse_info_get()
+ *	Get the FSE info from ECM frontend connection instance.
+ */
+bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info)
+{
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+
+	/*
+	 * Get destination net device from 'TO' side of ecm interface hierarchy.
+	 */
+	fse_info->dest_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_TO);
+	if (!fse_info->dest_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_TO);
+		return false;
+	}
+
+	dev_put(fse_info->dest_dev);
+
+	/*
+	 * Get source net device from 'FROM' side of interface hierarchy.
+	 */
+	fse_info->src_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	if (!fse_info->src_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_FROM);
+		return false;
+	}
+
+	dev_put(fse_info->src_dev);
+
+	/*
+	 * Get the 5 tuple information from front end connection instance.
+	 */
+	fse_info->ip_version = ecm_db_connection_ip_version_get(feci->ci);
+	fse_info->protocol = ecm_db_connection_protocol_get(feci->ci);
+	fse_info->src_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	fse_info->dest_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+
+	if (fse_info->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->src.v4_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->dest.v4_addr, dest_ip);
+	} else if (fse_info->ip_version == 6) {
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->src.v6_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->dest.v6_addr, dest_ip);
+	}
+
+	return true;
+}
+
+/*
  * ecm_front_end_fse_callbacks_register()
  *	Registers ECM FSE common callbacks.
  */
@@ -1659,7 +1711,6 @@ int ecm_front_end_fse_callbacks_register(struct ecm_front_end_fse_callbacks *fse
 		DEBUG_ERROR("ECM FSE callbacks are already registered\n");
 		return -1;
 	}
-
 	rcu_assign_pointer(ecm_fe_fse_cb, fse_cb);
 	synchronize_rcu();
 
