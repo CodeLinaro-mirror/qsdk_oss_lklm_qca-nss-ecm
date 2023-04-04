@@ -31,7 +31,7 @@
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
-	.update_service_id_get_msduq = qca_sawf_get_msdu_queue,
+	.update_service_id_get_msduq = qca_sawf_get_msduq_v2,
 	.update_sawf_ul = qca_sawf_config_ul,
 };
 
