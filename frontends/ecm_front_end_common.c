@@ -36,6 +36,7 @@
 #include <net/gre.h>
 #include <net/xfrm.h>
 #include <linux/hashtable.h>
+#include <net/sch_generic.h>
 #ifdef ECM_FRONT_END_PPE_ENABLE
 #include <ppe_drv.h>
 #endif
@@ -586,7 +587,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		}
 	} else {
 #ifdef ECM_IPV6_ENABLE
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Source IP address is local
@@ -596,7 +601,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Destination IP address is local
@@ -1669,12 +1678,12 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 		if ((!q) || (!q->enqueue)) {
 			continue;
 		}
-
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (q->flags & TCQ_F_NSS) {
 			DEBUG_INFO("PPE Qdisc is present for device[%s]\n", dev->name);
 			*is_ppeq = true;
                 }
-
+#endif
 		DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
 		dev_put(dev);
 		return true;

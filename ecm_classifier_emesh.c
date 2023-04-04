@@ -928,6 +928,7 @@ void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum 
 	if (!dscpcte) {
 		spin_unlock_bh(&ct->lock);
 		DEBUG_WARN("%px: ct=%px: no dscpcte\n", aci, ct);
+		nf_ct_put(ct);
 		return;
 	}
 
@@ -2356,28 +2357,28 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		return -1;
 	}
 
-	if (!debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_emesh_enabled)) {
 		DEBUG_ERROR("Failed to create ecm emesh classifier enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
 
-	if (!debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+	if (!ecm_debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_emesh_latency_config_enabled)) {
 		DEBUG_ERROR("Failed to create ecm emesh classifier latency config enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
 
-	if (!debugfs_create_u32("sawf_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+	if (!ecm_debugfs_create_u32("sawf_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_sawf_enabled)) {
 		DEBUG_ERROR("Failed to create ecm sawf classifier  enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
 
-	if (!debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+	if (!ecm_debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_sawf_cake_enabled)) {
 		DEBUG_ERROR("Failed to create ecm sawf cake enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);

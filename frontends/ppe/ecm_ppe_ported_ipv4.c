@@ -93,14 +93,6 @@ static int ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX]
 						/* Array of Number of TCP and UDP connections currently offloaded */
 
 /*
- * Expose what should be a static flag in the TCP connection tracker.
- */
-#ifdef ECM_OPENWRT_SUPPORT
-extern int nf_ct_tcp_no_window_check;
-#endif
-extern int nf_ct_tcp_be_liberal;
-
-/*
  * ecm_ppe_ported_ipv4_handle_flush()
  *	Handle situation if destroy comes before setting up rule
  *	feci->lock is callers responsibility.
@@ -1573,19 +1565,15 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
  */
 bool ecm_ppe_ported_ipv4_debugfs_init(struct dentry *dentry)
 {
-	struct dentry *udp_dentry;
-
-	udp_dentry = debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
-						&ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP]);
-	if (!udp_dentry) {
+	if (!ecm_debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
+				    &ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP])) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 udp_accelerated_count file in debugfs\n");
 		return false;
 	}
 
-	if (!debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
 					&ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_TCP])) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 tcp_accelerated_count file in debugfs\n");
-		debugfs_remove(udp_dentry);
 		return false;
 	}
 

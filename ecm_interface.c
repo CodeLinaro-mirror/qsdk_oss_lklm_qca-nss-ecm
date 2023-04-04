@@ -338,7 +338,11 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t ad
 	struct net_device *dev;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(addr6, addr);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, 1);
+#else
+	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, NULL);
+#endif
 	return dev;
 }
 #endif
@@ -781,7 +785,11 @@ static bool ecm_interface_mac_addr_get_ipv6_no_route(struct net_device *dev, ip_
 	 * Get the MAC address that corresponds to IP address given.
 	 */
 	ECM_IP_ADDR_TO_NIN6_ADDR(daddr, addr);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 	local_dev = ipv6_dev_find(&init_net, &daddr, 1);
+#else
+	local_dev = ipv6_dev_find(&init_net, &daddr, NULL);
+#endif
 	if (local_dev) {
 		DEBUG_TRACE("%pi6 is a local address\n", &daddr);
 		memcpy(mac_addr, dev->dev_addr, ETH_ALEN);
@@ -8009,7 +8017,9 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 {
 	struct msghdr msg;
 	struct iovec  iov;
-	mm_segment_t oldfs;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	mm_segment_t oldfs = get_fs();
+#endif
 	int size;
 
 	iov.iov_base = buf;
@@ -8020,15 +8030,14 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-	oldfs = get_fs();
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	set_fs(KERNEL_DS);
-	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
-	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
-#else
-	size = sock_recvmsg(sock, &msg, msg.msg_flags);
 #endif
+	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
+	size = sock_recvmsg(sock, &msg, msg.msg_flags);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	set_fs(oldfs);
+#endif
 
 	return size;
 }
