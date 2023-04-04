@@ -55,6 +55,13 @@ extern unsigned int ecm_front_end_ppe_fse_enable;
 #endif
 
 /*
+ * Flag to enable/disable Wi-Fi FSE block programming from ECM SFE frontend.
+ */
+#ifdef ECM_FRONT_END_SFE_ENABLE
+extern unsigned int ecm_sfe_fse_enable;
+#endif
+
+/*
  * ecm_front_end_l2_encap_header_len()
  *      Return length of encapsulating L2 header
  */
