@@ -48,7 +48,9 @@
 #include <linux/socket.h>
 #include <linux/wireless.h>
 #include <net/gre.h>
-
+#ifdef ECM_INTERFACE_BOND_ENABLE
+#include <net/bonding.h>
+#endif
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 #include <linux/if_bridge.h>
 #endif
@@ -3978,8 +3980,10 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 #ifdef ECM_INTERFACE_BOND_ENABLE
 				/*
 				 * LAG?
+				 * For MLO bond netdevice, destination for multicast is bond netdevice itself
+				 * Therefore, slave lookup is not needed.
 				 */
-				if (ecm_front_end_is_lag_master(dest_dev)) {
+				if (ecm_front_end_is_lag_master(dest_dev) && !bond_is_mlo_device(dest_dev)) {
 					/*
 					 * Link aggregation
 					 * Figure out which slave device of the link aggregation will be used to reach the destination.
