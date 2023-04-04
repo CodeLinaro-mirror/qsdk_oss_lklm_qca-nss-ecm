@@ -1685,12 +1685,14 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 		if ((!q) || (!q->enqueue)) {
 			continue;
 		}
+
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (q->flags & TCQ_F_NSS) {
 			DEBUG_INFO("PPE Qdisc is present for device[%s]\n", dev->name);
 			*is_ppeq = true;
                 }
 #endif
+
 		DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
 		dev_put(dev);
 		return true;
