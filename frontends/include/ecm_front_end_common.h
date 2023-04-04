@@ -34,6 +34,9 @@
 #include <ppe_drv.h>
 #include <ppe_drv_qos.h>
 #endif
+#ifdef ECM_FRONT_END_FSE_ENABLE
+#include "ecm_front_end_common_public.h"
+#endif
 
 #define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
 

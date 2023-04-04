@@ -102,6 +102,13 @@
 #endif
 #endif
 
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * Callback object for ECM frontend interaction with wlan driver to add/delete FSE rules.
+ */
+struct ecm_front_end_fse_callbacks *ecm_fe_fse_cb = NULL;
+#endif
+
 /*
  * Sysctl table header
  */
@@ -1693,3 +1700,34 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 	dev_put(dev);
 	return false;
 }
+
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * ecm_front_end_fse_callbacks_register()
+ *	Registers ECM FSE common callbacks.
+ */
+int ecm_front_end_fse_callbacks_register(struct ecm_front_end_fse_callbacks *fse_cb)
+{
+	if (ecm_fe_fse_cb) {
+		DEBUG_ERROR("ECM FSE callbacks are already registered\n");
+		return -1;
+	}
+
+	rcu_assign_pointer(ecm_fe_fse_cb, fse_cb);
+	synchronize_rcu();
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_register);
+
+/*
+ * ecm_front_end_fse_callbacks_unregister()
+ *	Unregisters ECM FSE common callbacks.
+ */
+void ecm_front_end_fse_callbacks_unregister(void)
+{
+	rcu_assign_pointer(ecm_fe_fse_cb, NULL);
+	synchronize_rcu();
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_unregister);
+#endif
