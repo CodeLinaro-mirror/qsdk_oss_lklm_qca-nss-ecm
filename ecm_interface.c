@@ -586,6 +586,48 @@ bool ecm_interface_find_gateway(ip_addr_t addr, ip_addr_t gw_addr)
 }
 EXPORT_SYMBOL(ecm_interface_find_gateway);
 
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+/*
+ * ecm_interface_mac_addr_get_pppoe()
+ *	Get mac address of dev on which PPPoE is running.
+ */
+bool ecm_interface_mac_addr_get_pppoe(struct net_device *local_dev, uint8_t *node_addr)
+{
+	struct ppp_channel *ppp_chan[1];
+	struct pppoe_opt addressing;
+	int px_proto;
+
+	if (ppp_hold_channels(local_dev, ppp_chan, 1) != 1) {
+		DEBUG_WARN("could not hold ppp channels for dev %s\n", local_dev->name);
+		return false;
+	}
+
+	px_proto = ppp_channel_get_protocol(ppp_chan[0]);
+	if (px_proto != PX_PROTO_OE) {
+		DEBUG_WARN("PPP protocol %d unsupported\n", px_proto);
+		ppp_release_channels(ppp_chan, 1);
+		return false;
+	}
+
+	/*
+	 * pppoe_channel_addressing_get takes dev_hold on addressing.dev
+	 */
+	if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+		DEBUG_WARN("failed to get PPPoE addressing info\n");
+		ppp_release_channels(ppp_chan, 1);
+		return false;
+	}
+
+	DEBUG_TRACE("Obtained mac address %pM and addressing dev %s for %s\n",
+				node_addr, addressing.dev->name, local_dev->name);
+	memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
+
+	dev_put(addressing.dev);
+	ppp_release_channels(ppp_chan, 1);
+	return true;
+}
+#endif
+
 /*
  * ecm_interface_mac_addr_get_ipv4()
  *	Return mac for an IPv4 address
