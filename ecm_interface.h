@@ -123,3 +123,8 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version);
 void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type);
 bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_iface_type_t type, int32_t *mtu);
 struct net_device *ecm_interface_get_and_hold_ipsec_tun_netdev(struct net_device *dev, struct sk_buff *skb, int32_t *interface_type);
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir,
+						uint32_t tx_packets, uint32_t tx_bytes,
+						uint32_t rx_packets, uint32_t rx_bytes);
+#endif

@@ -744,7 +744,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * where source port is set to zero.
 			 */
 			if (!vxlan_info.if_type) {
-				nircm->rule_flags |= SFE_RULE_CREATE_NO_SRC_IDENT;
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
 #else
 			rule_invalid = true;
@@ -1101,6 +1101,12 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+	if (feci->ci->vlan_filter_valid) {
+		ecm_sfe_common_ipv4_vlan_filter_set(feci->ci, nircm);
+	}
+#endif
+
 #if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
 	/*
 	 * DSCP information?
@@ -1365,6 +1371,12 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"secondary_ingress_vlan_tag: %x\n"
 			"secondary_egress_vlan_tag: %x\n"
 			"flags: rule=%x valid=%x src_mac_valid=%x\n"
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+			"flow_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
+			"flow_vlan_filter_egress_vlan_tag: %x, flags: %x\n"
+			"return_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
+			"return_vlan_filter_egress_vlan_tag: %x, flags: %x\n"
+#endif
 			"return_pppoe_session_id: %u\n"
 			"return_pppoe_remote_mac: %pM\n"
 			"flow_pppoe_session_id: %u\n"
@@ -1407,6 +1419,12 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->rule_flags,
 			nircm->valid_flags,
 			nircm->src_mac_rule.mac_valid_flags,
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+			nircm->flow_vlan_filter_rule.ingress_vlan_tag, nircm->flow_vlan_filter_rule.ingress_flags,
+			nircm->flow_vlan_filter_rule.egress_vlan_tag, nircm->flow_vlan_filter_rule.egress_flags,
+			nircm->return_vlan_filter_rule.ingress_vlan_tag, nircm->return_vlan_filter_rule.ingress_flags,
+			nircm->return_vlan_filter_rule.egress_vlan_tag, nircm->return_vlan_filter_rule.egress_flags,
+#endif
 			nircm->pppoe_rule.return_pppoe_session_id,
 			nircm->pppoe_rule.return_pppoe_remote_mac,
 			nircm->pppoe_rule.flow_pppoe_session_id,
