@@ -712,10 +712,13 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 	ecm_classifier_emesh_sawf_fill_vlan_info(ci, sender, flow_input_params, return_input_params);
 
 	flow_input_params->ifindex = dest_dev->ifindex;
+	return_input_params->ifindex = src_dev->ifindex;
+
 	/*
 	 *  Get the netdevice addres in case of wds repeater cases.
 	 */
 	ether_addr_copy((uint8_t *)flow_input_params->dev_addr, (uint8_t *)dest_dev->dev_addr);
+	ether_addr_copy((uint8_t *)return_input_params->dev_addr, (uint8_t *)src_dev->dev_addr);
 	ether_addr_copy(flow_input_params->src.mac, smac);
 	ether_addr_copy(flow_input_params->dst.mac, dmac);
 	ether_addr_copy(return_input_params->src.mac, dmac);
