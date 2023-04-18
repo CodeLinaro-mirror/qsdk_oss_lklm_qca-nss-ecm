@@ -472,12 +472,28 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 		return false;
 	}
 	if (!(neigh->nud_state & NUD_VALID)) {
+
+		/*
+		 * Device could be local in case of egress NAT
+		 */
+		struct net_device *local_dev = ecm_interface_dev_find_by_local_addr_ipv6(addr);
+		if (!local_dev) {
+			rcu_read_unlock();
+			neigh_release(neigh);
+			ecm_interface_route_release(&ecm_rt);
+			DEBUG_WARN("NUD invalid\n");
+			return false;
+		}
+
+		DEBUG_TRACE("address is local: %px (%s)\n", local_dev, local_dev->name);
+		memcpy(mac_addr, local_dev->dev_addr, ETH_ALEN);
+		dev_put(local_dev);
 		rcu_read_unlock();
 		neigh_release(neigh);
 		ecm_interface_route_release(&ecm_rt);
-		DEBUG_WARN("NUD invalid\n");
-		return false;
+		return true;
 	}
+
 	if (!neigh->dev) {
 		rcu_read_unlock();
 		neigh_release(neigh);
