@@ -941,8 +941,10 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 {
 	uint16_t regen_occurrances;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	struct ecm_db_iface_instance *from_nat_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *from_sfe_iface;
 	int32_t from_ifaces_first;
+	int32_t from_nat_ifaces_first;
 	struct ecm_db_iface_instance *to_ifaces;
 	struct ecm_db_iface_instance *ii_temp;
 	struct ecm_db_iface_instance *ii_single;
@@ -950,6 +952,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	struct sfe_ipv6_msg *nim;
 	int32_t *to_ifaces_first;
 	int32_t *to_ii_first;
+	int32_t from_nat_ifaces_identifier = 0;
 	int32_t from_sfe_iface_id;
 	int32_t to_sfe_iface_id;
 	uint8_t from_sfe_iface_address[ETH_ALEN];
@@ -1254,12 +1257,17 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		return;
 	}
 
+	from_nat_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_nat_ifaces, ECM_DB_OBJ_DIR_FROM_NAT);
+	from_nat_ifaces_identifier = ecm_db_iface_interface_identifier_get(from_nat_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1]);
+	ecm_db_connection_interfaces_deref(from_nat_ifaces, from_nat_ifaces_first);
+
 	/*
 	 * Now examine the TO / DEST heirarchy list to construct the destination part of the rule
 	 */
 	DEBUG_TRACE("%px: Examine to/dest heirarchy list\n", feci);
 	rule_invalid = false;
 	for (vif = 0; vif < ECM_DB_MULTICAST_IF_MAX; vif++) {
+		int32_t found_nat_ii_match = 0;
 		int32_t to_mtu = 0;
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 		struct ecm_db_interface_info_pppoe pppoe_info;
@@ -1284,6 +1292,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 
 		for (list_index = *to_ii_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
 			struct ecm_db_iface_instance *ii;
+			int32_t ii_identifier;
 			ecm_db_iface_type_t ii_type;
 			char *ii_name;
 			struct net_device *dev = NULL;
@@ -1293,6 +1302,15 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			ii = *ifaces;
 			ii_type = ecm_db_iface_type_get(ii);
 			ii_name = ecm_db_interface_type_to_string(ii_type);
+			ii_identifier = ecm_db_iface_interface_identifier_get(ii);
+
+			/*
+			 * Find match for NAT interface in Multicast destination interface list.
+			 * If found match, set the found_nat_ii_match flag here.
+			 */
+			if (ii_identifier == from_nat_ifaces_identifier) {
+				found_nat_ii_match = 1;
+			}
 
 			DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s)\n", feci, list_index, ii, ii_type, ii_name);
 
@@ -1527,6 +1545,27 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 		 */
 		if (to_sfe_iface_id != -1) {
 			bool is_bridge;
+
+			/*
+			 * Set a rule for NAT if found_nat_ii_match flag is set
+			 */
+			if (found_nat_ii_match) {
+				ip_addr_t xlate_sip;
+				uint32_t xlate_src_ip[4];
+
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT, xlate_sip);
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
+				if (!ECM_IP_ADDR_MATCH(xlate_sip, addr)) {
+					ECM_IP_ADDR_TO_SFE_IPV6_ADDR(xlate_src_ip, xlate_sip);
+					create->if_rule[valid_vif_idx].xlate_src_ip[0] = xlate_src_ip[0];
+					create->if_rule[valid_vif_idx].xlate_src_ip[1] = xlate_src_ip[1];
+					create->if_rule[valid_vif_idx].xlate_src_ip[2] = xlate_src_ip[2];
+					create->if_rule[valid_vif_idx].xlate_src_ip[3] = xlate_src_ip[3];
+					create->if_rule[valid_vif_idx].xlate_src_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT);
+					create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_NAT_VALID;
+				}
+			}
+
 			create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_JOIN;
 			create->if_rule[valid_vif_idx].if_num = to_sfe_iface_id;
 			create->if_rule[valid_vif_idx].if_mtu = to_mtu;
@@ -1627,23 +1666,42 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	create->tuple.protocol = IPPROTO_UDP;
 
 	/*
-	 * The src_ip is where the connection established from
+	 * The flow_ip is where the connection established from
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.flow_ip, addr);
+
+	/*
+	 * The return_ip is where the connection is established to, however, in the case of ingress
+	 * the return_ip would be the routers WAN IP - i.e. the NAT'ed version.
+	 * Getting the NAT'ed version here works for ingress or egress packets, for egress
+	 * the NAT'ed version would be the same as the normal address
+	 */
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.return_ip, addr);
+
+	/*
+	 * When the packet is forwarded to the next interface get the address the source IP of the
+	 * packet should be translated to.  For egress this is the NAT'ed from address.
+	 * This also works for ingress as the NAT'ed version of the WAN host would be the same as non-NAT'ed
+	 */
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->conn_rule.flow_ip_xlate, addr);
 
 	/*
 	 * The destination address is what the destination IP is translated to as it is forwarded to the next interface.
 	 * For egress this would yield the normal wan host and for ingress this would correctly NAT back to the LAN host
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, addr);
-	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->tuple.return_ip, addr);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(create->conn_rule.return_ip_xlate, addr);
 
 	/*
 	 * Same approach as above for port information
 	 */
 	create->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
-	create->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci,	ECM_DB_OBJ_DIR_TO));
+	create->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
+	create->conn_rule.flow_ident_xlate = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT));
+	create->conn_rule.return_ident_xlate = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO));
 
 	/*
 	 * Get mac addresses.
@@ -1685,6 +1743,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			"to_mtu: %u\n"
 			"from_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
 			"to_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+			"xlate_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
 			"to_mac: %pM\n"
 			"dest_iface_num: %u\n"
 			"in_vlan[0] %x\n"
@@ -1698,6 +1757,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			create->if_rule[vif].if_mtu,
 			ECM_IP_ADDR_TO_OCTAL(create->tuple.flow_ip), create->tuple.flow_ident,
 			ECM_IP_ADDR_TO_OCTAL(create->tuple.return_ip), create->tuple.return_ident,
+			ECM_IP_ADDR_TO_OCTAL(create->if_rule[vif].xlate_src_ip), create->if_rule[vif].xlate_src_ident,
 			create->if_rule[vif].if_mac,
 			create->if_rule[vif].if_num,
 			create->vlan_primary_rule.ingress_vlan_tag,
