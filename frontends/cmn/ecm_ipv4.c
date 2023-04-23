@@ -1371,7 +1371,7 @@ vxlan_done:
 	 *	dest_node_addr_nat is set to dest_node_addr
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
+		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
 			/*
 			 * Example 1
 			 */
@@ -1403,7 +1403,7 @@ vxlan_done:
 			src_node_addr_nat = NULL;
 
 			dest_node_addr_nat = NULL;
-		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
+		} else if ((ecm_dir == ECM_DB_DIRECTION_BRIDGED) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
 			/*
 			 * Example 5
 			 */
@@ -1422,7 +1422,7 @@ vxlan_done:
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}
 	} else {
-		if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
+		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
 			/*
 			 * Example 3
 			 */
@@ -1454,7 +1454,7 @@ vxlan_done:
 			src_node_addr = NULL;
 
 			dest_node_addr_nat = dest_node_addr;
-		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
+		} else if ((ecm_dir == ECM_DB_DIRECTION_BRIDGED) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
 			/*
 			 * Example 6
 			 */
