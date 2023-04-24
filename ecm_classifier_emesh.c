@@ -1170,6 +1170,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 */
 		if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
 			flow_input_params.dst.port == ecm_classifier_sawf_emesh_udp_ipsec_port)) {
+			ecm_db_connection_deref(ci);
 			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 			cemi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
@@ -1189,6 +1190,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 */
 check_emesh_classifier:
 	if (!ecm_classifier_emesh_enabled && !is_sawf_relevant) {
+		ecm_db_connection_deref(ci);
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 		cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto sawf_emesh_classifier_out;
