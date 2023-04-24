@@ -569,6 +569,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			 */
 			if (protocol == IPPROTO_ESP || (protocol == IPPROTO_UDP &&
 				flow_input_params.dst.port == ecm_classifier_mscs_scs_udp_ipsec_port)) {
+				ecm_db_connection_deref(ci);
 				spin_lock_bh(&ecm_classifier_mscs_lock);
 				cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
