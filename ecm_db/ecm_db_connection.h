@@ -93,7 +93,7 @@ struct ecm_db_connection_vlan_filter {
 
 bool ecm_db_connection_del_vlan_filter(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci, struct ecm_db_node_instance *ni[], struct sk_buff *skb,
-		ecm_db_obj_dir_t from_dir, ecm_db_obj_dir_t to_dir);
+		ecm_db_obj_dir_t from_dir, ecm_db_obj_dir_t to_dir, bool is_routed);
 #endif
 
 /*
