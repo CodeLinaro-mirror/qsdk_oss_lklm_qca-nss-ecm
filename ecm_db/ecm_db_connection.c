@@ -2590,7 +2590,7 @@ EXPORT_SYMBOL(ecm_db_connection_interfaces_reset);
  * 	#4: Assign this vlan tag(x) to all the bridge vlan filter interfaces in that particular dir ECM_DB_OBJ_DIR_XXX.
  */
 bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, struct sk_buff *skb, ecm_db_obj_dir_t dir,
-		uint8_t *src_mac_addr, enum ecm_db_connection_vlan_filter_dir vlan_filter_dir, uint16_t *vid)
+		uint8_t *src_mac_addr, uint8_t *dest_mac_addr, enum ecm_db_connection_vlan_filter_dir vlan_filter_dir, bool is_routed, uint16_t *vid)
 {
 	int ret;
 	uint32_t i;
@@ -2601,6 +2601,8 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 	uint32_t vlan_filter_iface_count = 0;
 	struct bridge_vlan_info vinfo;
 	struct net_device *dev = NULL;
+	struct net_device *prev_dev = NULL;
+	struct net_device *next_dev = NULL;
 	struct net_device *netdev = NULL;
 	struct net_device *bridge = NULL;
 	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -2658,7 +2660,7 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 	 */
 	if (walk_dir_fw) {
 		start_index = first_index;
-		end_index = ECM_DB_IFACE_HEIRARCHY_MAX-1;
+		end_index = ECM_DB_IFACE_HEIRARCHY_MAX - 1;
 		for (i = start_index; i <= end_index; i++) {
 			DEBUG_TRACE("%px: Walk interface heirarchy for i=%d index (MAX=%d)\n", ci, i, ECM_DB_IFACE_HEIRARCHY_MAX);
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[i]));
@@ -2711,17 +2713,67 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 				 */
 				netdev = br_fdb_find_vid_by_mac(bridge, src_mac_addr, vid);
 				if (!netdev) {
-					DEBUG_TRACE("skb: %px, br_fdb_find_vid_by_mac() returned NULL netdev for src_mac(%pM) %px (%s)\n",
+					DEBUG_TRACE("skb: %px, VID was not found for src_mac(%pM) on bridge: %px (%s)\n",
 							skb, src_mac_addr, bridge, bridge->name);
-					rcu_read_unlock();
-					dev_put(dev);
-					dev_put(bridge);
-					continue;
-				}
 
-				DEBUG_TRACE("%px: br_lookup_vid_in_fdb_list() success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
-						ci, dev->name, src_mac_addr, *vid, netdev->name);
-				dev_put(netdev);
+					/*
+					 * We didn't get an entry for the src_mac addr in the fdb table.
+					 * For a valid flow, there are only two ways the determined VID could be valid.
+					 */
+					if (is_routed && dev == bridge) {
+						/*
+						 * Case1: This packet must have used PVID configuration on bridge device, if the packet is say, coming from
+						 * WAN to LAN Brige device. And this bridge device would be the first device in this array.
+						 */
+						if (i == start_index) {
+							br_vlan_get_pvid_rcu(dev, vid);
+							DEBUG_TRACE("skb: %px, Fetching PVID from bridge iface: %d\n", skb, *vid);
+						}
+
+						/*
+						 * Case2: This packet must have used VID configuration from VLAN on a bridge device(if any).
+						 */
+						if (i == start_index + 1) {
+							prev_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[start_index]));
+							if (!prev_dev) {
+								DEBUG_WARN("%px: Failed to get previous net device with %d index\n", ci, start_index);
+								rcu_read_unlock();
+								goto fail;
+							}
+
+							if (is_vlan_dev(prev_dev)) {
+								*vid = vlan_dev_vlan_id(prev_dev);
+								DEBUG_TRACE("%px: Got VID from bridge VLAN iface(%s) vid: %d \n", ci, prev_dev->name, *vid);
+							}
+
+							dev_put(prev_dev);
+						}
+
+						/*
+						 * Validate if the destination mac is reachable with the obtained VID, via the bridge slave device,
+						 * in the interface heirarchy. We are expecting the entry to be present in FDB table.
+						 */
+						next_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[i+1]));
+						if (!next_dev) {
+							DEBUG_WARN("%px: Failed to get next net device(bridge slave) with %d index\n", ci, i+1);
+							rcu_read_unlock();
+							goto fail;
+						}
+
+						if (*vid == 0 || !br_fdb_has_entry(next_dev, dest_mac_addr, *vid)) {
+							dev_put(next_dev);
+							rcu_read_unlock();
+							DEBUG_TRACE("%px: Failed to reach dest mac(%pM) via VLAN tag(%d) on bridge slave device(%s)\n",
+									skb, dest_mac_addr, *vid, next_dev->name);
+							goto fail;
+						}
+
+					}
+				} else {
+					DEBUG_TRACE("%px: src_mac_addr lookup success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
+							ci, dev->name, src_mac_addr, *vid, netdev->name);
+					dev_put(netdev);
+				}
 			}
 
 			/*
@@ -2788,7 +2840,7 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 		/*
 		 * For RETURN Direction, traverse from ECM_DB_IFACE_HEIRARCHY_MAX-1 to first_index.
 		 */
-		start_index = ECM_DB_IFACE_HEIRARCHY_MAX-1;
+		start_index = ECM_DB_IFACE_HEIRARCHY_MAX - 1;
 		end_index = first_index;
 		for (i = start_index; i >= end_index; i--) {
 			DEBUG_TRACE("%px: Walk interface heirarchy for i=%d index (MAX=%d)\n", ci, i, ECM_DB_IFACE_HEIRARCHY_MAX);
@@ -2842,17 +2894,66 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 				 */
 				netdev = br_fdb_find_vid_by_mac(bridge, src_mac_addr, vid);
 				if (!netdev) {
-					DEBUG_TRACE("skb: %px, br_fdb_find_vid_by_mac() returned NULL netdev for src_mac(%pM) %px (%s)\n",
+					DEBUG_TRACE("skb: %px, VID was not found for src_mac(%pM) on bridge: %px (%s)\n",
 							skb, src_mac_addr, bridge, bridge->name);
-					rcu_read_unlock();
-					dev_put(dev);
-					dev_put(bridge);
-					continue;
-				}
 
-				DEBUG_TRACE("%px: br_lookup_vid_in_fdb_list() success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
-						ci, dev->name, src_mac_addr, *vid, netdev->name);
-				dev_put(netdev);
+					/*
+					 * We didn't get an entry for the src_mac addr in the fdb table.
+					 * For a valid flow, there are only two ways the determined VID could be valid.
+					 */
+					if (is_routed && dev == bridge) {
+						/*
+						 * Case1: This packet must have used PVID configuration on bridge device, if the packet is say, coming from
+						 * WAN to LAN Brige device. And this bridge device would be the first device in this array.
+						 */
+						if (i == start_index) {
+							br_vlan_get_pvid_rcu(dev, vid);
+							DEBUG_TRACE("skb: %px, Fetching PVID from bridge iface: %d\n", skb, *vid);
+						}
+
+						/*
+						 * Case2: This packet must have used VID configuration from VLAN on a bridge device(if any).
+						 */
+						if (i == start_index - 1) {
+							prev_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[start_index]));
+							if (!prev_dev) {
+								DEBUG_WARN("%px: Failed to get previous net device with %d index\n", ci, start_index);
+								rcu_read_unlock();
+								goto fail;
+							}
+
+							if (is_vlan_dev(prev_dev)) {
+								*vid = vlan_dev_vlan_id(prev_dev);
+								DEBUG_TRACE("%px: Got VID from bridge VLAN iface(%s) vid: %d \n", ci, prev_dev->name, *vid);
+							}
+
+							dev_put(prev_dev);
+						}
+
+						/*
+						 * Validate if the destination mac is reachable with the obtained VID, via the bridge slave device,
+						 * in the interface heirarchy. We are expecting the entry to be present in FDB table.
+						 */
+						next_dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[i-1]));
+						if (!next_dev) {
+							DEBUG_WARN("%px: Failed to get next net device(bridge slave) with %d index\n", ci, i-1);
+							rcu_read_unlock();
+							goto fail;
+						}
+
+						if (*vid == 0 || !br_fdb_has_entry(next_dev, dest_mac_addr, *vid)) {
+							dev_put(next_dev);
+							rcu_read_unlock();
+							DEBUG_TRACE("%px: Failed to reach dest mac(%pM) via VLAN tag(%d) on bridge slave device(%s)\n",
+									skb, dest_mac_addr, *vid, next_dev->name);
+							goto fail;
+						}
+					}
+				} else {
+					DEBUG_TRACE("%px: src_mac_addr lookup success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
+							ci, dev->name, src_mac_addr, *vid, netdev->name);
+					dev_put(netdev);
+				}
 			}
 
 			/*
@@ -2978,7 +3079,7 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 					struct ecm_db_node_instance *ni[],
 					struct sk_buff *skb,
 					ecm_db_obj_dir_t from_dir,
-					ecm_db_obj_dir_t to_dir)
+					ecm_db_obj_dir_t to_dir, bool is_routed)
 {
 	uint8_t *src_mac_addr;
 	uint8_t *dest_mac_addr;
@@ -2995,12 +3096,12 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	dest_mac_addr = ni[ECM_DB_OBJ_DIR_TO]->address;
 
 	if (src_mac_addr == NULL) {
-		DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() src_mac_addr is NULL\n", ci);
+		DEBUG_TRACE("%px: src_mac_addr is NULL\n", ci);
 		goto fail;
 	}
 
 	if (dest_mac_addr == NULL) {
-		DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() dest_mac_addr is NULL\n", ci);
+		DEBUG_TRACE("%px: dest_mac_addr is NULL\n", ci);
 		goto fail;
 	}
 
@@ -3015,9 +3116,9 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	 * the vlan tag used for FLOW path.
 	 * TODO: Evaluate integrating VLAN filter configuration during interface heirarchy construction.
 	 */
-	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for FROM heirarcy for FLOW direction.\n", ci);
-	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, src_mac_addr,
-				ECM_VLAN_FILTER_RULE_FLOW_DIR, &vid_flow)) {
+	DEBUG_TRACE("%px: Parse the heirarchy for FROM heirarcy in FLOW direction.\n", ci);
+	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, src_mac_addr, dest_mac_addr,
+				ECM_VLAN_FILTER_RULE_FLOW_DIR, is_routed, &vid_flow)) {
 		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_FLOW_DIR\n", ci);
 		goto fail;
 	}
@@ -3027,9 +3128,9 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	 * We use the vlan tag ID(vid) obtained in last walk (FROM direction),
 	 * to fill the other (TO) direction.
 	 */
-	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for TO heirarcy for FLOW direction.\n", ci);
-	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, dest_mac_addr,
-				ECM_VLAN_FILTER_RULE_FLOW_DIR, &vid_flow)) {
+	DEBUG_TRACE("%px: Parse the heirarchy for TO heirarcy in FLOW direction.\n", ci);
+	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, src_mac_addr, dest_mac_addr,
+				ECM_VLAN_FILTER_RULE_FLOW_DIR, is_routed, &vid_flow)) {
 		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_FLOW_DIR\n", ci);
 		goto fail;
 	}
@@ -3039,9 +3140,9 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	 * We send last param as "0", as we don't any information about
 	 * the vlan tag used for the RETURN path.
 	 */
-	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for TO heirarcy for RET direction.\n", ci);
-	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, dest_mac_addr,
-				ECM_VLAN_FILTER_RULE_RET_DIR, &vid_ret)) {
+	DEBUG_TRACE("%px: Parse the heirarchy for TO heirarcy in RET direction.\n", ci);
+	if (!ecm_db_connection_fill_vlan_filter(ci, skb, to_dir, dest_mac_addr, src_mac_addr,
+				ECM_VLAN_FILTER_RULE_RET_DIR, is_routed, &vid_ret)) {
 		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_TO and ECM_VLAN_FILTER_RULE_RET_DIR\n", ci);
 		goto fail;
 	}
@@ -3051,9 +3152,9 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci,
 	 * We use the vlan tag ID(vid) obtained in last walk (FROM direction),
 	 * to fill the other (TO) direction.
 	 */
-	DEBUG_TRACE("%px: ecm_db_connection_fill_vlan_filter() for FROM heirarcy for RET direction.\n", ci);
-	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, src_mac_addr,
-				ECM_VLAN_FILTER_RULE_RET_DIR, &vid_ret)) {
+	DEBUG_TRACE("%px: Parse the heirarchy for FROM heirarcy in RET direction.\n", ci);
+	if (!ecm_db_connection_fill_vlan_filter(ci, skb, from_dir, dest_mac_addr, src_mac_addr,
+				ECM_VLAN_FILTER_RULE_RET_DIR, is_routed, &vid_ret)) {
 		DEBUG_WARN("%px: vlan filter info not found for ECM_DB_OBJ_DIR_FROM and ECM_VLAN_FILTER_RULE_RET_DIR\n", ci);
 		goto fail;
 	}

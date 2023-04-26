@@ -698,7 +698,7 @@ feci_alloc_done:
 		/*
 		 * Add VLAN filter information in connection instance
 		 */
-		if (!ecm_db_connection_add_vlan_filter(nci, ni, skb, ECM_DB_OBJ_DIR_FROM_NAT, ECM_DB_OBJ_DIR_TO_NAT)) {
+		if (!ecm_db_connection_add_vlan_filter(nci, ni, skb, ECM_DB_OBJ_DIR_FROM, ECM_DB_OBJ_DIR_TO, is_routed)) {
 			DEBUG_WARN("Failed to update bridge vlan filter information\n");
 			goto fail_10;
 		}
