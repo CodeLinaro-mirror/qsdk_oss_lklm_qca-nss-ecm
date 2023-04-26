@@ -177,6 +177,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	int32_t to_top_iface_id;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	struct ecm_db_iface_instance *from_ppe_iface;
+	struct ecm_db_iface_instance *to_ppe_iface;
 	uint8_t from_ppe_iface_address[ETH_ALEN];
 	uint8_t to_ppe_iface_address[ETH_ALEN];
 	struct ppe_drv_v6_rule_create *pd6rc;
@@ -271,6 +273,12 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	pd6rc->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 
 	/*
+	 * Get the top interface in the hierarchy
+	 */
+	from_ppe_iface = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+	to_ppe_iface = to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+
+	/*
 	 * We know that each outward facing interface is known to the PPE and so this connection could be accelerated.
 	 * However the lists may also specify other interesting details that must be included in the creation command,
 	 * for example, ethernet MAC, VLAN tagging or PPPoE session information.
@@ -333,6 +341,13 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(from_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd6rc->rule_flags |= PPE_DRV_V6_RULE_FROM_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s from hierarchy\n", feci, from_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
@@ -626,6 +641,13 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			ecm_db_iface_bridge_address_get(ii, to_ppe_iface_address);
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(to_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd6rc->rule_flags |= PPE_DRV_V6_RULE_TO_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s to hierarchy \n", feci, to_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 			break;
 

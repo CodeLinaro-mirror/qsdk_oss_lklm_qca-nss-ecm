@@ -5294,7 +5294,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					} else {
 						ip_addr_t look_up_addr;
-						struct net_device *tmp_dev;
+						struct net_device *tmp_dev, *lookup_dev;
 						ECM_IP_ADDR_COPY(look_up_addr, dest_addr);
 						/*
 						 * If this is a local IP address, this means the interface hierarchy is being created for
@@ -5312,7 +5312,18 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 							dev_put(tmp_dev);
 						}
 
-						if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr)) {
+						lookup_dev = dest_dev;
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+						if ((top_dev) && (is_routed) && (is_vlan_dev(top_dev))) {
+							/*
+							 * VLAN over bridge case
+							 */
+							lookup_dev = top_dev;
+							DEBUG_TRACE("%px: VLAN over bridge topdev %px (%s) destdev %px (%s)\n", feci, top_dev, top_dev->name, dest_dev, dest_dev->name);
+						}
+#endif
+
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr)) {
 							DEBUG_WARN("%px: Unable to find the host MAC address connected to the Linux bridge\n", feci);
 							goto done;
 						}
