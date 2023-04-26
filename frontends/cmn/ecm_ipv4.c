@@ -222,41 +222,21 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 
 			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
 
+			/*
+			 * If the local_dev is a PPP device, we support only PPPoE devices.
+			 */
 			if (local_dev->type == ARPHRD_PPP) {
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
 				DEBUG_TRACE("%px: l2tp over netdevice %s unsupported\n", feci, local_dev->name);
 				dev_put(local_dev);
 				return NULL;
 #else
-				struct ppp_channel *ppp_chan[1];
-				struct pppoe_opt addressing;
-				int px_proto;
-
-				if (ppp_hold_channels(local_dev, ppp_chan, 1) != 1) {
-					DEBUG_WARN("%px: l2tpv2 over netdevice %s unsupported; could not hold ppp channels\n", feci, local_dev->name);
+				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
+					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
 					dev_put(local_dev);
 					return NULL;
 				}
 
-				px_proto = ppp_channel_get_protocol(ppp_chan[0]);
-				if (px_proto != PX_PROTO_OE) {
-					DEBUG_WARN("%px: l2tpv2 over PPP protocol %d unsupported\n", feci, px_proto);
-					ppp_release_channels(ppp_chan, 1);
-					dev_put(local_dev);
-					return NULL;
-				}
-
-				if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
-					DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
-					ppp_release_channels(ppp_chan, 1);
-					dev_put(local_dev);
-					return NULL;
-				}
-
-				DEBUG_TRACE("%px: Obtained mac address for %s remote address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
-				memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
-				dev_put(addressing.dev);
-				ppp_release_channels(ppp_chan, 1);
 				dev_put(local_dev);
 				done = true;
 				break;
@@ -330,6 +310,27 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			}
 
 			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
+
+			/*
+			 * If the local_dev is a PPP device, we support only PPPoE devices.
+			 */
+			if (local_dev->type == ARPHRD_PPP) {
+#ifndef ECM_INTERFACE_PPPOE_ENABLE
+				DEBUG_TRACE("%px: PPTP over netdevice %s unsupported\n", feci, local_dev->name);
+				dev_put(local_dev);
+				return NULL;
+#else
+				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
+					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
+					dev_put(local_dev);
+					return NULL;
+				}
+
+				dev_put(local_dev);
+				done = true;
+				break;
+#endif
+			}
 
 			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
@@ -1370,7 +1371,7 @@ vxlan_done:
 	 *	dest_node_addr_nat is set to dest_node_addr
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
+		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
 			/*
 			 * Example 1
 			 */
@@ -1402,7 +1403,7 @@ vxlan_done:
 			src_node_addr_nat = NULL;
 
 			dest_node_addr_nat = NULL;
-		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
+		} else if ((ecm_dir == ECM_DB_DIRECTION_BRIDGED) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
 			/*
 			 * Example 5
 			 */
@@ -1421,7 +1422,7 @@ vxlan_done:
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}
 	} else {
-		if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
+		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
 			/*
 			 * Example 3
 			 */
@@ -1453,7 +1454,7 @@ vxlan_done:
 			src_node_addr = NULL;
 
 			dest_node_addr_nat = dest_node_addr;
-		} else if (ecm_dir == ECM_DB_DIRECTION_BRIDGED) {
+		} else if ((ecm_dir == ECM_DB_DIRECTION_BRIDGED) || (ecm_dir == ECM_DB_DIRECTION_NON_NAT)) {
 			/*
 			 * Example 6
 			 */

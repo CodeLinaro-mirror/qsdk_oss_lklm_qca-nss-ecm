@@ -53,6 +53,7 @@ extern struct net_device *bond_get_tx_dev(struct sk_buff *skb, uint8_t *src_mac,
 					  void *dst, uint16_t protocol,
 					  struct net_device *bond_dev,
 					  __be16 *layer4hdr);
+bool ecm_interface_mac_addr_get_pppoe(struct net_device *local_dev, uint8_t *node_addr);
 bool ecm_interface_mac_addr_get_no_route(struct net_device *dev, ip_addr_t ip_addr, uint8_t *mac_addr);
 bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr);
 bool ecm_interface_find_route_by_addr(ip_addr_t addr, struct ecm_interface_route *ecm_rt);
