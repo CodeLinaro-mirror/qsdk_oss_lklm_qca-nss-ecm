@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -58,6 +58,9 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
+#ifdef ECM_INTERFACE_BOND_ENABLE
+#include <net/bonding.h>
+#endif
 #include <net/vxlan.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
@@ -1355,6 +1358,60 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 
 				DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_sfe_iface_address);
 				break;
+			case ECM_DB_IFACE_TYPE_LAG:
+			{
+#ifdef ECM_INTERFACE_BOND_ENABLE
+				struct net_device *dev;
+				DEBUG_TRACE("%px: LAG : %s\n", feci, dev->name);
+				if (interface_type_counts[ii_type] != 0) {
+
+					/*
+					 * Ignore additional mac addresses, these are usually as a result of address propagation
+					 * from bridges down to ports etc.
+					 */
+					DEBUG_TRACE("%px: LAG - ignore additional\n", feci);
+					rule_invalid = true;
+					break;
+				}
+
+				dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+				if (!dev) {
+					DEBUG_TRACE("%px: LAG device is not present\n", feci);
+					rule_invalid = true;
+					break;
+				}
+
+				/* Multicast offload supported only for MLO LAG devices.
+				 * Destination interface is MLO bond device itself
+				 */
+				if (!bond_is_mlo_device(dev)) {
+					DEBUG_TRACE("%px: LAG device is not MLO device: %s\n", feci, dev->name);
+					dev_put(dev);
+					rule_invalid = true;
+					break;
+				}
+
+
+				/*
+				 * Can only handle one MAC, the first outermost mac.
+				 */
+				ecm_db_iface_lag_address_get(ii, to_sfe_iface_address);
+				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (to_sfe_iface_id < 0) {
+					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
+					dev_put(dev);
+					rule_invalid = true;
+					break;
+			        }
+				DEBUG_TRACE("%px: LAG - mac: %pM, mtu %d\n", feci, to_sfe_iface_address, to_mtu);
+				dev_put(dev);
+#else
+				DEBUG_TRACE("%px: LAG not supported\n", feci);
+				rule_invalid = true;
+#endif
+				break;
+			}
 			case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 				/*
@@ -1469,6 +1526,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			DEBUG_WARN("%px: to/dest Rule invalid\n", feci);
 			ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
 			kfree(nim);
+			ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE);
 			return;
 		}
 
