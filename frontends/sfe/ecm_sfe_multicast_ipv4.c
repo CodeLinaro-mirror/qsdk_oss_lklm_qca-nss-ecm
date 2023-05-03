@@ -1117,6 +1117,26 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_sfe_iface_address);
 
 			break;
+
+		case ECM_DB_IFACE_TYPE_MACVLAN:
+#ifdef ECM_INTERFACE_MACVLAN_ENABLE
+			if (ecm_sfe_common_is_l2_iface_supported(ECM_DB_IFACE_TYPE_MACVLAN, list_index, from_ifaces_first) && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_MACVLAN);
+			}
+
+			ecm_db_iface_macvlan_address_get(ii, from_sfe_iface_address);
+			ether_addr_copy((uint8_t *)create->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+			create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+			create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+
+			DEBUG_TRACE("%px: Macvlan - mac: %pM\n", feci, from_sfe_iface_address);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: MACVLAN - unsupported\n", feci);
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_VLAN:
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 			if (interface_type_counts[ii_type] > 1) {
@@ -2621,8 +2641,8 @@ struct ecm_front_end_connection_instance *ecm_sfe_multicast_ipv4_connection_inst
 	feci->multicast_update = ecm_sfe_multicast_ipv4_bridge_update_connections;
 	feci->defunct = ecm_sfe_multicast_ipv4_connection_defunct_callback;
 
-	feci->get_stats_bitmap = ecm_sfe_common_dummy_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_sfe_common_dummy_set_stats_bitmap;
+	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
 
 	return feci;
 }
