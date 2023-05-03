@@ -766,6 +766,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
 		pd4rc->sawf_rule.return_mark = pr->return_sawf_metadata;
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SAWF;
+
+		/*
+		 * In case of SAWF denying acceleraion through PPE-DS
+		 * Allowing acceleration only through PPE-VP
+		 * TODO: configure accel using DS for SAWF
+		 */
+		spin_lock_bh(&feci->lock);
+		feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
+		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+		spin_unlock_bh(&feci->lock);
         }
 
 	/*
