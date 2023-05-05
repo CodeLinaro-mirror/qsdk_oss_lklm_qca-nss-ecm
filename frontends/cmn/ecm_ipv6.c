@@ -162,14 +162,6 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 	ip_addr_t local_gre_tun_ip;
 #endif
 
-#if defined(ECM_INTERFACE_L2TPV2_ENABLE) || defined(ECM_INTERFACE_MAP_T_ENABLE)
-#ifdef ECM_INTERFACE_PPPOE_ENABLE
-	struct ppp_channel *ppp_chan[1];
-	struct pppoe_opt addressing;
-	int px_proto;
-#endif
-#endif
-
 	DEBUG_INFO("%px: Establish node for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 
 	/*
@@ -242,37 +234,21 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 
 			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
 
+			/*
+			 * If the local_dev is a PPP device, we support only PPPoE devices.
+			 */
 			if (local_dev->type == ARPHRD_PPP) {
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
 				DEBUG_TRACE("%px: l2tpv2 over pppoe unsupported\n", feci);
 				dev_put(local_dev);
 				return NULL;
 #else
-				if (ppp_hold_channels(local_dev, ppp_chan, 1) != 1) {
-					DEBUG_WARN("%px: l2tpv2 over netdevice %s unsupported; could not hold ppp channels\n", feci, local_dev->name);
+				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
+					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
 					dev_put(local_dev);
 					return NULL;
 				}
 
-				px_proto = ppp_channel_get_protocol(ppp_chan[0]);
-				if (px_proto != PX_PROTO_OE) {
-					DEBUG_WARN("%px: l2tpv2 over PPP protocol %d unsupported\n", feci, px_proto);
-					ppp_release_channels(ppp_chan, 1);
-					dev_put(local_dev);
-					return NULL;
-				}
-
-				if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
-					DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
-					ppp_release_channels(ppp_chan, 1);
-					dev_put(local_dev);
-					return NULL;
-				}
-
-				DEBUG_TRACE("%px: Obtained mac address for %s remote address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
-				memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
-				dev_put(addressing.dev);
-				ppp_release_channels(ppp_chan, 1);
 				dev_put(local_dev);
 				done = true;
 				break;
@@ -318,6 +294,27 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 			}
 
 			DEBUG_TRACE("%px: local_dev found is %s\n", feci, local_dev->name);
+
+			/*
+			 * If the local_dev is a PPP device, we support only PPPoE devices.
+			 */
+			if (local_dev->type == ARPHRD_PPP) {
+#ifndef ECM_INTERFACE_PPPOE_ENABLE
+				DEBUG_TRACE("%px: PPTP over netdevice %s unsupported\n", feci, local_dev->name);
+				dev_put(local_dev);
+				return NULL;
+#else
+				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
+					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
+					dev_put(local_dev);
+					return NULL;
+				}
+
+				dev_put(local_dev);
+				done = true;
+				break;
+#endif
+			}
 
 			if (ECM_IP_ADDR_MATCH(local_ip, addr)) {
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, local_ip, node_addr))) {
@@ -365,42 +362,31 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 				return NULL;
 			}
 
-			if (ip6_inetdev->dev->type != ARPHRD_PPP) {
-				DEBUG_TRACE("%px: obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ip6_inetdev->dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
-				memcpy(node_addr, ip6_inetdev->dev->dev_addr, ETH_ALEN);
+			local_dev = ip6_inetdev->dev;
+
+			/*
+			 * If the local_dev is a PPP device, we support only PPPoE devices.
+			 */
+			if (local_dev->type == ARPHRD_PPP) {
+#ifndef ECM_INTERFACE_PPPOE_ENABLE
+				DEBUG_TRACE("%px: MAP-T over netdevice %s unsupported\n", feci, local_dev->name);
+				return NULL;
+#else
+				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
+					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
+					return NULL;
+				}
+
 				done = true;
 				break;
+#endif
 			}
 
-#ifndef ECM_INTERFACE_PPPOE_ENABLE
-			DEBUG_TRACE("%px: MAP-T over netdevice %s unsupported\n", feci, ip6_inetdev->dev->name);
-			return NULL;
-#else
-			if (ppp_hold_channels(ip6_inetdev->dev, ppp_chan, 1) != 1) {
-				DEBUG_WARN("%px: MAP-T over netdevice %s unsupported; could not hold ppp channels\n", feci, ip6_inetdev->dev->name);
-				return NULL;
-			}
-
-			px_proto = ppp_channel_get_protocol(ppp_chan[0]);
-			if (px_proto != PX_PROTO_OE) {
-				DEBUG_WARN("%px: MAP-T over PPP protocol %d unsupported\n", feci, px_proto);
-				ppp_release_channels(ppp_chan, 1);
-				return NULL;
-			}
-
-			if (pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
-				DEBUG_WARN("%px: failed to get PPPoE addressing info\n", feci);
-				ppp_release_channels(ppp_chan, 1);
-				return NULL;
-			}
-
-			DEBUG_TRACE("%px: Obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, addressing.dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
-			memcpy(node_addr, addressing.dev->dev_addr, ETH_ALEN);
-			dev_put(addressing.dev);
-			ppp_release_channels(ppp_chan, 1);
+			DEBUG_TRACE("%px: Obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n",
+								feci, local_dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
+			memcpy(node_addr, local_dev->dev_addr, ETH_ALEN);
 			done = true;
 			break;
-#endif
 
 #else
 			DEBUG_TRACE("%px: MAP-T interface unsupported\n", feci);
