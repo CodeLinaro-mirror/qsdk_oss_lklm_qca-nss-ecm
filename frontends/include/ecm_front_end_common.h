@@ -368,7 +368,8 @@ extern int ecm_front_end_common_connection_state_get(struct ecm_front_end_connec
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct net_device *outdev,
 						      struct sk_buff *skb,
-						      struct nf_conntrack_tuple *tuple,
+						      struct nf_conntrack_tuple *orig_tuple,
+						      struct nf_conntrack_tuple *reply_tuple,
 						      int ip_version, uint16_t offset);
 extern uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_instance *feci);
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE

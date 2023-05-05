@@ -482,13 +482,15 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
  * 3. GRE V4 or V6 TAP - allow acceleration
  * 4. GRE V4 or V6 TUN - allow acceleration
  * 5. NVGRE locally terminated - do not allow acceleration
- * 6. NVGRE pass through - do not allow acceleration
- * 7. GRE pass through - allow acceleration
+ * 6. GRE pass through NAT - do not allow acceleration
+ * 7. NVGRE pass through - do not allow acceleration
+ * 8. GRE pass through non NAT - allow acceleration
  */
 bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 							     struct net_device *outdev,
 							     struct sk_buff *skb,
-							     struct nf_conntrack_tuple *tuple,
+							     struct nf_conntrack_tuple *orig_tuple,
+							     struct nf_conntrack_tuple *reply_tuple,
 							     int ip_version, uint16_t offset)
 {
 	struct net_device *dev;
@@ -554,7 +556,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	 * If either is locally terminated, we cannot accelerate.
 	 */
 	if (ip_version == 4) {
-		dev = ip_dev_find(&init_net, tuple->src.u3.ip);
+		dev = ip_dev_find(&init_net, orig_tuple->src.u3.ip);
 		if (dev) {
 			/*
 			 * Source IP address is local
@@ -564,18 +566,27 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 
-		dev = ip_dev_find(&init_net, tuple->dst.u3.ip);
+		dev = ip_dev_find(&init_net, orig_tuple->dst.u3.ip);
 		if (dev) {
 			/*
 			 * Destination IP address is local
 			 */
 			dev_put(dev);
 			DEBUG_TRACE("%px: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
+			return false;
+		}
+
+		/*
+		 * Case 6: GRE pass through NAT
+		 *
+		 */
+		if (orig_tuple->src.u3.ip != reply_tuple->dst.u3.ip || orig_tuple->dst.u3.ip != reply_tuple->src.u3.ip) {
+			DEBUG_TRACE("%px: GRE IPv%d pass through NAT - do not allow acceleration\n", skb, ip_version);
 			return false;
 		}
 	} else {
 #ifdef ECM_IPV6_ENABLE
-		dev = ipv6_dev_find(&init_net, &(tuple->src.u3.in6), 1);
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), 1);
 		if (dev) {
 			/*
 			 * Source IP address is local
@@ -585,7 +596,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 
-		dev = ipv6_dev_find(&init_net, &(tuple->dst.u3.in6), 1);
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), 1);
 		if (dev) {
 			/*
 			 * Destination IP address is local
@@ -594,14 +605,15 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			DEBUG_TRACE("%px: NVGRE locally terminated (dest) - do not allow acceleration\n", skb);
 			return false;
 		}
+
 #else
-			DEBUG_TRACE("%px: IPv6 support not enabled\n", skb);
-			return false;
+		DEBUG_TRACE("%px: IPv6 support not enabled\n", skb);
+		return false;
 #endif
 	}
 
 	/*
-	 * Case 6: NVGRE pass through
+	 * Case 7: NVGRE pass through
 	 */
 	if (greh->flags & GRE_KEY) {
 		DEBUG_TRACE("%px: NVGRE pass through - do not allow acceleration\n", skb);
@@ -609,9 +621,9 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 	}
 
 	/*
-	 * Case 7: GRE pass through
+	 * Case 8: GRE pass through non NAT
 	 */
-	DEBUG_TRACE("%px: GRE IPv%d pass through - allow acceleration\n", skb, ip_version);
+	DEBUG_TRACE("%px: GRE IPv%d pass through non NAT - allow acceleration\n", skb, ip_version);
 	return true;
 }
 

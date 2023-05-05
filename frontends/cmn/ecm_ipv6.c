@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1096,7 +1096,7 @@ vxlan_done:
 	 */
 	if (ip_hdr.protocol == IPPROTO_GRE) {
 		uint16_t offset = ip_hdr.headers[ECM_TRACKER_IP_PROTOCOL_TYPE_GRE].offset;
-		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, 6, offset)) {
+		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, &reply_tuple, 6, offset)) {
 			DEBUG_WARN("%px: GRE protocol is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
