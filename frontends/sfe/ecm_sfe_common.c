@@ -174,7 +174,7 @@ fail:
  * Step 2.) Fast transmit setting is enabled on the destination interface only when no qdisc
  * 	is found in the hierarchy.
  */
-void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, struct sfe_qdisc_rule *qdisc_rule, struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], int32_t from_interfaces_first, int32_t to_interfaces_first)
+void ecm_sfe_common_fast_xmit_set(uint32_t *rule_flags, uint32_t *valid_flags, struct sfe_qdisc_rule *qdisc_rule, struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], int32_t from_interfaces_first, int32_t to_interfaces_first)
 {
 	s32 interface_num;
 	bool qdisc_found = false;
@@ -200,6 +200,7 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 				 * So strip the bottom interface flag for this case.
 				 */
 				*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				*rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_L2_DISABLE;
 				break;
 			}
 
@@ -248,8 +249,10 @@ void ecm_sfe_common_fast_xmit_set(uint16_t *rule_flags, uint16_t *valid_flags, s
 				 * So strip the bottom interface flag for this case.
 				 */
 				*rule_flags &= ~SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				*rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_L2_DISABLE;
 				break;
 			}
+
 			qdisc_found = true;
 			qdisc_rule->return_qdisc_interface = interface_num;
 			qdisc_rule->valid_flags |= SFE_QDISC_RULE_RETURN_VALID;
