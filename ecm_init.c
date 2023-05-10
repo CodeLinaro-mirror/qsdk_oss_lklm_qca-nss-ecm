@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -127,9 +127,10 @@ static int __init ecm_init(void)
 	int ret = -1;
 	struct dentry *ecm_stats_dentry;
 
-	printk(KERN_INFO "ECM init\n");
-
 	selected_front_end = ecm_front_end_type_select();
+
+	printk(KERN_INFO "ECM init: selected_front_end=%d\n", selected_front_end);
+
 	if (selected_front_end == ECM_FRONT_END_TYPE_MAX) {
 		DEBUG_ERROR("Front-end couldn't be selected\n");
 		return -1;
