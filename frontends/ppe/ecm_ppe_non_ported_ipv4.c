@@ -1544,6 +1544,44 @@ static int ecm_ppe_non_ported_ipv4_connection_state_get(struct ecm_front_end_con
 #endif
 
 /*
+ * ecm_ppe_non_ported_ipv4_connection_set();
+ *	Sets the PPE IPv4 non-ported connection's fields.
+ */
+void ecm_ppe_non_ported_ipv4_connection_set(struct ecm_front_end_connection_instance *feci, uint32_t flags)
+{
+	feci->accel_engine = ECM_FRONT_END_ENGINE_PPE;
+	feci->stats.no_action_seen_limit = ecm_ppe_ipv4_no_action_limit_default;
+	feci->stats.driver_fail_limit = ecm_ppe_ipv4_driver_fail_limit_default;
+	feci->stats.ae_nack_limit = ecm_ppe_ipv4_nack_limit_default;
+	feci->accelerate = ecm_ppe_non_ported_ipv4_connection_accelerate;
+	feci->decelerate = ecm_ppe_non_ported_ipv4_connection_decelerate;
+	feci->accel_ceased = ecm_ppe_non_ported_ipv4_connection_accel_ceased;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	feci->state_get = ecm_ppe_non_ported_ipv4_connection_state_get;
+#endif
+	feci->ae_interface_number_by_dev_get = ecm_ppe_common_get_interface_number_by_dev;
+	feci->ae_interface_number_by_dev_type_get = ecm_ppe_common_get_interface_number_by_dev_type;
+	feci->ae_interface_type_get = ecm_ppe_common_get_interface_type;
+	feci->regenerate = ecm_ppe_common_connection_regenerate;
+	feci->defunct = ecm_ppe_non_ported_ipv4_connection_defunct_callback;
+
+	ecm_ppe_common_init_fe_info(&feci->fe_info);
+
+	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
+	feci->fe_info.front_end_flags = flags;
+
+	/*
+	 * Just in case this function is called while switching AE to PPE
+	 * let's reset the failure stats which was increased by the old AE.
+	 */
+        feci->stats.driver_fail_total = 0;
+        feci->stats.driver_fail = 0;
+        feci->stats.ae_nack = 0;
+        feci->stats.ae_nack_total = 0;
+}
+
+/*
  * ecm_ppe_non_ported_ipv4_connection_instance_alloc()
  *	Create a front end instance specific for non-ported connection
  */
@@ -1589,11 +1627,6 @@ struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_ins
 	feci->can_accel = can_accel;
 	feci->accel_mode = (can_accel) ? ECM_FRONT_END_ACCELERATION_MODE_DECEL : ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
 	feci->accel_engine = ECM_FRONT_END_ENGINE_PPE;
-	spin_lock_bh(&ecm_ppe_ipv4_lock);
-	feci->stats.no_action_seen_limit = ecm_ppe_ipv4_no_action_limit_default;
-	feci->stats.driver_fail_limit = ecm_ppe_ipv4_driver_fail_limit_default;
-	feci->stats.ae_nack_limit = ecm_ppe_ipv4_nack_limit_default;
-	spin_unlock_bh(&ecm_ppe_ipv4_lock);
 
 	/*
 	 * Copy reference to connection - no need to ref ci as ci maintains a ref to this instance instead (this instance persists for as long as ci does)
@@ -1601,25 +1634,8 @@ struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_ins
 	feci->ci = ci;
 	feci->ip_version = 4;
 	feci->protocol = protocol;
-
-	/*
-	 * Populate the methods and callbacks
-	 */
-	feci->accelerate = ecm_ppe_non_ported_ipv4_connection_accelerate;
-	feci->decelerate = ecm_ppe_non_ported_ipv4_connection_decelerate;
-	feci->accel_ceased = ecm_ppe_non_ported_ipv4_connection_accel_ceased;
-#ifdef ECM_STATE_OUTPUT_ENABLE
-	feci->state_get = ecm_ppe_non_ported_ipv4_connection_state_get;
-#endif
-	feci->ae_interface_number_by_dev_get = ecm_ppe_common_get_interface_number_by_dev;
-	feci->ae_interface_number_by_dev_type_get = ecm_ppe_common_get_interface_number_by_dev_type;
-	feci->ae_interface_type_get = ecm_ppe_common_get_interface_type;
-	feci->regenerate = ecm_ppe_common_connection_regenerate;
-	feci->defunct = ecm_ppe_non_ported_ipv4_connection_defunct_callback;
-
-	feci->get_stats_bitmap = ecm_ppe_common_dummy_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_ppe_common_dummy_set_stats_bitmap;
-	feci->fe_info.front_end_flags = accel_flags;
+	ecm_ppe_non_ported_ipv4_connection_set(feci, accel_flags);
+	
 	return feci;
 }
 

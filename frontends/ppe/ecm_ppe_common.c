@@ -256,3 +256,13 @@ bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 
 	return true;
 }
+
+ /* ecm_ppe_common_init_fe_info()
+ *	Initialize common fe info
+ */
+void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
+{
+	info->from_stats_bitmap = 0;
+	info->to_stats_bitmap = 0;
+	info->front_end_flags = 0;
+}
