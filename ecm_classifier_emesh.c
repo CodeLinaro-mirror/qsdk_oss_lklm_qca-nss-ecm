@@ -611,6 +611,13 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 	struct ip_esp_hdr *esp;
 	uint16_t version;
 
+	/*
+	 * Return false if any of src or dest dev is not present.
+	 * Because, we need both devs to call the msduq callback.
+	 */
+	if (!src_dev || !dest_dev)
+		return false;
+
 	if (skb->protocol == ntohs(ETH_P_IP)) {
 		version = ntohs(ETH_P_IP);
 		if (unlikely(!pskb_may_pull(skb, sizeof(*iph)))) {
