@@ -853,7 +853,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 			ecm_db_iface_ovs_bridge_address_get(ii, to_sfe_iface_address);
 			if (is_valid_ether_addr(to_sfe_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, to_sfe_iface_address);
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
 				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
 				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
 			}
