@@ -1487,15 +1487,17 @@ void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *a
 }
 
 /*
- * ecm_classifier_emesh_sawf_update_ul_param_on_conn_decel()
- *	Update SAWF uplink parameters to wlan host driver when a connection gets decelerated in ECM
+ * ecm_classifier_emesh_sawf_params_sync_on_conn_decel()
+ *	Update SAWF parameters to wlan host driver when a connection gets decelerated in ECM
  */
-void ecm_classifier_emesh_sawf_update_ul_param_on_conn_decel(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
+void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_db_connection_instance *ci;
 	uint8_t dmac[ETH_ALEN], smac[ETH_ALEN];
 	uint8_t forward_service_id, reverse_service_id;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
@@ -1524,19 +1526,28 @@ void ecm_classifier_emesh_sawf_update_ul_param_on_conn_decel(struct ecm_classifi
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+
 	/*
-	 * Config sawf uplink parameters.
+	 * Sync sawf connection with wlan driver.
+	 * This info will be used for different use cases (ex. SAWF UL config) as per requirements.
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata.
 	 */
-	if (ecm_emesh.update_sawf_ul) {
+	if (ecm_emesh.sawf_conn_sync) {
 		forward_service_id = cemi->process_response.flow_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
 		reverse_service_id = cemi->process_response.return_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		DEBUG_INFO("%px: SAWF UL forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
-		ecm_emesh.update_sawf_ul(dmac, smac, forward_service_id, reverse_service_id,
+		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
+		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
 					ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW);
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_DECEL] = true;
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_ACCEL] = false;
 	}
+
+	if (src_dev)
+		dev_put(src_dev);
+
+	if (dest_dev)
+		dev_put(dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
@@ -1611,7 +1622,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v4(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_EVICT:
 	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
-		ecm_classifier_emesh_sawf_update_ul_param_on_conn_decel(aci, sync);
+		ecm_classifier_emesh_sawf_params_sync_on_conn_decel(aci, sync);
 		ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_DECEL);
 		break;
 	default:
@@ -1620,17 +1631,19 @@ static void ecm_classifier_emesh_sawf_sync_to_v4(struct ecm_classifier_instance 
 }
 
 /*
- * ecm_classifier_emesh_sawf_update_ul_params_on_conn_accel()
- *	Update SAWF uplink parameters associated with SP rule to wlan host driver
+ * ecm_classifier_emesh_sawf_params_sync_on_conn_accel()
+ *	Update SAWF parameters associated with SP rule to wlan host driver
  *	when a connection getting accelerated in ECM
  */
-static void ecm_classifier_emesh_sawf_update_ul_params_on_conn_accel(struct ecm_classifier_instance *aci,
+static void ecm_classifier_emesh_sawf_params_sync_on_conn_accel(struct ecm_classifier_instance *aci,
 		struct ecm_classifier_rule_create *ecrc)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_db_connection_instance *ci;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
 	uint8_t forward_service_id, reverse_service_id;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
@@ -1653,19 +1666,28 @@ static void ecm_classifier_emesh_sawf_update_ul_params_on_conn_accel(struct ecm_
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+
 	/*
-	 * Config sawf uplink parameters.
+	 * Sync sawf connection with wlan driver.
+	 * This info will be used for different use cases (ex. SAWF UL config) as per requirements.
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata
 	 */
-	if (ecm_emesh.update_sawf_ul) {
+	if (ecm_emesh.sawf_conn_sync) {
 		forward_service_id = cemi->process_response.flow_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
 		reverse_service_id = cemi->process_response.return_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		DEBUG_INFO("%px: SAWF UL forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
-		ecm_emesh.update_sawf_ul(dmac, smac, forward_service_id, reverse_service_id,
+		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
+		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
 					ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW);
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_ACCEL] = true;
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_DECEL] = false;
 	}
+
+	if (src_dev)
+		dev_put(src_dev);
+
+	if (dest_dev)
+		dev_put(dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
@@ -1787,7 +1809,7 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 static void ecm_classifier_emesh_sawf_sync_from_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
 	ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(aci, ecrc);
-	ecm_classifier_emesh_sawf_update_ul_params_on_conn_accel(aci, ecrc);
+	ecm_classifier_emesh_sawf_params_sync_on_conn_accel(aci, ecrc);
 	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_ACCEL);
 }
 
@@ -1806,7 +1828,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_EVICT:
 	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
-		ecm_classifier_emesh_sawf_update_ul_param_on_conn_decel(aci, sync);
+		ecm_classifier_emesh_sawf_params_sync_on_conn_decel(aci, sync);
 		ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_DECEL);
 		break;
 	default:
@@ -1821,7 +1843,7 @@ static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance 
 static void ecm_classifier_emesh_sawf_sync_from_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
 	ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(aci, ecrc);
-	ecm_classifier_emesh_sawf_update_ul_params_on_conn_accel(aci, ecrc);
+	ecm_classifier_emesh_sawf_params_sync_on_conn_accel(aci, ecrc);
 	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_SAWF_FSE_CONNECTION_STATE_ACCEL);
 }
 
@@ -2266,33 +2288,33 @@ void ecm_classifier_emesh_sawf_msduq_callback_unregister(void)
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_msduq_callback_unregister);
 
 /*
- * ecm_classifier_emesh_sawf_config_ul_callback_register()
+ * ecm_classifier_emesh_conn_sync_callback_register()
  */
-int ecm_classifier_emesh_sawf_config_ul_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
+int ecm_classifier_emesh_sawf_conn_sync_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
 {
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	if (ecm_emesh.update_sawf_ul) {
+	if (ecm_emesh.sawf_conn_sync) {
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-		DEBUG_ERROR("SAWF EMESH config uplink callbacks are registered\n");
+		DEBUG_ERROR("SAWF EMESH connection sync callbacks are registered\n");
 		return -1;
 	}
 
-	ecm_emesh.update_sawf_ul = emesh_cb->update_sawf_ul;
+	ecm_emesh.sawf_conn_sync = emesh_cb->sawf_conn_sync;
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 	return 0;
 }
-EXPORT_SYMBOL(ecm_classifier_emesh_sawf_config_ul_callback_register);
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_conn_sync_callback_register);
 
 /*
- * ecm_classifier_emesh_sawf_config_ul_callback_unregister()
+ * ecm_classifier_emesh_sawf_conn_sync_callback_unregister()
  */
-void ecm_classifier_emesh_sawf_config_ul_callback_unregister(void)
+void ecm_classifier_emesh_sawf_conn_sync_callback_unregister(void)
 {
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	ecm_emesh.update_sawf_ul = NULL;
+	ecm_emesh.sawf_conn_sync = NULL;
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
-EXPORT_SYMBOL(ecm_classifier_emesh_sawf_config_ul_callback_unregister);
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_conn_sync_callback_unregister);
 
 /*
  * ecm_classifier_emesh_sawf_update_fse_flow_callback_register()

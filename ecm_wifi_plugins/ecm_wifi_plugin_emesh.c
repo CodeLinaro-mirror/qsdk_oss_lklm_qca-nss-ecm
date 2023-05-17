@@ -26,13 +26,35 @@
 #include "ecm_wifi_plugin.h"
 
 /*
+ * ecm_wifi_plugin_emesh_sawf_conn_sync()
+ *	Connection sync callback for EMESH-SAWF classifier.
+ */
+static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct net_device *dst_dev, uint8_t *dmac,
+					  struct net_device *src_dev, uint8_t *smac,
+					  uint8_t fw_service_id, uint8_t rv_service_id,
+					  uint8_t start_or_stop)
+{
+	struct qca_sawf_connection_sync_param sawf_params = {0};
+
+	sawf_params.src_dev = src_dev;
+	sawf_params.dst_dev = dst_dev;
+	sawf_params.dst_mac = dmac;
+	sawf_params.src_mac = smac;
+	sawf_params.fw_service_id = fw_service_id;
+	sawf_params.rv_service_id = rv_service_id;
+	sawf_params.start_or_stop = start_or_stop;
+
+	qca_sawf_connection_sync(&sawf_params);
+}
+
+/*
  * ecm_wifi_plugin_emesh
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
-	.update_service_id_get_msduq = qca_sawf_get_msduq_v2,
-	.update_sawf_ul = qca_sawf_config_ul,
+	.update_service_id_get_msduq = qca_sawf_get_msdu_queue,
+	.sawf_conn_sync = ecm_wifi_plugin_emesh_sawf_conn_sync,
 };
 
 /*
@@ -52,7 +74,7 @@ int ecm_wifi_plugin_emesh_register(void)
 		return -1;
 	}
 
-	if (ecm_classifier_emesh_sawf_config_ul_callback_register(&ecm_wifi_plugin_emesh)) {
+	if (ecm_classifier_emesh_sawf_conn_sync_callback_register(&ecm_wifi_plugin_emesh)) {
 		ecm_classifier_emesh_latency_config_callback_unregister();
 		ecm_classifier_emesh_sawf_msduq_callback_unregister();
 		ecm_wifi_plugin_warning("ecm emesh config sawf ul callback registration failed.\n");
@@ -62,7 +84,7 @@ int ecm_wifi_plugin_emesh_register(void)
 	if (ecm_classifier_emesh_sawf_update_fse_flow_callback_register(&ecm_wifi_plugin_emesh)) {
 		ecm_classifier_emesh_latency_config_callback_unregister();
 		ecm_classifier_emesh_sawf_msduq_callback_unregister();
-		ecm_classifier_emesh_sawf_config_ul_callback_unregister();
+		ecm_classifier_emesh_sawf_conn_sync_callback_unregister();
 		ecm_wifi_plugin_warning("ecm emesh fse callback registration failed.\n");
 		return -1;
 	}
@@ -79,6 +101,6 @@ void ecm_wifi_plugin_emesh_unregister(void)
 	ecm_classifier_emesh_latency_config_callback_unregister();
 	ecm_classifier_emesh_sawf_msduq_callback_unregister();
 	ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister();
-	ecm_classifier_emesh_sawf_config_ul_callback_unregister();
+	ecm_classifier_emesh_sawf_conn_sync_callback_unregister();
 	ecm_wifi_plugin_info("EMESH classifier callbacks unregistered\n");
 }
