@@ -26,6 +26,8 @@
 #include <linux/string.h>
 #include <linux/netfilter_bridge.h>
 #include <linux/netfilter/xt_dscp.h>
+#include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_dscpremark_ext.h>
 #include <net/ip.h>
 #include <linux/inet.h>
 #include <sp_api.h>
@@ -74,18 +76,21 @@
 /*
  * SAWF information.
  */
-#define ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT 8
-#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT 16
-#define ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG 0xAA
+#define ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT             8
+#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT   16
+#define ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG             0xAA
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS 0xff
-#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ 0xffff
-#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP 0xffffffff
-#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT 16
-#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE 0xffff
-#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK 0xffff
-#define ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW 1
-#define ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW 2
-#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_MASK 0xff
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ         0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP   0xffffffff
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_HANDLE_SHIFT     16
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_INVALID_HANDLE   0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK    0xffff
+#define ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW              1
+#define ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW              2
+#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_MASK    0xff
+#define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
+#define ECM_CLASSIFIER_EMESH_SAWF_TAG_IS_VALID(sawf_meta) \
+		((ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) ? true : false)
 
 /*
  * EMESH classifier type.
@@ -170,6 +175,210 @@ static int ecm_classifier_emesh_sawf_count = 0;			/* Tracks number of instances 
  * Callback structure to support Mesh latency param config in WLAN driver
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_emesh;
+
+/*
+ * Message coming from userspace
+ */
+static struct ecm_front_end_flowsawf_msg flowsawf_msg;
+
+/*
+ * debugfs file object
+ */
+static uint32_t ecm_classifier_emesh_sawf_flowsawf;
+
+/*
+ * ecm_classifier_emesh_sawf_mark_set()
+ */
+static void ecm_classifier_emesh_sawf_mark_set(
+				uint32_t flow_service_class_id, uint32_t return_service_class_id,
+				uint16_t msduq_forward, uint16_t msduq_reverse,
+				struct ecm_front_end_flowsawf_msg *msg)
+{
+	if (msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
+		msg->flow_mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
+		msg->flow_mark |= (flow_service_class_id & 0xff) ;
+		msg->flow_mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
+		msg->flow_mark |= msduq_forward;
+	} else {
+		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
+	if (msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
+		msg->return_mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
+		msg->return_mark |= (return_service_class_id & 0xff);
+		msg->return_mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
+		msg->return_mark |= msduq_reverse;
+	} else {
+		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+}
+
+/*
+ * ecm_classifier_emesh_sawf_flowsawf_set()
+ *	Set sawf mark
+ * Note: IP addrs and ports in msg are in network order.
+ */
+static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf_msg *msg)
+{
+	struct ecm_db_connection_instance *ci;
+	ip_addr_t src_ip, dest_ip, match_addr;
+	ecm_tracker_sender_type_t sender;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	uint16_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint16_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint8_t dmac[ETH_ALEN];
+	uint8_t smac[ETH_ALEN];
+
+	if (msg->ip_version == 4) {
+		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI4n:%u -> %pI4n:%u protocol=%d\n", msg,
+				msg->flow_service_class_id, msg->return_service_class_id,
+				msg->flow_src_ip, ntohs(msg->flow_src_port),
+				msg->return_src_ip, ntohs(msg->return_src_port), msg->protocol);
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, msg->flow_src_ip[0]);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, msg->return_src_ip[0]);
+	} else {
+		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI6c@%u -> %pI6c@%u protocol=%d\n", msg,
+				msg->flow_service_class_id, msg->return_service_class_id,
+				msg->flow_src_ip, ntohs(msg->flow_src_port),
+				msg->return_src_ip, ntohs(msg->return_src_port), msg->protocol);
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(src_ip, msg->flow_src_ip);
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(dest_ip, msg->return_src_ip);
+	}
+
+	ci = ecm_db_connection_find_and_ref(src_ip,
+					    dest_ip,
+					    msg->protocol,
+					    ntohs(msg->flow_src_port),
+					    ntohs(msg->return_src_port));
+	if (unlikely(!ci)) {
+		DEBUG_WARN("no ci\n");
+		return;
+	}
+
+	if (!ci->feci->update_rule) {
+		DEBUG_WARN("frontend update_rule callback is not registered\n");
+		goto end;
+	}
+
+	/* TODO: need to recheck if the logic to get sender is correct or not */
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+	if (ECM_IP_ADDR_MATCH(src_ip, match_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	} else {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
+	}
+
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+
+	/*
+	 * Get the bidirectional msduq by calling wlan driver API (qca_sawf_get_msdu_queue())
+	 * using the service id, netdev, and peer's mac address.
+	 * TODO: Can we call qca_sawf_get_msduq(netdev, peer_mac, service_id) instead of
+	 *       qca_sawf_get_msdu_queue(netdev, peer_mac, service_id, dscp, rule_id)?
+	 */
+	if (ecm_emesh.update_service_id_get_msduq) {
+		if (dest_dev) {
+			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0);
+		}
+		if (src_dev) {
+			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0);
+		}
+	}
+
+	DEBUG_TRACE("ci=%px: sender=%d src_dev=%s smac=%pM dest_dev=%s dmac=%pM "
+		    "svcid_f=%u svcid_r=%u msduq_f=0x%x msduq_r=0x%x\n",
+			ci, sender, src_dev->name, smac, dest_dev->name, dmac,
+			msg->flow_service_class_id, msg->return_service_class_id,
+			msduq_forward, msduq_reverse);
+
+	/*
+	 * Set msg's flow/return marks to sawf_meta created from service ids and msduqs
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
+				msduq_forward, msduq_reverse, msg);
+	} else {
+		ecm_classifier_emesh_sawf_mark_set(msg->return_service_class_id, msg->flow_service_class_id,
+				msduq_reverse, msduq_forward, msg);
+	}
+
+	/*
+	 * Update frontend's mark rule
+	 */
+	ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+
+	/*
+	 * All done
+	 */
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+
+end:
+	ecm_db_connection_deref(ci);
+
+	return;
+}
+
+/*
+ * ecm_classifier_emesh_sawf_file_read()
+ */
+static ssize_t ecm_classifier_emesh_sawf_file_read(struct file *filp, char __user *userbuf,
+                                size_t count, loff_t *ppos)
+{
+	return 0;
+}
+
+/*
+ * ecm_classifier_emesh_sawf_file_write()
+ *      ECM creates 'flowsawf' file in debugfs.
+ *      Userspace app will open() 'flowsawf' and write() 'flowsawf_msg' to the file.
+ */
+static ssize_t ecm_classifier_emesh_sawf_file_write(struct file *filp, const char __user *userbuf,
+                                size_t count, loff_t *ppos)
+{
+	unsigned long not_copied;
+
+	if (count != offsetof(struct ecm_front_end_flowsawf_msg, flow_mark)) {
+		DEBUG_WARN("bytes_from_user=%zu offsetof(struct ecm_front_end_flowsawf_msg, flow_mark)=%zu\n",
+				count, offsetof(struct ecm_front_end_flowsawf_msg, flow_mark));
+		return -EINVAL;
+	}
+
+	memset(&flowsawf_msg, 0, sizeof(flowsawf_msg));
+	not_copied = copy_from_user((char *)&flowsawf_msg, userbuf, count);
+
+	DEBUG_TRACE("bytes_from_user=%zu bytes_not_copied=%lu pos=%llu\n",
+			count, not_copied, *ppos);
+
+	if (not_copied) {
+		return -EFAULT;
+	}
+
+	/*
+	 * Update the mark
+	 * IP addrs and ports in ecm_sfe_ifli_msg are in network order.
+	 */
+	ecm_classifier_emesh_sawf_flowsawf_set(&flowsawf_msg);
+
+	return count;
+}
+
+static const struct file_operations ecm_classifier_emesh_sawf_flowsawf_fops = {
+        .read = ecm_classifier_emesh_sawf_file_read,
+        .write = ecm_classifier_emesh_sawf_file_write,
+};
 
 /*
  * ecm_classifier_emesh_sawf_ref()
@@ -423,78 +632,6 @@ get_source_vlan_dev:
 }
 
 /*
- * ecm_classifier_emesh_sawf_get_and_hold_netdevs()
- *	Get source and the destination net devices for fetching msduq information
- *	from wlan driver and also to check if CAKE qdisc is enable or not on these
- *	netdevices for SAWF.
- */
-static void ecm_classifier_emesh_sawf_get_and_hold_netdevs(struct ecm_db_connection_instance *ci,
-						ecm_tracker_sender_type_t sender,
-						struct net_device **src_dev, struct net_device **dest_dev)
-{
-	uint32_t first_index;
-	ecm_db_obj_dir_t dir;
-	struct net_device *dev;
-	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
-
-	/*
-	 * Obtained destination netdev from ECM's 'to' or 'from' interface list
-	 * according to the type of sender.
-	 */
-	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
-		dir = ECM_DB_OBJ_DIR_TO;
-	} else {
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
-		dir = ECM_DB_OBJ_DIR_FROM;
-	}
-
-	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
-		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
-		if (!dev) {
-			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
-			ecm_db_connection_interfaces_deref(interfaces, first_index);
-			goto get_source_dev;
-		}
-
-		*dest_dev = dev;
-		ecm_db_connection_interfaces_deref(interfaces, first_index);
-		goto get_source_dev;
-	}
-
-	ecm_db_connection_interfaces_deref(interfaces, first_index);
-	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
-get_source_dev:
-	/*
-	 * Obtained source netdev form ECM's 'to' or 'from' interface list
-	 * according to the type of sender.
-	 */
-	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
-		dir = ECM_DB_OBJ_DIR_FROM;
-	} else {
-		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
-		dir = ECM_DB_OBJ_DIR_TO;
-	}
-
-	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
-		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
-		if (!dev) {
-			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
-			ecm_db_connection_interfaces_deref(interfaces, first_index);
-			return;
-		}
-
-		*src_dev = dev;
-		ecm_db_connection_interfaces_deref(interfaces, first_index);
-		return;
-	}
-
-	ecm_db_connection_interfaces_deref(interfaces, first_index);
-	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
-}
-
-/*
  * ecm_classifier_emesh_mark_sawf_metadata()
  *	Fills the sawf metadata in skb->mark.
  */
@@ -731,6 +868,89 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 }
 
 /*
+ * ecm_classifier_emesh_sawf_update()
+ *	Called from the frontend files to update the classifier instance.
+ */
+void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum ecm_rule_update_type type, void *arg)
+{
+	struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
+	struct nf_conn *ct;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *h;
+	struct nf_ct_dscpremark_ext *dscpcte;
+
+	if (type != ECM_RULE_UPDATE_TYPE_SAWFMARK) {
+		DEBUG_WARN("%px: unsupported update type: %d\n", aci, type);
+		return;
+	}
+
+	/*
+	 * Create a tuple so as to be able to look up a conntrack connection
+	 */
+	memset(&tuple, 0, sizeof(tuple));
+	tuple.src.u.all = msg->flow_src_port;
+	tuple.dst.u.all = msg->flow_dest_port;
+	tuple.dst.protonum = (uint8_t)msg->protocol;
+	tuple.dst.dir = IP_CT_DIR_ORIGINAL;
+	if (msg->ip_version == 4) {
+		tuple.src.l3num = AF_INET;
+		tuple.src.u3.ip = msg->flow_src_ip[0];
+		tuple.dst.u3.ip = msg->flow_dest_ip[0];
+		DEBUG_TRACE("%px: Lookup ct using Protocol=%d src_addr=%pI4:%d dest_addr=%pI4:%d\n",
+				aci, (int)tuple.dst.protonum,
+				tuple.src.u3.all, (int)(ntohs(tuple.src.u.all)),
+				tuple.dst.u3.all, (int)(ntohs(tuple.dst.u.all)));
+	} else {
+		tuple.src.l3num = AF_INET6;
+		ECM_IP_ADDR_COPY(tuple.src.u3.ip6, msg->flow_src_ip);
+		ECM_IP_ADDR_COPY(tuple.dst.u3.ip6, msg->flow_dest_ip);
+		DEBUG_TRACE("%px: Lookup ct using Protocol=%d src_addr=%pI6c@%d dest_addr=%pI6c@%d\n",
+				aci, (int)tuple.dst.protonum,
+				tuple.src.u3.all, (int)(ntohs(tuple.src.u.all)),
+				tuple.dst.u3.all, (int)(ntohs(tuple.dst.u.all)));
+	}
+	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
+	if (!h) {
+		DEBUG_WARN("%px: no ct\n", aci);
+		return;
+	}
+
+	ct = nf_ct_tuplehash_to_ctrack(h);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
+	NF_CT_ASSERT(ct->timeout.data == (unsigned long)ct);
+#endif
+
+	spin_lock_bh(&ct->lock);
+	dscpcte = nf_ct_dscpremark_ext_find(ct);
+	if (!dscpcte) {
+		spin_unlock_bh(&ct->lock);
+		DEBUG_WARN("%px: ct=%px: no dscpcte\n", aci, ct);
+		return;
+	}
+
+	if (ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(msg->flow_mark) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) {
+		dscpcte->flow_sawf_meta = msg->flow_mark;
+		dscpcte->flow_set_flags |= NF_CT_DSCPREMARK_EXT_SAWF;
+	} else {
+		dscpcte->flow_set_flags &= ~NF_CT_DSCPREMARK_EXT_SAWF;
+	}
+	if (ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(msg->return_mark) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) {
+		dscpcte->return_sawf_meta = msg->return_mark;
+		dscpcte->return_set_flags |= NF_CT_DSCPREMARK_EXT_SAWF;
+	} else {
+		dscpcte->return_set_flags &= ~NF_CT_DSCPREMARK_EXT_SAWF;
+	}
+	spin_unlock_bh(&ct->lock);
+
+	/*
+	 * Release connection
+	 */
+	nf_ct_put(ct);
+
+	return;
+}
+
+/*
  * ecm_classifier_emesh_sawf_process()
  *	Process new data for connection
  */
@@ -840,7 +1060,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 * Fetch the src and dest net devices required to get the msduq for SAWF
 	 * and to check for the CAKE Qdisc as well.
 	 */
-	ecm_classifier_emesh_sawf_get_and_hold_netdevs(ci, sender, &src_dev, &dest_dev);
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
 
 	/*
 	 * SAWF does support ported protocols.
@@ -882,6 +1102,24 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 */
 		if (flow_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
 			&& return_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+
+			/*
+			 * We then use sawf_meta stored in the dscp extension if sawf_meta is valid.
+			 * Sawf_meta is stored in the dscp extentension when the update callback is called.
+			 */
+			struct nf_ct_dscpremark_ext *dscpcte;
+
+			dscpcte = nf_ct_dscpremark_ext_find(ct);
+			if (dscpcte && (dscpcte->flow_set_flags & NF_CT_DSCPREMARK_EXT_SAWF)) {
+				cemi->process_response.flow_sawf_metadata = dscpcte->flow_sawf_meta;
+				DEBUG_TRACE("%px: use dscpcte's flow_sawf_meta=%x\n", cemi, cemi->process_response.flow_sawf_metadata);
+			}
+
+			if (dscpcte && (dscpcte->return_set_flags & NF_CT_DSCPREMARK_EXT_SAWF)) {
+				cemi->process_response.return_sawf_metadata = dscpcte->return_sawf_meta;
+				DEBUG_TRACE("%px: use dscpcte's return_sawf_meta=%x\n", cemi, cemi->process_response.return_sawf_metadata);
+			}
+
 			goto check_emesh_classifier;
 		}
 
@@ -1725,6 +1963,7 @@ struct ecm_classifier_emesh_sawf_instance *ecm_classifier_emesh_sawf_instance_al
 #endif
 	cemi->base.ref = ecm_classifier_emesh_sawf_ref;
 	cemi->base.deref = ecm_classifier_emesh_sawf_deref;
+	cemi->base.update = ecm_classifier_emesh_sawf_update;
 	cemi->base.should_keep_connection = ecm_classifier_emesh_sawf_should_keep_connection;
 	cemi->ci_serial = ecm_db_connection_serial_get(ci);
 	cemi->process_response.process_actions = 0;
@@ -2101,6 +2340,16 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		return -1;
 	}
 
+
+	/*
+	 * Create /sys/kernel/debug/ecm/ecm_classifier_emesh/flowsawf
+	 */
+	if (!debugfs_create_file("flowsawf", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				&ecm_classifier_emesh_sawf_flowsawf, &ecm_classifier_emesh_sawf_flowsawf_fops)) {
+		DEBUG_ERROR("Failed to create flowsawf file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+		return -1;
+	}
 
 	/*
 	 * Register for service prioritization notification update.

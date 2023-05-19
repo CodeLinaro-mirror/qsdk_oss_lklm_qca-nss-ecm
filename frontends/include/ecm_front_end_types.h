@@ -329,6 +329,35 @@ struct ecm_front_end_ovs_params {
 	int dest_port;
 };
 
+
+/**
+ * Message used to update frontend's SAWF meta
+ * Ports and IPs are in network order.
+ */
+struct ecm_front_end_flowsawf_msg {
+	/*
+	 * ifli message coming from userspace
+	 */
+	uint32_t flow_service_class_id;
+	uint32_t return_service_class_id;
+	uint16_t flow_src_port;
+	uint16_t flow_dest_port;
+	uint32_t flow_src_ip[4];
+	uint32_t flow_dest_ip[4];
+	uint16_t return_src_port;
+	uint16_t return_dest_port;
+	uint32_t return_src_ip[4];
+	uint32_t return_dest_ip[4];
+	uint8_t ip_version;
+	uint8_t protocol;
+
+	/*
+	 * SAWF meta
+	 */
+	uint32_t flow_mark;
+	uint32_t return_mark;
+};
+
 extern void ecm_front_end_ipv6_interface_construct_netdev_put(struct ecm_front_end_interface_construct_instance *efeici);
 extern void ecm_front_end_ipv6_interface_construct_netdev_hold(struct ecm_front_end_interface_construct_instance *efeici);
 extern bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ecm_tracker_sender_type_t sender, ecm_db_direction_t ecm_dir, bool is_routed,
