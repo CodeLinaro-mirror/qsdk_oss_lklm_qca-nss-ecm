@@ -2076,13 +2076,14 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 	ip_addr_t ip_addr;
 	struct in6_addr ipv6addr = IN6ADDR_ANY_INIT;
 	struct sp_rule *r = (struct sp_rule *)data;
-	uint32_t valid_flag = r->inner.flags;
+	uint32_t valid_flag_emesh = r->inner.flags;
+	uint32_t valid_flag_sawf = r->inner.flags_sawf;
 
 	/*
 	 * Return if E-Mesh or SAWF functionality is not enabled or the rule
 	 * classifier type is SCS.
 	 */
-	if (r->classifier_type == SP_RULE_TYPE_SCS) {
+	if (r->classifier_type == SP_RULE_TYPE_SCS || r->classifier_type == SP_RULE_TYPE_MSCS) {
 		DEBUG_INFO("Not an EMESH / SAWF rule notification !\n");
 		return NOTIFY_DONE;
 	}
@@ -2092,70 +2093,93 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 	}
 
 	DEBUG_INFO("SP rule update notification received\n");
-	if (ecm_classifier_sawf_enabled || r->classifier_type == SP_RULE_TYPE_SAWF) {
-		ecm_db_connection_make_defunct_sawf_connections(r->id);
+	if (ecm_classifier_sawf_enabled || r->classifier_type != SP_RULE_TYPE_MESH) {
+
+		switch(event) {
+		case SP_MAPDB_REMOVE_RULE:
+		case SP_MAPDB_MODIFY_RULE:
+			ecm_db_connection_make_defunct_sawf_connections(r->id);
+			break;
+		case SP_MAPDB_ADD_RULE:
+
+			/*
+			 * At add rule notification, defunct already exsisting connections in
+			 * matching rule fields in certain order of priority of rule fields.
+			 */
+			goto defunct_by_priority;
+		}
+
 		return NOTIFY_DONE;
 	}
 
+defunct_by_priority:
 	/*
 	 * Order of priority of rule fields to match and flush connections:
 	 * Port ---> IP address ---> Mac Address ---> Protocol
 	 * Flush connections for both directions as ECM creates reverse
 	 * direction rule as well
 	 */
-	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_PORT) {
-		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_FROM);
-		ecm_db_connection_defunct_by_port(r->inner.src_port, ECM_DB_OBJ_DIR_TO);
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_SRC_PORT) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_PORT)) {
+		uint16_t src_port = r->inner.src_port;
+		if (r->classifier_type != SP_RULE_TYPE_MESH)
+			src_port = htons(r->inner.src_port);
+
+		ecm_db_connection_defunct_by_port(src_port, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_connection_defunct_by_port(src_port, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_DST_PORT) {
-		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_FROM);
-		ecm_db_connection_defunct_by_port(r->inner.dst_port, ECM_DB_OBJ_DIR_TO);
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_DST_PORT) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_PORT)) {
+		uint16_t dst_port = r->inner.dst_port;
+		if (r->classifier_type != SP_RULE_TYPE_MESH)
+			dst_port = htons(r->inner.dst_port);
+
+		ecm_db_connection_defunct_by_port(dst_port, ECM_DB_OBJ_DIR_FROM);
+		ecm_db_connection_defunct_by_port(dst_port, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV4) {
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_SRC_IPV4) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV4)) {
 		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.src_ipv4_addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV4) {
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_DST_IPV4) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_IPV4)) {
 		ECM_NIN4_ADDR_TO_IP_ADDR(ip_addr, r->inner.dst_ipv4_addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_SRC_IPV6) {
-		memcpy(ipv6addr.s6_addr32, r->inner.src_ipv6_addr, 4);
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_SRC_IPV6) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_SRC_IPV6)) {
+		memcpy(ipv6addr.s6_addr32, r->inner.src_ipv6_addr, sizeof(struct in6_addr));
 		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_DST_IPV6) {
-		memcpy(ipv6addr.s6_addr32, r->inner.dst_ipv6_addr, 4);
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_DST_IPV6) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_IPV6)) {
+		memcpy(ipv6addr.s6_addr32, r->inner.dst_ipv6_addr, sizeof(struct in6_addr));
 		ECM_NIN6_ADDR_TO_IP_ADDR(ip_addr, ipv6addr);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_FROM);
 		ecm_db_host_connections_defunct_by_dir(ip_addr, ECM_DB_OBJ_DIR_TO);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_SOURCE_MAC) {
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_SOURCE_MAC) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_SOURCE_MAC)) {
 		ecm_interface_node_connections_defunct((uint8_t *)r->inner.sa, ECM_DB_IP_VERSION_IGNORE);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_DST_MAC) {
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_DST_MAC) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_DST_MAC)) {
 		ecm_interface_node_connections_defunct((uint8_t *)r->inner.da, ECM_DB_IP_VERSION_IGNORE);
 		return NOTIFY_DONE;
 	}
 
-	if (valid_flag & SP_RULE_FLAG_MATCH_PROTOCOL) {
+	if ((valid_flag_emesh & SP_RULE_FLAG_MATCH_PROTOCOL) || (valid_flag_sawf & SP_RULE_FLAG_MATCH_SAWF_PROTOCOL)) {
 		ecm_db_connection_defunct_by_protocol(r->inner.protocol_number);
 		return NOTIFY_DONE;
 	}
