@@ -23,6 +23,7 @@
 #include <ppe_drv.h>
 #include <ppe_drv_v4.h>
 #include <ppe_drv_v6.h>
+#include <ppe_drv_port.h>
 
 #include <net/xfrm.h>
 
@@ -76,6 +77,28 @@ static inline int32_t ecm_ppe_common_get_ae_iface_id_by_netdev_id(int32_t ifinde
 	dev_put(dev);
 
 	return ae_iface_id;
+}
+
+/*
+ * ecm_ppe_common_get_port_id_by_netdev_id()
+ *	Gets the PPE port id from the netdevice interface index.
+ */
+static inline int32_t ecm_ppe_common_get_port_id_by_netdev_id(int32_t ifindex)
+{
+	struct net_device *dev;
+	int32_t port_id;
+
+	dev = dev_get_by_index(&init_net, ifindex);
+	if (!dev) {
+		DEBUG_WARN("unable to find net device with %d ifindex\n", ifindex);
+		return PPE_DRV_PORT_ID_INVALID;
+	}
+
+	port_id = ppe_drv_port_num_from_dev(dev);
+
+	dev_put(dev);
+
+	return port_id;
 }
 
 /*

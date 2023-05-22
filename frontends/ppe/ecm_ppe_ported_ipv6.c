@@ -302,6 +302,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
 		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
+
 		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
@@ -400,8 +401,12 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			break;
 
 		case ECM_DB_IFACE_TYPE_VLAN:
+		{
 #ifdef ECM_INTERFACE_VLAN_ENABLE
+			int32_t port_id;
+
 			DEBUG_TRACE("%px: VLAN\n", feci);
+
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
@@ -424,6 +429,16 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				from_iface_id = iface_id;
+			}
+
+			/*
 			 * Primary or secondary (QinQ) VLAN?
 			 */
 			if (interface_type_counts[ii_type] == 0) {
@@ -431,6 +446,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			} else {
 				pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = vlan_value;
 			}
+
 			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_VLAN;
 
 			/*
@@ -443,6 +459,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+		}
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
@@ -562,7 +579,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	rule_invalid = false;
 	for (list_index = to_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
 		struct ecm_db_iface_instance *ii;
-		uint32_t iface_id, ae_iface_id;
+		int32_t iface_id, ae_iface_id;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -577,7 +594,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
-		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(ii));
+		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
+
 		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
@@ -677,8 +695,12 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			break;
 
 		case ECM_DB_IFACE_TYPE_VLAN:
+		{
 #ifdef ECM_INTERFACE_VLAN_ENABLE
+			int32_t port_id;
+
 			DEBUG_TRACE("%px: VLAN\n", feci);
+
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
@@ -698,6 +720,16 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				vlan_value |= vlan_dev_get_egress_qos_mask(vlan_out_dev, pr->flow_qos_tag);
 				dev_put(vlan_out_dev);
 				vlan_out_dev = NULL;
+			}
+
+			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				to_iface_id = iface_id;
 			}
 
 			/*
@@ -721,6 +753,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+		}
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
