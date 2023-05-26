@@ -115,6 +115,34 @@ DEFINE_SPINLOCK(ecm_ipv4_lock);			/* Protect against SMP access between netfilte
 bool ecm_ipv4_terminate_pending = false;		/* True when the user has signalled we should quit */
 
 /*
+ * ecm_ipv4_dev_has_ipaddr()
+ *	Returns true if dev has an IPv4 address
+ */
+static bool ecm_ipv4_dev_has_ipaddr(struct net_device *dev)
+{
+	struct in_device *in_dev;
+	const struct in_ifaddr *ifa;
+
+	rcu_read_lock();
+	in_dev = __in_dev_get_rcu(dev);
+	if (!in_dev) {
+		rcu_read_unlock();
+		DEBUG_TRACE("%s: dev->ip_ptr is NULL\n", dev->name);
+		return false;
+	}
+
+	ifa = rcu_dereference(in_dev->ifa_list);
+	if (!ifa) {
+		rcu_read_unlock();
+		DEBUG_TRACE("%s: dev->ip_ptr->ifa_list is NULL\n", dev->name);
+		return false;
+	}
+	rcu_read_unlock();
+
+	return true;
+}
+
+/*
  * ecm_ipv4_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
@@ -472,8 +500,10 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #endif
 			/*
 			 * If dev is a bridge port, we should use the bridge device for the MAC lookup and ARP request.
+			 * For brouting case where dev is a bridge port and also is a routing interface (so dev has an
+			 * IP address), we should use dev itself for the MAC lookup and ARP request.
 			 */
-			if (ecm_front_end_is_bridge_port(dev)) {
+			if (ecm_front_end_is_bridge_port(dev) && !ecm_ipv4_dev_has_ipaddr(dev)) {
 				DEBUG_TRACE("%s is a bridge port\n", dev->name);
 				mac_dev = ecm_interface_get_and_hold_dev_master(dev);
 				if(!mac_dev) {
@@ -1550,7 +1580,7 @@ static bool ecm_ipv4_is_bridge_pkt(struct net_device *in,
 	rcu_read_lock();
 	upper = netdev_master_upper_dev_get_rcu(lower);
 	rcu_read_unlock();
-	return upper && (upper == bridge);
+	return upper && (upper == bridge) && !ecm_ipv4_dev_has_ipaddr(lower);
 }
 
 /*
@@ -1566,7 +1596,7 @@ static unsigned int ecm_ipv4_post_routing_hook(void *priv,
 	bool can_accel = true;
 	unsigned int result;
 
-	DEBUG_TRACE("%px: IPv4 CMN Routing: %s\n", out, out->name);
+	DEBUG_TRACE("%px: IPv4 CMN Routing: %s skb=%px\n", out, out->name, skb);
 
 	/*
 	 * If operations have stopped then do not process packets
@@ -1718,7 +1748,7 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 	struct net_device *dest_dev __maybe_unused;
 	uint16_t vid __maybe_unused;
 
-	DEBUG_TRACE("%px: IPv4 CMN Bridge: %s\n", out, out->name);
+	DEBUG_TRACE("%px: IPv4 CMN Bridge: %s skb=%px\n", out, out->name, skb);
 
 	/*
 	 * If operations have stopped then do not process packets
