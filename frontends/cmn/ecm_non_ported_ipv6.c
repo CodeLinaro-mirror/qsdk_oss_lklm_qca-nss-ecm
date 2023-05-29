@@ -121,6 +121,7 @@ static inline bool ecm_non_ported_ipv6_is_protocol_supported(int protocol)
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	case IPPROTO_GRE:
 #endif
+	case IPPROTO_ETHERIP:
 	case IPPROTO_RAW:
 		return true;
 	}
