@@ -352,12 +352,20 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 #endif
 		case ECM_DB_IFACE_TYPE_MAP_T:
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
-			in = dev_get_by_index(&init_net, skb->skb_iif);
+			if (skb->skb_iif == ecm_db_iface_interface_identifier_get(interface_list[i])) {
+				in = skb_dst(skb)->dev;
+				if (in) {
+					dev_hold(in);
+				}
+			} else {
+				in = dev_get_by_index(&init_net, inet_iif(skb));
+			}
 			if (!in) {
 				DEBUG_WARN("%px: failed to obtain node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
 				return NULL;
 			}
 			memcpy(node_addr, in->dev_addr, ETH_ALEN);
+			DEBUG_TRACE("%px, Node MAC address[%pM] attached to interface[%s]\n", feci, node_addr, interface_list[i]->name);
 			dev_put(in);
 			done = true;
 			break;
@@ -453,7 +461,11 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 			/*
 			 * If dev is a bridge port, we should use the bridge device for the MAC lookup and ARP request.
 			 */
-			if (ecm_front_end_is_bridge_port(dev)) {
+			if (ecm_front_end_is_bridge_port(dev)
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				|| ecm_interface_is_ovs_bridge_port(dev)
+#endif
+			    ) {
 				DEBUG_TRACE("%s is a bridge port\n", dev->name);
 				mac_dev = ecm_interface_get_and_hold_dev_master(dev);
 				if(!mac_dev) {
@@ -577,7 +589,7 @@ done:
 	 */
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		DEBUG_TRACE("%px: node established: %px\n", feci, ni);
+		DEBUG_TRACE("%px: established node[%px] attaching to iface %s\n", feci, ni, ii->name);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
@@ -587,7 +599,7 @@ done:
 	 */
 	nni = ecm_db_node_alloc();
 	if (!nni) {
-		DEBUG_WARN("%px: Failed to establish node\n", feci);
+		DEBUG_TRACE("%px: failed node attaching to iface %s\n", feci, ii->name);
 		ecm_db_iface_deref(ii);
 		return NULL;
 	}
@@ -612,7 +624,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%px: node (%px) established, node address: %pM\n", feci, nni, node_addr);
+	DEBUG_TRACE("%px: node (%px) established, node address: %pM iface:%s\n", feci, nni, node_addr, ii->name);
 	return nni;
 }
 
