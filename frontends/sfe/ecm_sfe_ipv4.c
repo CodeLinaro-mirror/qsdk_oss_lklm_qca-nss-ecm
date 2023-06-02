@@ -949,44 +949,44 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	}
 
 #ifdef CONFIG_XFRM
-	if (!debugfs_create_u32("reject_acceleration_for_ipsec", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("reject_acceleration_for_ipsec", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_reject_acceleration_for_ipsec)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 reject_acceleration_for_ipsec file in debugfs\n");
 		goto task_cleanup;
 	}
 #endif
 
-	if (!debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_no_action_limit_default)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 no_action_limit_default file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_driver_fail_limit_default)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 driver_fail_limit_default file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_nack_limit_default)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 nack_limit_default file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_accelerated_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 accelerated_count file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_pending_accel_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 pending_accel_count file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
 					(u32 *)&ecm_sfe_ipv4_pending_decel_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 pending_decel_count file in debugfs\n");
 		goto task_cleanup;

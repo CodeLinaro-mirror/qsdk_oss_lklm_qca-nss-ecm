@@ -92,6 +92,7 @@
 static int ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX] = {0};
 						/* Array of Number of TCP and UDP connections currently offloaded */
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0))
 /*
  * Expose what should be a static flag in the TCP connection tracker.
  */
@@ -99,6 +100,7 @@ static int ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX]
 extern int nf_ct_tcp_no_window_check;
 #endif
 extern int nf_ct_tcp_be_liberal;
+#endif
 
 /*
  * ecm_sfe_ported_ipv4_connection_callback()
@@ -1331,7 +1333,14 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		} else {
 			int flow_dir;
 			int return_dir;
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0))
+			uint32_t tcp_be_liberal = nf_ct_tcp_be_liberal;
+			uint32_t tcp_no_window_check = nf_ct_tcp_no_window_check;
+#else
+			struct nf_tcp_net *tn = nf_tcp_pernet(nf_ct_net(ct));
+			uint32_t tcp_be_liberal = tn->tcp_be_liberal;
+			uint32_t tcp_no_window_check = tn->tcp_no_window_check;
+#endif
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
 			ecm_front_end_flow_and_return_directions_get(ct, addr, 4, &flow_dir, &return_dir);
 
@@ -1345,10 +1354,11 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->tcp_rule.return_max_window = ct->proto.tcp.seen[return_dir].td_maxwin;
 			nircm->tcp_rule.return_end = ct->proto.tcp.seen[return_dir].td_end;
 			nircm->tcp_rule.return_max_end = ct->proto.tcp.seen[return_dir].td_maxend;
+
 #ifdef ECM_OPENWRT_SUPPORT
-			if (nf_ct_tcp_be_liberal || nf_ct_tcp_no_window_check
+			if (tcp_be_liberal || tcp_no_window_check
 #else
-			if (nf_ct_tcp_be_liberal
+			if (tcp_be_liberal
 #endif
 					|| (ct->proto.tcp.seen[flow_dir].flags & IP_CT_TCP_FLAG_BE_LIBERAL)
 					|| (ct->proto.tcp.seen[return_dir].flags & IP_CT_TCP_FLAG_BE_LIBERAL)) {
@@ -2167,19 +2177,15 @@ struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv4_connection_instanc
  */
 bool ecm_sfe_ported_ipv4_debugfs_init(struct dentry *dentry)
 {
-	struct dentry *udp_dentry;
-
-	udp_dentry = debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
-						&ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP]);
-	if (!udp_dentry) {
+	if (!ecm_debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
+				    &ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP])) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 udp_accelerated_count file in debugfs\n");
 		return false;
 	}
 
-	if (!debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
 					&ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_TCP])) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 tcp_accelerated_count file in debugfs\n");
-		debugfs_remove(udp_dentry);
 		return false;
 	}
 

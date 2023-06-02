@@ -4565,7 +4565,7 @@ static struct file_operations ecm_db_connection_count_simple_fops = {
  */
 bool ecm_db_connection_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("connection_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("connection_count", S_IRUGO, dentry,
 					(u32 *)&ecm_db_connection_count)) {
 		DEBUG_ERROR("Failed to create ecm db connection count file in debugfs\n");
 		return false;

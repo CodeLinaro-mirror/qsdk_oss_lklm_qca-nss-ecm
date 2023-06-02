@@ -2936,11 +2936,8 @@ static void ecm_sfe_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
  */
 bool ecm_sfe_multicast_ipv6_debugfs_init(struct dentry *dentry)
 {
-	struct dentry *multicast_dentry;
-
-	multicast_dentry = debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
-						&ecm_sfe_multicast_ipv6_accelerated_count);
-	if (!multicast_dentry) {
+	if (!ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
+						&ecm_sfe_multicast_ipv6_accelerated_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 multicast_accelerated_count file in debugfs\n");
 		return false;
 	}
@@ -2962,7 +2959,7 @@ void ecm_sfe_multicast_ipv6_stop(int num)
  */
 int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("ecm_sfe_multicast_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
+	if (!ecm_debugfs_create_u32("ecm_sfe_multicast_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
 					(u32 *)&ecm_front_end_ipv6_mc_stopped)) {
 		DEBUG_ERROR("Failed to create ecm front end ipv6 mc stop file in debugfs\n");
 		return -1;
