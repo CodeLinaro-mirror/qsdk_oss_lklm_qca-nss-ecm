@@ -419,6 +419,11 @@ ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
 ccflags-$(ECM_BRIDGE_VLAN_FILTERING_ENABLE) += -DECM_BRIDGE_VLAN_FILTERING_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_FSE_ENABLE=y in order to enable FSE rule push from ECM frontend.
+# #############################################################################
+ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.
