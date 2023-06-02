@@ -1,25 +1,7 @@
-##########################################################################
-# Copyright (c) 2014-2016, 2018-2021, The Linux Foundation. All rights reserved.
-# Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
-#
-# Permission to use, copy, modify, and/or distribute this software for
-# any purpose with or without fee is hereby granted, provided that the
-# above copyright notice and this permission notice appear in all copies.
-# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
-# OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-##########################################################################
-
 # ###################################################
 # Makefile for the QCA NSS ECM
 # ###################################################
-ifneq ($(findstring 6.1., $(KERNELVERSION)),)
-include $(obj)/Makefile_61.mk
-else
+
 ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 obj-m += examples/ecm_sfe_l2.o
 endif
@@ -109,11 +91,6 @@ ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_common.o
 ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ipv4.o
 ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_PPE_ENABLE) += -DECM_FRONT_END_PPE_ENABLE
-
-# #############################################################################
-# Define ECM_FRONT_END_PPE_QOS_ENABLE=y in order to enable PPE QoS
-# #############################################################################
-ccflags-$(ECM_FRONT_END_PPE_QOS_ENABLE) += -DECM_FRONT_END_PPE_QOS_ENABLE
 
 # #############################################################################
 # Define ECM_FRONT_END_CONN_LIMIT_ENABLE=y in order to limit accelerated
@@ -421,11 +398,6 @@ ccflags-$(ECM_INTERFACE_OVPN_ENABLE) += -DECM_INTERFACE_OVPN_ENABLE
 ccflags-$(ECM_BRIDGE_VLAN_FILTERING_ENABLE) += -DECM_BRIDGE_VLAN_FILTERING_ENABLE
 
 # #############################################################################
-# Define ECM_FRONT_END_FSE_ENABLE=y in order to enable FSE rule push from ECM frontend.
-# #############################################################################
-ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
-
-# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.
@@ -506,4 +478,3 @@ endif
 ccflags-y += -Wall -Werror
 
 obj ?= .
-endif
