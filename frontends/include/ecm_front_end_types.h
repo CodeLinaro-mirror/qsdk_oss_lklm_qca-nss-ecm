@@ -295,6 +295,9 @@ struct ecm_front_end_connection_instance {
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
 	bool destroy_fail_handle_pending;			/* Set while handling the connection destroy failure */
+#ifdef ECM_FRONT_END_FSE_ENABLE
+	bool fse_configure;					/* Flag to indicate if the connection is configured in Wi-Fi FSE block */
+#endif
 	ecm_front_end_acceleration_mode_t accel_mode;		/* Indicates the type of acceleration being applied to a connection, if any. */
 	spinlock_t lock;					/* Lock for structure data */
 	int refs;						/* Integer to trap we never go negative */

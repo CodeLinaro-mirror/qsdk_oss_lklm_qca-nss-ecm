@@ -47,6 +47,13 @@
  */
 extern unsigned int ecm_front_end_conn_limit;
 
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * ECM front end FSE callbacks ops.
+ */
+extern struct ecm_front_end_fse_callbacks *ecm_fe_fse_cb;
+#endif
+
 /*
  * Flag to enable/disable Wi-FI FSE block programming through PPE driver
  */
@@ -414,4 +421,8 @@ uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_i
 bool ecm_front_end_check_udp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
+#ifdef ECM_FRONT_END_FSE_ENABLE
+bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info);
+#endif /* ECM_FRONT_END_FSE_ENABLE */
+
 #endif  /* __ECM_FRONT_END_COMMON_H */
