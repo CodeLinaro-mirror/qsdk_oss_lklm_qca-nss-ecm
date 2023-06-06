@@ -26,6 +26,10 @@
 
 #include <net/xfrm.h>
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <nss_ppe_vxlanmgr.h>
+#endif
+
 /*
  * This macro converts ECM ip_addr_t to PPE IPv6 address
  */
@@ -197,3 +201,8 @@ static inline void ecm_ppe_common_dummy_set_stats_bitmap(struct ecm_front_end_co
 
 bool ecm_ppe_ipv6_is_conn_limit_reached(void);
 bool ecm_ppe_ipv4_is_conn_limit_reached(void);
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
+											ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
+#endif
