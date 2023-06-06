@@ -36,6 +36,7 @@
 #include <net/gre.h>
 #include <net/xfrm.h>
 #include <linux/hashtable.h>
+#include <net/sch_generic.h>
 #ifdef ECM_FRONT_END_PPE_ENABLE
 #include <ppe_drv.h>
 #endif
@@ -100,6 +101,13 @@
 #include "ecm_ppe_non_ported_ipv4.h"
 #include "ecm_ppe_non_ported_ipv6.h"
 #endif
+#endif
+
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * Callback object for ECM frontend interaction with wlan driver to add/delete FSE rules.
+ */
+struct ecm_front_end_fse_callbacks *ecm_fe_fse_cb = NULL;
 #endif
 
 /*
@@ -586,7 +594,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		}
 	} else {
 #ifdef ECM_IPV6_ENABLE
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Source IP address is local
@@ -596,7 +608,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Destination IP address is local
@@ -1669,12 +1685,12 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 		if ((!q) || (!q->enqueue)) {
 			continue;
 		}
-
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (q->flags & TCQ_F_NSS) {
 			DEBUG_INFO("PPE Qdisc is present for device[%s]\n", dev->name);
 			*is_ppeq = true;
                 }
-
+#endif
 		DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
 		dev_put(dev);
 		return true;
@@ -1693,3 +1709,85 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 	dev_put(dev);
 	return false;
 }
+
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * ecm_front_end_fse_info_get()
+ *	Get the FSE info from ECM frontend connection instance.
+ */
+bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info)
+{
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+
+	/*
+	 * Get destination net device from 'TO' side of ecm interface hierarchy.
+	 */
+	fse_info->dest_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_TO);
+	if (!fse_info->dest_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_TO);
+		return false;
+	}
+
+	dev_put(fse_info->dest_dev);
+
+	/*
+	 * Get source net device from 'FROM' side of interface hierarchy.
+	 */
+	fse_info->src_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	if (!fse_info->src_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_FROM);
+		return false;
+	}
+
+	dev_put(fse_info->src_dev);
+
+	/*
+	 * Get the 5 tuple information from front end connection instance.
+	 */
+	fse_info->ip_version = ecm_db_connection_ip_version_get(feci->ci);
+	fse_info->protocol = ecm_db_connection_protocol_get(feci->ci);
+	fse_info->src_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	fse_info->dest_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+
+	if (fse_info->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->src.v4_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->dest.v4_addr, dest_ip);
+	} else if (fse_info->ip_version == 6) {
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->src.v6_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->dest.v6_addr, dest_ip);
+	}
+
+	return true;
+}
+
+/*
+ * ecm_front_end_fse_callbacks_register()
+ *	Registers ECM FSE common callbacks.
+ */
+int ecm_front_end_fse_callbacks_register(struct ecm_front_end_fse_callbacks *fse_cb)
+{
+	if (ecm_fe_fse_cb) {
+		DEBUG_ERROR("ECM FSE callbacks are already registered\n");
+		return -1;
+	}
+	rcu_assign_pointer(ecm_fe_fse_cb, fse_cb);
+	synchronize_rcu();
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_register);
+
+/*
+ * ecm_front_end_fse_callbacks_unregister()
+ *	Unregisters ECM FSE common callbacks.
+ */
+void ecm_front_end_fse_callbacks_unregister(void)
+{
+	rcu_assign_pointer(ecm_fe_fse_cb, NULL);
+	synchronize_rcu();
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_unregister);
+#endif

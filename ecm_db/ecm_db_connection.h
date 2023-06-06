@@ -416,7 +416,8 @@ int32_t ecm_db_connection_interfaces_get_count(struct ecm_db_connection_instance
 int32_t ecm_db_connection_interfaces_get_and_ref(struct ecm_db_connection_instance *ci,
 						 struct ecm_db_iface_instance *interfaces[],
 						 ecm_db_obj_dir_t dir);
-
+struct net_device *ecm_db_connection_first_iface_dev_get_and_ref(struct ecm_db_connection_instance *ci,
+								 ecm_db_obj_dir_t dir);
 void ecm_db_connection_classifier_assign(struct ecm_db_connection_instance *ci,
 					 struct ecm_classifier_instance *new_ca);
 int ecm_db_connection_classifier_assignments_get_and_ref(struct ecm_db_connection_instance *ci,

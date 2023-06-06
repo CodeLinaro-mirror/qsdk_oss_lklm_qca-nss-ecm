@@ -8,5 +8,6 @@ obj-m += ecm-wifi-plugin.o
 ecm-wifi-plugin-objs := \
                         ecm_wifi_plugin_emesh.o \
                         ecm_wifi_plugin_mscs.o \
+                        ecm_wifi_plugin_fse.o \
                         ecm_wifi_plugin_init.o
 

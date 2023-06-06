@@ -1465,7 +1465,7 @@ struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_ins
  */
 bool ecm_ppe_non_ported_ipv4_debugfs_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("non_ported_accelerated_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("non_ported_accelerated_count", S_IRUGO, dentry,
 					(u32 *)&ecm_ppe_non_ported_ipv4_accelerated_count)) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 non_ported_accelerated_count file in debugfs\n");
 		return false;

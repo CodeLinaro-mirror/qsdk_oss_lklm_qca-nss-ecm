@@ -1246,7 +1246,7 @@ int ecm_classifier_pcc_init(struct dentry *dentry)
 		return -1;
 	}
 
-	if (!debugfs_create_u32("enabled", S_IRUGO, ecm_classifier_pcc_dentry,
+	if (!ecm_debugfs_create_u32("enabled", S_IRUGO, ecm_classifier_pcc_dentry,
 					(u32 *)&ecm_classifier_pcc_enabled)) {
 		DEBUG_ERROR("Failed to create pcc enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_pcc_dentry);
