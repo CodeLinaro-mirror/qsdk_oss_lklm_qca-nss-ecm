@@ -333,6 +333,16 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			goto ported_accel_bad_rule;
 		}
 
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+#endif
+
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
 		 * Conflicting information may cause accel to be unsupported.
@@ -549,6 +559,16 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 			goto ported_accel_bad_rule;
 		}
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+#endif
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
