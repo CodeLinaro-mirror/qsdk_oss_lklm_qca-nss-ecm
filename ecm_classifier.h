@@ -117,6 +117,10 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 
 #define ECM_CLASSIFIER_PROCESS_ACTION_MARK 0x00008000	/* Contains flow & return skb mark */
 
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG	0x00010000	/* Mark the E-MESH SAWF legacy scs tag */
+#endif
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call
