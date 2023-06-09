@@ -690,6 +690,14 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 
 	/*
+	 * Checks if legacy scs rule match has happened
+	 */
+	if ((flow_output_params->sawf_rule_type == SAWF_RULE_TYPE_SCS) ||
+				(return_output_params->sawf_rule_type == SAWF_RULE_TYPE_SCS)) {
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG;
+	}
+
+	/*
 	 * While updating the DSCP remark values, even if one direction rule matches and we have one sided dscp remark
 	 * coming from userspace, we will apply the same for both direction. Does not apply for vlan
 	 * pcp remark as vlan id could be different in the other direction.
@@ -1081,6 +1089,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 */
 	flow_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
+	flow_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
+	return_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
