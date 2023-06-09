@@ -423,10 +423,18 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	bool can_accel;
 	ecm_front_end_acceleration_mode_t accel_mode;
 	struct ecm_front_end_connection_mode_stats stats;
+	char *ae_selection_done = "precedence-array";
 
 	spin_lock_bh(&feci->lock);
 	can_accel = feci->can_accel;
 	accel_mode = feci->accel_mode;
+
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE) {
+		ae_selection_done = "sawf-classifier";
+	} else if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED) {
+		ae_selection_done = "ae-selector";
+	}
+
 	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
 	spin_unlock_bh(&feci->lock);
 
@@ -476,7 +484,9 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	if ((result = ecm_state_write(sfi, "slow_path_packets", "%llu", stats.slow_path_packets))) {
 		return result;
 	}
-
+	if ((result = ecm_state_write(sfi, "ae_selection_done", "%s", ae_selection_done))) {
+		return result;
+	}
 	return ecm_state_prefix_remove(sfi);
 }
 #endif
@@ -1344,12 +1354,12 @@ static void ecm_front_end_ported_ipv6_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_ported_ipv6_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv6_connection_set(feci, 0);
+		ecm_sfe_ported_ipv6_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 	default:
@@ -1375,12 +1385,12 @@ static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_ported_ipv4_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv4_connection_set(feci, 0);
+		ecm_sfe_ported_ipv4_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 	default:
@@ -1393,7 +1403,7 @@ static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_con
  * ecm_front_end_connection_limit_reached()
  *	Check connection limit.
  */
-static bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version)
+bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version)
 {
 	switch (ae_type) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
@@ -1455,6 +1465,17 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		spin_unlock_bh(&feci->lock);
 		DEBUG_TRACE("%px: AE switch can't be done for defuncted flow\n", feci);
 		return false;
+	}
+
+	/*
+	 * check if acceleration engine needs to be changed
+	 * if change_ae_type flag is set then it means that sawf wants to change the ae
+	 */
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE) {
+		new_ae_type = feci->next_accel_engine;
+		feci->fe_info.front_end_flags &= ~ ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE;
+		goto change_ae;
 	}
 
 	/*
@@ -1823,3 +1844,102 @@ void ecm_front_end_fse_callbacks_unregister(void)
 }
 EXPORT_SYMBOL(ecm_front_end_fse_callbacks_unregister);
 #endif
+
+/*
+ * ecm_front_end_is_ae_type_feature_supported()
+ *	checks whether selected acceleration engine's featue is supported.
+ */
+bool ecm_front_end_is_ae_type_feature_supported(ecm_ae_classifier_result_t ae_type, struct sk_buff *skb,
+									struct ecm_tracker_ip_header *iph)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_NSS:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NSS))) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_SFE:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE))) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_PPE:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_PPE))) {
+			return true;
+		}
+		break;
+#endif
+	default:
+		DEBUG_WARN("unexpected ae type: %d\n", ae_type);
+	}
+	return false;
+}
+
+/*
+ * ecm_front_end_ae_type_to_supported_ae_engine()
+ *	maps ae type to corresponding engine
+ *	sets required front end flags for the given mode
+ *	returns the supported acceleration engine for the selected ae type
+ */
+enum ecm_front_end_engine ecm_front_end_ae_type_to_supported_ae_engine(uint32_t *flags,
+									ecm_ae_classifier_result_t ae_type)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_NSS:
+		return ECM_FRONT_END_ENGINE_NSS;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_SFE:
+		return ECM_FRONT_END_ENGINE_SFE;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+		*flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_DS;
+		return ECM_FRONT_END_ENGINE_PPE;
+	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+		*flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+		return ECM_FRONT_END_ENGINE_PPE;
+	case ECM_AE_CLASSIFIER_RESULT_PPE:
+		return ECM_FRONT_END_ENGINE_PPE;
+#endif
+	default:
+		DEBUG_WARN("unexpected ae type: %d\n", ae_type);
+		return ECM_FRONT_END_ENGINE_MAX;
+	}
+}
+
+/*
+ * ecm_front_end_accel_engine_to_ae_type()
+ *	returns possible corresponding ae type
+ */
+ecm_ae_classifier_result_t ecm_front_end_accel_engine_to_ae_type(enum ecm_front_end_engine accel_engine)
+{
+	switch (accel_engine) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		return ECM_AE_CLASSIFIER_RESULT_NSS;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		return ECM_AE_CLASSIFIER_RESULT_SFE;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		return ECM_AE_CLASSIFIER_RESULT_PPE;
+#endif
+	default:
+		DEBUG_WARN("unexpected acceleration engine: %d\n", accel_engine);
+		return ECM_AE_CLASSIFIER_RESULT_NONE;
+	}
+}

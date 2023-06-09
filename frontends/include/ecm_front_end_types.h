@@ -78,6 +78,12 @@ enum ecm_front_end_engine_flag {
 						/* If a front end supports PPE VP datapath */
 	ECM_FRONT_END_ENGINE_FLAG_AE_PRECEDENCE = 0x00000008,
 						/* If the front end enforces AE precedence selection */
+	ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE = 0x00000010,
+						/* If the front end enforces change in ae */
+	ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE = 0x00000020,
+						/* If the change in ae enforced by front end is done */
+	ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED = 0x00000040,
+						/* If hybrid classifier is enabled and deciding ae selection */
 	ECM_FRONT_END_ENGINE_FLAG_MAX
 						/* Maximum front end engine flags */
 };
@@ -277,6 +283,7 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_connection_update_rule_t update_rule;			/* Updates the frontend specific data */
 
 	enum ecm_front_end_engine accel_engine;					/* Acceleration engine type */
+	enum ecm_front_end_engine next_accel_engine;					/* Acceleration engine type */
 	uint8_t ported_accelerated_count_index;                 		/* Index value of accelerated count array (UDP or TCP) */
 
 	struct ecm_front_end_common_fe_info fe_info;          /* Front end information */
@@ -471,7 +478,7 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
  *	Sets the precedence array based on the selected frontend mode.
  *
  * If any new combination of AEs or a single AE is added to the system, this function
- * must be updated for the new frontend modes.
+ * must be updated for the new ae types.
  */
 static inline bool ecm_front_end_set_ae_precendence_array(enum ecm_front_end_type type)
 {

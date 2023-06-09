@@ -2088,6 +2088,7 @@ void ecm_sfe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance
 	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
 	feci->fe_info.front_end_flags = flags;
+	feci->next_accel_engine = ECM_FRONT_END_ENGINE_SFE;
 
 	/*
 	 * Just in case this function is called while switching AE to SFE

@@ -110,6 +110,18 @@ enum ecm_classifier_emesh_ul_params_sync_modes {
 };
 
 /*
+ * EMESH sawf related stats flags.
+ */
+enum ecm_classifier_emesh_sawf_rule_stats {
+	ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS = 0x00000001,
+					/* if sawf rule match is successful */
+	ECM_CLASSIFIER_EMESH_SAWF_RULE_AE_TYPE_NOT_SUPPORTED = 0x00000002,
+					/* if sawf selected ae type is not supported by ecm */
+	ECM_CLASSIFIER_EMESH_SAWF_RULE_INVALID_AE_TYPE = 0x00000004,
+					/* if sawf selected ae type is invalid*/
+};
+
+/*
  * struct ecm_classifier_emesh_sawf_instance
  * 	State to allow tracking of dynamic qos for a connection
  */
@@ -134,6 +146,7 @@ struct ecm_classifier_emesh_sawf_instance {
 	enum ecm_classifier_emesh_sawf_types type;		/* Flag for which type of classifier classified the connection */
 	uint16_t flow_rule_id;			/* Rule id that matches the connection */
 	uint16_t return_rule_id;		/* Rule id that matches the connection for reverse direction */
+	enum ecm_classifier_emesh_sawf_rule_stats sawf_rule_stats;	/* Each bit indicates sawf rule stats */
 
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
@@ -732,6 +745,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	}
 
 	cemi->type = ECM_CLASSIFIER_SAWF;
+	cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
 
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
@@ -963,6 +977,137 @@ void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum 
 }
 
 /*
+ * ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_result()
+ *	Converts spm ae type to ecm ae classifier result types.
+ */
+static ecm_ae_classifier_result_t ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_result(enum sp_rule_ae_type ae_type)
+{
+	switch(ae_type) {
+	case SP_RULE_AE_TYPE_DEFAULT:
+		return ECM_AE_CLASSIFIER_RESULT_NONE;
+	case SP_RULE_AE_TYPE_SFE:
+		return ECM_AE_CLASSIFIER_RESULT_SFE;
+	case SP_RULE_AE_TYPE_PPE:
+		return ECM_AE_CLASSIFIER_RESULT_PPE;
+	case SP_RULE_AE_TYPE_PPE_DS:
+		return ECM_AE_CLASSIFIER_RESULT_PPE_DS;
+	case SP_RULE_AE_TYPE_PPE_VP:
+		return ECM_AE_CLASSIFIER_RESULT_PPE_VP;
+	default:
+		return ECM_AE_CLASSIFIER_RESULT_NONE;
+	}
+}
+
+/*
+ * ecm_classifier_emesh_sawf_process_ae_type()
+ *	In case of sawf rule match process ae type output
+ *	to switch to selected ae
+ */
+static void ecm_classifier_emesh_sawf_process_ae_type(struct ecm_classifier_instance *aci, struct ecm_front_end_connection_instance *feci,
+								enum sp_rule_ae_type flow_ae_type, enum sp_rule_ae_type return_ae_type,
+								struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb)
+{
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	ecm_ae_classifier_result_t return_ae_path = ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_result(return_ae_type);
+	ecm_ae_classifier_result_t flow_ae_path = ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_result(flow_ae_type);
+	ecm_ae_classifier_result_t ae_type = flow_ae_path;
+	enum ecm_front_end_engine fe_accel_engine = ECM_FRONT_END_ENGINE_MAX;
+	uint32_t fe_flags = 0;
+
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
+
+	/*
+	 * If no ae type was selected from sawf rule match then return.
+	 */
+	if ((return_ae_path == ECM_AE_CLASSIFIER_RESULT_NONE) && (flow_ae_path == ECM_AE_CLASSIFIER_RESULT_NONE)) {
+		return;
+	}
+
+	spin_lock_bh(&feci->lock);
+
+	/*
+	 * If external ae selector or hybrid classifier use ae type selected by hybrid classifier.
+	 * Do not process the ae type selected from sawf rule match.
+	 */
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED) {
+		DEBUG_WARN("%px : ae selector module is enabled\n", cemi);
+		spin_unlock_bh(&feci->lock);
+		return;
+	}
+
+	/*
+	 * If ecm has already attempted to switch to selected ae type then do not
+	 * repeatedly process the ae type selected from sawf rule match.
+	 */
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE) {
+		spin_unlock_bh(&feci->lock);
+		return;
+	}
+
+	spin_unlock_bh(&feci->lock);
+
+	/*
+	 * If both forward and reverse direction parameters match with sawf rules having
+	 * different ae types then do not process the selected ae type.
+	 */
+	if ((return_ae_path != ECM_AE_CLASSIFIER_RESULT_NONE) && (flow_ae_path != ECM_AE_CLASSIFIER_RESULT_NONE)
+										&& (return_ae_path != flow_ae_path)) {
+		DEBUG_WARN("%px :Invalid configuration, select same acceleration engine for both directions of a flow\n", cemi);
+		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_INVALID_AE_TYPE;
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		return;
+
+	} else if (return_ae_path != ECM_AE_CLASSIFIER_RESULT_NONE) {
+			ae_type = return_ae_path;
+	}
+
+	if (!ecm_front_end_is_ae_type_feature_supported(ae_type, skb, ip_hdr)) {
+		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_AE_TYPE_NOT_SUPPORTED;
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		return;
+	}
+
+	spin_lock_bh(&feci->lock);
+
+	/*
+	 * If sawf selected ae type is different from current ae type then change ae
+	 */
+	if (ae_type != ecm_front_end_accel_engine_to_ae_type(feci->accel_engine)) {
+		fe_accel_engine = ecm_front_end_ae_type_to_supported_ae_engine(&fe_flags, ae_type);
+		if (fe_accel_engine == ECM_FRONT_END_ENGINE_MAX) {
+			spin_unlock_bh(&feci->lock);
+			DEBUG_WARN("%px: unsupported accel_engine %d for ae_type %d\n", cemi, fe_accel_engine, ae_type);
+			return;
+		}
+
+		/*
+		 * Check if this new AE has space for a new connection.
+		 */
+		if (ecm_front_end_connection_limit_reached(fe_accel_engine, feci->ip_version)) {
+			spin_unlock_bh(&feci->lock);
+			DEBUG_TRACE("%px: AE type: %d reached its connection limit\n", cemi, fe_accel_engine);
+			return;
+		}
+
+		feci->next_accel_engine = fe_accel_engine;
+		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+		feci->fe_info.front_end_flags |= fe_flags;
+		spin_unlock_bh(&feci->lock);
+
+		if (ecm_front_end_connection_check_and_switch_to_next_ae(feci)) {
+			DEBUG_TRACE("%px: new AE type: %d\n", cemi, feci->accel_engine);
+		}
+
+		return;
+	}
+
+	spin_unlock_bh(&feci->lock);
+}
+
+/*
  * ecm_classifier_emesh_sawf_process()
  *	Process new data for connection
  */
@@ -1092,6 +1237,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	flow_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
 	return_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
+	flow_output_params.ae_type = SP_RULE_AE_TYPE_NONE;
+	return_output_params.ae_type = SP_RULE_AE_TYPE_NONE;
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
@@ -1253,6 +1400,14 @@ check_emesh_classifier:
 
 sawf_classifier_out:
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	/*
+	 * Check if SPM classification output has chosen Acceleration path switch.
+	 */
+	if (is_sawf_relevant) {
+		ecm_classifier_emesh_sawf_process_ae_type(aci, feci, flow_output_params.ae_type, return_output_params.ae_type, ip_hdr, skb);
+	}
+
 	accel_mode = ecm_front_end_connection_accel_state_get(feci);
 	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
 	ecm_front_end_connection_deref(feci);
@@ -1919,6 +2074,9 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 	int result;
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_classifier_process_response process_response;
+	bool sawf_rule_match_success;
+	bool sawf_rule_invalid_ae_type;
+	bool sawf_rule_ae_type_not_supported;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
@@ -1929,6 +2087,9 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	process_response = cemi->process_response;
+	sawf_rule_match_success = cemi->sawf_rule_stats & ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
+	sawf_rule_invalid_ae_type = cemi->sawf_rule_stats & ECM_CLASSIFIER_EMESH_SAWF_RULE_INVALID_AE_TYPE;
+	sawf_rule_ae_type_not_supported = cemi->sawf_rule_stats & ECM_CLASSIFIER_EMESH_SAWF_RULE_AE_TYPE_NOT_SUPPORTED;
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
@@ -1936,6 +2097,22 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 	 */
 	if ((result = ecm_classifier_process_response_state_get(sfi, &process_response))) {
 		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "sawf_rule_match_success", "%d", sawf_rule_match_success))) {
+		return result;
+	}
+
+	if (sawf_rule_invalid_ae_type) {
+		if ((result = ecm_state_write(sfi, "sawf_rule_invalid_ae_type", "%d", sawf_rule_invalid_ae_type))) {
+			return result;
+		}
+	}
+
+	if (sawf_rule_ae_type_not_supported) {
+		if ((result = ecm_state_write(sfi, "sawf_rule_ae_type_not_supported", "%d", sawf_rule_ae_type_not_supported))) {
+			return result;
+		}
 	}
 
 	return ecm_state_prefix_remove(sfi);
@@ -2006,6 +2183,7 @@ struct ecm_classifier_emesh_sawf_instance *ecm_classifier_emesh_sawf_instance_al
 	cemi->ci_serial = ecm_db_connection_serial_get(ci);
 	cemi->process_response.process_actions = 0;
 	cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;
+	cemi->sawf_rule_stats = 0;
 
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 

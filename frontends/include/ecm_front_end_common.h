@@ -415,6 +415,7 @@ void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instan
 void ecm_front_end_connection_ref(struct ecm_front_end_connection_instance *feci);
 int ecm_front_end_connection_deref(struct ecm_front_end_connection_instance *feci);
 
+bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version);
 bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci);
 void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
@@ -426,4 +427,9 @@ bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num);
 bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info);
 #endif /* ECM_FRONT_END_FSE_ENABLE */
 
+bool ecm_front_end_is_ae_type_feature_supported (ecm_ae_classifier_result_t ae_type, struct sk_buff *skb,
+									struct ecm_tracker_ip_header *iph);
+enum ecm_front_end_engine ecm_front_end_ae_type_to_supported_ae_engine(uint32_t *flags,
+									ecm_ae_classifier_result_t ae_type);
+ecm_ae_classifier_result_t ecm_front_end_accel_engine_to_ae_type(enum ecm_front_end_engine accel_engine);
 #endif  /* __ECM_FRONT_END_COMMON_H */
