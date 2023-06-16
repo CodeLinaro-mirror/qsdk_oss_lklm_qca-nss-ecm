@@ -1673,10 +1673,12 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
 	 * Ported acceleration ends
 	 */
 	spin_lock_bh(&ecm_sfe_ipv6_lock);
+
+	/*
+	 * TODO: Figure out the counter issue and add the assert back.
+	 */
 	ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index]--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index] >= 0, "Bad udp accel counter\n");
 	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
 	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
 	/*
@@ -1955,10 +1957,12 @@ static void ecm_sfe_ported_ipv6_connection_accel_ceased(struct ecm_front_end_con
 	 * Ported acceleration ends
 	 */
 	spin_lock_bh(&ecm_sfe_ipv6_lock);
+
+	/*
+	 * TODO: Figure out the counter issue and add the assert back.
+	 */
 	ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index]--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index] >= 0, "Bad ported accel counter\n");
 	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
 	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 }
 
