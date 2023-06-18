@@ -7353,6 +7353,18 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		}
 		break;
 
+	case NETDEV_UNREGISTER:
+		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER \n", dev);
+		if (netif_is_bond_slave(dev)) {
+			master = ecm_interface_get_and_hold_dev_master(dev);
+			DEBUG_ASSERT(master, "Expected a master\n");
+			ecm_interface_dev_defunct_connections(master);
+			dev_put(master);
+		} else {
+			ecm_interface_dev_defunct_connections(dev);
+		}
+		break;
+
 	case NETDEV_CHANGE:
 		DEBUG_INFO("Net device: %px, CHANGE\n", dev);
 		if (!netif_carrier_ok(dev)) {
