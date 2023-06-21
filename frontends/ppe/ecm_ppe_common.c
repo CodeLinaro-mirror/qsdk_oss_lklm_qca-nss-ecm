@@ -119,14 +119,14 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 
 	dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 	if (!dev) {
-		DEBUG_TRACE("%px: VXLAN: could not get the dev for ifindex: %d", feci, if_index);
+		DEBUG_TRACE("%px: VXLAN: could not get the dev", feci);
 		return -1;
 	}
 
 	priv = netdev_priv(dev);
 	cfg = &priv->cfg;
 	src_ip = &cfg->saddr;
-	if (src_ip->sa.sa_family == AF_INET){
+	if (src_ip->sa.sa_family == AF_INET) {
 		ip_type = AF_INET;
 	} else {
 		ip_type = AF_INET6;
@@ -170,10 +170,7 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 		}
 	}
 
-	*vp_status = nss_ppe_vxlanmgr_get_vp_status(dev, remote_ip, ip_type);
-	if (*vp_status == NSS_PPE_VXLANMGR_VP_CREATION_SUCCESS) {
-		if_index = nss_ppe_vxlanmgr_get_ppe_netdev_idx(dev, remote_ip, ip_type);
-	}
+	*vp_status = nss_ppe_vxlanmgr_get_ifindex_and_vp_status(dev, remote_ip, ip_type, &if_index);
 
 	DEBUG_TRACE("%px: VXLAN: netdev:%s if_index:%d vp_status:%u\n", feci,dev->name, if_index, *vp_status);
 
