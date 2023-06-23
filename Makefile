@@ -48,6 +48,7 @@ ecm-y := \
 	 frontends/cmn/ecm_ae_classifier.o \
 	 frontends/cmn/ecm_ipv4.o \
 	 frontends/cmn/ecm_ported_ipv4.o \
+	 frontends/cmn/ecm_stats_v4.o \
 	 ecm_tracker_udp.o \
 	 ecm_tracker_tcp.o \
 	 ecm_tracker_datagram.o \
@@ -72,6 +73,7 @@ ecm-y := \
 ecm-$(ECM_IPV6_ENABLE) += frontends/ecm_front_end_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_ported_ipv6.o
+ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_stats_v6.o
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/cmn/ecm_non_ported_ipv4.o
 ifeq ($(ECM_NON_PORTED_SUPPORT_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_non_ported_ipv6.o
@@ -489,6 +491,7 @@ ccflags-y += -DECM_STATE_DEBUG_LEVEL=1
 ccflags-y += -DECM_OPENWRT_SUPPORT=1
 ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_AE_CLASSIFIER_DEBUG_LEVEL=1
+ccflags-y += -DECM_STATS_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 

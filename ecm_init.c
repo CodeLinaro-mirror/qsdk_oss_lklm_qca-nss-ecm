@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -120,7 +120,8 @@ extern void ecm_classifier_mscs_exit(void);
  */
 static int __init ecm_init(void)
 {
-	int ret;
+	int ret = -1;
+	struct dentry *ecm_stats_dentry;
 
 	printk(KERN_INFO "ECM init\n");
 
@@ -139,6 +140,12 @@ static int __init ecm_init(void)
 	if (!ecm_dentry) {
 		DEBUG_ERROR("Failed to create ecm directory in debugfs\n");
 		return -1;
+	}
+
+	ecm_stats_dentry = debugfs_create_dir("stats", ecm_dentry);
+	if (!ecm_stats_dentry) {
+		DEBUG_ERROR("Failed to create stats dir in ecm\n");
+		goto err_db;
 	}
 
 	ret = ecm_db_init(ecm_dentry);
