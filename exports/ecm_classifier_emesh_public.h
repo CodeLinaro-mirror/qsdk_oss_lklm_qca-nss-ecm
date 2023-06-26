@@ -61,6 +61,25 @@ struct ecm_classifier_fse_info {
 };
 
 /**
+ * ecm_classifier_emesh_sawf_flow_info
+ *
+ * @netdev : Netdevice
+ * @peer_mac : Destination peer mac address
+ * @service_id : Service class id
+ * @dscp : Differentiated Services Code Point
+ * @rule_id : Rule id
+ * @sawf_rule_type: Rule type
+ */
+struct ecm_classifier_emesh_sawf_flow_info {
+	struct net_device *netdev;
+	uint8_t *peer_mac;
+	uint32_t service_id;
+	uint32_t dscp;
+	uint32_t rule_id;
+	uint8_t sawf_rule_type;
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
 typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
@@ -71,8 +90,7 @@ typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
 /**
  * MSDUQ callback to which emesh-sawf will register.
  */
-typedef uint16_t (*ecm_classifier_emesh_msduq_callback_t)(struct net_device *out_dev,
-		uint8_t dest_mac[], uint32_t service_class_id, uint32_t dscp, uint32_t rule_id, uint8_t sawf_rule_type);
+typedef uint32_t (*ecm_classifier_emesh_msduq_callback_t)(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info);
 
 /**
  * SAWF params sync callback function pointer.
