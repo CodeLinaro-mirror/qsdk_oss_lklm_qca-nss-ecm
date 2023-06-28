@@ -7368,18 +7368,6 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		}
 		break;
 
-	case NETDEV_UNREGISTER:
-		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER \n", dev);
-		if (netif_is_bond_slave(dev)) {
-			master = ecm_interface_get_and_hold_dev_master(dev);
-			DEBUG_ASSERT(master, "Expected a master\n");
-			ecm_interface_dev_defunct_connections(master);
-			dev_put(master);
-		} else {
-			ecm_interface_dev_defunct_connections(dev);
-		}
-		break;
-
 	case NETDEV_CHANGE:
 		DEBUG_INFO("Net device: %px, CHANGE\n", dev);
 		if (!netif_carrier_ok(dev)) {
@@ -7403,6 +7391,39 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 	case NETDEV_CHANGEADDR:
 		DEBUG_INFO("Net device: %px, MACADDR CHANGE\n", dev);
 		if (!netif_is_bond_slave(dev) && !netif_is_bridge_port(dev)) {
+			ecm_interface_dev_defunct_connections(dev);
+		}
+		break;
+
+	case NETDEV_UNREGISTER:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		/*
+		 * 'ppe_vxlan_tun' is the name of the dummy or the child netdevice.
+		 * pdev is the Linux netdevice or parent netdevice.
+		 */
+		if (unlikely(!strncmp(dev->name, "ppe_vxlan_tun", 13))) {
+			int ifindex;
+			struct net_device *pdev;
+
+			ifindex = *(int *)netdev_priv(dev);
+			pdev = dev_get_by_index(&init_net, ifindex);
+			if (!pdev) {
+				DEBUG_WARN("Net device: %px, base or the parent-netdevice not found \n", dev);
+				return NOTIFY_DONE;
+			}
+
+			ecm_interface_dev_defunct_connections(pdev);
+			DEBUG_INFO("Net device:%px, NETDEV_UNREGISTER dev: %s pdev: %s\n", dev, dev->name, pdev->name);
+			dev_put(pdev);
+		}
+#endif
+		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER \n", dev);
+		if (netif_is_bond_slave(dev)) {
+			master = ecm_interface_get_and_hold_dev_master(dev);
+			DEBUG_ASSERT(master, "Expected a master\n");
+			ecm_interface_dev_defunct_connections(master);
+			dev_put(master);
+		} else {
 			ecm_interface_dev_defunct_connections(dev);
 		}
 		break;
