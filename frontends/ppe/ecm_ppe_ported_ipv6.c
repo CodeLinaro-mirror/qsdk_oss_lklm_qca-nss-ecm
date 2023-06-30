@@ -740,6 +740,21 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	}
 
 	/*
+	 * Check if the PPE offload is enabled for the rule's Tx/Rx interfaces or not
+	 */
+	if (!ppe_drv_iface_check_flow_offload_enabled(pd6rc->conn_rule.rx_if,
+						pd6rc->conn_rule.tx_if)) {
+		DEBUG_TRACE("%px: PPE offload is disabled for rx if: %d, tx: %d\n",
+				feci, pd6rc->conn_rule.rx_if, pd6rc->conn_rule.tx_if);
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		goto ported_accel_bad_rule;
+	}
+
+	DEBUG_TRACE("%px: PPE offload is enabled for rx if: %d, tx: %d\n",
+			feci, pd6rc->conn_rule.rx_if, pd6rc->conn_rule.tx_if);
+
+	/*
 	 * Routed or bridged?
 	 */
 	if (ecm_db_connection_is_routed_get(feci->ci)) {
