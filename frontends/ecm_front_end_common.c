@@ -1648,6 +1648,36 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 	return ecm_front_end_is_port_in_denied_list(dest_port, ecm_front_end_tcp_denied_ports);
 }
 
+/*
+ * ecm_front_end_common_intf_ingress_qdisc_check()
+ *      Checks if ingress qdisc is configured on the given interface
+ */
+bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
+{
+#if defined(CONFIG_NET_CLS_ACT)
+	struct net_device *dev;
+	struct mini_Qdisc *miniq;
+
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+	miniq = rcu_dereference_bh(dev->miniq_ingress);
+	if (miniq) {
+		DEBUG_INFO("Ingress Qdisc is present for device[%s]\n", dev->name);
+		dev_put(dev);
+		return true;
+	}
+
+	DEBUG_INFO("Ingress Qdisc is not present for device[%s]\n", dev->name);
+	dev_put(dev);
+#endif
+	return false;
+}
+
 #ifdef ECM_FRONT_END_FSE_ENABLE
 /*
  * ecm_front_end_fse_info_get()

@@ -340,6 +340,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			goto ported_accel_bad_rule;
 		}
 
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
 		 * Conflicting information may cause accel to be unsupported.
@@ -546,6 +554,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 		if (ae_iface_id < 0) {
 			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
