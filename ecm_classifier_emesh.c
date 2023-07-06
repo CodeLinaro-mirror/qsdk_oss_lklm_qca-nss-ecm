@@ -298,10 +298,10 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	 */
 	if (ecm_emesh.update_service_id_get_msduq) {
 		if (dest_dev) {
-			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0, SAWF_RULE_TYPE_DEFAULT);
+			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0, SP_SAWF_RULE_TYPE_DEFAULT);
 		}
 		if (src_dev) {
-			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0, SAWF_RULE_TYPE_DEFAULT);
+			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0, SP_SAWF_RULE_TYPE_DEFAULT);
 		}
 	}
 
@@ -705,8 +705,8 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	/*
 	 * Checks if legacy scs rule match has happened
 	 */
-	if ((flow_output_params->sawf_rule_type == SAWF_RULE_TYPE_SCS) ||
-				(return_output_params->sawf_rule_type == SAWF_RULE_TYPE_SCS)) {
+	if ((flow_output_params->sawf_rule_type == SP_SAWF_RULE_TYPE_SCS) ||
+				(return_output_params->sawf_rule_type == SP_SAWF_RULE_TYPE_SCS)) {
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG;
 	}
 
@@ -1235,10 +1235,10 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 */
 	flow_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
-	flow_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
-	return_output_params.sawf_rule_type = SAWF_RULE_TYPE_MAX;
 	flow_output_params.ae_type = SP_RULE_AE_TYPE_NONE;
 	return_output_params.ae_type = SP_RULE_AE_TYPE_NONE;
+	flow_output_params.sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
+	return_output_params.sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
