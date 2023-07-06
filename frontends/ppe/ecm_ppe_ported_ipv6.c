@@ -306,6 +306,14 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
 			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
@@ -598,6 +606,14 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
+
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
