@@ -1133,6 +1133,15 @@ done:
 		}
 
 		/*
+		 * E-MESH SAWF LEGACY SCS is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF legacy scs is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG;
+		}
+
+		/*
 		 * EMESH-SAWF has valid pcp remark to be updated in VLAN tag.
 		 */
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
