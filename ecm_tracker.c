@@ -84,6 +84,7 @@ static bool ecm_tracker_ip_header_helper_udp(struct ecm_tracker_ip_protocols *et
 static bool ecm_tracker_ip_header_helper_icmp(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
 static bool ecm_tracker_ip_header_helper_unknown(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
 static bool ecm_tracker_ip_header_helper_gre(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
+static bool ecm_tracker_ip_header_helper_etherip(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
 #ifdef ECM_IPV6_ENABLE
 static bool ecm_tracker_ip_header_helper_ipv6_generic(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
 static bool ecm_tracker_ip_header_helper_ipv6_fragment(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr);
@@ -222,7 +223,7 @@ static struct ecm_tracker_ip_protocols {
 	{94, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "94", ecm_tracker_ip_header_helper_unknown},
 	{95, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "95", ecm_tracker_ip_header_helper_unknown},
 	{96, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "96", ecm_tracker_ip_header_helper_unknown},
-	{97, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "97", ecm_tracker_ip_header_helper_unknown},
+	{97, ECM_TRACKER_IP_PROTOCOL_TYPE_ETHERIP, "etherip", ecm_tracker_ip_header_helper_etherip},
 	{98, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "98", ecm_tracker_ip_header_helper_unknown},
 	{99, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "99", ecm_tracker_ip_header_helper_unknown},
 	{100, ECM_TRACKER_IP_PROTOCOL_TYPE_UNKNOWN, "100", ecm_tracker_ip_header_helper_unknown},
@@ -967,6 +968,33 @@ static bool ecm_tracker_ip_header_helper_udp(struct ecm_tracker_ip_protocols *et
 
 	/*
 	 * There is no header following a UDP header
+	 */
+	*next_hdr = -1;
+	return true;
+}
+
+/*
+ * ecm_tracker_ip_header_helper_etherip()
+ *	Interpret an Etherip header
+ */
+static bool ecm_tracker_ip_header_helper_etherip(struct ecm_tracker_ip_protocols *etip, struct ecm_tracker_ip_protocol_header *etiph, struct ecm_tracker_ip_header *ip_hdr,
+						struct sk_buff *skb, uint8_t protocol, ecm_tracker_ip_protocol_type_t ecm_ip_protocol, uint32_t offset, uint32_t remain, int16_t *next_hdr)
+{
+	DEBUG_ASSERT((protocol == IPPROTO_ETHERIP) && (ecm_ip_protocol == ECM_TRACKER_IP_PROTOCOL_TYPE_ETHERIP), "Bad protocol: %u or ecm_ip_protocol: %d", protocol, ecm_ip_protocol);
+
+	DEBUG_TRACE("etherip helper skb: %px, protocol: %u, ecm_ip_proto: %d, offset: %u, remain: %u\n", skb, protocol, ecm_ip_protocol, offset, remain);
+	if (remain < 16) {
+		DEBUG_TRACE("not enough Etherip header: %u\n", remain);
+		return false;
+	}
+
+	etiph->protocol_number = protocol;
+	etiph->header_size = 16;
+	etiph->size = remain;
+	etiph->offset = offset;
+
+	/*
+	 * There is no header following an Etherip header
 	 */
 	*next_hdr = -1;
 	return true;

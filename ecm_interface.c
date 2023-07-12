@@ -4811,7 +4811,7 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 		return true;
 	}
 
-	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP) {
+	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP || protocol == IPPROTO_ETHERIP) {
 		return true;
 	}
 

@@ -108,6 +108,7 @@ enum ecm_tracker_ip_protocol_types {
 	ECM_TRACKER_IP_PROTOCOL_TYPE_IPV6_DO,
 	ECM_TRACKER_IP_PROTOCOL_TYPE_IPV6_HBH,		/* IPv6 hop-by-hop header */
 #endif
+	ECM_TRACKER_IP_PROTOCOL_TYPE_ETHERIP,
 	ECM_TRACKER_IP_PROTOCOL_TYPE_COUNT		/* Must be last, do not use */
 };
 typedef enum ecm_tracker_ip_protocol_types ecm_tracker_ip_protocol_type_t;
