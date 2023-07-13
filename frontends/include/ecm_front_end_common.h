@@ -77,6 +77,8 @@ static inline uint32_t ecm_front_end_l2_encap_header_len(uint16_t protocol)
 	switch (protocol) {
 	case ETH_P_PPP_SES:
 		return PPPOE_SES_HLEN;
+	case ETH_P_8021Q:
+		return VLAN_HLEN;
 	default:
 		return 0;
 	}
