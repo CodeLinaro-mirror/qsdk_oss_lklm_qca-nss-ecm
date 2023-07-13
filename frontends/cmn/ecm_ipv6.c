@@ -1367,6 +1367,49 @@ skip_ipv6_process:
 }
 
 /*
+ * ecm_ipv6_vlan_bridge_process()
+ *	Called for vlan packets that are going
+ *	out to one of the bridge physical interfaces.
+ */
+static unsigned int ecm_ipv6_vlan_bridge_process(struct net_device *out,
+						     struct net_device *in,
+						     struct ethhdr *skb_eth_hdr,
+						     bool can_accel,
+						     struct sk_buff *skb)
+{
+	unsigned int result = NF_ACCEPT;
+	struct vlan_ethhdr *skb_vlan_hdr = vlan_eth_hdr(skb);
+	uint32_t encap_header_len = 0;
+
+	encap_header_len = ecm_front_end_l2_encap_header_len(ntohs(skb->protocol));
+	ecm_front_end_pull_l2_encap_header(skb, encap_header_len);
+	skb->protocol = skb_vlan_hdr->h_vlan_encapsulated_proto;
+
+	if (ntohs(skb->protocol) == ETH_P_PPP_SES) {
+
+		/*
+		 * Check if PPPoE bridge acceleration is disabled.
+		 */
+		if (ecm_front_end_ppppoe_br_accel_disabled()) {
+			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
+			goto skip_ipv6_vlan_process;
+		}
+
+		result = ecm_ipv6_pppoe_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
+		goto skip_ipv6_vlan_process;
+	}
+
+	result = ecm_ipv6_ip_process(out, in, skb_eth_hdr->h_source,
+					 skb_eth_hdr->h_dest, can_accel,
+					 false, true, skb, ETH_P_8021Q);
+skip_ipv6_vlan_process:
+	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
+	skb->protocol = htons(ETH_P_8021Q);
+
+	return result;
+}
+
+/*
  * ecm_ipv6_bridge_post_routing_hook()
  *	Called for packets that are going out to one of the bridge physical interfaces.
  *
@@ -1424,9 +1467,20 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		return NF_ACCEPT;
 	}
 	eth_type = ntohs(skb_eth_hdr->h_proto);
-	if (unlikely((eth_type != 0x86DD) && (eth_type != ETH_P_PPP_SES))) {
-		DEBUG_TRACE("%px: Not IP/PPPoE session\n", skb);
+	if (unlikely((eth_type != ETH_P_IPV6) && (eth_type != ETH_P_PPP_SES) && (eth_type != ETH_P_8021Q))) {
+		DEBUG_TRACE("%px: Not IP/PPPoE/VLAN session\n", skb);
 		return NF_ACCEPT;
+	}
+
+	if (eth_type == ETH_P_8021Q) {
+		struct vlan_ethhdr *skb_vlan_hdr;
+		uint16_t vlan_encap_proto;
+		skb_vlan_hdr = vlan_eth_hdr(skb);
+		vlan_encap_proto = ntohs(skb_vlan_hdr->h_vlan_encapsulated_proto);
+		if (unlikely((vlan_encap_proto != ETH_P_IPV6) && (vlan_encap_proto != ETH_P_PPP_SES))) {
+			DEBUG_TRACE("%px: Not IP/PPPoE session: %d\n", skb, vlan_encap_proto);
+			return NF_ACCEPT;
+		}
 	}
 
 	/*
@@ -1529,6 +1583,11 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 
 	DEBUG_TRACE("Bridge process skb: %px, bridge: %px (%s), In: %px (%s), Out: %px (%s)\n",
 			skb, bridge, bridge->name, in, in->name, out, out->name);
+
+	if (unlikely(eth_type == ETH_P_8021Q)) {
+		result = ecm_ipv6_vlan_bridge_process((struct net_device *)out, in, skb_eth_hdr, can_accel, skb);
+		goto skip_ipv6_bridge_flow;
+	}
 
 	if (unlikely(eth_type == ETH_P_PPP_SES)) {
 

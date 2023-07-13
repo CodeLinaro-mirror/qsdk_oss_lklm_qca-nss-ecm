@@ -1108,6 +1108,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		if (is_l2_encap) {
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_L2_ENCAP;
 		}
+
+		/*
+		 * Bridge vlan passthrough
+		 */
+		if (!(nircm->valid_flags & SFE_RULE_CREATE_VLAN_VALID)) {
+			if (skb_vlan_tag_present(skb)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_VLAN_PASSTHROUGH;
+			}
+		}
 	}
 
 	if (ecm_interface_src_check) {
@@ -1145,6 +1154,14 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
 	if (feci->ci->vlan_filter_valid) {
 		ecm_sfe_common_ipv6_vlan_filter_set(feci->ci, nircm);
+	}
+
+	/*
+	 * if bridge vlan filtering is enabled
+	 * disable the vlan passthrough
+	 */
+	if (nircm->valid_flags & SFE_RULE_CREATE_VLAN_FILTER_VALID) {
+		nircm->rule_flags &= ~SFE_RULE_CREATE_FLAG_BRIDGE_VLAN_PASSTHROUGH;
 	}
 #endif
 
