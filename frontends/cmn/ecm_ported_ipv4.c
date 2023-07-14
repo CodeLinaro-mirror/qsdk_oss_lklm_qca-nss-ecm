@@ -562,6 +562,10 @@ feci_alloc_check:
 		}
 
 feci_alloc_done:
+		if (ae_result != ECM_AE_CLASSIFIER_RESULT_DONT_CARE) {
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED;
+		}
+
 		if (!ecm_front_end_ipv4_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
 							ip_src_addr, ip_src_addr_nat,
