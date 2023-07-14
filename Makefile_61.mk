@@ -180,7 +180,7 @@ endif
 # Define ECM_INTERFACE_VXLAN_ENABLE=y in order
 # to enable support for VxLAN interface.
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
+ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 
 # #############################################################################
 # Define ECM_IPV6_ENABLE=y in order to enable IPv6 support in the ECM.
