@@ -935,7 +935,7 @@ done:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_ipv6_connection_regenerate(ci, sender, out_dev, in_dev, layer4hdr, skb);
+		ecm_ipv6_connection_regenerate(ci, sender, out_dev, out_dev_nat, in_dev, in_dev_nat, layer4hdr, skb);
 	}
 
 	/*
