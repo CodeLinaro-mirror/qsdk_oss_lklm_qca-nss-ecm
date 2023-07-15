@@ -602,7 +602,7 @@ done:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_ipv6_connection_regenerate(ci, sender, out_dev, in_dev, NULL, skb);
+		ecm_ipv6_connection_regenerate(ci, sender, out_dev, out_dev, in_dev, in_dev, NULL, skb);
 	}
 
 	/*
