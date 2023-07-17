@@ -1512,6 +1512,36 @@ vxlan_done:
 }
 
 /*
+ * ecm_ipv6_is_bridge_pkt()
+ *	Return true if pkt is from bridge flow.
+ *	If in/out dev is a bridge port and the other dev is a master
+ *	of the same bridge port dev, then consider it a bridge flow packet
+ *	and return true.
+ */
+static bool ecm_ipv6_is_bridge_pkt(struct net_device *in, struct net_device *out)
+{
+	struct net_device *lower = NULL;
+	struct net_device *upper = NULL;
+	struct net_device *bridge = NULL;
+
+	if (in->priv_flags & IFF_BRIDGE_PORT) {
+		lower = in;
+		bridge = out;
+	} else if (out->priv_flags & IFF_BRIDGE_PORT) {
+		lower = out;
+		bridge = in;
+	}
+
+	if (!lower)
+		return false;
+
+	rcu_read_lock();
+	upper = netdev_master_upper_dev_get_rcu(lower);
+	rcu_read_unlock();
+	return upper && (upper == bridge);
+}
+
+/*
  * ecm_ipv6_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
@@ -1578,6 +1608,15 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 		/*
 		 * Locally sourced packets are not processed in ECM.
 		 */
+		return NF_ACCEPT;
+	}
+
+	/*
+	 * Skip bridge flow packet
+	 */
+	if (ecm_ipv6_is_bridge_pkt(in, out)) {
+		DEBUG_TRACE("Bridge flow, ignoring: %px\n", skb);
+		dev_put(in);
 		return NF_ACCEPT;
 	}
 
