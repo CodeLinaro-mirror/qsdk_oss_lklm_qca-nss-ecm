@@ -357,7 +357,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(from_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_FROM_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s from hierarchy\n", feci, from_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
@@ -572,7 +578,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			if (is_valid_ether_addr(to_ppe_iface_address)) {
 				ether_addr_copy((uint8_t *)pd4rc->conn_rule.return_mac, to_ppe_iface_address);
 			}
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(to_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_TO_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s to hierarchy \n", feci, to_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 			break;
 
