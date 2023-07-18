@@ -826,8 +826,8 @@ static int ecm_sfe_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	/*
 	 * Same approach as above for port information
 	 */
-	create->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	create->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	create->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	create->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO));
 
 	/*
 	 * Destination Node(MAC) address. This address will be same for all to side intefaces
