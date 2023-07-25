@@ -93,14 +93,6 @@ static int ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX]
 						/* Array of Number of TCP and UDP connections currently offloaded */
 
 /*
- * Expose what should be a static flag in the TCP connection tracker.
- */
-#ifdef ECM_OPENWRT_SUPPORT
-extern int nf_ct_tcp_no_window_check;
-#endif
-extern int nf_ct_tcp_be_liberal;
-
-/*
  * ecm_ppe_ported_ipv4_handle_flush()
  *	Handle situation if destroy comes before setting up rule
  *	feci->lock is callers responsibility.
@@ -180,12 +172,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	int protocol;
 	int32_t from_ifaces_first;
 	int32_t to_ifaces_first;
+	int32_t from_iface_id;
+	int32_t to_iface_id;
+	int32_t from_top_iface_id;
+	int32_t to_top_iface_id;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *from_ppe_iface;
 	struct ecm_db_iface_instance *to_ppe_iface;
-	int32_t from_ppe_iface_id;
-	int32_t to_ppe_iface_id;
 	uint8_t from_ppe_iface_address[ETH_ALEN];
 	uint8_t to_ppe_iface_address[ETH_ALEN];
 	ip_addr_t addr;
@@ -251,6 +245,10 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		goto ported_accel_bad_rule;
 	}
 
+	from_iface_id = ecm_db_iface_interface_identifier_get(from_ifaces[from_ifaces_first]);
+	from_top_iface_id = ecm_db_iface_interface_identifier_get(from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1]);
+	DEBUG_TRACE("%px: from_iface_id:%d from_top_iface_id:%d", feci, from_iface_id, from_top_iface_id);
+
 	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
 		DEBUG_TRACE("%px: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
@@ -258,41 +256,9 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		goto ported_accel_bad_rule;
 	}
 
-	/*
-	 * First interface in each must be a known ppe interface
-	 */
-	from_ppe_iface = from_ifaces[from_ifaces_first];
-	to_ppe_iface = to_ifaces[to_ifaces_first];
-	from_ppe_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(from_ppe_iface));
-	to_ppe_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(to_ppe_iface));
-	if ((from_ppe_iface_id < 0) || (to_ppe_iface_id < 0)) {
-		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
-		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-		DEBUG_TRACE("%px: Accel attempt failed - FIRST interfaces for 'from'(%d) and 'to'(%d) interfaces list!\n", feci, from_ppe_iface_id, to_ppe_iface_id);
-		goto ported_accel_bad_rule;
-	}
-
-	/*
-	 * Get PPE interface ID of the top interface in heirarchy
-	 */
-	from_ppe_iface = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
-	to_ppe_iface = to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
-	pd4rc->top_rule.rx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(from_ppe_iface));
-	pd4rc->top_rule.tx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(to_ppe_iface));
-	if ((pd4rc->top_rule.rx_if < 0) || (pd4rc->top_rule.tx_if < 0)) {
-		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
-		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-		DEBUG_TRACE("%px: Accel attempt failed - TOP interfaces for 'from'(%d) and 'to'(%d) interfaces list!\n", feci, pd4rc->top_rule.rx_if, pd4rc->top_rule.tx_if);
-		goto ported_accel_bad_rule;
-	}
-
-	/*
-	 * Set interface numbers involved in accelerating this connection.
-	 * These are the outer facing addresses from the heirarchy interface lists we got above.
-	 * These may be overridden later if we detect special interface types e.g. ipsec.
-	 */
-	pd4rc->conn_rule.rx_if = from_ppe_iface_id;
-	pd4rc->conn_rule.tx_if = to_ppe_iface_id;
+	to_iface_id = ecm_db_iface_interface_identifier_get(to_ifaces[to_ifaces_first]);
+	to_top_iface_id = ecm_db_iface_interface_identifier_get(to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1]);
+	DEBUG_TRACE("%px: to_iface_id:%d to_top_iface_id:%d", feci, to_iface_id, to_top_iface_id);
 
 	/*
 	 * Set the mtu values. These values will be overwritten if the flow is
@@ -300,6 +266,12 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	pd4rc->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
 	pd4rc->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
+	 * Get the top interface in heirarchy
+	 */
+	from_ppe_iface = from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
+	to_ppe_iface = to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX - 1];
 
 	/*
 	 * We know that each outward facing interface is known to the PPE and so this connection could be accelerated.
@@ -316,7 +288,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	rule_invalid = false;
 	for (list_index = from_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
 		struct ecm_db_iface_instance *ii;
-		uint32_t iface_id, ae_iface_id;
+		int32_t iface_id, ae_iface_id;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -331,17 +303,28 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
-		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(ii));
-		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
-				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
+		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
 
-		if (ae_iface_id < 0) {
-			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
+		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s), type: %d (%s)\n",
+				feci, list_index, ii, ii->name, ii_type, ii_name);
+
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 			goto ported_accel_bad_rule;
 		}
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+#endif
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -360,7 +343,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(from_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_FROM_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s from hierarchy\n", feci, from_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
@@ -426,9 +415,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			rule_invalid = true;
 #endif
 			break;
+
 		case ECM_DB_IFACE_TYPE_VLAN:
+		{
 #ifdef ECM_INTERFACE_VLAN_ENABLE
+			int32_t port_id;
+
 			DEBUG_TRACE("%px: VLAN\n", feci);
+
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
@@ -437,6 +431,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
+
 			ecm_db_iface_vlan_info_get(ii, &vlan_info);
 			vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
 
@@ -451,6 +446,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				from_iface_id = iface_id;
+			}
+
+			/*
 			 * Primary or secondary (QinQ) VLAN?
 			 */
 			if (interface_type_counts[ii_type] == 0) {
@@ -458,6 +463,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			} else {
 				pd4rc->vlan_rule.secondary_vlan.ingress_vlan_tag = vlan_value;
 			}
+
 			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
 
 			/*
@@ -470,6 +476,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+		}
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifndef ECM_INTERFACE_IPSEC_ENABLE
@@ -479,7 +486,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			break;
 
 		case ECM_DB_IFACE_TYPE_VXLAN:
+		{
+			/*
+			 * For VxLAN device, a 5-tuple connection rule is added with the same src and dest ports in both the directions.
+			 * Source interface is a VxLAN interface for the routed flow which is the case for VxLAN->IPsec or VxLAN->WAN rule.
+			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
+			 */
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+			int32_t vxlan_ppe_dev_id;
+			uint32_t vp_status;
+
 			DEBUG_TRACE("%px: From VXLAN interface\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
 				/*
@@ -490,21 +506,49 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
-			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VXLAN);
+			vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_FROM, &vp_status);
+			DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			if (vp_status == NSS_PPE_VXLANMGR_VP_CREATION_IN_PROGRESS) {
+				/*
+				 * Retry with the subsequent packets
+				 */
+				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+				ecm_ppe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+				kfree(pd4rc);
+				return;
+			}
+
+			if ((vp_status != NSS_PPE_VXLANMGR_VP_CREATION_SUCCESS) || (vxlan_ppe_dev_id < 0)) {
+				DEBUG_WARN("%px: VXLAN: Re-tried enough\n", feci);
+				rule_invalid = true;
+				break;
+			}
 
 			/*
-			 * For VxLAN device, a 5-tuple connection rule is added with the same src and dest ports in both the directions.
-			 * Source interface is a VxLAN interface for the routed flow which is the case for VxLAN->IPsec or VxLAN->WAN rule.
-			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
+			 * overwrite the first and top interface id
 			 */
+			from_iface_id = vxlan_ppe_dev_id;
+			from_top_iface_id = vxlan_ppe_dev_id;
+			ae_iface_id = vxlan_ppe_dev_id;
+
+			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VXLAN);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 			break;
-
+		}
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
+		}
+
+		if (ae_iface_id < 0) {
+			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
 		}
 
 		/*
@@ -521,6 +565,31 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 
 	/*
+	 * First interface in each must be a known ppe interface
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the outer facing addresses from the heirarchy interface lists we got above.
+	 */
+	pd4rc->conn_rule.rx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(from_iface_id);
+	if (pd4rc->conn_rule.rx_if < 0) {
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		DEBUG_TRACE("%px: Accel attempt failed - FIRST interfaces for 'from'(%d) interface list!\n", feci, pd4rc->conn_rule.rx_if);
+		goto ported_accel_bad_rule;
+	}
+
+	/*
+	 * Get PPE interface ID of the top interface in heirarchy
+	 */
+	pd4rc->top_rule.rx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(from_top_iface_id);
+	if (pd4rc->top_rule.rx_if < 0) {
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		DEBUG_TRACE("%px: Accel attempt failed - TOP interfaces for 'from'(%d) interface list!\n", feci, pd4rc->top_rule.rx_if);
+		goto ported_accel_bad_rule;
+	}
+
+
+	/*
 	 * Now examine the TO / DEST heirarchy list to construct the destination part of the rule
 	 */
 	DEBUG_TRACE("%px: Examine to/dest heirarchy list\n", feci);
@@ -528,7 +597,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	rule_invalid = false;
 	for (list_index = to_ifaces_first; !rule_invalid && (list_index < ECM_DB_IFACE_HEIRARCHY_MAX); list_index++) {
 		struct ecm_db_iface_instance *ii;
-		uint32_t iface_id, ae_iface_id;
+		int32_t iface_id, ae_iface_id;
 		ecm_db_iface_type_t ii_type;
 		char *ii_name;
 #ifdef ECM_INTERFACE_VLAN_ENABLE
@@ -543,17 +612,28 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
-		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(ecm_db_iface_interface_identifier_get(ii));
+		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
+
 		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s %d), type: %d (%s), ae_iface_id(%d)\n",
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
-		if (ae_iface_id < 0) {
-			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
+		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 			goto ported_accel_bad_rule;
 		}
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
+		}
+#endif
 
 		/*
 		 * Extract information from this interface type if it is applicable to the rule.
@@ -575,7 +655,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			if (is_valid_ether_addr(to_ppe_iface_address)) {
 				ether_addr_copy((uint8_t *)pd4rc->conn_rule.return_mac, to_ppe_iface_address);
 			}
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(to_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_TO_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s to hierarchy \n", feci, to_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 			break;
 
@@ -642,8 +728,12 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			break;
 
 		case ECM_DB_IFACE_TYPE_VLAN:
+		{
 #ifdef ECM_INTERFACE_VLAN_ENABLE
+			int32_t port_id;
+
 			DEBUG_TRACE("%px: VLAN\n", feci);
+
 			if (interface_type_counts[ii_type] > 1) {
 				/*
 				 * Can only support two vlans
@@ -652,6 +742,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
+
 			ecm_db_iface_vlan_info_get(ii, &vlan_info);
 			vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
 
@@ -666,6 +757,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				to_iface_id = iface_id;
+			}
+
+			/*
 			 * Primary or secondary (QinQ) VLAN?
 			 */
 			if (interface_type_counts[ii_type] == 0) {
@@ -673,7 +774,9 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			} else {
 				pd4rc->vlan_rule.secondary_vlan.egress_vlan_tag = vlan_value;
 			}
+
 			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
+
 			memcpy(to_ppe_iface_address, vlan_info.address, ETH_ALEN);
 
 			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
@@ -682,18 +785,63 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+		}
 
 		case ECM_DB_IFACE_TYPE_VXLAN:
+		{
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+			int32_t vxlan_ppe_dev_id;
+			uint32_t vp_status;
+
+			DEBUG_TRACE("%px: To VXLAN interface\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Can support only one VxLAN interface.
+				 */
+				DEBUG_WARN("%px: VxLAN - ignore additional\n", feci);
+				rule_invalid = true;
+				break;
+			}
+
+			vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_TO, &vp_status);
+			DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			if (vp_status == NSS_PPE_VXLANMGR_VP_CREATION_IN_PROGRESS) {
+				/* Retry with the subsequent packets */
+				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+				ecm_ppe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+				kfree(pd4rc);
+				return;
+			}
+
+			if ((vp_status != NSS_PPE_VXLANMGR_VP_CREATION_SUCCESS) || (vxlan_ppe_dev_id < 0)) {
+				DEBUG_WARN("%px: VXLAN: Re-tried enough\n", feci);
+				rule_invalid = true;
+				break;
+			}
+
+			/* overwrite the first and top interface id */
+			to_iface_id = vxlan_ppe_dev_id;
+			to_top_iface_id = vxlan_ppe_dev_id;
+			ae_iface_id = vxlan_ppe_dev_id;
+
 			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VXLAN);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 			break;
-
+		}
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
+		}
+
+		if (ae_iface_id < 0) {
+			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
+					feci, iface_id, ii_type, ii_name);
+			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+			goto ported_accel_bad_rule;
 		}
 
 		/*
@@ -706,6 +854,30 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		DEBUG_TRACE("%px: to/dest Rule invalid\n", feci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		goto ported_accel_bad_rule;
+	}
+
+	/*
+	 * First interface in each must be a known ppe interface
+	 * Set interface numbers involved in accelerating this connection.
+	 * These are the outer facing addresses from the heirarchy interface lists we got above.
+	 */
+	pd4rc->conn_rule.tx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(to_iface_id);
+	if (pd4rc->conn_rule.tx_if < 0) {
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		DEBUG_TRACE("%px: Accel attempt failed - FIRST interfaces for 'to'(%d) interface list!\n", feci, pd4rc->conn_rule.tx_if);
+		goto ported_accel_bad_rule;
+	}
+
+	/*
+	 * Get PPE interface ID of the top interface in heirarchy
+	 */
+	pd4rc->top_rule.tx_if = ecm_ppe_common_get_ae_iface_id_by_netdev_id(to_top_iface_id);
+	if (pd4rc->top_rule.tx_if < 0) {
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		DEBUG_TRACE("%px: Accel attempt failed - TOP interfaces for 'to'(%d) interfaces list!\n", feci, pd4rc->top_rule.tx_if);
 		goto ported_accel_bad_rule;
 	}
 
@@ -789,12 +961,15 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		/*
 		 * In case of SAWF denying acceleraion through PPE-DS
 		 * Allowing acceleration only through PPE-VP
+		 * For legacy scs do not deny acceleration through PPE-DS
 		 * TODO: configure accel using DS for SAWF
 		 */
-		spin_lock_bh(&feci->lock);
-		feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
-		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
-		spin_unlock_bh(&feci->lock);
+		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG)) {
+			spin_lock_bh(&feci->lock);
+			feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+			spin_unlock_bh(&feci->lock);
+		}
         }
 
 	/*
@@ -816,6 +991,36 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 
 #endif
+
+	/*
+	 * Policer/ACL info
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_ACL;
+
+			if (pr->rule_id.acl.flow_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.flow_acl_id = pr->rule_id.acl.flow_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_FLOW_ACL;
+			}
+
+			if (pr->rule_id.acl.return_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.return_acl_id = pr->rule_id.acl.return_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_RETURN_ACL;
+			}
+	} else if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_POLICER;
+			if (pr->rule_id.policer.flow_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.flow_policer_id = pr->rule_id.policer.flow_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_FLOW_POLICER;
+			}
+
+			if (pr->rule_id.policer.return_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.return_policer_id = pr->rule_id.policer.return_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_RETURN_POLICER;
+			}
+	}
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
@@ -949,7 +1154,6 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-
 	DEBUG_INFO("%px: Ported Accelerate connection %px\n"
 			"Protocol: %d\n"
 			"from_mtu: %u\n"
@@ -1476,6 +1680,45 @@ static int ecm_ppe_ported_ipv4_connection_state_get(struct ecm_front_end_connect
 #endif
 
 /*
+ * ecm_ppe_ported_ipv4_connection_set();
+ *	Sets the PPE IPv4 ported connection's fields.
+ */
+void ecm_ppe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance *feci, uint32_t flags)
+{
+	feci->accel_engine = ECM_FRONT_END_ENGINE_PPE;
+	spin_lock_bh(&ecm_ppe_ipv4_lock);
+	feci->stats.no_action_seen_limit = ecm_ppe_ipv4_no_action_limit_default;
+	feci->stats.driver_fail_limit = ecm_ppe_ipv4_driver_fail_limit_default;
+	feci->stats.ae_nack_limit = ecm_ppe_ipv4_nack_limit_default;
+	spin_unlock_bh(&ecm_ppe_ipv4_lock);
+	feci->accelerate = ecm_ppe_ported_ipv4_connection_accelerate;
+	feci->decelerate = ecm_ppe_ported_ipv4_connection_decelerate;
+	feci->accel_ceased = ecm_ppe_ported_ipv4_connection_accel_ceased;
+#ifdef ECM_STATE_OUTPUT_ENABLE
+	feci->state_get = ecm_ppe_ported_ipv4_connection_state_get;
+#endif
+	feci->ae_interface_number_by_dev_get = ecm_ppe_common_get_interface_number_by_dev;
+	feci->ae_interface_number_by_dev_type_get = ecm_ppe_common_get_interface_number_by_dev_type;
+	feci->ae_interface_type_get = ecm_ppe_common_get_interface_type;
+	feci->regenerate = ecm_ppe_common_connection_regenerate;
+	feci->defunct = ecm_ppe_ported_ipv4_connection_defunct_callback;
+
+	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
+	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
+	feci->fe_info.front_end_flags = flags;
+	feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
+
+	/*
+	 * Just in case this function is called while switching AE to PPE
+	 * let's reset the failure stats which was increased by the old AE.
+	 */
+	feci->stats.driver_fail_total = 0;
+	feci->stats.driver_fail = 0;
+	feci->stats.ae_nack = 0;
+	feci->stats.ae_nack_total = 0;
+}
+
+/*
  * ecm_ppe_ported_ipv4_connection_instance_alloc()
  *	Create a front end instance specific for ported connection
  */
@@ -1521,11 +1764,6 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
 	feci->can_accel = can_accel;
 	feci->accel_mode = (can_accel) ? ECM_FRONT_END_ACCELERATION_MODE_DECEL : ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
 	feci->accel_engine = ECM_FRONT_END_ENGINE_PPE;
-	spin_lock_bh(&ecm_ppe_ipv4_lock);
-	feci->stats.no_action_seen_limit = ecm_ppe_ipv4_no_action_limit_default;
-	feci->stats.driver_fail_limit = ecm_ppe_ipv4_driver_fail_limit_default;
-	feci->stats.ae_nack_limit = ecm_ppe_ipv4_nack_limit_default;
-	spin_unlock_bh(&ecm_ppe_ipv4_lock);
 
 	/*
 	 * Copy reference to connection - no need to ref ci as ci maintains a ref to this instance instead (this instance persists for as long as ci does)
@@ -1534,24 +1772,7 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
 	feci->ip_version = 4;
 	feci->protocol = protocol;
 
-	/*
-	 * Populate the methods and callbacks
-	 */
-	feci->accelerate = ecm_ppe_ported_ipv4_connection_accelerate;
-	feci->decelerate = ecm_ppe_ported_ipv4_connection_decelerate;
-	feci->accel_ceased = ecm_ppe_ported_ipv4_connection_accel_ceased;
-#ifdef ECM_STATE_OUTPUT_ENABLE
-	feci->state_get = ecm_ppe_ported_ipv4_connection_state_get;
-#endif
-	feci->ae_interface_number_by_dev_get = ecm_ppe_common_get_interface_number_by_dev;
-	feci->ae_interface_number_by_dev_type_get = ecm_ppe_common_get_interface_number_by_dev_type;
-	feci->ae_interface_type_get = ecm_ppe_common_get_interface_type;
-	feci->regenerate = ecm_ppe_common_connection_regenerate;
-	feci->defunct = ecm_ppe_ported_ipv4_connection_defunct_callback;
-
-	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
-	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
-	feci->fe_info.front_end_flags = accel_flags;
+	ecm_ppe_ported_ipv4_connection_set(feci, accel_flags);
 
 	if (protocol == IPPROTO_TCP) {
 		feci->ported_accelerated_count_index = ECM_FRONT_END_PORTED_PROTO_TCP;
@@ -1573,19 +1794,15 @@ struct ecm_front_end_connection_instance *ecm_ppe_ported_ipv4_connection_instanc
  */
 bool ecm_ppe_ported_ipv4_debugfs_init(struct dentry *dentry)
 {
-	struct dentry *udp_dentry;
-
-	udp_dentry = debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
-						&ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP]);
-	if (!udp_dentry) {
+	if (!ecm_debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
+				    &ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP])) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 udp_accelerated_count file in debugfs\n");
 		return false;
 	}
 
-	if (!debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
 					&ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_TCP])) {
 		DEBUG_ERROR("Failed to create ecm ppe ipv4 tcp_accelerated_count file in debugfs\n");
-		debugfs_remove(udp_dentry);
 		return false;
 	}
 

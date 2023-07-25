@@ -562,6 +562,10 @@ feci_alloc_check:
 		}
 
 feci_alloc_done:
+		if (ae_result != ECM_AE_CLASSIFIER_RESULT_DONT_CARE) {
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED;
+		}
+
 		if (!ecm_front_end_ipv4_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
 							ip_src_addr, ip_src_addr_nat,
@@ -1130,6 +1134,15 @@ done:
 		}
 
 		/*
+		 * E-MESH SAWF LEGACY SCS is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF legacy scs is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG;
+		}
+
+		/*
 		 * E-MESH SAWF has valid pcp remark values to be updated in vlan tag.
 		 */
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
@@ -1154,6 +1167,28 @@ done:
 			prevalent_pr.flow_mirror_ifindex = aci_pr.flow_mirror_ifindex;
 			prevalent_pr.return_mirror_ifindex = aci_pr.return_mirror_ifindex;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_MIRROR_ENABLED;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.acl.flow_acl_id,
+					aci_pr.rule_id.acl.return_acl_id);
+			prevalent_pr.rule_id.acl.flow_acl_id = aci_pr.rule_id.acl.flow_acl_id;
+			prevalent_pr.rule_id.acl.return_acl_id = aci_pr.rule_id.acl.return_acl_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.policer.flow_policer_id,
+					aci_pr.rule_id.policer.return_policer_id);
+			prevalent_pr.rule_id.policer.flow_policer_id = aci_pr.rule_id.policer.flow_policer_id;
+			prevalent_pr.rule_id.policer.return_policer_id = aci_pr.rule_id.policer.return_policer_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED;
 		}
 #endif
 	}

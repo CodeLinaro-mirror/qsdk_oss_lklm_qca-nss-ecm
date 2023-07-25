@@ -36,6 +36,7 @@
 #include <net/gre.h>
 #include <net/xfrm.h>
 #include <linux/hashtable.h>
+#include <net/sch_generic.h>
 #ifdef ECM_FRONT_END_PPE_ENABLE
 #include <ppe_drv.h>
 #endif
@@ -100,6 +101,13 @@
 #include "ecm_ppe_non_ported_ipv4.h"
 #include "ecm_ppe_non_ported_ipv6.h"
 #endif
+#endif
+
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * Callback object for ECM frontend interaction with wlan driver to add/delete FSE rules.
+ */
+struct ecm_front_end_fse_callbacks *ecm_fe_fse_cb = NULL;
 #endif
 
 /*
@@ -415,10 +423,18 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	bool can_accel;
 	ecm_front_end_acceleration_mode_t accel_mode;
 	struct ecm_front_end_connection_mode_stats stats;
+	char *ae_selection_done = "precedence-array";
 
 	spin_lock_bh(&feci->lock);
 	can_accel = feci->can_accel;
 	accel_mode = feci->accel_mode;
+
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE) {
+		ae_selection_done = "sawf-classifier";
+	} else if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_AE_SELECTOR_ENABLED) {
+		ae_selection_done = "ae-selector";
+	}
+
 	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
 	spin_unlock_bh(&feci->lock);
 
@@ -468,7 +484,9 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	if ((result = ecm_state_write(sfi, "slow_path_packets", "%llu", stats.slow_path_packets))) {
 		return result;
 	}
-
+	if ((result = ecm_state_write(sfi, "ae_selection_done", "%s", ae_selection_done))) {
+		return result;
+	}
 	return ecm_state_prefix_remove(sfi);
 }
 #endif
@@ -586,7 +604,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		}
 	} else {
 #ifdef ECM_IPV6_ENABLE
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Source IP address is local
@@ -596,7 +618,11 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 			return false;
 		}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), 1);
+#else
+		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), NULL);
+#endif
 		if (dev) {
 			/*
 			 * Destination IP address is local
@@ -1328,12 +1354,12 @@ static void ecm_front_end_ported_ipv6_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_ported_ipv6_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv6_connection_set(feci, 0);
+		ecm_sfe_ported_ipv6_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 	default:
@@ -1359,12 +1385,12 @@ static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_con
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_ported_ipv4_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	case ECM_FRONT_END_ENGINE_SFE:
-		ecm_sfe_ported_ipv4_connection_set(feci, 0);
+		ecm_sfe_ported_ipv4_connection_set(feci, feci->fe_info.front_end_flags);
 		break;
 #endif
 	default:
@@ -1377,7 +1403,7 @@ static void ecm_front_end_ported_ipv4_connection_update(struct ecm_front_end_con
  * ecm_front_end_connection_limit_reached()
  *	Check connection limit.
  */
-static bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version)
+bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, int ip_version)
 {
 	switch (ae_type) {
 #ifdef ECM_FRONT_END_NSS_ENABLE
@@ -1439,6 +1465,17 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		spin_unlock_bh(&feci->lock);
 		DEBUG_TRACE("%px: AE switch can't be done for defuncted flow\n", feci);
 		return false;
+	}
+
+	/*
+	 * check if acceleration engine needs to be changed
+	 * if change_ae_type flag is set then it means that sawf wants to change the ae
+	 */
+	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE) {
+		new_ae_type = feci->next_accel_engine;
+		feci->fe_info.front_end_flags &= ~ ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE;
+		goto change_ae;
 	}
 
 	/*
@@ -1642,6 +1679,36 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 }
 
 /*
+ * ecm_front_end_common_intf_ingress_qdisc_check()
+ *      Checks if ingress qdisc is configured on the given interface
+ */
+bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
+{
+#if defined(CONFIG_NET_CLS_ACT)
+	struct net_device *dev;
+	struct mini_Qdisc *miniq;
+
+	dev = dev_get_by_index(&init_net, interface_num);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", interface_num);
+		return false;
+	}
+
+	BUG_ON(!rcu_read_lock_bh_held());
+	miniq = rcu_dereference_bh(dev->miniq_ingress);
+	if (miniq) {
+		DEBUG_INFO("Ingress Qdisc is present for device[%s]\n", dev->name);
+		dev_put(dev);
+		return true;
+	}
+
+	DEBUG_INFO("Ingress Qdisc is not present for device[%s]\n", dev->name);
+	dev_put(dev);
+#endif
+	return false;
+}
+
+/*
  * ecm_front_end_common_intf_qdisc_check()
  *      Checks if qdisc is configured on the given interface
  */
@@ -1670,10 +1737,12 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 			continue;
 		}
 
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (q->flags & TCQ_F_NSS) {
 			DEBUG_INFO("PPE Qdisc is present for device[%s]\n", dev->name);
 			*is_ppeq = true;
                 }
+#endif
 
 		DEBUG_INFO("Qdisc is present for device[%s]\n", dev->name);
 		dev_put(dev);
@@ -1692,4 +1761,185 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 	DEBUG_WARN("%px Qdisc is not present for device[%s]\n", dev, dev->name);
 	dev_put(dev);
 	return false;
+}
+
+#ifdef ECM_FRONT_END_FSE_ENABLE
+/*
+ * ecm_front_end_fse_info_get()
+ *	Get the FSE info from ECM frontend connection instance.
+ */
+bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info)
+{
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+
+	/*
+	 * Get destination net device from 'TO' side of ecm interface hierarchy.
+	 */
+	fse_info->dest_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_TO);
+	if (!fse_info->dest_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_TO);
+		return false;
+	}
+
+	dev_put(fse_info->dest_dev);
+
+	/*
+	 * Get source net device from 'FROM' side of interface hierarchy.
+	 */
+	fse_info->src_dev = ecm_db_connection_first_iface_dev_get_and_ref(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	if (!fse_info->src_dev) {
+		DEBUG_WARN("%px: Failed to get net device with %d dir\n", feci, ECM_DB_OBJ_DIR_FROM);
+		return false;
+	}
+
+	dev_put(fse_info->src_dev);
+
+	/*
+	 * Get the 5 tuple information from front end connection instance.
+	 */
+	fse_info->ip_version = ecm_db_connection_ip_version_get(feci->ci);
+	fse_info->protocol = ecm_db_connection_protocol_get(feci->ci);
+	fse_info->src_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	fse_info->dest_port = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+
+	if (fse_info->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->src.v4_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(fse_info->dest.v4_addr, dest_ip);
+	} else if (fse_info->ip_version == 6) {
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->src.v6_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(fse_info->dest.v6_addr, dest_ip);
+	}
+
+	return true;
+}
+
+/*
+ * ecm_front_end_fse_callbacks_register()
+ *	Registers ECM FSE common callbacks.
+ */
+int ecm_front_end_fse_callbacks_register(struct ecm_front_end_fse_callbacks *fse_cb)
+{
+	if (ecm_fe_fse_cb) {
+		DEBUG_ERROR("ECM FSE callbacks are already registered\n");
+		return -1;
+	}
+	rcu_assign_pointer(ecm_fe_fse_cb, fse_cb);
+	synchronize_rcu();
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_register);
+
+/*
+ * ecm_front_end_fse_callbacks_unregister()
+ *	Unregisters ECM FSE common callbacks.
+ */
+void ecm_front_end_fse_callbacks_unregister(void)
+{
+	rcu_assign_pointer(ecm_fe_fse_cb, NULL);
+	synchronize_rcu();
+}
+EXPORT_SYMBOL(ecm_front_end_fse_callbacks_unregister);
+#endif
+
+/*
+ * ecm_front_end_is_ae_type_feature_supported()
+ *	checks whether selected acceleration engine's featue is supported.
+ */
+bool ecm_front_end_is_ae_type_feature_supported(ecm_ae_classifier_result_t ae_type, struct sk_buff *skb,
+									struct ecm_tracker_ip_header *iph)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_NSS:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NSS))) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_SFE:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE))) {
+			return true;
+		}
+		break;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_PPE:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+		if ((ecm_front_end_feature_check(skb, iph)) &&
+					(ecm_front_end_is_feature_supported(ECM_FE_FEATURE_PPE))) {
+			return true;
+		}
+		break;
+#endif
+	default:
+		DEBUG_WARN("unexpected ae type: %d\n", ae_type);
+	}
+	return false;
+}
+
+/*
+ * ecm_front_end_ae_type_to_supported_ae_engine()
+ *	maps ae type to corresponding engine
+ *	sets required front end flags for the given mode
+ *	returns the supported acceleration engine for the selected ae type
+ */
+enum ecm_front_end_engine ecm_front_end_ae_type_to_supported_ae_engine(uint32_t *flags,
+									ecm_ae_classifier_result_t ae_type)
+{
+	switch (ae_type) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_NSS:
+		return ECM_FRONT_END_ENGINE_NSS;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_SFE:
+		return ECM_FRONT_END_ENGINE_SFE;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+		*flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_DS;
+		return ECM_FRONT_END_ENGINE_PPE;
+	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+		*flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+		return ECM_FRONT_END_ENGINE_PPE;
+	case ECM_AE_CLASSIFIER_RESULT_PPE:
+		return ECM_FRONT_END_ENGINE_PPE;
+#endif
+	default:
+		DEBUG_WARN("unexpected ae type: %d\n", ae_type);
+		return ECM_FRONT_END_ENGINE_MAX;
+	}
+}
+
+/*
+ * ecm_front_end_accel_engine_to_ae_type()
+ *	returns possible corresponding ae type
+ */
+ecm_ae_classifier_result_t ecm_front_end_accel_engine_to_ae_type(enum ecm_front_end_engine accel_engine)
+{
+	switch (accel_engine) {
+#ifdef ECM_FRONT_END_NSS_ENABLE
+	case ECM_FRONT_END_ENGINE_NSS:
+		return ECM_AE_CLASSIFIER_RESULT_NSS;
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	case ECM_FRONT_END_ENGINE_SFE:
+		return ECM_AE_CLASSIFIER_RESULT_SFE;
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	case ECM_FRONT_END_ENGINE_PPE:
+		return ECM_AE_CLASSIFIER_RESULT_PPE;
+#endif
+	default:
+		DEBUG_WARN("unexpected acceleration engine: %d\n", accel_engine);
+		return ECM_AE_CLASSIFIER_RESULT_NONE;
+	}
 }

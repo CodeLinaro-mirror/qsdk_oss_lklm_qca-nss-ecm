@@ -383,7 +383,7 @@ void ecm_front_end_ipv4_stop(int num)
  */
 int ecm_front_end_ipv4_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("front_end_ipv4_stop", S_IRUGO | S_IWUSR, dentry,
+	if (!ecm_debugfs_create_u32("front_end_ipv4_stop", S_IRUGO | S_IWUSR, dentry,
 					(u32 *)&ecm_front_end_ipv4_stopped)) {
 		DEBUG_ERROR("Failed to create ecm front end ipv4 stop file in debugfs\n");
 		return -1;

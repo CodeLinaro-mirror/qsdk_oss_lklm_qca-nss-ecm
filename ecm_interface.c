@@ -338,7 +338,11 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t ad
 	struct net_device *dev;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(addr6, addr);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, 1);
+#else
+	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, NULL);
+#endif
 	return dev;
 }
 #endif
@@ -468,12 +472,28 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 		return false;
 	}
 	if (!(neigh->nud_state & NUD_VALID)) {
+
+		/*
+		 * Device could be local in case of egress NAT
+		 */
+		struct net_device *local_dev = ecm_interface_dev_find_by_local_addr_ipv6(addr);
+		if (!local_dev) {
+			rcu_read_unlock();
+			neigh_release(neigh);
+			ecm_interface_route_release(&ecm_rt);
+			DEBUG_WARN("NUD invalid\n");
+			return false;
+		}
+
+		DEBUG_TRACE("address is local: %px (%s)\n", local_dev, local_dev->name);
+		memcpy(mac_addr, local_dev->dev_addr, ETH_ALEN);
+		dev_put(local_dev);
 		rcu_read_unlock();
 		neigh_release(neigh);
 		ecm_interface_route_release(&ecm_rt);
-		DEBUG_WARN("NUD invalid\n");
-		return false;
+		return true;
 	}
+
 	if (!neigh->dev) {
 		rcu_read_unlock();
 		neigh_release(neigh);
@@ -781,7 +801,11 @@ static bool ecm_interface_mac_addr_get_ipv6_no_route(struct net_device *dev, ip_
 	 * Get the MAC address that corresponds to IP address given.
 	 */
 	ECM_IP_ADDR_TO_NIN6_ADDR(daddr, addr);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0))
 	local_dev = ipv6_dev_find(&init_net, &daddr, 1);
+#else
+	local_dev = ipv6_dev_find(&init_net, &daddr, NULL);
+#endif
 	if (local_dev) {
 		DEBUG_TRACE("%pi6 is a local address\n", &daddr);
 		memcpy(mac_addr, dev->dev_addr, ETH_ALEN);
@@ -4787,7 +4811,7 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 		return true;
 	}
 
-	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP) {
+	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP || protocol == IPPROTO_ETHERIP) {
 		return true;
 	}
 
@@ -5270,7 +5294,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					} else {
 						ip_addr_t look_up_addr;
-						struct net_device *tmp_dev;
+						struct net_device *tmp_dev, *lookup_dev;
 						ECM_IP_ADDR_COPY(look_up_addr, dest_addr);
 						/*
 						 * If this is a local IP address, this means the interface hierarchy is being created for
@@ -5288,7 +5312,18 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 							dev_put(tmp_dev);
 						}
 
-						if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr)) {
+						lookup_dev = dest_dev;
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+						if ((top_dev) && (is_routed) && (is_vlan_dev(top_dev))) {
+							/*
+							 * VLAN over bridge case
+							 */
+							lookup_dev = top_dev;
+							DEBUG_TRACE("%px: VLAN over bridge topdev %px (%s) destdev %px (%s)\n", feci, top_dev, top_dev->name, dest_dev, dest_dev->name);
+						}
+#endif
+
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr)) {
 							DEBUG_WARN("%px: Unable to find the host MAC address connected to the Linux bridge\n", feci);
 							goto done;
 						}
@@ -7387,6 +7422,39 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		}
 		break;
 
+	case NETDEV_UNREGISTER:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		/*
+		 * 'ppe_vxlan_tun' is the name of the dummy or the child netdevice.
+		 * pdev is the Linux netdevice or parent netdevice.
+		 */
+		if (unlikely(!strncmp(dev->name, "ppe_vxlan_tun", 13))) {
+			int ifindex;
+			struct net_device *pdev;
+
+			ifindex = *(int *)netdev_priv(dev);
+			pdev = dev_get_by_index(&init_net, ifindex);
+			if (!pdev) {
+				DEBUG_WARN("Net device: %px, base or the parent-netdevice not found \n", dev);
+				return NOTIFY_DONE;
+			}
+
+			ecm_interface_dev_defunct_connections(pdev);
+			DEBUG_INFO("Net device:%px, NETDEV_UNREGISTER dev: %s pdev: %s\n", dev, dev->name, pdev->name);
+			dev_put(pdev);
+		}
+#endif
+		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER \n", dev);
+		if (netif_is_bond_slave(dev)) {
+			master = ecm_interface_get_and_hold_dev_master(dev);
+			DEBUG_ASSERT(master, "Expected a master\n");
+			ecm_interface_dev_defunct_connections(master);
+			dev_put(master);
+		} else {
+			ecm_interface_dev_defunct_connections(dev);
+		}
+		break;
+
 	default:
 		DEBUG_TRACE("Net device: %px, UNHANDLED: %lx\n", dev, event);
 		break;
@@ -8009,7 +8077,9 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 {
 	struct msghdr msg;
 	struct iovec  iov;
-	mm_segment_t oldfs;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	mm_segment_t oldfs = get_fs();
+#endif
 	int size;
 
 	iov.iov_base = buf;
@@ -8020,15 +8090,14 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-	oldfs = get_fs();
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	set_fs(KERNEL_DS);
-	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0))
-	size = sock_recvmsg(sock, &msg, len, msg.msg_flags);
-#else
-	size = sock_recvmsg(sock, &msg, msg.msg_flags);
 #endif
+	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
+	size = sock_recvmsg(sock, &msg, msg.msg_flags);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	set_fs(oldfs);
+#endif
 
 	return size;
 }

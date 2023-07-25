@@ -121,6 +121,7 @@ static inline bool ecm_non_ported_ipv6_is_protocol_supported(int protocol)
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	case IPPROTO_GRE:
 #endif
+	case IPPROTO_ETHERIP:
 	case IPPROTO_RAW:
 		return true;
 	}
@@ -161,6 +162,14 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	protocol = (int)orig_tuple->dst.protonum;
 	src_port = 0;
 	dest_port = 0;
+
+	/*
+	 * NAT acceleration is not supported for 3-tuple
+	 */
+	if (unlikely(ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || unlikely(ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT)) {
+		DEBUG_TRACE("%px: Non-ported ipv6 NAT acceleration is not supported\n", skb);
+		return NF_ACCEPT;
+	}
 
 	/*
 	 * 3-tuple acceleration for PPPoE bridged flow?
@@ -366,9 +375,15 @@ feci_alloc_check:
 		}
 
 feci_alloc_done:
+		/*
+		 * NAT is not supported for IPv6 non-ported cases,
+		 * using ip_src_addr for ip_src_addr_nat and
+		 * ip_dest_addr for ip_dest_addr_nat.
+		 */
 		if (!ecm_front_end_ipv6_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,
 							in_dev, out_dev,
-							ip_src_addr, ip_dest_addr,
+							ip_src_addr, ip_src_addr,
+							ip_dest_addr, ip_dest_addr,
 							&efeici)) {
 			DEBUG_WARN("ECM front end ipv6 interface construct set failed\n");
 			goto fail_1;
@@ -587,7 +602,7 @@ done:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_ipv6_connection_regenerate(ci, sender, out_dev, in_dev, NULL, skb);
+		ecm_ipv6_connection_regenerate(ci, sender, out_dev, out_dev, in_dev, in_dev, NULL, skb);
 	}
 
 	/*
@@ -749,7 +764,32 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
 #endif
+
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.acl.flow_acl_id,
+					aci_pr.rule_id.acl.return_acl_id);
+			prevalent_pr.rule_id.acl.flow_acl_id = aci_pr.rule_id.acl.flow_acl_id;
+			prevalent_pr.rule_id.acl.return_acl_id = aci_pr.rule_id.acl.return_acl_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.policer.flow_policer_id,
+					aci_pr.rule_id.policer.return_policer_id);
+			prevalent_pr.rule_id.policer.flow_policer_id = aci_pr.rule_id.policer.flow_policer_id;
+			prevalent_pr.rule_id.policer.return_policer_id = aci_pr.rule_id.policer.return_policer_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED;
+		}
+#endif
 	}
+
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	/*

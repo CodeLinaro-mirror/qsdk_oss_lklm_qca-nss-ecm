@@ -23,8 +23,13 @@
 #include <ppe_drv.h>
 #include <ppe_drv_v4.h>
 #include <ppe_drv_v6.h>
+#include <ppe_drv_port.h>
 
 #include <net/xfrm.h>
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <nss_ppe_vxlanmgr.h>
+#endif
 
 /*
  * This macro converts ECM ip_addr_t to PPE IPv6 address
@@ -72,6 +77,28 @@ static inline int32_t ecm_ppe_common_get_ae_iface_id_by_netdev_id(int32_t ifinde
 	dev_put(dev);
 
 	return ae_iface_id;
+}
+
+/*
+ * ecm_ppe_common_get_port_id_by_netdev_id()
+ *	Gets the PPE port id from the netdevice interface index.
+ */
+static inline int32_t ecm_ppe_common_get_port_id_by_netdev_id(int32_t ifindex)
+{
+	struct net_device *dev;
+	int32_t port_id;
+
+	dev = dev_get_by_index(&init_net, ifindex);
+	if (!dev) {
+		DEBUG_WARN("unable to find net device with %d ifindex\n", ifindex);
+		return PPE_DRV_PORT_ID_INVALID;
+	}
+
+	port_id = ppe_drv_port_num_from_dev(dev);
+
+	dev_put(dev);
+
+	return port_id;
 }
 
 /*
@@ -197,3 +224,8 @@ static inline void ecm_ppe_common_dummy_set_stats_bitmap(struct ecm_front_end_co
 
 bool ecm_ppe_ipv6_is_conn_limit_reached(void);
 bool ecm_ppe_ipv4_is_conn_limit_reached(void);
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
+											ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
+#endif

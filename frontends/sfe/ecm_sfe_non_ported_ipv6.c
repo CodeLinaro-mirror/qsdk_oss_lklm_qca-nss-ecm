@@ -1032,21 +1032,27 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	/*
 	 * The flow_ip is where the connection established from
+	 * NAT is not supported for tunnel flows, so flow_ip and flow_ip_xlate will be same
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->tuple.flow_ip, src_ip);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->conn_rule.flow_ip_xlate, src_ip);
 
 	/*
 	 * The return_ip is where the connection is established to
+	 * NAT is not supported for tunnel flows, so return_ip and return_ip_xlate will be same
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->tuple.return_ip, dest_ip);
+	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(nircm->conn_rule.return_ip_xlate, dest_ip);
 
 	/*
 	 * Same approach as above for port information
 	 */
 	nircm->tuple.flow_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+	nircm->conn_rule.flow_ident_xlate = nircm->tuple.flow_ident;
 	nircm->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
+	nircm->conn_rule.return_ident_xlate =  nircm->tuple.return_ident;
 
 	/*
 	 * Get mac addresses.
@@ -1726,7 +1732,7 @@ struct ecm_front_end_connection_instance *ecm_sfe_non_ported_ipv6_connection_ins
  */
 bool ecm_sfe_non_ported_ipv6_debugfs_init(struct dentry *dentry)
 {
-	if (!debugfs_create_u32("non_ported_accelerated_count", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_u32("non_ported_accelerated_count", S_IRUGO, dentry,
 					(u32 *)&ecm_sfe_non_ported_ipv6_accelerated_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 non_ported_accelerated_count file in debugfs\n");
 		return false;
