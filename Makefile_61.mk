@@ -22,9 +22,9 @@ endif
 ifeq ($(EXAMPLES_BUILD_MARK),y)
 obj-m += examples/ecm_mark_test.o
 endif
-#ifeq ($(EXAMPLES_BUILD_OVS),y)
-#obj-m += examples/ecm_ovs.o
-#endif
+ifeq ($(EXAMPLES_BUILD_OVS),y)
+obj-m += examples/ecm_ovs.o
+endif
 
 ecm-y := \
 	 frontends/cmn/ecm_ae_classifier.o \
@@ -223,7 +223,7 @@ ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
 # #############################################################################
 # Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
+ccflags-$(ECM_INTERFACE_OVS_BRIDGE_ENABLE) += -DECM_INTERFACE_OVS_BRIDGE_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_VLAN_ENABLE=y in order to enable support for VLAN
@@ -264,8 +264,8 @@ endif
 # #############################################################################
 # Define ECM_CLASSIFIER_OVS_ENABLE=y in order to enable ovs classifier.
 # #############################################################################
-#ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
-#ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
+ecm-$(ECM_CLASSIFIER_OVS_ENABLE) += ecm_classifier_ovs.o
+ccflags-$(ECM_CLASSIFIER_OVS_ENABLE) += -DECM_CLASSIFIER_OVS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MARK_ENABLE=y in order to enable mark classifier.
