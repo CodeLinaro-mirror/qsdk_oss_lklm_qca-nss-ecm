@@ -80,12 +80,25 @@ struct ecm_classifier_emesh_sawf_flow_info {
 };
 
 /**
+ * Structure collecting mesh latency params to send it to wlan driver
+ * via registered callback.
+ */
+struct ecm_classifer_emesh_sawf_mesh_latency_params {
+	struct net_device *dst_dev;		/**< Destination net dev. */
+	struct net_device *src_dev;		/**< Source net dev. */
+	uint8_t *peer_mac;			/**< Peer MAC. */
+	uint32_t service_interval_dl;		/**< Service interval DL. */
+	uint32_t burst_size_dl;			/**< Burst size DL. */
+	uint32_t service_interval_ul;		/**< Service interval UL. */
+	uint32_t burst_size_ul;			/**< Burst size UL. */
+	uint16_t priority;			/**< Priority. */
+	uint8_t accel_or_decel;			/**< Time of the callback. */
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
-typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
-		uint32_t service_interval_dl, uint32_t burst_size_dl,
-		uint32_t service_interval_ul, uint32_t burst_size_ul,
-		uint16_t priority, uint8_t add_or_sub);
+typedef void (*ecm_classifier_emesh_callback_t)(struct ecm_classifer_emesh_sawf_mesh_latency_params *mesh_params);
 
 /**
  * MSDUQ callback to which emesh-sawf will register.
