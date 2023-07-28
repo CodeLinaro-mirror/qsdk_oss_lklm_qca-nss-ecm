@@ -1578,7 +1578,10 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 void ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct ecm_classifer_emesh_sawf_mesh_latency_params mesh_params = {0};
 	struct ecm_db_connection_instance *ci;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
 	uint8_t peer_mac[ETH_ALEN];
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
@@ -1606,21 +1609,40 @@ void ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(struct ecm_cla
 		return;
 	}
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+
 	/*
 	 * Get mac address for destination node
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, peer_mac);
-	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval_dl, cemi->burst_size_dl, cemi->service_interval_ul, cemi->burst_size_ul,
-			cemi->pcp[ECM_CONN_DIR_FLOW], ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+	mesh_params.peer_mac = peer_mac;
+	mesh_params.dst_dev = dest_dev;
+	mesh_params.src_dev = src_dev;
+	mesh_params.service_interval_dl = cemi->service_interval_dl;
+	mesh_params.service_interval_ul = cemi->service_interval_ul;
+	mesh_params.burst_size_dl = cemi->burst_size_dl;
+	mesh_params.burst_size_ul = cemi->burst_size_ul;
+	mesh_params.priority = cemi->pcp[ECM_CONN_DIR_FLOW];
+	mesh_params.accel_or_decel = ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS;
+
+	ecm_emesh.update_peer_mesh_latency_params(&mesh_params);
 
 	/*
 	 * Get mac address for source node
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, peer_mac);
-	ecm_emesh.update_peer_mesh_latency_params(peer_mac,
-			cemi->service_interval_dl, cemi->burst_size_dl, cemi->service_interval_ul, cemi->burst_size_ul,
-			cemi->pcp[ECM_CONN_DIR_FLOW], ECM_CLASSIFIER_EMESH_SUB_LATENCY_PARAMS);
+
+	mesh_params.peer_mac = peer_mac;
+	mesh_params.dst_dev = src_dev;
+	mesh_params.src_dev = dest_dev;
+	ecm_emesh.update_peer_mesh_latency_params(&mesh_params);
+
+	if (src_dev)
+		dev_put(src_dev);
+
+	if (dest_dev)
+		dev_put(dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
@@ -1726,6 +1748,8 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 	uint8_t service_interval_ul;
 	uint32_t burst_size_ul;
 	struct sk_buff *skb;
+	struct net_device *src_dev, *dest_dev = NULL;
+	struct ecm_classifer_emesh_sawf_mesh_latency_params mesh_params = {0};
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
 
@@ -1764,6 +1788,8 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 		return;
 	}
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+
 	/*
 	 * Invoke SPM rule lookup API to update skb priority
 	 * When latency config is enabled, fetch latency parameter
@@ -1797,9 +1823,16 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 		/*
 		 * Send destination mac address of this connection
 		 */
-		ecm_emesh.update_peer_mesh_latency_params(dmac,
-				service_interval_dl, burst_size_dl, service_interval_ul, burst_size_ul,
-				skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+		mesh_params.dst_dev = dest_dev;
+		mesh_params.src_dev = src_dev;
+		mesh_params.peer_mac = dmac;
+		mesh_params.service_interval_dl = service_interval_dl;
+		mesh_params.service_interval_ul = service_interval_ul;
+		mesh_params.burst_size_dl = burst_size_dl;
+		mesh_params.burst_size_ul = burst_size_ul;
+		mesh_params.priority = skb->priority;
+		mesh_params.accel_or_decel = ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS;
+		ecm_emesh.update_peer_mesh_latency_params(&mesh_params);
 	}
 
 	/*
@@ -1812,10 +1845,23 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 		/*
 		 * Send source mac address of this connection
 		 */
-		ecm_emesh.update_peer_mesh_latency_params(smac,
-				service_interval_dl, burst_size_dl, service_interval_ul, burst_size_ul,
-				skb->priority, ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS);
+		mesh_params.peer_mac = smac;
+		mesh_params.dst_dev = src_dev;
+		mesh_params.src_dev = dest_dev;
+		mesh_params.service_interval_dl = service_interval_dl;
+		mesh_params.service_interval_ul = service_interval_ul;
+		mesh_params.burst_size_dl = burst_size_dl;
+		mesh_params.burst_size_ul = burst_size_ul;
+		mesh_params.priority = skb->priority;
+		mesh_params.accel_or_decel = ECM_CLASSIFIER_EMESH_ADD_LATENCY_PARAMS;
+		ecm_emesh.update_peer_mesh_latency_params(&mesh_params);
 	}
+
+	if (src_dev)
+		dev_put(src_dev);
+
+	if (dest_dev)
+		dev_put(dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
