@@ -35,6 +35,8 @@ static inline int ecm_wifi_plugin_get_peer_priority(struct ecm_classifier_mscs_g
 
 	wlan_get_priority_param.dst_mac = get_priority_info->dst_mac;
 	wlan_get_priority_param.src_mac = get_priority_info->src_mac;
+	wlan_get_priority_param.src_dev = get_priority_info->src_dev;
+	wlan_get_priority_param.dst_dev = get_priority_info->dst_dev;
 	wlan_get_priority_param.skb = get_priority_info->skb;
 
 	return qca_mscs_peer_lookup_n_get_priority_v2(&wlan_get_priority_param);
@@ -50,6 +52,8 @@ static inline bool ecm_wifi_plugin_update_skb_priority(struct ecm_classifier_msc
 
 	rule_match_param.dst_mac_addr = match_info->dst_mac;
 	rule_match_param.rule_id = match_info->rule_id;
+	rule_match_param.src_dev = match_info->src_dev;
+	rule_match_param.dst_dev = match_info->dst_dev;
 
 	return qca_scs_peer_lookup_n_rule_match_v2(&rule_match_param);
 }
