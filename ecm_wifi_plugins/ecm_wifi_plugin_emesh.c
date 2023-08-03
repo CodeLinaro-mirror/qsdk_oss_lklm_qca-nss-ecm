@@ -71,9 +71,34 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct ecm_classifer_eme
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	ath_sawf_uplink(&sawf_params);
 #else
+	sawf_params.fw_mark_metadata = sawf_sync_params->fwd_mark_metadata;
+	sawf_params.rv_mark_metadata = sawf_sync_params->rev_mark_metadata;
 	qca_sawf_connection_sync(&sawf_params);
 #endif
 }
+
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+/*
+ * ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid()
+ *	Convert the ECM SAWF valid flags to Wi-Fi driver valid flags.
+ */
+static inline uint32_t ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(uint32_t valid_flag)
+{
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID) {
+		return QCA_SAWF_SVID_VALID;
+	}
+
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID) {
+		return QCA_SAWF_DSCP_VALID;
+	}
+
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID) {
+		return QCA_SAWF_PCP_VALID;
+	}
+
+	return 0;
+}
+#endif
 
 /*
  * ecm_wifi_plugin_emesh_sawf_get_mark_data()
@@ -96,6 +121,13 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	sawf_params.rule_id = sawf_flow_info->rule_id;
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	/*
+	 * For upstream driver we can call the query only for the SVID valid case.
+	 */
+	if (!(sawf_flow_info->valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+		return ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
 	msduq = ath_sawf_downlink(&sawf_params);
 	sawf_mark |= ECM_WIFI_PLUGIN_SAWF_TAG;
 	sawf_mark <<= ECM_WIFI_PLUGIN_SAWF_TAG_SHIFT;
@@ -106,6 +138,9 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	return sawf_mark;
 #else
 	sawf_params.sawf_rule_type = sawf_flow_info->sawf_rule_type;
+	sawf_params.pcp = sawf_flow_info->vlan_pcp;
+	sawf_params.dscp = sawf_flow_info->dscp;
+	sawf_params.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
 
 	return qca_sawf_get_mark_metadata(&sawf_params);
 #endif
