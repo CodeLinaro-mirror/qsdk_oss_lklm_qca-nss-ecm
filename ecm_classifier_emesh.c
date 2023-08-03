@@ -281,14 +281,14 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	 * Get the bidirectional msduq by calling wlan driver API (qca_sawf_get_msdu_queue())
 	 * using the service id, netdev, and peer's mac address.
 	 * TODO: Can we call qca_sawf_get_msduq(netdev, peer_mac, service_id) instead of
-	 *       qca_sawf_get_msdu_queue(netdev, peer_mac, service_id, dscp, rule_id)?
+	 *       qca_sawf_get_msdu_queue(netdev, peer_mac, service_id, dscp, rule_id, sawf_rule_type)?
 	 */
 	if (ecm_emesh.update_service_id_get_msduq) {
 		if (dest_dev) {
-			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0);
+			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0, SAWF_RULE_TYPE_DEFAULT);
 		}
 		if (src_dev) {
-			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0);
+			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0, SAWF_RULE_TYPE_DEFAULT);
 		}
 	}
 
@@ -1132,7 +1132,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
 			if (dest_dev) {
-				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_FLOW], flow_output_params.rule_id);
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_FLOW], flow_output_params.rule_id, flow_output_params.sawf_rule_type);
 
 				/*
 				 * Mark the skb with SAWF meta data for flow creation packet.
@@ -1142,7 +1142,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 									msduq_forward);
 			}
 			if (src_dev) {
-				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_RETURN], return_output_params.rule_id);
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_RETURN], return_output_params.rule_id, return_output_params.sawf_rule_type);
 			}
 		}
 
