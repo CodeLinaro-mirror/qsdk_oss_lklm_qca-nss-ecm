@@ -30,6 +30,12 @@
  * @{
  */
 
+#define ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID		0x1
+#define ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID		0x2
+#define ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID	0x4
+#define ECM_CLASSIFIER_EMESH_SAWF_DSCPCTE_VALID		0x8
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ         0xffffffff
+
 /**
  * State of the connection while informing 5-tuple
  * information to FSE (Flow search engine) via register callback.
@@ -75,6 +81,8 @@ struct ecm_classifier_emesh_sawf_flow_info {
 	uint8_t *peer_mac;
 	uint32_t service_id;
 	uint32_t dscp;
+	uint32_t vlan_pcp;
+	uint32_t valid_flag;
 	uint32_t rule_id;
 	uint8_t sawf_rule_type;
 };
@@ -106,6 +114,8 @@ struct ecm_classifer_emesh_sawf_sync_params {
 	uint8_t src_mac[ETH_ALEN];		/**< Source MAC. */
 	uint8_t fwd_service_id;			/**< Forward Service class ID. */
 	uint8_t rev_service_id;			/**< Reverse Service class ID. */
+	uint32_t fwd_mark_metadata;		/**< Forward mark metadata. */
+	uint32_t rev_mark_metadata;		/**< Reverse mark metadata. */
 	uint8_t add_or_sub;			/**< Add or Subtract a Flow */
 };
 

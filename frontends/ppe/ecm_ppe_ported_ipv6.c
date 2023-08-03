@@ -83,6 +83,9 @@
 #include "ecm_tracker_tcp.h"
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+#include "ecm_classifier_emesh.h"
+#endif
 #include "ecm_interface.h"
 #include "ecm_ppe_ported_ipv6.h"
 #include "ecm_ppe_ipv6.h"
@@ -843,6 +846,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
          * SAWF information
          */
         if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+		bool sawf_rule_valid = true;
 		pd6rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
 		pd6rc->sawf_rule.flow_service_class = pr->flow_service_class;
 		pd6rc->sawf_rule.return_mark = pr->return_sawf_metadata;
@@ -850,12 +854,17 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SAWF;
 
 		/*
-		 * In case of SAWF denying acceleraion through PPE-DS
+		 * In case of SAWF denying acceleration through PPE-DS
 		 * Allowing acceleration only through PPE-VP
-		 * For legacy scs do not deny acceleration through PPE-DS
-		 * TODO: configure accel using DS for SAWF
+		 * For legacy scs and non-SPM rule case, do not deny acceleration through PPE-DS
+		 * TODO: configure accel using DS for SAWF and SPM rule valid case as well.
 		 */
-		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG)) {
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (aci) {
+			sawf_rule_valid = ecm_classifier_emesh_is_sawf_rule_valid((struct ecm_classifier_emesh_sawf_instance *)aci);
+			aci->deref(aci);
+		}
+		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) && sawf_rule_valid) {
 			spin_lock_bh(&feci->lock);
 			feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
 			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
@@ -1019,8 +1028,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			"return_qos_tag: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
-			"sawf mark: %x\n"
-			"return sawf mark: %x\n"
+			"flow_sawf mark: %x\n"
+			"return_sawf mark: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
 			"conn_rule.tx_if: %d (to iface first:%s)\n",
 			feci,
