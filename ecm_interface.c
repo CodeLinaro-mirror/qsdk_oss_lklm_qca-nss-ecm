@@ -2728,7 +2728,6 @@ bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_if
 	case ECM_DB_IFACE_TYPE_GRE_TUN:
 	case ECM_DB_IFACE_TYPE_GRE_TAP:
 	case ECM_DB_IFACE_TYPE_VXLAN:
-	case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 		if (src_dev) {
 			*mtu = src_dev->mtu;
 		} else {
@@ -3358,37 +3357,6 @@ identifier_update:
 		ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_IPSEC_TUNNEL, &dev_mtu);
 #endif
 		type_info.ipsec_tunnel.os_specific_ident = dev_interface_num;
-
-		/*
-		 * Override the MTU size in the decap direction in case of IPSec tunnel.
-		 * This will apply to IPsec->WAN rule.
-		 * TODO: Move this override to accelerate function.
-		 */
-#ifdef ECM_XFRM_ENABLE
-		if (ip_hdr(skb)->version == IPVERSION) {
-			if ((ip_hdr(skb)->protocol == IPPROTO_ESP) ||
-			    ((ip_hdr(skb)->protocol == IPPROTO_UDP) &&
-			     (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED))) {
-				dev_mtu = ECM_DB_IFACE_MTU_MAX;
-			}
-		} else {
-			if (ipv6_hdr(skb)->nexthdr == IPPROTO_ESP) {
-				dev_mtu = ECM_DB_IFACE_MTU_MAX;
-			}
-		}
-#else
-		if (ip_hdr(skb)->version == IPVERSION) {
-			if ((ip_hdr(skb)->protocol == IPPROTO_ESP) ||
-			    ((ip_hdr(skb)->protocol == IPPROTO_UDP) &&
-			     (udp_hdr(skb)->dest == htons(4500)))) {
-				dev_mtu = ECM_DB_IFACE_MTU_MAX;
-			}
-		} else {
-			if (ipv6_hdr(skb)->nexthdr == IPPROTO_ESP) {
-				dev_mtu = ECM_DB_IFACE_MTU_MAX;
-			}
-		}
-#endif
 
 		ii = ecm_interface_ipsec_tunnel_interface_establish(&type_info.ipsec_tunnel, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 		if (ii) {
