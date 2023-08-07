@@ -727,6 +727,13 @@ static void ecm_nss_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 			nircm->conn_rule.flow_interface_num = ecm_nss_common_ipsec_get_ifnum(from_nss_iface_id);
 			nircm->nexthop_rule.flow_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.flow_nexthop);
+
+			/*
+			 * Override the MTU size in the decap direction, this will apply to IPsec->WAN rule
+			 */
+			if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
+				nircm->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
