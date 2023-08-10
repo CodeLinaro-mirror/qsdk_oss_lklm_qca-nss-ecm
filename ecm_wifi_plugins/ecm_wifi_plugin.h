@@ -23,17 +23,21 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+#include <ath_sawf.h>
+#else
 #include <qca_mscs_if.h>
 #include <qca_mesh_latency_if.h>
 #include <qca_sawf_if.h>
 #include <qca_fse_if.h>
-#include <ecm_classifier_mscs_public.h>
-#include <ecm_classifier_emesh_public.h>
-#include <ecm_front_end_common_public.h>
-
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 #include <qca_scs_if.h>
 #endif
+#endif
+
+#include <ecm_classifier_mscs_public.h>
+#include <ecm_classifier_emesh_public.h>
+#include <ecm_front_end_common_public.h>
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
 
@@ -68,28 +72,29 @@
 #endif
 
 /*
- * ecm_wifi_plugin_mscs_register()
- *	API to register mscs callbacks.
- */
-extern int ecm_wifi_plugin_mscs_register(void);
-
-/*
  * ecm_wifi_plugin_emesh_register()
  *	API to register emesh callbacks.
  */
 extern int ecm_wifi_plugin_emesh_register(void);
 
 /*
- * ecm_wifi_plugin_mscs_unregister()
- *	API to unregister the mscs callbacks.
- */
-extern void ecm_wifi_plugin_mscs_unregister(void);
-
-/*
  * ecm_wifi_plugin_emesh_unregister()
  *	API to unregister the emesh callbacks.
  */
 extern void ecm_wifi_plugin_emesh_unregister(void);
+
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+/*
+ * ecm_wifi_plugin_mscs_register()
+ *	API to register mscs callbacks.
+ */
+extern int ecm_wifi_plugin_mscs_register(void);
+
+/*
+ * ecm_wifi_plugin_mscs_unregister()
+ *	API to unregister the mscs callbacks.
+ */
+extern void ecm_wifi_plugin_mscs_unregister(void);
 
 /*
  * ecm_wifi_plugin_fse_cb_register()
@@ -102,3 +107,4 @@ extern int ecm_wifi_plugin_fse_cb_register(void);
  *	API to unregister FSE (Flow Search Engine) programming callbacks.
  */
 extern void ecm_wifi_plugin_fse_cb_unregister(void);
+#endif
