@@ -26,6 +26,27 @@
 #include "ecm_wifi_plugin.h"
 
 /*
+ * ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params()
+ *	Update mesh latency params.
+ */
+static inline void ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params(struct ecm_classifer_emesh_sawf_mesh_latency_params *mesh_params)
+{
+	struct qca_mesh_latency_update_peer_param wlan_mesh_params = {0};
+
+	wlan_mesh_params.dest_mac = mesh_params->peer_mac;
+	wlan_mesh_params.src_dev = mesh_params->src_dev;
+	wlan_mesh_params.dst_dev = mesh_params->dst_dev;
+	wlan_mesh_params.service_interval_dl = mesh_params->service_interval_dl;
+	wlan_mesh_params.service_interval_ul = mesh_params->service_interval_ul;
+	wlan_mesh_params.burst_size_dl = mesh_params->burst_size_dl;
+	wlan_mesh_params.burst_size_ul = mesh_params->burst_size_ul;
+	wlan_mesh_params.priority = mesh_params->priority;
+	wlan_mesh_params.add_or_sub = mesh_params->accel_or_decel;
+
+	qca_mesh_latency_update_peer_parameter_v2(&wlan_mesh_params);
+}
+
+/*
  * ecm_wifi_plugin_emesh_sawf_conn_sync()
  *	Connection sync callback for EMESH-SAWF classifier.
  */
@@ -69,7 +90,7 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
-	.update_peer_mesh_latency_params = qca_mesh_latency_update_peer_parameter,
+	.update_peer_mesh_latency_params = ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params,
 	.update_service_id_get_msduq = ecm_wifi_plugin_emesh_sawf_get_mark_data,
 	.sawf_conn_sync = ecm_wifi_plugin_emesh_sawf_conn_sync,
 };
