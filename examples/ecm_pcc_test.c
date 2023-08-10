@@ -306,7 +306,7 @@ ecm_pcc_test_get_accel_info_v4(struct ecm_classifier_pcc_registrant *r,
 			src_port, dest_port, &is_reverse);
 	if (!rule) {
 		spin_unlock_bh(&ecm_pcc_test_rules_lock);
-		pr_info("Rule not found\n");
+		pr_debug("Rule not found\n");
 		return ECM_CLASSIFIER_PCC_RESULT_NOT_YET;
 	}
 	accel = rule->accel;
