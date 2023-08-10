@@ -55,7 +55,11 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct net_device *dst_d
 					  uint8_t fw_service_id, uint8_t rv_service_id,
 					  uint8_t start_or_stop)
 {
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	struct ath_ul_params sawf_params = {0};
+#else
 	struct qca_sawf_connection_sync_param sawf_params = {0};
+#endif
 
 	sawf_params.src_dev = src_dev;
 	sawf_params.dst_dev = dst_dev;
@@ -65,7 +69,11 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct net_device *dst_d
 	sawf_params.rv_service_id = rv_service_id;
 	sawf_params.start_or_stop = start_or_stop;
 
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	ath_sawf_uplink(&sawf_params);
+#else
 	qca_sawf_connection_sync(&sawf_params);
+#endif
 }
 
 /*
@@ -74,17 +82,27 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct net_device *dst_d
  */
 static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info)
 {
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	struct ath_dl_params sawf_params = {0};
+#else
 	struct qca_sawf_metadata_param sawf_params = {0};
+#endif
 
 	sawf_params.netdev = sawf_flow_info->netdev;
 	sawf_params.peer_mac = sawf_flow_info->peer_mac;
 	sawf_params.service_id = sawf_flow_info->service_id;
 	sawf_params.dscp = sawf_flow_info->dscp;
 	sawf_params.rule_id = sawf_flow_info->rule_id;
+
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	return ath_sawf_downlink(&sawf_params);
+#else
 	sawf_params.sawf_rule_type = sawf_flow_info->sawf_rule_type;
 
 	return qca_sawf_get_mark_metadata(&sawf_params);
+#endif
 }
+
 /*
  * ecm_wifi_plugin_emesh
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
