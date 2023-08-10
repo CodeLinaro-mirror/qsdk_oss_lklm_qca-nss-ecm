@@ -91,6 +91,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_IS_VALID(sawf_meta) \
 		((ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) ? true : false)
+#define ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK	0xffff
 
 /*
  * EMESH classifier type.
@@ -231,6 +232,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	uint16_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
+	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 
 	if (msg->ip_version == 4) {
 		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI4n:%u -> %pI4n:%u protocol=%d\n", msg,
@@ -285,10 +287,25 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	 */
 	if (ecm_emesh.update_service_id_get_msduq) {
 		if (dest_dev) {
-			msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, msg->flow_service_class_id, 0, 0, SP_SAWF_RULE_TYPE_DEFAULT);
+			sawf_flow_info.netdev = dest_dev;
+			sawf_flow_info.peer_mac = dmac;
+			sawf_flow_info.service_id = msg->flow_service_class_id;
+			sawf_flow_info.dscp = 0;
+			sawf_flow_info.rule_id = 0;
+			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
+
+			msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
 		}
+
 		if (src_dev) {
-			msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, msg->return_service_class_id, 0, 0, SP_SAWF_RULE_TYPE_DEFAULT);
+			sawf_flow_info.netdev = src_dev;
+			sawf_flow_info.peer_mac = smac;
+			sawf_flow_info.service_id = msg->return_service_class_id;
+			sawf_flow_info.dscp = 0;
+			sawf_flow_info.rule_id = 0;
+			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
+
+			msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
 		}
 	}
 
@@ -990,7 +1007,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	struct sp_rule_output_params flow_output_params;
 	struct sp_rule_output_params return_output_params;
 	bool is_sawf_relevant = false;
-
+	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
 
@@ -1142,7 +1159,14 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
 			if (dest_dev) {
-				msduq_forward = ecm_emesh.update_service_id_get_msduq(dest_dev, dmac, flow_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_FLOW], flow_output_params.rule_id, flow_output_params.sawf_rule_type);
+				sawf_flow_info.netdev = dest_dev;
+				sawf_flow_info.peer_mac = dmac;
+				sawf_flow_info.service_id = flow_output_params.service_class_id;
+				sawf_flow_info.dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+				sawf_flow_info.rule_id = flow_output_params.rule_id;
+				sawf_flow_info.sawf_rule_type = flow_output_params.sawf_rule_type;
+
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
 
 				/*
 				 * Mark the skb with SAWF meta data for flow creation packet.
@@ -1152,7 +1176,14 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 									msduq_forward);
 			}
 			if (src_dev) {
-				msduq_reverse = ecm_emesh.update_service_id_get_msduq(src_dev, smac, return_output_params.service_class_id, cemi->dscp[ECM_CONN_DIR_RETURN], return_output_params.rule_id, return_output_params.sawf_rule_type);
+				sawf_flow_info.netdev = src_dev;
+				sawf_flow_info.peer_mac = smac;
+				sawf_flow_info.service_id = return_output_params.service_class_id;
+				sawf_flow_info.dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+				sawf_flow_info.rule_id = return_output_params.rule_id;
+				sawf_flow_info.sawf_rule_type = return_output_params.sawf_rule_type;
+
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
 			}
 		}
 
