@@ -1094,7 +1094,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 * SAWF does support ported protocols.
 	 */
 	protocol = ecm_db_connection_protocol_get(ci);
-	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP)) {
+	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP) &&
+			(protocol != IPPROTO_ESP)) {
 		goto check_emesh_classifier;
 	}
 
