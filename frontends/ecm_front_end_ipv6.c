@@ -52,7 +52,7 @@
 #include "ecm_front_end_ipv6.h"
 #include "ecm_interface.h"
 #include "ecm_ipv6.h"
-
+#include"ecm_stats_v6.h"
 /*
  * General operational control
  */
@@ -417,9 +417,25 @@ void ecm_front_end_ipv6_stop(int num)
  */
 int ecm_front_end_ipv6_init(struct dentry *dentry)
 {
+	struct dentry *ecm_stats_dentry;
+
 	if (!ecm_debugfs_create_u32("front_end_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
 					(u32 *)&ecm_front_end_ipv6_stopped)) {
 		DEBUG_ERROR("Failed to create ecm front end ipv6 stop file in debugfs\n");
+		return -1;
+	}
+
+	ecm_stats_dentry = debugfs_lookup("stats", dentry);
+	if (!ecm_stats_dentry) {
+		DEBUG_ERROR("Stats dentry not created\n");
+		return -1;
+	}
+
+	if (ecm_stats_v6_debugfs_init(ecm_stats_dentry)) {
+		DEBUG_ERROR("Failed to create v6 stats file in ecm\n");
+		/*
+		 * Cleanup will be taken care by the calling function.
+		 */
 		return -1;
 	}
 

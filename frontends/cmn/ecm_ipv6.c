@@ -108,6 +108,7 @@
 #include "ecm_non_ported_ipv6.h"
 #endif
 #include "ecm_multicast_ipv6.h"
+#include "ecm_stats_v6.h"
 
 /*
  * Locking of the classifier - concurrency control for file global parameters.
@@ -1045,6 +1046,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 */
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
 		DEBUG_WARN("Invalid ip header in skb %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_MALFORMED_IP_HEADER);
 		return NF_ACCEPT;
 	}
 
@@ -1053,11 +1055,13 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 	 */
 	if (ip_hdr.is_v4) {
 		DEBUG_TRACE("Not an IPv6 packet, skb %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_NON_IPV6_HDR);
 		return NF_ACCEPT;
 	}
 
 	if (ip_hdr.fragmented) {
 		DEBUG_TRACE("skb %px is fragmented\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_FRAGMENTED_PACKETS);
 		return NF_ACCEPT;
 	}
 
@@ -1079,6 +1083,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		 */
 		if (unlikely(test_bit(IPS_DYING_BIT, &ct->status))) {
 			DEBUG_WARN("%px: ct: %px is in dying state\n", skb, ct);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_CONNTRACK_IN_DYING_STATE);
 			return NF_ACCEPT;
 		}
 
@@ -1119,6 +1124,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 			}
 #endif
 			DEBUG_TRACE("%px: ct: untracked\n", skb);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_UNTRACKED_CONNTRACK);
 			return NF_ACCEPT;
 		}
 
@@ -1129,6 +1135,7 @@ unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *
 		if (nfct_help(ct)) {
 			DEBUG_TRACE("%px: Connection has helper\n", ct);
 			can_accel = false;
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_CONN_HAS_HELPER);
 		}
 
 		/*
@@ -1168,6 +1175,7 @@ vxlan_done:
 		uint16_t offset = ip_hdr.headers[ECM_TRACKER_IP_PROTOCOL_TYPE_GRE].offset;
 		if (!ecm_front_end_gre_proto_is_accel_allowed(in_dev, out_dev, skb, &orig_tuple, &reply_tuple, 6, offset)) {
 			DEBUG_WARN("%px: GRE protocol is not allowed\n", skb);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_UNSUPPORTED_GRE_PROTOCOL);
 			return NF_ACCEPT;
 		}
 	}
@@ -1181,11 +1189,13 @@ vxlan_done:
 #ifdef ECM_MULTICAST_ENABLE
 		if (unlikely(ecm_front_end_ipv6_mc_stopped)) {
 			DEBUG_TRACE("%px: Multicast disabled by ecm_front_end_ipv6_mc_stopped = %d\n", skb, ecm_front_end_ipv6_mc_stopped);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_MCAST_STOPPED);
 			return NF_ACCEPT;
 		}
 
 		if (unlikely(!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_MULTICAST))) {
 			DEBUG_TRACE("%px: Multicast ipv6 acceleration is not supported on selected frontend\n", skb);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_MCAST_NOT_SUPPORTED);
 			return NF_ACCEPT;
 		}
 
@@ -1193,6 +1203,7 @@ vxlan_done:
 				can_accel, is_routed, skb, &ip_hdr, ct, sender,
 				&orig_tuple, &reply_tuple);
 #else
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_MCAST_FEATURE_DISABLED);
 		return NF_ACCEPT;
 #endif
 	}
@@ -1489,10 +1500,12 @@ vxlan_done:
 	 */
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_dest_addr))) {
 		DEBUG_TRACE("skb %px non-unicast daddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN,ECM_STATS_V6_EXCEPTION_DEST_IP_NOT_UCAST);
 		return NF_ACCEPT;
 	}
 	if (unlikely(ecm_ip_addr_is_non_unicast(ip_src_addr))) {
 		DEBUG_TRACE("skb %px non-unicast saddr " ECM_IP_ADDR_OCTAL_FMT "\n", skb, ECM_IP_ADDR_TO_OCTAL(ip_src_addr));
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN,ECM_STATS_V6_EXCEPTION_SRC_IP_NOT_UCAST);
 		return NF_ACCEPT;
 	}
 
@@ -1514,6 +1527,7 @@ vxlan_done:
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 	if (unlikely(!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_NON_PORTED))) {
 		DEBUG_TRACE("%px: Non-ported ipv6 acceleration is not supported on the selected frontend\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_NON_PORTED_NOT_SUPPORTED);
 		return NF_ACCEPT;
 	}
 
@@ -1526,6 +1540,7 @@ vxlan_done:
 			&orig_tuple, &reply_tuple,
 			ip_src_addr, ip_dest_addr, l2_encap_proto);
 #else
+	ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_NON_PORTED_DISABLED);
 	return NF_ACCEPT;
 #endif
 }
@@ -1582,6 +1597,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	if (unlikely(ecm_front_end_ipv6_stopped)) {
 		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_FRONT_END_STOPPED);
 		return NF_ACCEPT;
 	}
 	spin_unlock_bh(&ecm_ipv6_lock);
@@ -1591,6 +1607,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
 		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BCAST_PACKET_IGNORED);
 		return NF_ACCEPT;
 	}
 
@@ -1599,6 +1616,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 * skip pptp because we don't accelerate them
 	 */
 	if (ecm_interface_is_pptp(skb, out)) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_PPTP_DISABLED);
 		return NF_ACCEPT;
 	}
 #endif
@@ -1608,6 +1626,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 * skip l2tpv2 because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 2)) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_L2TPV2_DISABLED);
 		return NF_ACCEPT;
 	}
 #endif
@@ -1616,6 +1635,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 * skip l2tpv3 because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_L2TPV3_PROTOCOL);
 		return NF_ACCEPT;
 	}
 
@@ -1627,6 +1647,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 		/*
 		 * Locally sourced packets are not processed in ECM.
 		 */
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_LOCAL_PACKETS_IGNORED);
 		return NF_ACCEPT;
 	}
 
@@ -1636,6 +1657,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	if (ecm_ipv6_is_bridge_pkt(in, out)) {
 		DEBUG_TRACE("Bridge flow, ignoring: %px\n", skb);
 		dev_put(in);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PACKET_WRONG_HOOK);
 		return NF_ACCEPT;
 	}
 
@@ -1645,6 +1667,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 */
 	if (netif_is_ovs_master(out) || netif_is_ovs_master(in)) {
 		dev_put(in);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_OVS_DISABLED);
 		return NF_ACCEPT;
 	}
 #endif
@@ -1674,6 +1697,7 @@ static unsigned int ecm_ipv6_pppoe_bridge_process(struct net_device *out,
 
 	ppp_proto = ntohs(ppp_proto);
 	if (ppp_proto != PPP_IPV6) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PROTO_NOT_PPPOE);
 		return NF_ACCEPT;
 	}
 
@@ -1683,6 +1707,7 @@ static unsigned int ecm_ipv6_pppoe_bridge_process(struct net_device *out,
 
 	if (!ecm_tracker_ip_check_header_and_read(&ip_hdr, skb)) {
 		DEBUG_WARN("Invalid ip header in skb %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PPPOE_MALFORMED_HEADER);
 		goto skip_ipv6_process;
 	}
 
@@ -1691,6 +1716,7 @@ static unsigned int ecm_ipv6_pppoe_bridge_process(struct net_device *out,
 	 */
 	if (ecm_ip_addr_is_multicast(ip_hdr.dest_addr)) {
 		DEBUG_WARN("Multicast acceleration is not support in PPPoE bridge %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PPPOE_MCAST_ACCEL_NOT_SUPPORTED);
 		goto skip_ipv6_process;
 	}
 
@@ -1734,6 +1760,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	if (unlikely(ecm_front_end_ipv6_stopped)) {
 		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_FRONT_END_STOPPED);
 		return NF_ACCEPT;
 	}
 	spin_unlock_bh(&ecm_ipv6_lock);
@@ -1743,6 +1770,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	 */
 	if (skb->pkt_type == PACKET_BROADCAST) {
 		DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_BCAST_PACKET_IGNORED);
 		return NF_ACCEPT;
 	}
 
@@ -1750,6 +1778,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	 * skip l2tp/pptp because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_pptp(skb, out)) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PPTP_ACCEL_FAIL);
 		return NF_ACCEPT;
 	}
 
@@ -1759,11 +1788,13 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	skb_eth_hdr = eth_hdr(skb);
 	if (!skb_eth_hdr) {
 		DEBUG_TRACE("%px: Not Eth\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_MALFORMED_IP_HEADER);
 		return NF_ACCEPT;
 	}
 	eth_type = ntohs(skb_eth_hdr->h_proto);
 	if (unlikely((eth_type != 0x86DD) && (eth_type != ETH_P_PPP_SES))) {
 		DEBUG_TRACE("%px: Not IP/PPPoE session\n", skb);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_NOT_IP_PPPOE_PACKETS);
 		return NF_ACCEPT;
 	}
 
@@ -1783,6 +1814,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	bridge = ecm_interface_get_and_hold_dev_master((struct net_device *)out);
 	if (!bridge) {
 		DEBUG_WARN("Expected a master for bridge port %s\n", out->name);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_MASTER_NOT_FOUND);
 		return NF_ACCEPT;
 	}
 
@@ -1792,6 +1824,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		 * Case 1.
 		 */
 		DEBUG_TRACE("Local traffic: %px, ignoring traffic to bridge: %px (%s) \n", skb, bridge, bridge->name);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_LOCAL_PACKETS_IGNORED);
 		dev_put(bridge);
 		return NF_ACCEPT;
 	}
@@ -1813,6 +1846,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	if (!in) {
 		DEBUG_TRACE("skb: %px, no in device for bridge: %px (%s)\n", skb, bridge, bridge->name);
 		dev_put(bridge);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PORT_NOT_FOUND);
 		return NF_ACCEPT;
 	}
 
@@ -1827,6 +1861,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 					"the packet, hairpin not enabled"
 					"on port %px (%s)\n", skb, bridge,
 					bridge->name, out, out->name);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_HAIRPIN_NOT_ENABLED);
 			goto skip_ipv6_bridge_flow;
 		}
 		DEBUG_TRACE("skb: %px, bridge: %px (%s), hairpin enabled on port"
@@ -1838,6 +1873,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	 */
 	if (!ecm_mac_addr_equal(skb_eth_hdr->h_source, bridge->dev_addr)) {
 		DEBUG_TRACE("skb: %px, Ignoring routed packet to bridge: %px (%s)\n", skb, bridge, bridge->name);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_ROUTED_PACKET_WRONG_HOOK);
 		goto skip_ipv6_bridge_flow;
 	}
 
@@ -1852,6 +1888,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 			DEBUG_TRACE("skb: %px, br_fdb_find_vid_by_mac() returned NULL dest_dev for dest_mac(%pM) %px (%s) vid=%d\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name, vid);
 			rcu_read_unlock();
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_DEST_MAC_NOT_FOUND);
 			goto skip_ipv6_bridge_flow;
 		}
 		dev_put(dest_dev);
@@ -1860,6 +1897,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		if (!br_fdb_has_entry((struct net_device *)out, skb_eth_hdr->h_dest, 0)) {
 			DEBUG_WARN("skb: %px, No fdb entry for this mac address %pM in the bridge: %px (%s)\n",
 					skb, skb_eth_hdr->h_dest, bridge, bridge->name);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_MAC_ENTRY_NOT_FOUND);
 			goto skip_ipv6_bridge_flow;
 		}
 #endif
@@ -1875,6 +1913,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		 */
 		if (ecm_front_end_ppppoe_br_accel_disabled()) {
 			DEBUG_TRACE("skb: %px, PPPoE bridge flow acceleration is disabled\n", skb);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PPPOE_ACCEL_DISABLED);
 			goto skip_ipv6_bridge_flow;
 		}
 
