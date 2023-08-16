@@ -169,7 +169,7 @@ ifeq ($(ECM_IPV6_ENABLE), y)
 # Define ECM_INTERFACE_MAP_T_ENABLE=y in order
 # to enable support for MAP-T interface.
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
+ccflags-$(ECM_INTERFACE_MAP_T_ENABLE) += -DECM_INTERFACE_MAP_T_ENABLE
 endif
 
 # #############################################################################
