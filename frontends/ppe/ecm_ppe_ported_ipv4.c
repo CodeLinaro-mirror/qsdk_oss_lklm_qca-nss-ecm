@@ -979,7 +979,9 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
 		pd4rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		pd4rc->sawf_rule.flow_service_class = pr->flow_service_class;
 		pd4rc->sawf_rule.return_mark = pr->return_sawf_metadata;
+		pd4rc->sawf_rule.return_service_class = pr->return_service_class;
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SAWF;
 
 		/*

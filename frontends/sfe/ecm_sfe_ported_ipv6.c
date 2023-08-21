@@ -1201,7 +1201,9 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
 		nircm->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		nircm->sawf_rule.flow_svc_id = pr->flow_service_class;
 		nircm->sawf_rule.return_mark = pr->return_sawf_metadata;
+		nircm->sawf_rule.return_svc_id = pr->return_service_class;
 	}
 
 	/*

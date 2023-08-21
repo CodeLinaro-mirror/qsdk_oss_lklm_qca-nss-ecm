@@ -778,10 +778,12 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		memset(&mark, 0, sizeof(mark));
 		mark.type = SFE_CONNECTION_MARK_TYPE_SAWFMARK;
 		mark.flow_mark = msg->flow_mark;
+		mark.flow_svc_id = msg->flow_service_class_id;
 		if (SFE_GET_SAWF_TAG(mark.flow_mark) == SFE_SAWF_VALID_TAG) {
 			mark.flags |= SFE_SAWF_MARK_FLOW_VALID;
 		}
 		mark.return_mark = msg->return_mark;
+		mark.return_svc_id = msg->return_service_class_id;
 		if (SFE_GET_SAWF_TAG(mark.return_mark) == SFE_SAWF_VALID_TAG) {
 			mark.flags |= SFE_SAWF_MARK_RETURN_VALID;
 		}

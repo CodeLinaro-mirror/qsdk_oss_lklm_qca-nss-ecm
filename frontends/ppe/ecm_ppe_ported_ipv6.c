@@ -992,9 +992,11 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
          * SAWF information
          */
         if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
-                pd6rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
-                pd6rc->sawf_rule.return_mark = pr->return_sawf_metadata;
-                pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SAWF;
+		pd6rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
+		pd6rc->sawf_rule.flow_service_class = pr->flow_service_class;
+		pd6rc->sawf_rule.return_mark = pr->return_sawf_metadata;
+		pd6rc->sawf_rule.return_service_class = pr->return_service_class;
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SAWF;
 
 		/*
 		 * In case of SAWF denying acceleraion through PPE-DS
