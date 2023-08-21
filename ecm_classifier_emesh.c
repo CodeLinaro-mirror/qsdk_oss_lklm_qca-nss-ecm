@@ -91,8 +91,6 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_IS_VALID(sawf_meta) \
 		((ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) ? true : false)
-#define ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK	0xffff
-
 /*
  * EMESH classifier type.
  */
@@ -192,25 +190,17 @@ static uint32_t ecm_classifier_emesh_sawf_flowsawf;
  */
 static void ecm_classifier_emesh_sawf_mark_set(
 				uint32_t flow_service_class_id, uint32_t return_service_class_id,
-				uint16_t msduq_forward, uint16_t msduq_reverse,
+				uint32_t msduq_forward, uint32_t msduq_reverse,
 				struct ecm_front_end_flowsawf_msg *msg)
 {
 	if (msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
-		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
-		msg->flow_mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
-		msg->flow_mark |= (flow_service_class_id & 0xff) ;
-		msg->flow_mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		msg->flow_mark |= msduq_forward;
+		msg->flow_mark = msduq_forward;
 	} else {
 		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
 
 	if (msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
-		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
-		msg->return_mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
-		msg->return_mark |= (return_service_class_id & 0xff);
-		msg->return_mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		msg->return_mark |= msduq_reverse;
+		msg->return_mark = msduq_reverse;
 	} else {
 		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
@@ -228,8 +218,8 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	ecm_tracker_sender_type_t sender;
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
-	uint16_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-	uint16_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
@@ -294,7 +284,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.rule_id = 0;
 			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 
-			msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
+			msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
 
 		if (src_dev) {
@@ -305,7 +295,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.rule_id = 0;
 			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 
-			msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
+			msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
 	}
 
@@ -649,22 +639,6 @@ get_source_vlan_dev:
 }
 
 /*
- * ecm_classifier_emesh_mark_sawf_metadata()
- *	Fills the sawf metadata in skb->mark.
- */
-static void ecm_classifier_emesh_mark_sawf_metadata(struct sk_buff *skb,
-		struct sp_rule_output_params *flow_output_params, uint32_t msduq_forward)
-{
-	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
-		skb->mark = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
-		skb->mark <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
-		skb->mark |= flow_output_params->service_class_id;
-		skb->mark <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		skb->mark |= msduq_forward;
-	}
-}
-
-/*
  * ecm_classifier_emesh_sawf_fill_sawf_metadata()
  *	Save the sawf metadata in the classifier instance.
  */
@@ -674,30 +648,22 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 {
 	/*
 	 * Update the flow_sawf_metadata in process response,
-	 * if the service class id is valid. Tag bits are used to
-	 * distinguish between valid and invalid sawf_metadata.
+	 * if the service class id is valid.
 	 */
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
-		cemi->process_response.flow_sawf_metadata = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
-		cemi->process_response.flow_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
-		cemi->process_response.flow_sawf_metadata |= flow_output_params->service_class_id;
-		cemi->process_response.flow_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		cemi->process_response.flow_sawf_metadata |= msduq_forward;
+		cemi->process_response.flow_service_class = flow_output_params->service_class_id;
+		cemi->process_response.flow_sawf_metadata = msduq_forward;
 		cemi->flow_rule_id = flow_output_params->rule_id;
 	}
 
 	/*
 	 * Update the return_sawf_metadata in process response,
-	 * if the service class id is valid. Tag bits are used to
-	 * distinguish between valid and invalid sawf_metadata.
+	 * if the service class id is valid.
 	 */
 	if (return_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
-		cemi->process_response.return_sawf_metadata = ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG;
-		cemi->process_response.return_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT;
-		cemi->process_response.return_sawf_metadata |= return_output_params->service_class_id;
-		cemi->process_response.return_sawf_metadata <<= ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		cemi->process_response.return_sawf_metadata |= msduq_reverse;
+		cemi->process_response.return_service_class = return_output_params->service_class_id;
+		cemi->process_response.return_sawf_metadata = msduq_reverse;
 		cemi->return_rule_id = return_output_params->rule_id;
 	}
 
@@ -1167,14 +1133,12 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.rule_id = flow_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = flow_output_params.sawf_rule_type;
 
-				msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 
 				/*
 				 * Mark the skb with SAWF meta data for flow creation packet.
 				 */
-				ecm_classifier_emesh_mark_sawf_metadata(skb,
-									&flow_output_params,
-									msduq_forward);
+				skb->mark = msduq_forward;
 			}
 			if (src_dev) {
 				sawf_flow_info.netdev = src_dev;
@@ -1184,7 +1148,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.rule_id = return_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = return_output_params.sawf_rule_type;
 
-				msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info) & ECM_CLASSIFIER_EMESH_SAWF_VALID_MSDUQ_MASK;
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 			}
 		}
 
@@ -1226,9 +1190,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			cemi->process_response.flow_qos_tag = skb->priority;
 			cemi->process_response.return_qos_tag = skb->priority;
 			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
-			ecm_classifier_emesh_mark_sawf_metadata(skb,
-								&flow_output_params,
-								msduq_forward);
+			skb->mark = msduq_forward;
 			goto sawf_emesh_classifier_out;
 		}
 	}
@@ -1566,8 +1528,8 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata.
 	 */
 	if (ecm_emesh.sawf_conn_sync) {
-		forward_service_id = cemi->process_response.flow_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		reverse_service_id = cemi->process_response.return_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
+		forward_service_id = cemi->process_response.flow_service_class;
+		reverse_service_id = cemi->process_response.return_service_class;
 		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
 		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
 					ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW);
@@ -1728,8 +1690,8 @@ static void ecm_classifier_emesh_sawf_params_sync_on_conn_accel(struct ecm_class
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata
 	 */
 	if (ecm_emesh.sawf_conn_sync) {
-		forward_service_id = cemi->process_response.flow_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
-		reverse_service_id = cemi->process_response.return_sawf_metadata >> ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT;
+		forward_service_id = cemi->process_response.flow_service_class;
+		reverse_service_id = cemi->process_response.return_service_class;
 		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
 		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
 					ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW);
