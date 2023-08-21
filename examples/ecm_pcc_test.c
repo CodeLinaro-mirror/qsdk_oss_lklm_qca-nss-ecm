@@ -120,9 +120,9 @@ static void ecm_pcc_test_registrant_ref(struct ecm_classifier_pcc_registrant *r)
 	 */
 	remain = atomic_inc_return(&r->ref_count);
 	if (remain <= 0)
-		pr_info("REFERENCE COUNT WRAP!\n");
+		pr_debug("REFERENCE COUNT WRAP!\n");
 	else
-		pr_info("ECM PCC Registrant ref: %d\n", remain);
+		pr_debug("ECM PCC Registrant ref: %d\n", remain);
 }
 
 /*
@@ -144,7 +144,7 @@ ecm_pcc_test_registrant_deref(struct ecm_classifier_pcc_registrant *r)
 		/*
 		 * Something still holds a reference
 		 */
-		pr_info("ECM PCC Registrant deref: %d\n", remain);
+		pr_debug("ECM PCC Registrant deref: %d\n", remain);
 		return;
 	}
 
