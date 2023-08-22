@@ -478,7 +478,16 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			break;
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-#ifndef ECM_INTERFACE_IPSEC_ENABLE
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+			DEBUG_TRACE("%px: IPSEC\n", feci);
+
+			/*
+			 * Override the MTU size in the decap direction, this will apply to IPsec->WAN rule
+			 */
+			if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
+				pd6rc->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
+#else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
@@ -759,6 +768,36 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
 	}
 #endif
+
+	/*
+	 * Policer/ACL info
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_ACL_POLICER;
+			pd6rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_ACL;
+			if (pr->rule_id.acl.flow_acl_id) {
+				pd6rc->ap_rule.rule_id.acl.flow_acl_id = pr->rule_id.acl.flow_acl_id;
+				pd6rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_FLOW_ACL;
+			}
+
+			if (pr->rule_id.acl.return_acl_id) {
+				pd6rc->ap_rule.rule_id.acl.return_acl_id = pr->rule_id.acl.return_acl_id;
+				pd6rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_RETURN_ACL;
+			}
+	} else if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_ACL_POLICER;
+			pd6rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_POLICER;
+
+			if (pr->rule_id.policer.flow_policer_id) {
+				pd6rc->ap_rule.rule_id.policer.flow_policer_id = pr->rule_id.policer.flow_policer_id;
+				pd6rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_FLOW_POLICER;
+			}
+
+			if (pr->rule_id.policer.return_policer_id) {
+				pd6rc->ap_rule.rule_id.policer.return_policer_id = pr->rule_id.policer.return_policer_id;
+				pd6rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_RETURN_POLICER;
+			}
+	}
 
 	/*
 	 * Set protocol

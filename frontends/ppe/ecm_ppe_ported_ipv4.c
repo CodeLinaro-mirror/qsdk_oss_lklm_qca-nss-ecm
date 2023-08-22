@@ -198,6 +198,9 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	int32_t interface_type_counts[ECM_DB_IFACE_TYPE_COUNT];
 	bool rule_invalid;
 	bool is_defunct = false;
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+	bool is_ppeq = false;
+#endif
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
 	ecm_front_end_acceleration_mode_t result_mode;
@@ -357,7 +360,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(from_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_FROM_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s from hierarchy\n", feci, from_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
@@ -469,7 +478,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			break;
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-#ifndef ECM_INTERFACE_IPSEC_ENABLE
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+			DEBUG_TRACE("%px: IPSEC\n", feci);
+
+			/*
+			 * Override the MTU size in the decap direction, this will apply to IPsec->WAN rule
+			 */
+			if (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED) {
+				pd4rc->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
+#else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
@@ -572,7 +590,13 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			if (is_valid_ether_addr(to_ppe_iface_address)) {
 				ether_addr_copy((uint8_t *)pd4rc->conn_rule.return_mac, to_ppe_iface_address);
 			}
-
+#ifdef ECM_INTERFACE_VLAN_ENABLE
+			if ((ecm_db_iface_type_get(to_ppe_iface) == ECM_DB_IFACE_TYPE_VLAN) &&
+			    ecm_db_connection_is_routed_get(feci->ci)) {
+				pd4rc->rule_flags |= PPE_DRV_V4_RULE_TO_BRIDGE_VLAN_NETDEV;
+				DEBUG_TRACE("%px VLAN over bridge %s to hierarchy \n", feci, to_ppe_iface->name);
+			}
+#endif
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 			break;
 
@@ -707,9 +731,40 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 
 	/*
+	 * Check if the PPE offload is enabled for the rule's Tx/Rx interfaces or not
+	 */
+	if (!ppe_drv_iface_check_flow_offload_enabled(pd4rc->conn_rule.rx_if,
+						pd4rc->conn_rule.tx_if)) {
+		DEBUG_TRACE("%px: PPE offload is disabled for rx if: %d, tx: %d\n",
+				feci, pd4rc->conn_rule.rx_if, pd4rc->conn_rule.tx_if);
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		goto ported_accel_bad_rule;
+	}
+
+	DEBUG_TRACE("%px: PPE offload is enabled for rx if: %d, tx: %d\n",
+			feci, pd4rc->conn_rule.rx_if, pd4rc->conn_rule.tx_if);
+
+	/*
 	 * Set up the flow and return qos tags
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+		int32_t to_ppe_qos_intf = ecm_db_iface_interface_identifier_get(to_ifaces[to_ifaces_first]);
+		int32_t from_ppe_qos_intf = ecm_db_iface_interface_identifier_get(from_ifaces[from_ifaces_first]);
+
+		if (ecm_front_end_common_intf_qdisc_check(to_ppe_qos_intf, &is_ppeq) && is_ppeq) {
+			pd4rc->qos_rule.flow_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, to_ppe_qos_intf), pr->flow_qos_tag);
+			pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		}
+
+		if (ecm_front_end_common_intf_qdisc_check(from_ppe_qos_intf, &is_ppeq) && is_ppeq) {
+			pd4rc->qos_rule.return_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, from_ppe_qos_intf), pr->return_qos_tag);
+			pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
+		}
+#endif
+
 		pd4rc->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		pd4rc->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_QOS;
@@ -770,12 +825,15 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		/*
 		 * In case of SAWF denying acceleraion through PPE-DS
 		 * Allowing acceleration only through PPE-VP
+		 * For legacy scs do not deny acceleration through PPE-DS
 		 * TODO: configure accel using DS for SAWF
 		 */
-		spin_lock_bh(&feci->lock);
-		feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
-		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
-		spin_unlock_bh(&feci->lock);
+		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG)) {
+			spin_lock_bh(&feci->lock);
+			feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
+			spin_unlock_bh(&feci->lock);
+		}
         }
 
 	/*
@@ -797,6 +855,36 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 
 #endif
+
+	/*
+	 * Policer/ACL info
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_ACL;
+
+			if (pr->rule_id.acl.flow_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.flow_acl_id = pr->rule_id.acl.flow_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_FLOW_ACL;
+			}
+
+			if (pr->rule_id.acl.return_acl_id) {
+				pd4rc->ap_rule.rule_id.acl.return_acl_id = pr->rule_id.acl.return_acl_id;
+				pd4rc->ap_rule.rule_id.acl.flags |= PPE_DRV_VALID_FLAG_RETURN_ACL;
+			}
+	} else if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_ACL_POLICER;
+			pd4rc->ap_rule.type = PPE_DRV_RULE_TYPE_FLOW_POLICER;
+			if (pr->rule_id.policer.flow_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.flow_policer_id = pr->rule_id.policer.flow_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_FLOW_POLICER;
+			}
+
+			if (pr->rule_id.policer.return_policer_id) {
+				pd4rc->ap_rule.rule_id.policer.return_policer_id = pr->rule_id.policer.return_policer_id;
+				pd4rc->ap_rule.rule_id.policer.flags |= PPE_DRV_VALID_FLAG_RETURN_POLICER;
+			}
+	}
 
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
@@ -930,7 +1018,6 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 	ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-
 	DEBUG_INFO("%px: Ported Accelerate connection %px\n"
 			"Protocol: %d\n"
 			"from_mtu: %u\n"

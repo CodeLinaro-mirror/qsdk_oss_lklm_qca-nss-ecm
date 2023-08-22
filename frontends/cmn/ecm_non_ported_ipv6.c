@@ -121,6 +121,7 @@ static inline bool ecm_non_ported_ipv6_is_protocol_supported(int protocol)
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
 	case IPPROTO_GRE:
 #endif
+	case IPPROTO_ETHERIP:
 	case IPPROTO_RAW:
 		return true;
 	}
@@ -601,7 +602,7 @@ done:
 	 * Do we need to action generation change?
 	 */
 	if (unlikely(ecm_db_connection_regeneration_required_check(ci))) {
-		ecm_ipv6_connection_regenerate(ci, sender, out_dev, in_dev, NULL, skb);
+		ecm_ipv6_connection_regenerate(ci, sender, out_dev, out_dev, in_dev, in_dev, NULL, skb);
 	}
 
 	/*
@@ -763,7 +764,32 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
 #endif
+
+#ifdef ECM_CLASSIFIER_PCC_ENABLE
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.acl.flow_acl_id,
+					aci_pr.rule_id.acl.return_acl_id);
+			prevalent_pr.rule_id.acl.flow_acl_id = aci_pr.rule_id.acl.flow_acl_id;
+			prevalent_pr.rule_id.acl.return_acl_id = aci_pr.rule_id.acl.return_acl_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACL_ENABLED;
+		}
+
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow: %d"
+					" return: %d\n",
+					ci, aci, aci->type_get(aci),
+					aci_pr.rule_id.policer.flow_policer_id,
+					aci_pr.rule_id.policer.return_policer_id);
+			prevalent_pr.rule_id.policer.flow_policer_id = aci_pr.rule_id.policer.flow_policer_id;
+			prevalent_pr.rule_id.policer.return_policer_id = aci_pr.rule_id.policer.return_policer_id;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_POLICER_ENABLED;
+		}
+#endif
 	}
+
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	/*

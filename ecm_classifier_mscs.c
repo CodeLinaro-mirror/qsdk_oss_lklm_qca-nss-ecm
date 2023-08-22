@@ -421,10 +421,14 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	uint8_t dmac[ETH_ALEN];
 	bool mscs_rule_match = false;
 	bool scs_rule_match = false;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
 	uint64_t slow_pkts;
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	struct sp_rule_input_params flow_input_params;
 	struct sp_rule_output_params flow_output_params;
+	struct ecm_classifier_mscs_get_priority_info get_priority_info = {0};
+	struct ecm_classifier_mscs_rule_match_info rule_match_info = {0};
 	ecm_classifier_mscs_scs_priority_callback_t scs_cb = NULL;
 #endif
 #ifdef ECM_MULTICAST_ENABLE
@@ -505,6 +509,8 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
 	}
 
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+
 	/*
 	 * Set the invalid SCS rule id, in case if we do not find any SCS rule.
 	 */
@@ -545,7 +551,11 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 					goto check_mscs_classifier;
 				}
 
-				result = scs_cb(flow_output_params.rule_id, dmac);
+				rule_match_info.rule_id = flow_output_params.rule_id;
+				rule_match_info.dst_mac = dmac;
+				rule_match_info.src_dev = src_dev;
+				rule_match_info.dst_dev = dest_dev;
+				result = scs_cb(&rule_match_info);
 			}
 		}
 
@@ -617,7 +627,12 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			/*
 			 * Invoke callback registered to classifier for peer look up
 			 */
-			result = cb(smac, dmac, skb);
+			get_priority_info.src_mac = smac;
+			get_priority_info.dst_mac = dmac;
+			get_priority_info.src_dev = src_dev;
+			get_priority_info.dst_dev = dest_dev;
+			get_priority_info.skb = skb;
+			result = cb(&get_priority_info);
 
 			if (result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
 				cmscsi->mscs_priority_update = true;
@@ -706,6 +721,12 @@ mscs_classifier_out:
 	/*
 	 * Return our process response
 	 */
+	if(src_dev)
+		dev_put(src_dev);
+
+	if(dest_dev)
+		dev_put(dest_dev);
+
 	*process_response = cmscsi->process_response;
 	spin_unlock_bh(&ecm_classifier_mscs_lock);
 }

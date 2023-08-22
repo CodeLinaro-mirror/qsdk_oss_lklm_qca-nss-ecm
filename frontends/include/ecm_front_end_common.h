@@ -30,6 +30,10 @@
 #ifdef ECM_FRONT_END_SFE_ENABLE
 #include <sfe_api.h>
 #endif
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+#include <ppe_drv.h>
+#include <ppe_drv_qos.h>
+#endif
 #ifdef ECM_FRONT_END_FSE_ENABLE
 #include "ecm_front_end_common_public.h"
 #endif
@@ -419,4 +423,5 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 #ifdef ECM_FRONT_END_FSE_ENABLE
 bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info);
 #endif /* ECM_FRONT_END_FSE_ENABLE */
+bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
 #endif  /* __ECM_FRONT_END_COMMON_H */

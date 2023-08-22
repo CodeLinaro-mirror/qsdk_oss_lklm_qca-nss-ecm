@@ -61,24 +61,56 @@ struct ecm_classifier_fse_info {
 };
 
 /**
+ * ecm_classifier_emesh_sawf_flow_info
+ *
+ * @netdev : Netdevice
+ * @peer_mac : Destination peer mac address
+ * @service_id : Service class id
+ * @dscp : Differentiated Services Code Point
+ * @rule_id : Rule id
+ * @sawf_rule_type: Rule type
+ */
+struct ecm_classifier_emesh_sawf_flow_info {
+	struct net_device *netdev;
+	uint8_t *peer_mac;
+	uint32_t service_id;
+	uint32_t dscp;
+	uint32_t rule_id;
+	uint8_t sawf_rule_type;
+};
+
+/**
+ * Structure collecting mesh latency params to send it to wlan driver
+ * via registered callback.
+ */
+struct ecm_classifer_emesh_sawf_mesh_latency_params {
+	struct net_device *dst_dev;		/**< Destination net dev. */
+	struct net_device *src_dev;		/**< Source net dev. */
+	uint8_t *peer_mac;			/**< Peer MAC. */
+	uint32_t service_interval_dl;		/**< Service interval DL. */
+	uint32_t burst_size_dl;			/**< Burst size DL. */
+	uint32_t service_interval_ul;		/**< Service interval UL. */
+	uint32_t burst_size_ul;			/**< Burst size UL. */
+	uint16_t priority;			/**< Priority. */
+	uint8_t accel_or_decel;			/**< Time of the callback. */
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
-typedef int (*ecm_classifier_emesh_callback_t)(uint8_t dest_mac[],
-		uint32_t service_interval_dl, uint32_t burst_size_dl,
-		uint32_t service_interval_ul, uint32_t burst_size_ul,
-		uint16_t priority, uint8_t add_or_sub);
+typedef void (*ecm_classifier_emesh_callback_t)(struct ecm_classifer_emesh_sawf_mesh_latency_params *mesh_params);
 
 /**
  * MSDUQ callback to which emesh-sawf will register.
  */
-typedef uint16_t (*ecm_classifier_emesh_msduq_callback_t)(struct net_device *out_dev,
-		uint8_t dest_mac[], uint32_t service_class_id, uint32_t dscp, uint32_t rule_id);
+typedef uint32_t (*ecm_classifier_emesh_msduq_callback_t)(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info);
 
 /**
- * SAWF UL configuration update callback function pointer.
+ * SAWF params sync callback function pointer.
  */
-typedef void (*ecm_classifier_emesh_sawf_config_ul_callback_t)(uint8_t dest_mac[],
-		uint8_t src_mac[], uint8_t fwd_service_id, uint8_t rev_service_id, uint8_t add_or_sub);
+typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct net_device *dest_dev, uint8_t dest_mac[],
+		struct net_device *src_dev, uint8_t src_mac[], uint8_t fwd_service_id, uint8_t rev_service_id,
+		uint8_t add_or_sub);
 
 /**
  * FSE flow update callback to which emesh-sawf will register.
@@ -95,8 +127,8 @@ struct ecm_classifier_emesh_sawf_callbacks {
 						/**< Get msduq for SAWF classifier. */
 	ecm_classifier_emesh_fse_flow_callback_t update_fse_flow_info;
 						/**< Update fse flow callback. */
-	ecm_classifier_emesh_sawf_config_ul_callback_t update_sawf_ul;
-						/**< Update SAWF uplink parameters. */
+	ecm_classifier_emesh_sawf_conn_params_sync_callback_t sawf_conn_sync;
+						/**< Sync SAWF parameters. */
 };
 
 /**
@@ -136,22 +168,22 @@ int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emes
 void ecm_classifier_emesh_sawf_msduq_callback_unregister(void);
 
 /**
- * Registers EMESH-SAWF config uplink callback.
+ * Registers EMESH-SAWF connection sync callback.
  *
  * @param	mesh_cb	EMESH-SAWF callback pointer.
  *
  * @return
  * The status of the callback registration operation.
  */
-int ecm_classifier_emesh_sawf_config_ul_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+int ecm_classifier_emesh_sawf_conn_sync_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
 
 /**
- * Unregisters EMESH-SAWF config uplink callback.
+ * Unregisters EMESH-SAWF connection sync callback.
  *
  * @return
  * None.
  */
-void ecm_classifier_emesh_sawf_config_ul_callback_unregister(void);
+void ecm_classifier_emesh_sawf_conn_sync_callback_unregister(void);
 
 /**
  * Registers EMESH-SAWF fse flow update callback.

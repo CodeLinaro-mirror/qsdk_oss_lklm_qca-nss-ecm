@@ -109,6 +109,11 @@ ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv4.o
 ccflags-$(ECM_FRONT_END_PPE_ENABLE) += -DECM_FRONT_END_PPE_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_PPE_QOS_ENABLE=y in order to enable PPE QoS
+# #############################################################################
+ccflags-$(ECM_FRONT_END_PPE_QOS_ENABLE) += -DECM_FRONT_END_PPE_QOS_ENABLE
+
+# #############################################################################
 # Define ECM_FRONT_END_CONN_LIMIT_ENABLE=y in order to limit accelerated
 # connections for low-memory profiles.
 # #############################################################################
