@@ -76,6 +76,10 @@ static const char* ecm_stats_v6_exception_name_str[] = {
 	"v6_src_ip_not_ucast",
 	"v6_non_ported_not_supported",
 	"v6_non_ported_disabled",
+	"v6_route_in_iff_offload_disabled",
+	"v6_route_out_iff_offload_disabled",
+	"v6_bridge_in_iff_offload_disabled",
+	"v6_bridge_out_iff_offload_disabled",
 };
 
 static const char* ecm_stats_v6_exception_ported_name_str[] = {
