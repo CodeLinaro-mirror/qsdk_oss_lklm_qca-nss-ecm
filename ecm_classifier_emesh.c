@@ -744,11 +744,12 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 {
 	struct iphdr *iph;
 	struct ipv6hdr *ip6h;
-	struct tcphdr *tcphdr;
 	struct udphdr *udphdr;
 	uint16_t dscp;
 	struct ip_esp_hdr *esp;
 	uint16_t version;
+	ip_addr_t src_ip;
+	ip_addr_t dst_ip;
 
 	/*
 	 * Return false if any of src or dest dev is not present.
@@ -757,8 +758,18 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 	if (!src_dev || !dest_dev)
 		return false;
 
-	if (skb->protocol == ntohs(ETH_P_IP)) {
-		version = ntohs(ETH_P_IP);
+	/*
+	 * Get the IP version and protocol information.
+	 */
+	version = ecm_db_connection_ip_version_get(ci);
+
+	flow_input_params->protocol = return_input_params->protocol = ecm_db_connection_protocol_get(ci);
+	flow_input_params->ip_version_type = return_input_params->ip_version_type = version;
+
+	/*
+	 * Get the DSCP information from the packets IP header.
+	 */
+	if (version == 4) {
 		if (unlikely(!pskb_may_pull(skb, sizeof(*iph)))) {
 			/*
 			 * Check for ip header
@@ -768,15 +779,10 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		}
 
 		iph = ip_hdr(skb);
-		flow_input_params->protocol = iph->protocol;
-		return_input_params->protocol = iph->protocol;
-		flow_input_params->src.ip.ipv4_addr = return_input_params->dst.ip.ipv4_addr = iph->saddr;
-		flow_input_params->dst.ip.ipv4_addr = return_input_params->src.ip.ipv4_addr = iph->daddr;
-		flow_input_params->ip_version_type = return_input_params->ip_version_type = 4;
+
 		dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
 		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
-	} else if (skb->protocol == ntohs(ETH_P_IPV6)) {
-		version = ntohs(ETH_P_IPV6);
+	} else if (version == 6) {
 		if (unlikely(!pskb_may_pull(skb, sizeof(*ip6h)))) {
 			/*
 			 * Check for ipv6 header
@@ -786,34 +792,50 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		}
 
 		ip6h = ipv6_hdr(skb);
-		flow_input_params->protocol = ip6h->nexthdr;
-		return_input_params->protocol = ip6h->nexthdr;
-		memcpy(&flow_input_params->src.ip.ipv6_addr, &ip6h->saddr, sizeof(struct in6_addr));
-		memcpy(&flow_input_params->dst.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
-		memcpy(&return_input_params->src.ip.ipv6_addr, &ip6h->daddr, sizeof(struct in6_addr));
-		memcpy(&return_input_params->dst.ip.ipv6_addr, &ip6h->saddr, sizeof(struct in6_addr));
-		flow_input_params->ip_version_type = return_input_params->ip_version_type = 6;
 		dscp = ipv6_get_dsfield(ip6h) >> XT_DSCP_SHIFT;
 		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
 	} else {
-		DEBUG_INFO("Not ip packet protocol: %x \n", skb->protocol);
+		DEBUG_INFO("Invalid IP version: %d \n", version);
 		return false;
 	}
 
-	flow_input_params->spi = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SPI;
-	if (flow_input_params->protocol == IPPROTO_TCP) {
-		/*
-		 * Check for tcp header
-		 */
-		if (unlikely(!pskb_may_pull(skb, sizeof(*tcphdr)))) {
-			DEBUG_INFO("No tcp header in skb\n");
-			return false;
-		}
+	/*
+	 * Get the IP addresses and port information from ECM connection DB.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
+		flow_input_params->src.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		return_input_params->dst.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		flow_input_params->dst.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		return_input_params->src.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+	} else {
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, src_ip);
+		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, dst_ip);
+		flow_input_params->src.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		return_input_params->dst.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+		flow_input_params->dst.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+		return_input_params->src.port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	}
 
-		tcphdr = tcp_hdr(skb);
-		flow_input_params->src.port = return_input_params->dst.port = ntohs(tcphdr->source);
-		flow_input_params->dst.port = return_input_params->src.port = ntohs(tcphdr->dest);
-	} else if (flow_input_params->protocol == IPPROTO_UDP) {
+	if (version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow_input_params->src.ip.ipv4_addr, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(flow_input_params->dst.ip.ipv4_addr, dst_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(return_input_params->src.ip.ipv4_addr, dst_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(return_input_params->dst.ip.ipv4_addr, src_ip);
+	} else {
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(flow_input_params->src.ip.ipv6_addr, src_ip);
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(flow_input_params->dst.ip.ipv6_addr, dst_ip);
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(return_input_params->src.ip.ipv6_addr, dst_ip);
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(return_input_params->dst.ip.ipv6_addr, src_ip);
+	}
+
+	/*
+	 * In case of IPSec / UDP encap IPSec protocol, get the SPI value from the
+	 * header UDP / ESP header.
+	 */
+	flow_input_params->spi = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SPI;
+	if (flow_input_params->protocol == IPPROTO_UDP) {
 		/*
 		 * Check for udp header
 		 */
@@ -822,14 +844,11 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 			return false;
 		}
 
-		udphdr = udp_hdr(skb);
-		flow_input_params->src.port = return_input_params->dst.port = ntohs(udphdr->source);
-		flow_input_params->dst.port = return_input_params->src.port = ntohs(udphdr->dest);
-
 		/*
 		 * Check for UDP encapsulated IPSEC packet.
 		 */
 		if (flow_input_params->dst.port == ecm_classifier_sawf_emesh_udp_ipsec_port) {
+			udphdr = udp_hdr(skb);
 			esp = (struct ip_esp_hdr *)((uint8_t *)udphdr + sizeof(*udphdr));
 			flow_input_params->spi = ntohl(esp->spi);
 		}
@@ -838,16 +857,13 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		/*
 		 * Get the SPI for IPSEC packets.
 		 */
-		if (version == ntohs(ETH_P_IP)) {
+		if (version == 4) {
 			esp = (struct ip_esp_hdr *)((uint8_t *)iph + sizeof(*iph));
 			flow_input_params->spi = ntohl(esp->spi);
 		} else {
 			esp = (struct ip_esp_hdr *)((uint8_t *)ip6h + sizeof(*ip6h));
 			flow_input_params->spi = ntohl(esp->spi);
 		}
-	} else {
-		DEBUG_INFO("Not a ported protocol \n");
-		return false;
 	}
 
 	flow_input_params->vlan_tci = return_input_params->vlan_tci = SP_RULE_INVALID_VLAN_TCI;
