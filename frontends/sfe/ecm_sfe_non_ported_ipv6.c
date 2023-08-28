@@ -988,6 +988,15 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		if (is_l2_encap) {
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_L2_ENCAP;
 		}
+
+		/*
+		 * Bridge vlan passthrough
+		 */
+		if (!(nircm->valid_flags & SFE_RULE_CREATE_VLAN_VALID)) {
+			if (skb_vlan_tag_present(skb)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_VLAN_PASSTHROUGH;
+			}
+		}
 	}
 
 	if (ecm_interface_src_check || ecm_db_connection_is_pppoe_bridged_get(feci->ci)) {
