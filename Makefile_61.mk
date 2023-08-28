@@ -213,7 +213,7 @@ endif
 # #############################################################################
 # Define ECM_XFRM_ENABLE=y in order to enable
 # #############################################################################
-#ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
+ccflags-$(ECM_XFRM_ENABLE) += -DECM_XFRM_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_OVS_BRIDGE_ENABLE=y in order to enable support for OVS
@@ -234,13 +234,13 @@ ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 # #############################################################################
 # Define ECM_INTERFACE_IPSEC_ENABLE=y in order to enable support for IPSEC
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
+ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
 ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx \
 	     ipq50xx_64 ipq95xx_32 ipq95xx ipq53xx_32 ipq53xx))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
-#ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
+ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
