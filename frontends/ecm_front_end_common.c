@@ -672,12 +672,11 @@ void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
 	struct nf_ct_dscpremark_ext *dscpcte;
 
 	/*
-	 * Extract the priority and DSCP from skb during the TCP handshake
-	 * and store into ct extension for each direction.
+	 * Extract the priority and DSCP from skb and store into ct extension for each direction.
 	 */
 	spin_lock_bh(&ct->lock);
 	dscpcte = nf_ct_dscpremark_ext_find(ct);
-	if (dscpcte && ct->proto.tcp.state != TCP_CONNTRACK_ESTABLISHED) {
+	if (dscpcte) {
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			dscpcte->flow_priority = skb->priority;
 			dscpcte->flow_mark = skb->mark;
