@@ -76,8 +76,6 @@
 /*
  * SAWF information.
  */
-#define ECM_CLASSIFIER_EMESH_SAWF_TAG_SHIFT             8
-#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_SHIFT   16
 #define ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG             0xAA
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS 0xff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ         0xffff
@@ -87,10 +85,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_CAKE_PRIORITY_MASK    0xffff
 #define ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW              1
 #define ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW              2
-#define ECM_CLASSIFIER_EMESH_SAWF_SERVICE_CLASS_MASK    0xff
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
-#define ECM_CLASSIFIER_EMESH_SAWF_TAG_IS_VALID(sawf_meta) \
-		((ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) ? true : false)
 /*
  * EMESH classifier type.
  */
@@ -1667,10 +1662,7 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_db_connection_instance *ci;
-	uint8_t dmac[ETH_ALEN], smac[ETH_ALEN];
-	uint8_t forward_service_id, reverse_service_id;
-	struct net_device *src_dev = NULL;
-	struct net_device *dest_dev = NULL;
+	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
@@ -1692,14 +1684,14 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 	/*
 	 * Get mac address for destination node
 	 */
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, sawf_sync_params.dest_mac);
 
 	/*
 	 * Get mac address for source node
 	 */
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, sawf_sync_params.src_mac);
 
-	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &sawf_sync_params.src_dev, &sawf_sync_params.dest_dev);
 
 	/*
 	 * Sync sawf connection with wlan driver.
@@ -1707,20 +1699,20 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata.
 	 */
 	if (ecm_emesh.sawf_conn_sync) {
-		forward_service_id = cemi->process_response.flow_service_class;
-		reverse_service_id = cemi->process_response.return_service_class;
-		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
-		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
-					ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW);
+		sawf_sync_params.fwd_service_id = cemi->process_response.flow_service_class;
+		sawf_sync_params.rev_service_id = cemi->process_response.return_service_class;
+		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id);
+		sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW;
+		ecm_emesh.sawf_conn_sync(&sawf_sync_params);
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_DECEL] = true;
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_ACCEL] = false;
 	}
 
-	if (src_dev)
-		dev_put(src_dev);
+	if (sawf_sync_params.src_dev)
+		dev_put(sawf_sync_params.src_dev);
 
-	if (dest_dev)
-		dev_put(dest_dev);
+	if (sawf_sync_params.dest_dev)
+		dev_put(sawf_sync_params.dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
@@ -1835,11 +1827,7 @@ static void ecm_classifier_emesh_sawf_params_sync_on_conn_accel(struct ecm_class
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_db_connection_instance *ci;
-	uint8_t dmac[ETH_ALEN];
-	uint8_t smac[ETH_ALEN];
-	struct net_device *src_dev = NULL;
-	struct net_device *dest_dev = NULL;
-	uint8_t forward_service_id, reverse_service_id;
+	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
@@ -1858,10 +1846,10 @@ static void ecm_classifier_emesh_sawf_params_sync_on_conn_accel(struct ecm_class
 		return;
 	}
 
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
-	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, sawf_sync_params.src_mac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, sawf_sync_params.dest_mac);
 
-	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &sawf_sync_params.src_dev, &sawf_sync_params.dest_dev);
 
 	/*
 	 * Sync sawf connection with wlan driver.
@@ -1869,20 +1857,20 @@ static void ecm_classifier_emesh_sawf_params_sync_on_conn_accel(struct ecm_class
 	 * Service ID is in 16-23 bits of flow_sawf_metadata and return_sawf_metadata
 	 */
 	if (ecm_emesh.sawf_conn_sync) {
-		forward_service_id = cemi->process_response.flow_service_class;
-		reverse_service_id = cemi->process_response.return_service_class;
-		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, forward_service_id, reverse_service_id);
-		ecm_emesh.sawf_conn_sync(dest_dev, dmac, src_dev, smac, forward_service_id, reverse_service_id,
-					ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW);
+		sawf_sync_params.fwd_service_id = cemi->process_response.flow_service_class;
+		sawf_sync_params.rev_service_id = cemi->process_response.return_service_class;
+		DEBUG_INFO("%px: SAWF forward service id : %x reverse service id : %x\n", cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id);
+		sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW;
+		ecm_emesh.sawf_conn_sync(&sawf_sync_params);
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_ACCEL] = true;
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_DECEL] = false;
 	}
 
-	if (src_dev)
-		dev_put(src_dev);
+	if (sawf_sync_params.src_dev)
+		dev_put(sawf_sync_params.src_dev);
 
-	if (dest_dev)
-		dev_put(dest_dev);
+	if (sawf_sync_params.dest_dev)
+		dev_put(sawf_sync_params.dest_dev);
 
 	ecm_db_connection_deref(ci);
 }
