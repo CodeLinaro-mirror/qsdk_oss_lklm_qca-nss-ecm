@@ -1591,6 +1591,14 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	DEBUG_TRACE("%px: Routing: %s\n", out, out->name);
 
 	/*
+	 * Skip flow with interface marked for don't offload.
+	 */
+	if (out->priv_flags_ext & IFF_EXT_HW_NO_OFFLOAD) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_ROUTE_OUT_IFF_NO_OFFLOAD);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv6_lock);
@@ -1648,6 +1656,15 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 		 * Locally sourced packets are not processed in ECM.
 		 */
 		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_LOCAL_PACKETS_IGNORED);
+		return NF_ACCEPT;
+	}
+
+	/*
+	 * Skip flow with interface marked for don't offload.
+	 */
+	if (in->priv_flags_ext & IFF_EXT_HW_NO_OFFLOAD) {
+		dev_put(in);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_ROUTE_IN_IFF_NO_OFFLOAD);
 		return NF_ACCEPT;
 	}
 
@@ -1797,6 +1814,14 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	DEBUG_TRACE("%px: IPv6 CMN Bridge: %s\n", out, out->name);
 
 	/*
+	 * Skip flow with interface marked for don't offload.
+	 */
+	if (out->priv_flags_ext & IFF_EXT_HW_NO_OFFLOAD) {
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_OUT_IFF_NO_OFFLOAD);
+		return NF_ACCEPT;
+	}
+
+	/*
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv6_lock);
@@ -1883,6 +1908,17 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		dev_put(bridge);
 		return NF_ACCEPT;
 	}
+
+	/*
+	 * Skip flow with interface marked for don't offload.
+	 */
+	if (in->priv_flags_ext & IFF_EXT_HW_NO_OFFLOAD) {
+		dev_put(bridge);
+		dev_put(in);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_IN_IFF_NO_OFFLOAD);
+		return NF_ACCEPT;
+	}
+
 	dev_put(in);
 
 	/*

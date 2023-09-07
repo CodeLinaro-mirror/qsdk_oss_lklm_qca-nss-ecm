@@ -80,6 +80,10 @@ static const char* ecm_stats_v4_exception_cmn_name_str[] = {
 	"v4_src_ip_not_ucast",
 	"v4_non_ported_not_supported",
 	"v4_non_ported_disabled",
+	"v4_route_in_iff_offload_disabled",
+	"v4_route_out_iff_offload_disabled",
+	"v4_bridge_in_iff_offload_disabled",
+	"v4_bridge_out_iff_offload_disabled",
 };
 
 static const char* ecm_stats_v4_exception_ported_name_str[] = {

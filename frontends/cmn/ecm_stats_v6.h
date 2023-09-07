@@ -97,6 +97,14 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of IPv6 packets ignored as nonported feature not supported */
 	ECM_STATS_V6_EXCEPTION_NON_PORTED_DISABLED,
 			/* Number of IPv6 packets ignored as nonported is disabled */
+	ECM_STATS_V6_EXCEPTION_ROUTE_IN_IFF_NO_OFFLOAD,
+			/* Number of routed IPv6 packet ignored as input interface marked with no-offload */
+	ECM_STATS_V6_EXCEPTION_ROUTE_OUT_IFF_NO_OFFLOAD,
+			/* Number of routed IPv6 packet ignored as output interface marked with no-offload */
+	ECM_STATS_V6_EXCEPTION_BRIDGE_IN_IFF_NO_OFFLOAD,
+			/* Number of bridged IPv6 packet ignored as input interface marked with no-offload */
+	ECM_STATS_V6_EXCEPTION_BRIDGE_OUT_IFF_NO_OFFLOAD,
+			/* Number of bridged IPv6 packet ignored as output interface marked with no-offload */
 	ECM_STATS_V6_EXCEPTION_CMN_MAX
 			/*Maximum common exceptions for IPv6 flows*/
 };
