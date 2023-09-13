@@ -496,7 +496,16 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		}
 
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
-#ifndef ECM_INTERFACE_IPSEC_ENABLE
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+			DEBUG_TRACE("%px: IPSEC\n", feci);
+
+			/*
+			 * Override the MTU size in the decap direction, this will apply to IPsec->WAN rule
+			 */
+			if (IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED) {
+				pd4rc->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
+			}
+#else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
 #endif
