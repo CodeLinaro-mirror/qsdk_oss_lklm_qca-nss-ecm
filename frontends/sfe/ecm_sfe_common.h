@@ -150,3 +150,9 @@ bool ecm_sfe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 void ecm_sfe_common_ipv4_vlan_filter_set(struct ecm_db_connection_instance *ci, struct sfe_ipv4_rule_create_msg *nircm);
 void ecm_sfe_common_ipv6_vlan_filter_set(struct ecm_db_connection_instance *ci, struct sfe_ipv6_rule_create_msg *nircm);
 #endif
+#ifdef ECM_MHT_ENABLE
+bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *feci,
+				    struct ecm_db_iface_instance *from_sfe_iface,
+				    struct ecm_db_iface_instance *to_sfe_iface,
+				    u32 *valid_flags, struct sfe_mark_rule *mark_rule);
+#endif

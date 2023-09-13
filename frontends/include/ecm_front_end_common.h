@@ -69,6 +69,13 @@ extern unsigned int ecm_sfe_fse_enable;
 #endif
 
 /*
+ * Flag to enable/disable MHT related features from ECM SFE frontend.
+ */
+#ifdef ECM_MHT_ENABLE
+extern unsigned int ecm_sfe_mht_enable;
+#endif
+
+/*
  * ecm_front_end_l2_encap_header_len()
  *      Return length of encapsulating L2 header
  */
