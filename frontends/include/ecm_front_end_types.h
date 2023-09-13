@@ -308,6 +308,9 @@ struct ecm_front_end_connection_instance {
 	ecm_front_end_acceleration_mode_t accel_mode;		/* Indicates the type of acceleration being applied to a connection, if any. */
 	spinlock_t lock;					/* Lock for structure data */
 	int refs;						/* Integer to trap we never go negative */
+#ifdef ECM_MHT_ENABLE
+	uint32_t mht_port_query_count;				/* Counts the number of retry done to get destination mac's port id. */
+#endif
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif

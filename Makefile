@@ -345,6 +345,10 @@ ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
 # Define ECM_NON_PORTED_SUPPORT_ENABLE=y in order to enable non-ported protocol.
 # #############################################################################
 
+# #############################################################################
+# Define ECM_MHT_ENABLE=y in order to enable MHT related features.
+# #############################################################################
+ccflags-$(ECM_MHT_ENABLE) += -DECM_MHT_ENABLE
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv4.o

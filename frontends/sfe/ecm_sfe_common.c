@@ -54,6 +54,10 @@
 #include "ecm_sfe_common.h"
 #include "exports/ecm_sfe_common_public.h"
 
+#ifdef ECM_MHT_ENABLE
+#include "ppe_drv.h"
+#endif
+
 
 /*
  * Callback object to support SFE frontend interaction with external code
@@ -71,6 +75,13 @@ static int ecm_sfe_fast_xmit_enable = 1;
  * Flag to indicate FSE rule push from ECM SFE frontend.
  */
 unsigned int ecm_sfe_fse_enable = 1;
+
+#ifdef ECM_MHT_ENABLE
+/*
+ * Flag to indicate MHT is enabled.
+ */
+unsigned int ecm_sfe_mht_enable = 1;
+#endif
 
 /*
  * ecm_sfe_common_fast_xmit_check()
@@ -348,6 +359,38 @@ int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *bu
 	return ret;
 }
 
+#ifdef ECM_MHT_ENABLE
+/*
+ * ecm_sfe_mht_enable_handler()
+ *	Sysctl to enable/disable MHT feature through ECM SFE frontend.
+ */
+int ecm_sfe_mht_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the variable with user input
+	 */
+	current_val = ecm_sfe_mht_enable;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if ((ecm_sfe_mht_enable != 0) && (ecm_sfe_mht_enable != 1)) {
+		ecm_sfe_mht_enable = current_val;
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+#endif
+
 /*
  * ecm_sfe_ipv4_is_conn_limit_reached()
  *	Connection limit is reached or not ?
@@ -416,6 +459,15 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
 		.mode           = 0644,
 		.proc_handler   = &ecm_sfe_fse_enable_handler,
 	},
+#ifdef ECM_MHT_ENABLE
+	{
+		.procname       = "sfe_mht_enable",
+		.data           = &ecm_sfe_mht_enable,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = &ecm_sfe_mht_enable_handler,
+	},
+#endif
 	{}
 };
 
@@ -952,3 +1004,109 @@ void ecm_sfe_common_callbacks_unregister(void)
 	synchronize_rcu();
 }
 EXPORT_SYMBOL(ecm_sfe_common_callbacks_unregister);
+
+#ifdef ECM_MHT_ENABLE
+/*
+ * ecm_sfe_common_get_mht_port_id()
+ *	Returns true if getting mht port is succesful.
+ */
+bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *feci,
+				    struct ecm_db_iface_instance *from_sfe_iface,
+				    struct ecm_db_iface_instance *to_sfe_iface,
+				    u32 *valid_flags, struct sfe_mark_rule *mark_rule)
+{
+	struct net_device *dev = NULL;
+	int32_t port_info = -1;
+	uint8_t mht_mac[ETH_ALEN];
+
+	dev  = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(from_sfe_iface));
+	if (!dev) {
+		DEBUG_WARN("%px: Failed to get net device for from sfe iface\n", feci);
+		return true;
+	}
+
+	/*
+	 * MHT port is found on the from interface
+	 */
+	if (ppe_drv_is_mht_dev(dev)) {
+		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, mht_mac);
+		port_info = ppe_drv_mht_port_from_fdb(mht_mac, 0);
+
+		if (port_info != -1) {
+			spin_lock_bh(&feci->lock);
+			feci->mht_port_query_count = 0;
+			spin_unlock_bh(&feci->lock);
+			dev_put(dev);
+			mark_rule->return_mark = ((SFE_MHT_VALID_TAG << SFE_MHT_TAG_SHIFT) | port_info);
+			*valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+			return true;
+		}
+
+		spin_lock_bh(&feci->lock);
+		/*
+		 * Check if we can re-try to find the port with subsequent packets.
+		 */
+		if (feci->mht_port_query_count < SFE_MHT_MAX_ACCELERATION_RETRY) {
+			feci->mht_port_query_count++;
+			spin_unlock_bh(&feci->lock);
+			dev_put(dev);
+			return false;
+		}
+
+		/*
+		 * We reached to max re-try count, return true without marking the rule.
+		 */
+		feci->mht_port_query_count = 0;
+		spin_unlock_bh(&feci->lock);
+		dev_put(dev);
+		return true;
+	}
+
+	dev_put(dev);
+	dev  = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(to_sfe_iface));
+	if (!dev) {
+		DEBUG_WARN("%px: Failed to get net device for to sfe iface\n", feci);
+		return true;
+	}
+
+	/*
+	 * MHT port is found on the To interface
+	 */
+	if (ppe_drv_is_mht_dev(dev)) {
+		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, mht_mac);
+		port_info = ppe_drv_mht_port_from_fdb(mht_mac, 0);
+
+		if (port_info != -1) {
+			spin_lock_bh(&feci->lock);
+			feci->mht_port_query_count = 0;
+			spin_unlock_bh(&feci->lock);
+			dev_put(dev);
+			mark_rule->flow_mark = ((SFE_MHT_VALID_TAG << SFE_MHT_TAG_SHIFT) | port_info);
+			*valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+			return true;
+		}
+
+		spin_lock_bh(&feci->lock);
+		/*
+		 * Check if we can re-try to find the port with subsequent packets.
+		 */
+		if (feci->mht_port_query_count < SFE_MHT_MAX_ACCELERATION_RETRY) {
+			feci->mht_port_query_count++;
+			spin_unlock_bh(&feci->lock);
+			dev_put(dev);
+			return false;
+		}
+
+		/*
+		 * We reached to max re-try count, return true without marking the rule.
+		 */
+		feci->mht_port_query_count = 0;
+		spin_unlock_bh(&feci->lock);
+		dev_put(dev);
+		return true;
+	}
+
+	dev_put(dev);
+	return true;
+}
+#endif
