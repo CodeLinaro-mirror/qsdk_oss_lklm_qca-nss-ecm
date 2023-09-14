@@ -121,6 +121,31 @@ DEFINE_SPINLOCK(ecm_ipv6_lock);			/* Protect against SMP access between netfilte
 bool ecm_ipv6_terminate_pending = false;		/* True when the user has signalled we should quit */
 
 /*
+ * ecm_ipv6_dev_has_ipaddr()
+ *	Returns true if dev has an IPv6 address
+ */
+static bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
+{
+	struct inet6_dev *ip6_inetdev;
+
+	ip6_inetdev = __in6_dev_get(dev);
+	if (!ip6_inetdev) {
+		DEBUG_TRACE("%px: dev->ip6_ptr is NULL for %s\n", dev, dev->name);
+		return false;
+	}
+
+	read_lock_bh(&ip6_inetdev->lock);
+	if (list_empty(&ip6_inetdev->addr_list)) {
+		read_unlock_bh(&ip6_inetdev->lock);
+		DEBUG_TRACE("%px: dev->ip6_ptr->addr_list is empty for %s\n", dev, dev->name);
+		return false;
+	}
+	read_unlock_bh(&ip6_inetdev->lock);
+
+	return true;
+}
+
+/*
  * ecm_ipv6_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
@@ -527,11 +552,11 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 					goto done;
 				}
 
-				if (ecm_front_end_is_bridge_port(dev)
+				if (!ecm_ipv6_dev_has_ipaddr(dev) && (ecm_front_end_is_bridge_port(dev)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 					|| ecm_interface_is_ovs_bridge_port(dev)
 #endif
-				) {
+				)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
 					if (!master) {
@@ -1557,7 +1582,7 @@ static bool ecm_ipv6_is_bridge_pkt(struct net_device *in, struct net_device *out
 	rcu_read_lock();
 	upper = netdev_master_upper_dev_get_rcu(lower);
 	rcu_read_unlock();
-	return upper && (upper == bridge);
+	return upper && (upper == bridge) && !ecm_ipv6_dev_has_ipaddr(lower);
 }
 
 /*
