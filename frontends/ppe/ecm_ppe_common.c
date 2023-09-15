@@ -96,3 +96,43 @@ bool ecm_ppe_ipv4_is_conn_limit_reached(void)
 	spin_unlock_bh(&ecm_ppe_ipv4_lock);
 	return false;
 }
+
+/*
+ * ecm_ppe_feature_check()
+ *	Check some specific features for PPE acceleration
+ */
+bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+{
+	bool inner = 0;
+
+	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr, &inner)) {
+#ifdef ECM_XFRM_ENABLE
+		struct net_device *ipsec_dev;
+		int32_t interface_type;
+
+		/*
+		 * Dont accelerate inner flow.
+		 */
+		if (inner) {
+			DEBUG_TRACE("%px xfrm inner flow is not supported for PPE; skip it\n", skb);
+			return false;
+		}
+
+		/*
+		 * Check if the transformation for this flow
+		 * is done by AE. If yes, then try to accelerate.
+		 */
+		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
+		if (!ipsec_dev) {
+			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
+			return false;
+		}
+		dev_put(ipsec_dev);
+#else
+		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
+		return false;
+#endif
+	}
+
+	return true;
+}

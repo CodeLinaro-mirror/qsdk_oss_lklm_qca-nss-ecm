@@ -117,69 +117,6 @@ static inline void ecm_ppe_common_connection_regenerate(struct ecm_front_end_con
 }
 
 /*
- * ecm_ppe_feature_check()
- *	Check some specific features for PPE acceleration
- */
-static inline bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
-{
-	/*
-	 * Check if this is xfrm flow and can be accelerated via PPE.
-	 */
-#ifdef CONFIG_XFRM
-	if (!dev_net(skb->dev)->xfrm.policy_count[XFRM_POLICY_OUT]) {
-		goto not_xfrm;
-	}
-
-	/*
-	 * Packet seen after output transformation. We use the IPCB(skb) to check
-	 * for this condition. No custom code should mangle the IPCB: skb->cb area,
-	 * while the packet is traversing through the INET layer.
-	 *
-	 * Accelerate outer flow through PPE.
-	 */
-	if (ip_hdr->is_v4) {
-		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
-			DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
-			return true;
-		}
-	} else if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
-		DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
-		return true;
-	}
-
-	if (ip_hdr->protocol == IPPROTO_ESP) {
-		DEBUG_TRACE("%px: ESP Passthrough packet\n", skb);
-		goto not_xfrm;
-	}
-
-	/*
-	 * skb's sp is set for decapsulated packet.
-	 * Dont accelerate inner flow.
-	 */
-	if (secpath_exists(skb)) {
-		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
-		return false;
-	}
-
-	/*
-	 * dst->xfrm is valid for lan to wan plain packet
-	 */
-	if (skb_dst(skb) && skb_dst(skb)->xfrm) {
-		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
-		return false;
-	}
-
-not_xfrm:
-#endif
-
-	/*
-	 * TODO: Should we add some features to be rejected in PPE frontend?
-	 */
-
-	return true;
-}
-
-/*
  * ecm_ppe_common_dummy_get_stats_bitmap()
  */
 static inline uint32_t ecm_ppe_common_dummy_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir)
@@ -195,5 +132,6 @@ static inline void ecm_ppe_common_dummy_set_stats_bitmap(struct ecm_front_end_co
 
 }
 
+bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr);
 bool ecm_ppe_ipv6_is_conn_limit_reached(void);
 bool ecm_ppe_ipv4_is_conn_limit_reached(void);

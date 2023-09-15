@@ -250,9 +250,9 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 
 /*
  * ecm_front_end_is_xfrm_flow()
- *	Check if the flow is an xfrm flow.
+ *	Returns true if the flow is an xfrm flow and identifies if the flow is xfrm inner.
  */
-static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
+bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool *inner)
 {
 #ifdef CONFIG_XFRM
 	struct dst_entry *dst;
@@ -271,10 +271,12 @@ static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_i
 	if (ip_hdr->is_v4) {
 		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
 			DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
+			*inner = false;
 			return true;
 		}
 	} else if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
 		DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
+		*inner = false;
 		return true;
 	}
 
@@ -288,6 +290,7 @@ static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_i
 	 */
 	if (secpath_exists(skb)) {
 		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
+		*inner = true;
 		return true;
 	}
 
@@ -297,6 +300,7 @@ static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_i
 	dst = skb_dst(skb);
 	if (dst && dst->xfrm) {
 		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
+		*inner = true;
 		return true;
 	}
 #endif
@@ -310,7 +314,9 @@ static bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_i
  */
 bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
 {
-	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr)) {
+	bool inner = 0;
+
+	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr, &inner)) {
 #ifdef ECM_XFRM_ENABLE
 		struct net_device *ipsec_dev;
 		int32_t interface_type;
