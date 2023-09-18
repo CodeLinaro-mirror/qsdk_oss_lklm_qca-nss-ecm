@@ -150,6 +150,11 @@ struct ecm_classifier_emesh_sawf_instance {
 			/* Flag indicating which field is shared with wlan_driver for MLO priority or if this is DSCPCTE_CASE for flow direction */
 	uint8_t return_valid_flag;
 			/* Flag indicating which field is shared with wlan_driver for MLO priority or if this is DSCPCTE_CASE for return direction */
+	enum sp_rule_classifier_type flow_rule_classifier_type;	/* Matched rule type for the connection */
+	enum sp_rule_classifier_type return_rule_classifier_type;	/* Matched rule type for the connection */
+	uint32_t flow_rule_key;			/* Key to delete the IFLI rule connection */
+	uint32_t return_rule_key;			/* Key to delete the IFLI rule connection */
+
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -301,8 +306,8 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.service_id = msg->flow_service_class_id;
 			sawf_flow_info.dscp = 0;
 			sawf_flow_info.rule_id = 0;
-			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+			sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 
 			msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
@@ -313,8 +318,8 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.service_id = msg->return_service_class_id;
 			sawf_flow_info.dscp = 0;
 			sawf_flow_info.rule_id = 0;
-			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
 			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+			sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 
 			msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
@@ -680,8 +685,16 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.flow_service_class = flow_output_params->service_class_id;
 		cemi->process_response.flow_sawf_metadata = msduq_forward;
+
+		/*
+		 * Output params recieved from SPM after rule look up
+		 * rule classifier type and rule id will be printed in ecm dump for debug
+		 * key will be used to delete the IFLI rule
+		 */
 		cemi->flow_rule_id = flow_output_params->rule_id;
 		cemi->flow_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+		cemi->flow_rule_classifier_type = flow_output_params->sawf_rule_type;
+		cemi->flow_rule_key = flow_output_params->key;
 	}
 
 	/*
@@ -691,8 +704,16 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	if (return_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.return_service_class = return_output_params->service_class_id;
 		cemi->process_response.return_sawf_metadata = msduq_reverse;
+
+		/*
+		 * Output params recieved from SPM after rule look up
+		 * rule classifier type and rule id will be printed in ecm dump for debug
+		 * key will be used to delete the IFLI rule
+		 */
 		cemi->return_rule_id = return_output_params->rule_id;
 		cemi->return_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+		cemi->return_rule_classifier_type = return_output_params->sawf_rule_type;
+		cemi->return_rule_key = return_output_params->key;
 	}
 
 	/*
@@ -703,8 +724,8 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	/*
 	 * Checks if legacy scs rule match has happened
 	 */
-	if ((flow_output_params->sawf_rule_type == SP_SAWF_RULE_TYPE_SCS) ||
-				(return_output_params->sawf_rule_type == SP_SAWF_RULE_TYPE_SCS)) {
+	if ((flow_output_params->sawf_rule_type == SP_RULE_TYPE_SAWF_SCS) ||
+				(return_output_params->sawf_rule_type == SP_RULE_TYPE_SAWF_SCS)) {
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG;
 	}
 
@@ -1311,8 +1332,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	 */
 	flow_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
-	flow_output_params.sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
-	return_output_params.sawf_rule_type = SP_SAWF_RULE_TYPE_INVALID;
+	flow_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
+	return_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
@@ -1854,6 +1875,19 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 		return;
 	}
 
+	if (mode == ECM_CLASSIFIER_EMESH_MODE_DECEL) {
+		/*
+		 * Call delete rule for IFLI classifier
+	 	 */
+		if (cemi->flow_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
+			sp_mapdb_ifli_rule_flush(cemi->flow_rule_id, cemi->flow_rule_key);
+		}
+
+		if (cemi->return_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
+			sp_mapdb_ifli_rule_flush(cemi->return_rule_id, cemi->return_rule_key);
+		}
+	}
+
 	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
 	if (!ci) {
 		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
@@ -2314,6 +2348,10 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 	uint8_t return_valid_flag;
 	uint32_t flow_sawf_metadata;
 	uint32_t return_sawf_metadata;
+	uint32_t flow_rule_id;
+	uint32_t return_rule_id;
+	enum sp_rule_classifier_type flow_rule_classifier_type;
+	enum sp_rule_classifier_type return_rule_classifier_type;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
@@ -2332,6 +2370,10 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 	return_sawf_metadata = cemi->process_response.return_sawf_metadata;
 	flow_valid_flag = cemi->flow_valid_flag;
 	return_valid_flag = cemi->return_valid_flag;
+	flow_rule_id = cemi->flow_rule_id;
+	return_rule_id = cemi->return_rule_id;
+	flow_rule_classifier_type = cemi->flow_rule_classifier_type;
+	return_rule_classifier_type = cemi->return_rule_classifier_type;
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
@@ -2374,6 +2416,24 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 
 	if (sawf_rule_ae_type_none) {
 		if ((result = ecm_state_write(sfi, "sawf_accel_status", "%s", "denied"))) {
+			return result;
+		}
+	}
+
+	if (sawf_rule_match_success) {
+		if ((result = ecm_state_write(sfi, "flow_rule_classifier_type", "%s", sp_mapdb_get_classifier_type_str(flow_rule_classifier_type)))) {
+			return result;
+		}
+
+		if ((result = ecm_state_write(sfi, "flow_rule_id", "%d", flow_rule_id))) {
+			return result;
+		}
+
+		if ((result = ecm_state_write(sfi, "return_rule_classifier_type", "%s", sp_mapdb_get_classifier_type_str(return_rule_classifier_type)))) {
+			return result;
+		}
+
+		if ((result = ecm_state_write(sfi, "return_rule_id", "%d", return_rule_id))) {
 			return result;
 		}
 	}
