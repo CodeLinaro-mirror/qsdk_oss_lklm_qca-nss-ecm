@@ -144,6 +144,12 @@ ccflags-$(ECM_INTERFACE_PPPOE_ENABLE) += -DECM_INTERFACE_PPPOE_ENABLE
 ccflags-$(ECM_INTERFACE_L2TPV2_ENABLE) += -DECM_INTERFACE_L2TPV2_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_L2TPV3_ENABLE=y in order
+# to enable support for L2TPV3 interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_L2TPV3_ENABLE) += -DECM_INTERFACE_L2TPV3_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_PPTP_ENABLE=y in order
 # to enable support for pptp acceleration.
 # #############################################################################

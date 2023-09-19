@@ -391,7 +391,8 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	uint8_t from_sfe_iface_address[ETH_ALEN];
 	uint8_t to_sfe_iface_address[ETH_ALEN];
 	ip_addr_t addr;
-#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE)
+#if defined(ECM_INTERFACE_L2TPV2_ENABLE) ||  defined(ECM_INTERFACE_PPTP_ENABLE) || defined(ECM_INTERFACE_GRE_TAP_ENABLE) \
+			|| defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_L2TPV3_ENABLE)
 	struct net_device *dev __attribute__((unused));
 #endif
 	struct sfe_ipv4_msg *nim;
@@ -549,7 +550,8 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_in_dev = NULL;
 #endif
-#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) ||  defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE)
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_PPTP_ENABLE) \
+						|| defined(ECM_INTERFACE_L2TPV3_ENABLE)
 		ip_addr_t saddr;
 		ip_addr_t daddr;
 #endif
@@ -620,17 +622,18 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 				break;
 			}
 
-#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_L2TPV3_ENABLE)
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
-				if (dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) {
+				if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) || (dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3)) {
+					int db_iface_type;
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
-					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TAP, &(nircm->conn_rule.flow_mtu))) {
+					db_iface_type = (dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) ? ECM_DB_IFACE_TYPE_GRE_TAP : ECM_DB_IFACE_TYPE_L2TPV3;
+					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, db_iface_type, &(nircm->conn_rule.flow_mtu))) {
 						rule_invalid = true;
-						DEBUG_WARN("%px: Unable to get mtu value for the GRE TAP interface\n", feci);
+						DEBUG_WARN("%px: Unable to get mtu value for the %s interface\n", feci, dev->name);
 					}
-
 				}
 				dev_put(dev);
 			}

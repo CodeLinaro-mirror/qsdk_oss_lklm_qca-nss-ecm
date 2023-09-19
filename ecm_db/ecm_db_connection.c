@@ -4180,6 +4180,7 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 		break;
 	case IPPROTO_IPIP:
 	case IPPROTO_GRE:
+	case IPPROTO_L2TP:
 		host1_port = 0;
 		host2_port = 0;
 		break;
@@ -4239,6 +4240,7 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 	case IPPROTO_IPV6:
 	case IPPROTO_ESP:
 	case IPPROTO_GRE:
+	case IPPROTO_L2TP:
 		host1_port = 0;
 		host2_port = 0;
 		break;

@@ -247,9 +247,10 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 
 	/*
 	 * GRE connections such as PPTP-GRE are stored into the db using a 3 tuple based hash.
-	 * So we ignore the port information here when trying to lookup the connection
+	 * L2TPv3 over IP connection also uses a 3 tuple based hash.
+	 * So we ignore the port information here when trying to lookup the connection.
 	 */
-	if (sync->protocol == IPPROTO_GRE) {
+	if (sync->protocol == IPPROTO_GRE || sync->protocol == IPPROTO_L2TP) {
 		flow_ident = 0;
 		return_ident_xlate = 0;
 	}
