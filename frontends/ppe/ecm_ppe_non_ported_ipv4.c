@@ -722,6 +722,21 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	}
 
 	/*
+	 * Check if the PPE offload is enabled for the rule's Tx/Rx interfaces or not
+	 */
+	if (!ppe_drv_iface_check_flow_offload_enabled(pd4rc->conn_rule.rx_if,
+						pd4rc->conn_rule.tx_if)) {
+		DEBUG_TRACE("%px: PPE offload is disabled for rx if: %d, tx: %d\n",
+				feci, pd4rc->conn_rule.rx_if, pd4rc->conn_rule.tx_if);
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		goto non_ported_accel_bad_rule;
+	}
+
+	DEBUG_TRACE("%px: PPE offload is enabled for rx if: %d, tx: %d\n",
+			feci, pd4rc->conn_rule.rx_if, pd4rc->conn_rule.tx_if);
+
+	/*
 	 * Set up the flow and return qos tags
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
