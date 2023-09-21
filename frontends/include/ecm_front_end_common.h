@@ -411,6 +411,7 @@ void ecm_front_end_common_sysctl_unregister(void);
 int ecm_sfe_sysctl_tbl_init(void);
 void ecm_sfe_sysctl_tbl_exit(void);
 bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr);
+bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool *inner);
 
 ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci);
 void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci);
