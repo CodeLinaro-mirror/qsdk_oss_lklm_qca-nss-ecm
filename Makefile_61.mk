@@ -163,7 +163,7 @@ ifeq ($(ECM_IPV6_ENABLE), y)
 # Define ECM_INTERFACE_TUNIPIP6_ENABLE=y in order
 # to enable support for TUNIPIP6 interface.
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
+ccflags-$(ECM_INTERFACE_TUNIPIP6_ENABLE) += -DECM_INTERFACE_TUNIPIP6_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_MAP_T_ENABLE=y in order
