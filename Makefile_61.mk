@@ -157,7 +157,7 @@ ifeq ($(ECM_IPV6_ENABLE), y)
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
 # to enable support for SIT interface.
 # #############################################################################
-#ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
+ccflags-$(ECM_INTERFACE_SIT_ENABLE) += -DECM_INTERFACE_SIT_ENABLE
 
 # #############################################################################
 # Define ECM_INTERFACE_TUNIPIP6_ENABLE=y in order
