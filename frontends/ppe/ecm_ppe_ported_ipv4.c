@@ -848,8 +848,14 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			sawf_rule_valid = ecm_classifier_emesh_is_sawf_rule_valid((struct ecm_classifier_emesh_sawf_instance *)aci);
 			aci->deref(aci);
 		}
-
-		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) && sawf_rule_valid) {
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) {
+			/*
+			 * Set sawf valid flag as false and mark scs
+			 * flag as true.
+			 */
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SCS;
+			pd4rc->valid_flags &= (~PPE_DRV_V4_VALID_FLAG_SAWF);
+		} else if (sawf_rule_valid) {
 			spin_lock_bh(&feci->lock);
 			feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
 			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;

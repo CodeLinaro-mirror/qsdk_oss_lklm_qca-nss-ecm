@@ -2336,7 +2336,7 @@ EXPORT_SYMBOL(ecm_classifier_emesh_sawf_instance_alloc);
  * ecm_db_connection_make_defunct_sawf_connections()
  *      Make defunct all connections that are currently assigned to a classifier of the given type
  */
-void ecm_db_connection_make_defunct_sawf_connections(uint16_t rule_id)
+static void ecm_db_connection_make_defunct_sawf_connections(uint32_t rule_id)
 {
 	struct ecm_db_connection_instance *ci;
 	DEBUG_INFO("Make defunct all connections assigned to SAWF\n");
@@ -2409,9 +2409,9 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 
 	/*
 	 * Return if E-Mesh or SAWF functionality is not enabled or the rule
-	 * classifier type is SCS.
+	 * classifier type is MSCS.
 	 */
-	if (r->classifier_type == SP_RULE_TYPE_SCS || r->classifier_type == SP_RULE_TYPE_MSCS) {
+	if (r->classifier_type == SP_RULE_TYPE_MSCS) {
 		DEBUG_INFO("Not an EMESH / SAWF rule notification !\n");
 		return NOTIFY_DONE;
 	}
