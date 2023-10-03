@@ -25,6 +25,7 @@
 
 #include "ecm_wifi_plugin.h"
 
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 /*
  * ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params()
  *	Update mesh latency params.
@@ -45,6 +46,7 @@ static inline void ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params(struct ecm
 
 	qca_mesh_latency_update_peer_parameter_v2(&wlan_mesh_params);
 }
+#endif
 
 /*
  * ecm_wifi_plugin_emesh_sawf_conn_sync()
@@ -80,6 +82,8 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct ecm_classifer_eme
 static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info)
 {
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	uint32_t msduq = 0;
+	uint32_t sawf_mark = 0;
 	struct ath_dl_params sawf_params = {0};
 #else
 	struct qca_sawf_metadata_param sawf_params = {0};
@@ -92,7 +96,14 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	sawf_params.rule_id = sawf_flow_info->rule_id;
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	return ath_sawf_downlink(&sawf_params);
+	msduq = ath_sawf_downlink(&sawf_params);
+	sawf_mark |= ECM_WIFI_PLUGIN_SAWF_TAG;
+	sawf_mark <<= ECM_WIFI_PLUGIN_SAWF_TAG_SHIFT;
+	sawf_mark |= (sawf_params.service_id & ECM_WIFI_PLUGIN_SAWF_SERVICE_CLASS_MASK);
+	sawf_mark <<= ECM_WIFI_PLUGIN_SAWF_SERVICE_CLASS_SHIFT;
+	sawf_mark |= (msduq & ECM_WIFI_PLUGIN_SAWF_MSDUQ_MASK);
+
+	return sawf_mark;
 #else
 	sawf_params.sawf_rule_type = sawf_flow_info->sawf_rule_type;
 
@@ -105,7 +116,9 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
  * 	Register EMESH client callback with ECM EMSH classifier to update peer mesh latency parameters.
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	.update_peer_mesh_latency_params = ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params,
+#endif
 	.update_service_id_get_msduq = ecm_wifi_plugin_emesh_sawf_get_mark_data,
 	.sawf_conn_sync = ecm_wifi_plugin_emesh_sawf_conn_sync,
 };
