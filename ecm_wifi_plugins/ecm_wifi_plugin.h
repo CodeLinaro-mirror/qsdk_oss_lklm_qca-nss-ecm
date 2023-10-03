@@ -71,6 +71,14 @@
 #endif
 #endif
 
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+#define ECM_WIFI_PLUGIN_SAWF_TAG 0xAA
+#define ECM_WIFI_PLUGIN_SAWF_TAG_SHIFT 8
+#define ECM_WIFI_PLUGIN_SAWF_SERVICE_CLASS_MASK 0xFF
+#define ECM_WIFI_PLUGIN_SAWF_SERVICE_CLASS_SHIFT 16
+#define ECM_WIFI_PLUGIN_SAWF_MSDUQ_MASK 16
+#endif
+
 /*
  * ecm_wifi_plugin_emesh_register()
  *	API to register emesh callbacks.
