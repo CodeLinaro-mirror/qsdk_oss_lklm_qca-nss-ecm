@@ -62,10 +62,10 @@ ecm-$(ECM_IPV6_ENABLE) += frontends/cmn/ecm_non_ported_ipv6.o
 endif
 
 #SFE Multicast is enabled in case NSS disabled
-#ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
-#ifeq ($(ECM_IPV6_ENABLE), y)
-#ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
-#endif
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
+ifeq ($(ECM_IPV6_ENABLE), y)
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
+endif
 
 # #############################################################################
 # Define ECM_FRONT_END_NSS_ENABLE=y in order to select
@@ -196,7 +196,7 @@ ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 # #############################################################################
 
 ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
-#ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
+ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
@@ -204,9 +204,9 @@ ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 endif
 else
-#ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
-#ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
+ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
 endif
 endif
 
