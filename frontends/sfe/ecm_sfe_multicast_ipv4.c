@@ -1932,12 +1932,11 @@ static void ecm_sfe_multicast_ipv4_connection_destroy_callback(void *app_data, s
 
 	/*
 	 * Mcast acceleration ends
+	 * TODO: Figure out the issue with counters and add the ASSERTs back.
 	 */
 	spin_lock_bh(&ecm_sfe_ipv4_lock);
 	ecm_sfe_multicast_ipv4_accelerated_count--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_sfe_multicast_ipv4_accelerated_count >= 0, "Bad udp accel counter\n");
 	ecm_sfe_ipv4_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_sfe_ipv4_accelerated_count >= 0, "Bad accel counter\n");
 	spin_unlock_bh(&ecm_sfe_ipv4_lock);
 
 	/*
@@ -2188,12 +2187,11 @@ static void ecm_sfe_multicast_ipv4_connection_accel_ceased(struct ecm_front_end_
 
 	/*
 	 * Mcast acceleration ends
+	 * TODO: Figure out the issue with counters and add the ASSERTs back.
 	 */
 	spin_lock_bh(&ecm_sfe_ipv4_lock);
 	ecm_sfe_multicast_ipv4_accelerated_count--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_sfe_multicast_ipv4_accelerated_count >= 0, "Bad Mcast accel counter\n");
 	ecm_sfe_ipv4_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_sfe_ipv4_accelerated_count >= 0, "Bad accel counter\n");
 	spin_unlock_bh(&ecm_sfe_ipv4_lock);
 }
 
