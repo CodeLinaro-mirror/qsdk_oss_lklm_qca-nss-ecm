@@ -148,6 +148,11 @@ static int __init ecm_init(void)
 		goto err_db;
 	}
 
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	if (ecm_front_end_ppe_fse_enable) {
+		ppe_drv_fse_feature_enable();
+	}
+#endif
 	ret = ecm_db_init(ecm_dentry);
 	if (0 != ret) {
 		goto err_db;
@@ -248,12 +253,6 @@ static int __init ecm_init(void)
 		goto err_state;
 	}
 #endif
-
-#ifdef ECM_FRONT_END_PPE_ENABLE
-	if (ecm_front_end_ppe_fse_enable) {
-		ppe_drv_fse_feature_enable();
-	}
-#endif
 	ecm_front_end_common_sysctl_register();
 
 	printk(KERN_INFO "ECM init complete\n");
@@ -312,6 +311,11 @@ err_cls_mscs:
 err_cls_default:
 	ecm_db_exit();
 err_db:
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	if (ecm_front_end_ppe_fse_enable) {
+		ppe_drv_fse_feature_disable();
+	}
+#endif
 	debugfs_remove_recursive(ecm_dentry);
 
 	printk(KERN_INFO "ECM init failed: %d\n", ret);
