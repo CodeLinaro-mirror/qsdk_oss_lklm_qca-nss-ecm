@@ -8,9 +8,9 @@ endif
 obj-m +=examples/ecm_ae_select.o
 
 obj-m += ecm.o
-#ifeq ($(BUILD_ECM_WIFI_PLUGIN),y)
-#obj-m += ecm_wifi_plugins/
-#endif
+ifeq ($(BUILD_ECM_WIFI_PLUGIN),y)
+obj-m += ecm_wifi_plugins/
+endif
 
 # #####################################################
 # Example builds.
@@ -277,13 +277,13 @@ ccflags-$(ECM_CLASSIFIER_MARK_ENABLE) += -DECM_CLASSIFIER_MARK_ENABLE
 # #############################################################################
 # Define ECM_CLASSIFIER_MSCS_ENABLE=y in order to enable mscs flow classifier.
 # #############################################################################
-#ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
-#ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
+ecm-$(ECM_CLASSIFIER_MSCS_ENABLE) += ecm_classifier_mscs.o
+ccflags-$(ECM_CLASSIFIER_MSCS_ENABLE) += -DECM_CLASSIFIER_MSCS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_MSCS_SCS_ENABLE=y in order to enable SCS classifier.
 # #############################################################################
-#ccflags-$(ECM_CLASSIFIER_MSCS_SCS_ENABLE) += -DECM_CLASSIFIER_MSCS_SCS_ENABLE
+ccflags-$(ECM_CLASSIFIER_MSCS_SCS_ENABLE) += -DECM_CLASSIFIER_MSCS_SCS_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_NL_ENABLE=y in order to enable NL classifier.
@@ -305,8 +305,8 @@ ccflags-$(ECM_CLASSIFIER_DSCP_ENABLE) += -DECM_CLASSIFIER_DSCP_ENABLE
 # with Hy-Fi is completed.
 # #############################################################################
 #
-#ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
-#ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
+ecm-$(ECM_CLASSIFIER_HYFI_ENABLE) += ecm_classifier_hyfi.o
+ccflags-$(ECM_CLASSIFIER_HYFI_ENABLE) += -DECM_CLASSIFIER_HYFI_ENABLE
 
 # #############################################################################
 # Define ECM_CLASSIFIER_PCC_ENABLE=y in order to enable
@@ -320,8 +320,8 @@ ccflags-$(ECM_CLASSIFIER_PCC_ENABLE) += -DECM_CLASSIFIER_PCC_ENABLE
 # #############################################################################
 # Define ECM_CLASSIFIER_EMESH_ENABLE=y in order to enable E-Mesh classifier.
 # #############################################################################
-#ecm-$(ECM_CLASSIFIER_EMESH_ENABLE) += ecm_classifier_emesh.o
-#ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
+ecm-$(ECM_CLASSIFIER_EMESH_ENABLE) += ecm_classifier_emesh.o
+ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
 
 # #############################################################################
 # Define ECM_NON_PORTED_SUPPORT_ENABLE=y in order to enable non-ported protocol.
@@ -403,6 +403,11 @@ ccflags-$(ECM_BAND_STEERING_ENABLE) += -DECM_BAND_STEERING_ENABLE
 # to enable support for bridge VLAN filter acceleration.
 # #############################################################################
 ccflags-$(ECM_BRIDGE_VLAN_FILTERING_ENABLE) += -DECM_BRIDGE_VLAN_FILTERING_ENABLE
+
+# #############################################################################
+# Define ECM_FRONT_END_FSE_ENABLE=y in order to enable FSE rule push from ECM frontend.
+# #############################################################################
+ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
 
 # #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
