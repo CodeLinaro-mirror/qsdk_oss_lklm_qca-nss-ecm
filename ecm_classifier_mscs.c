@@ -728,6 +728,7 @@ mscs_classifier_exit:
 	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	cmscsi->process_response.flow_qos_tag = cmscsi->priority[ECM_CONN_DIR_FLOW];
 	cmscsi->process_response.return_qos_tag = cmscsi->priority[ECM_CONN_DIR_RETURN];
+	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_HLOS_TID_VALID;
 
 mscs_classifier_out:
 
