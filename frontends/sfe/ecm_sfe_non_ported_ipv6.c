@@ -1034,6 +1034,22 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		nircm->valid_flags |= SFE_RULE_CREATE_MARK_VALID;
 	}
 #endif
+
+#ifdef ECM_MHT_ENABLE
+	/*
+	 * Check if mht feature is enabled or not.
+	 * If yes, add port id to rule mark.
+	 * otherwise try with the next packet until reach to a MAX retry count
+	 */
+	if (ecm_sfe_mht_enable && (!ecm_sfe_common_get_mht_port_id(feci, from_sfe_iface, to_sfe_iface,
+								   &nircm->valid_flags, &nircm->mark_rule))) {
+		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		ecm_sfe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		kfree(nim);
+		return;
+	}
+#endif
 	/*
 	 * Set protocol
 	 */
