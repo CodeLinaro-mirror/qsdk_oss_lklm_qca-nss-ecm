@@ -29,6 +29,7 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/nf_conntrack_dscpremark_ext.h>
 #include <net/ip.h>
+#include <net/sch_generic.h>
 #include <linux/inet.h>
 #include <sp_api.h>
 
