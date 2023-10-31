@@ -833,6 +833,13 @@ static int ecm_sfe_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 	create->tuple.return_ident = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO));
 
 	/*
+	 * Get mac addresses.
+	 * The src_mac is the mac address of the node that established the connection.
+	 * This will work whether the from_node is LAN (egress) or WAN (ingress).
+	 */
+	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)create->conn_rule.flow_mac);
+
+	/*
 	 * Destination Node(MAC) address. This address will be same for all to side intefaces
 	 */
 	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
