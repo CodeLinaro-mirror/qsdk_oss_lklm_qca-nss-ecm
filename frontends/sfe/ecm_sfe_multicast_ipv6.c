@@ -1677,6 +1677,15 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	memcpy(create->dest_mac, dest_mac, ETH_ALEN);
 
 	/*
+	 * Bridge vlan passthrough
+	 */
+	if ((create->rule_flags & SFE_RULE_CREATE_FLAG_BRIDGE_FLOW) && (!(create->valid_flags & SFE_RULE_CREATE_VLAN_VALID))) {
+		if (skb_vlan_tag_present(skb)) {
+			create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_VLAN_PASSTHROUGH;
+		}
+	}
+
+	/*
 	 * Set protocol
 	 */
 	create->tuple.protocol = IPPROTO_UDP;
