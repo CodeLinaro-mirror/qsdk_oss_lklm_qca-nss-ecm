@@ -1563,7 +1563,7 @@ process_packet:
 		struct ecm_front_end_connection_instance *feci;
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		feci->accelerate(feci, &prevalent_pr, false, NULL, NULL);
+		feci->accelerate(feci, &prevalent_pr, false, NULL, skb);
 		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);
