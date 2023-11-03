@@ -1126,7 +1126,9 @@ done:
 				ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
+			prevalent_pr.flow_service_class = aci_pr.flow_service_class;
 			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
+			prevalent_pr.return_service_class = aci_pr.return_service_class;
 		}
 
 		/*

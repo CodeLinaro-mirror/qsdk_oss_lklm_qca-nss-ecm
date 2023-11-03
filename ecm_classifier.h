@@ -175,6 +175,8 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 	uint32_t flow_sawf_metadata;			/* Flow SAWF metadata value */
 	uint32_t return_sawf_metadata;			/* Return SAWF metadata value */
+	uint8_t flow_service_class;			/* Flow service class ID */
+	uint8_t return_service_class;			/* Return service class ID */
 	uint8_t flow_vlan_pcp;				/* Flow VLAN pcp remark value */
 	uint8_t return_vlan_pcp;			/* Return VLAN pcp remark value */
 #endif
