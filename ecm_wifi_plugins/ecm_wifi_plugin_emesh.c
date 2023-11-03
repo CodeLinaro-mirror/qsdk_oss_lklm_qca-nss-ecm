@@ -50,20 +50,17 @@ static inline void ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params(struct ecm
  * ecm_wifi_plugin_emesh_sawf_conn_sync()
  *	Connection sync callback for EMESH-SAWF classifier.
  */
-static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct net_device *dst_dev, uint8_t *dmac,
-					  struct net_device *src_dev, uint8_t *smac,
-					  uint8_t fw_service_id, uint8_t rv_service_id,
-					  uint8_t start_or_stop)
+static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct ecm_classifer_emesh_sawf_sync_params *sawf_sync_params)
 {
 	struct qca_sawf_connection_sync_param sawf_params = {0};
 
-	sawf_params.src_dev = src_dev;
-	sawf_params.dst_dev = dst_dev;
-	sawf_params.dst_mac = dmac;
-	sawf_params.src_mac = smac;
-	sawf_params.fw_service_id = fw_service_id;
-	sawf_params.rv_service_id = rv_service_id;
-	sawf_params.start_or_stop = start_or_stop;
+	sawf_params.src_dev = sawf_sync_params->src_dev;
+	sawf_params.dst_dev = sawf_sync_params->dest_dev;
+	sawf_params.dst_mac = sawf_sync_params->dest_mac;
+	sawf_params.src_mac = sawf_sync_params->src_mac;
+	sawf_params.fw_service_id = sawf_sync_params->fwd_service_id;
+	sawf_params.rv_service_id = sawf_sync_params->rev_service_id;
+	sawf_params.start_or_stop = sawf_sync_params->add_or_sub;
 
 	qca_sawf_connection_sync(&sawf_params);
 }

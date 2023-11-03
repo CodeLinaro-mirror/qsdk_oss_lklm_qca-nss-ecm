@@ -96,6 +96,20 @@ struct ecm_classifer_emesh_sawf_mesh_latency_params {
 };
 
 /**
+ * Structure collecting sawf param to send to wlan driver
+ * via registered callback at connection sync.
+ */
+struct ecm_classifer_emesh_sawf_sync_params {
+	struct net_device *dest_dev;		/**< Destination net dev. */
+	struct net_device *src_dev;		/**< Source net dev. */
+	uint8_t dest_mac[ETH_ALEN];		/**< Destination MAC. */
+	uint8_t src_mac[ETH_ALEN];		/**< Source MAC. */
+	uint8_t fwd_service_id;			/**< Forward Service class ID. */
+	uint8_t rev_service_id;			/**< Reverse Service class ID. */
+	uint8_t add_or_sub;			/**< Add or Subtract a Flow */
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
 typedef void (*ecm_classifier_emesh_callback_t)(struct ecm_classifer_emesh_sawf_mesh_latency_params *mesh_params);
@@ -108,9 +122,7 @@ typedef uint32_t (*ecm_classifier_emesh_msduq_callback_t)(struct ecm_classifier_
 /**
  * SAWF params sync callback function pointer.
  */
-typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct net_device *dest_dev, uint8_t dest_mac[],
-		struct net_device *src_dev, uint8_t src_mac[], uint8_t fwd_service_id, uint8_t rev_service_id,
-		uint8_t add_or_sub);
+typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct ecm_classifer_emesh_sawf_sync_params *sawf_sync_params);
 
 /**
  * FSE flow update callback to which emesh-sawf will register.
