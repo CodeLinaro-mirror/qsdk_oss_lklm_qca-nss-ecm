@@ -157,6 +157,12 @@ ccflags-$(ECM_INTERFACE_GRE_TAP_ENABLE) += -DECM_INTERFACE_GRE_TAP_ENABLE
 # #############################################################################
 ccflags-$(ECM_INTERFACE_GRE_TUN_ENABLE) += -DECM_INTERFACE_GRE_TUN_ENABLE
 
+# #############################################################################
+# Define ECM_INTERFACE_L2TPV3_ENABLE=y in order
+# to enable support for L2TPV3 interface.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_L2TPV3_ENABLE) += -DECM_INTERFACE_L2TPV3_ENABLE
+
 ifeq ($(ECM_IPV6_ENABLE), y)
 # #############################################################################
 # Define ECM_INTERFACE_SIT_ENABLE=y in order
