@@ -3332,7 +3332,6 @@ identifier_update:
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 		struct net_device *ipsec_dev;
-		ip_addr_t saddr, daddr;
 
 		DEBUG_TRACE("Net device: %px is IPSec tunnel type: %d\n", dev, dev_type);
 
@@ -3353,18 +3352,6 @@ identifier_update:
 				ae_interface_num);
 		dev_put(ipsec_dev);
 
-		/*
-		 * Copy IP addresses from skb
-		 */
-		if (ip_hdr(skb)->version == IPVERSION) {
-			ECM_NIN4_ADDR_TO_IP_ADDR(saddr, ip_hdr(skb)->saddr);
-			ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
-		} else {
-			ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
-			ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
-		}
-
-		ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_IPSEC_TUNNEL, &dev_mtu);
 #endif
 		type_info.ipsec_tunnel.os_specific_ident = dev_interface_num;
 
