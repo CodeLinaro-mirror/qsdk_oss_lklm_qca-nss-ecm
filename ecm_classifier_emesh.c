@@ -290,6 +290,9 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	 * using the service id, netdev, and peer's mac address.
 	 * TODO: Can we call qca_sawf_get_msduq(netdev, peer_mac, service_id) instead of
 	 *       qca_sawf_get_msdu_queue(netdev, peer_mac, service_id, dscp, rule_id, sawf_rule_type)?
+	 *
+	 *	 Proprietary driver should know that there is an update for the msduq and it should do the
+	 *	 accounting for the old msduq value.
 	 */
 	if (ecm_emesh.update_service_id_get_msduq) {
 		if (dest_dev) {
@@ -299,6 +302,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.dscp = 0;
 			sawf_flow_info.rule_id = 0;
 			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
+			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 
 			msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
@@ -310,6 +314,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 			sawf_flow_info.dscp = 0;
 			sawf_flow_info.rule_id = 0;
 			sawf_flow_info.sawf_rule_type = SP_SAWF_RULE_TYPE_DEFAULT;
+			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 
 			msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 		}
@@ -1413,6 +1418,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
 				sawf_flow_info.rule_id = flow_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = flow_output_params.sawf_rule_type;
+				sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
@@ -1434,6 +1440,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
 				sawf_flow_info.rule_id = return_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = return_output_params.sawf_rule_type;
+				sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
