@@ -2728,6 +2728,7 @@ bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_if
 	case ECM_DB_IFACE_TYPE_GRE_TUN:
 	case ECM_DB_IFACE_TYPE_GRE_TAP:
 	case ECM_DB_IFACE_TYPE_VXLAN:
+	case ECM_DB_IFACE_TYPE_L2TPV3:
 		if (src_dev) {
 			*mtu = src_dev->mtu;
 		} else {
@@ -3278,6 +3279,26 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			}
 		}
 #endif
+
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+		/*
+		 * L2TPV3 ethernet pseudowire interface
+		 */
+		if (dev->priv_flags_ext & (IFF_EXT_ETH_L2TPV3)) {
+			interface_type = feci->ae_interface_type_get(feci, dev);
+			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
+
+			/*
+			 * L2TPv3 interface wth psuedowire type Ethernet is handled here.
+			 * Wait until acceleration engine is ready.
+			 */
+			if (ae_interface_num < 0) {
+				DEBUG_TRACE("%px: L2TPv3 interface is not ready yet. Interface type: %d\n", feci, interface_type);
+				return NULL;
+			}
+		}
+#endif
+
 		/*
 		 * ETHERNET!
 		 * Just plain ethernet it seems
@@ -4746,6 +4767,10 @@ static struct net_device *ecm_interface_should_update_egress_device_bridged(
 	return bridge;
 }
 
+/*
+ * ecm_interface_is_tunnel_endpoint
+ * 	Check if interface is a tunnel endpoint
+ */
 static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct net_device *dev, int ip_version, int protocol)
 {
 	if (ip_version == 4) {
@@ -4772,6 +4797,13 @@ static inline bool ecm_interface_is_tunnel_endpoint(struct sk_buff *skb, struct 
 	if (protocol == IPPROTO_GRE || protocol == IPPROTO_ESP || protocol == IPPROTO_ETHERIP) {
 		return true;
 	}
+
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+	if ((protocol == IPPROTO_L2TP) && (dev->type == ARPHRD_ETHER)
+			&& (dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3)) {
+		return true;
+	}
+#endif
 
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 	if (dev->type == ARPHRD_NONE && dev->priv_flags_ext & IFF_EXT_TUN_TAP) {
@@ -6104,6 +6136,16 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 				if (dest_dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
 					DEBUG_TRACE("%px: Acceleration not supported for GRE tap flows.\n", dest_dev);
+					dev_put(src_dev);
+					dev_put(dest_dev);
+					ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
+					return ECM_DB_IFACE_HEIRARCHY_MAX;
+				}
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+				if (dest_dev->priv_flags_ext & (IFF_EXT_ETH_L2TPV3)) {
+					DEBUG_TRACE("%px: Acceleration not supported for L2TPV3 flows.\n", dest_dev);
 					dev_put(src_dev);
 					dev_put(dest_dev);
 					ecm_db_connection_interfaces_deref(interfaces, current_interface_index);

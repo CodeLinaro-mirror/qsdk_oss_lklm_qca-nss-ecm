@@ -123,6 +123,9 @@ static inline bool ecm_non_ported_ipv6_is_protocol_supported(int protocol)
 #endif
 	case IPPROTO_ETHERIP:
 	case IPPROTO_RAW:
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+	case IPPROTO_L2TP:
+#endif
 		return true;
 	}
 	return false;
