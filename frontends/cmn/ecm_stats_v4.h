@@ -29,8 +29,8 @@ enum ecm_stats_v4_exception_cmn_events {
 			/* Number of IPv4 packets ignored as PPTP disabled */
 	ECM_STATS_V4_EXCEPTION_L2TPV2_DISABLED,
 			/* Number of IPv4 packets ignored as L2TPv2 accelaration failed */
-	ECM_STATS_V4_EXCEPTION_L2TPV3_PROTOCOL,
-			/* Number of IPv4 packets ignored as L2TPv3 accelaration failed */
+	ECM_STATS_V4_EXCEPTION_L2TPV3_UNSUPPORTED_INTERFACE,
+			/* Number of IPv4 packets ignored as L2TPv3 pseudowire interface (ex: PPP) not supported */
 	ECM_STATS_V4_EXCEPTION_LOCAL_PACKETS_IGNORED,
 			/* Number of IPv4 locally formed packets ignored */
 	ECM_STATS_V4_EXCEPTION_BRIDGE_PACKET_WRONG_HOOK,
@@ -107,6 +107,8 @@ enum ecm_stats_v4_exception_cmn_events {
 			/* Number of Bridged IPv4 packet ignored as input interface marked with no-offload */
 	ECM_STATS_V4_EXCEPTION_BRIDGE_OUT_IFF_NO_OFFLOAD,
 			/* Number of Bridged IPv4 packet ignored as output interface marked with no-offload */
+	ECM_STATS_V4_EXCEPTION_UNSUPPORTED_L2TPV3_PROTOCOL,
+			/* Number of IPv4 packets ignored as unsupported L2TPv3 protocol */
 	ECM_STATS_V4_EXCEPTION_CMN_MAX
 		/*Maximum common exceptions for IPv4 flows*/
 

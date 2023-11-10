@@ -29,8 +29,8 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of IPv6 packets ignored as PPTP accelaration failed */
 	ECM_STATS_V6_EXCEPTION_L2TPV2_DISABLED,
 			/* Number of IPv6 packets ignored as L2TPv2 accelaration failed */
-	ECM_STATS_V6_EXCEPTION_L2TPV3_PROTOCOL,
-			/* Number of IPv6 packets ignored as L2TPv3 accelaration failed */
+	ECM_STATS_V6_EXCEPTION_L2TPV3_UNSUPPORTED_INTERFACE,
+			/* Number of IPv6 packets ignored as L2TPv3 pseudowire interface (ex: PPP) not supported */
 	ECM_STATS_V6_EXCEPTION_LOCAL_PACKETS_IGNORED,
 			/* Number of IPv6 locally formed packets ignored */
 	ECM_STATS_V6_EXCEPTION_BRIDGE_PACKET_WRONG_HOOK,
@@ -105,6 +105,8 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of bridged IPv6 packet ignored as input interface marked with no-offload */
 	ECM_STATS_V6_EXCEPTION_BRIDGE_OUT_IFF_NO_OFFLOAD,
 			/* Number of bridged IPv6 packet ignored as output interface marked with no-offload */
+	ECM_STATS_V6_EXCEPTION_UNSUPPORTED_L2TPV3_PROTOCOL,
+			/* Number of IPv6 packets ignored as unsupported L2TPv3 protocol */
 	ECM_STATS_V6_EXCEPTION_CMN_MAX
 			/*Maximum common exceptions for IPv6 flows*/
 };

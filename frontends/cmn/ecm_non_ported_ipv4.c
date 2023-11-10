@@ -122,6 +122,9 @@ static inline bool ecm_non_ported_ipv4_is_protocol_supported(int protocol)
 	case IPPROTO_GRE:
 #endif
 	case IPPROTO_RAW:
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+	case IPPROTO_L2TP:
+#endif
 		return true;
 	}
 	return false;

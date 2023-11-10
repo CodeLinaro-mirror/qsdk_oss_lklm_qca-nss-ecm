@@ -498,6 +498,24 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 #endif
 
 /*
+ * ecm_front_end_l2tp_proto_is_accel_allowed
+ *	Allow L2TPV3 acceleration for l2tpv3 tunnel on ethernet interfaces
+ */
+bool ecm_front_end_l2tp_proto_is_accel_allowed(struct net_device *indev, struct net_device *outdev)
+{
+#ifdef ECM_INTERFACE_L2TPV3_ENABLE
+	/*
+	 * L2TPv3 acceleration is allowed for l2tp-ethX interfaces
+	 */
+	if ((indev->priv_flags_ext & IFF_EXT_ETH_L2TPV3)
+		|| (outdev->priv_flags_ext & IFF_EXT_ETH_L2TPV3)) {
+		return true;
+	}
+#endif
+	return false;
+}
+
+/*
  * ecm_front_end_gre_proto_is_accel_allowed()
  *	Handle the following GRE cases:
  *

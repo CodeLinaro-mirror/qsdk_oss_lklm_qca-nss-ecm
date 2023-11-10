@@ -1206,6 +1206,17 @@ vxlan_done:
 	}
 
 	/*
+	 * Check if we can accelerate L2TPv3 protocol.
+	 */
+	if (ip_hdr.protocol == IPPROTO_L2TP) {
+		if (!ecm_front_end_l2tp_proto_is_accel_allowed(in_dev, out_dev)) {
+			DEBUG_WARN("%px: L2TPv3 protocol is not allowed\n", skb);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_UNSUPPORTED_L2TPV3_PROTOCOL);
+			return NF_ACCEPT;
+		}
+	}
+
+	/*
 	 * Check for a multicast Destination address here.
 	 */
 	ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.in6);
@@ -1665,10 +1676,10 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 #endif
 
 	/*
-	 * skip l2tpv3 because we don't accelerate them
+	 * skip l2tpv3 over PPP interface because we don't accelerate them
 	 */
 	if (ecm_interface_is_l2tp_packet_by_version(skb, out, 3)) {
-		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_L2TPV3_PROTOCOL);
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_L2TPV3_UNSUPPORTED_INTERFACE);
 		return NF_ACCEPT;
 	}
 
