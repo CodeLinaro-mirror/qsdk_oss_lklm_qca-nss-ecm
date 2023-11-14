@@ -40,5 +40,6 @@ extern struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_f
 							uint8_t *given_node_addr, struct sk_buff *skb);
 extern struct ecm_db_host_instance *ecm_ipv6_host_establish_and_ref(ip_addr_t addr);
 extern struct ecm_db_mapping_instance *ecm_ipv6_mapping_establish_and_ref(ip_addr_t addr, int port);
+extern bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev);
 extern int ecm_ipv6_init(struct dentry *dentry);
 extern void ecm_ipv6_exit(void);

@@ -124,7 +124,7 @@ bool ecm_ipv6_terminate_pending = false;		/* True when the user has signalled we
  * ecm_ipv6_dev_has_ipaddr()
  *	Returns true if dev has an IPv6 address
  */
-static bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
+bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
 {
 	struct inet6_dev *ip6_inetdev;
 

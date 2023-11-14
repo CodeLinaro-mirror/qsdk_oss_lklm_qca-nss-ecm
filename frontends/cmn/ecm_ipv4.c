@@ -118,7 +118,7 @@ bool ecm_ipv4_terminate_pending = false;		/* True when the user has signalled we
  * ecm_ipv4_dev_has_ipaddr()
  *	Returns true if dev has an IPv4 address
  */
-static bool ecm_ipv4_dev_has_ipaddr(struct net_device *dev)
+bool ecm_ipv4_dev_has_ipaddr(struct net_device *dev)
 {
 	struct in_device *in_dev;
 	const struct in_ifaddr *ifa;
