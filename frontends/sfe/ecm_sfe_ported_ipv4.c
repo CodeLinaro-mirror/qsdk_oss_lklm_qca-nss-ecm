@@ -224,6 +224,15 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 		_ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		spin_unlock_bh(&ecm_sfe_ipv4_lock);
 
+		/*
+		 * If there was a defunct attempt while handling the flush event, set the accel mode
+		 * to defunct fail. Then either conntrack timeout or ECM database connection timeout
+		 * will handle the destroy later.
+		 */
+		if (feci->is_defunct) {
+			feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
+		}
+
 		spin_unlock_bh(&feci->lock);
 
 		/*
