@@ -291,7 +291,7 @@ static void ecm_classifier_emesh_sawf_flowsawf_set(struct ecm_front_end_flowsawf
 	 * TODO: Can we call qca_sawf_get_msduq(netdev, peer_mac, service_id) instead of
 	 *       qca_sawf_get_msdu_queue(netdev, peer_mac, service_id, dscp, rule_id, sawf_rule_type)?
 	 *
-	 *	 Proprietary driver should know that there is an update for the msduq and it should do the
+	 *	 Wifi driver should know that there is an update for the msduq and it should do the
 	 *	 accounting for the old msduq value.
 	 */
 	if (ecm_emesh.update_service_id_get_msduq) {
