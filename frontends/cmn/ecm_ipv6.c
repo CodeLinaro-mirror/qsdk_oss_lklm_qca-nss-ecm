@@ -383,19 +383,11 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 #ifdef ECM_INTERFACE_MAP_T_ENABLE
 			ip6_inetdev = ip6_dst_idev(skb_dst(skb));
 			if (!ip6_inetdev) {
-				DEBUG_WARN("%px: Failed to get dst device for MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
+				DEBUG_WARN("%px: Failed to obtain mac address for MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
-			if (ip6_inetdev->dev->ifindex == ecm_db_iface_interface_identifier_get(interface_list[i])) {
-				local_dev = dev_get_by_index(&init_net, inet6_iif(skb));
-			} else {
-				local_dev = ip6_inetdev->dev;
-				dev_hold(local_dev);
-			}
-			if (!local_dev) {
-				DEBUG_WARN("%px: Failed to get local device for MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
-				return NULL;
-			}
+
+			local_dev = ip6_inetdev->dev;
 
 			/*
 			 * If the local_dev is a PPP device, we support only PPPoE devices.
@@ -403,19 +395,13 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 			if (local_dev->type == ARPHRD_PPP) {
 #ifndef ECM_INTERFACE_PPPOE_ENABLE
 				DEBUG_TRACE("%px: MAP-T over netdevice %s unsupported\n", feci, local_dev->name);
-				dev_put(local_dev);
 				return NULL;
 #else
 				if (!ecm_interface_mac_addr_get_pppoe(local_dev, node_addr)) {
 					DEBUG_WARN("%px: Unable to get any PPPoE device MAC address\n", feci);
-					dev_put(local_dev);
 					return NULL;
 				}
 
-				DEBUG_TRACE("%px: obtained mac address[%pM] of %s as MAP-T address "ECM_IP_ADDR_OCTAL_FMT"\n",
-						feci, local_dev->name, node_addr, ECM_IP_ADDR_TO_OCTAL(addr));
-
-				dev_put(local_dev);
 				done = true;
 				break;
 #endif
@@ -424,7 +410,6 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: Obtained mac address for %s MAP-T address " ECM_IP_ADDR_OCTAL_FMT "\n",
 								feci, local_dev->name, ECM_IP_ADDR_TO_OCTAL(addr));
 			memcpy(node_addr, local_dev->dev_addr, ETH_ALEN);
-			dev_put(local_dev);
 			done = true;
 			break;
 
@@ -552,11 +537,7 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 					goto done;
 				}
 
-				if (!ecm_ipv6_dev_has_ipaddr(dev) && (ecm_front_end_is_bridge_port(dev)
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-					|| ecm_interface_is_ovs_bridge_port(dev)
-#endif
-				)) {
+				if (!ecm_ipv6_dev_has_ipaddr(dev) && (ecm_front_end_is_bridge_port(dev))) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
 					if (!master) {
@@ -648,7 +629,7 @@ done:
 	 */
 	ni = ecm_db_node_find_and_ref(node_addr, ii);
 	if (ni) {
-		DEBUG_TRACE("%px: established node[%px] attaching to iface %s\n", feci, ni, ii->name);
+		DEBUG_TRACE("%px: node established %px\n", feci, ni);
 		ecm_db_iface_deref(ii);
 		return ni;
 	}
@@ -683,7 +664,7 @@ done:
 	 */
 	ecm_db_iface_deref(ii);
 
-	DEBUG_TRACE("%px: node (%px) established, node address: %pM iface:%s\n", feci, nni, node_addr, ii->name);
+	DEBUG_TRACE("%px: node %px established\n", feci, nni);
 	return nni;
 }
 
