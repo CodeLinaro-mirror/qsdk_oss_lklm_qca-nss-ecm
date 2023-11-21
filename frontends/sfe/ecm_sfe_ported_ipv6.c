@@ -1723,41 +1723,6 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
 
 	spin_lock_bh(&feci->lock);
 
-#ifdef ECM_FRONT_END_FSE_ENABLE
-	/*
-	 * After removing SFE entry, check if this connection has a
-	 * valid entry in FSE block. If yes, destroy that entry.
-	 */
-	if (feci->fse_configure) {
-		struct ecm_front_end_fse_info fse_info = {0};
-		struct ecm_front_end_fse_callbacks *fse_ops;
-		bool status = false;
-
-		if (ecm_front_end_fse_info_get(feci, &fse_info)) {
-			spin_unlock_bh(&feci->lock);
-
-			/*
-			 * Invoke FSE wlan callback for rule deletion.
-			 */
-			rcu_read_lock_bh();
-			fse_ops = rcu_dereference(ecm_fe_fse_cb);
-			if (fse_ops)
-				status = fse_ops->destroy_fse_rule(&fse_info);
-			rcu_read_unlock_bh();
-
-			/*
-			 * In case of a successful rule deletion in FSE,
-			 * reset fse_configure flag in feci.
-			 * Retake the lock which was released for
-			 * invoking the callback.
-			 */
-			spin_lock_bh(&feci->lock);
-			if (status)
-				feci->fse_configure = false;
-		}
-	}
-#endif
-
 	/*
 	 * If decel is not still pending then it's possible that the SFE ended acceleration by some other reason e.g. flush
 	 * In which case we cannot rely on the response we get here.
@@ -1798,6 +1763,42 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
 	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
 	spin_unlock_bh(&ecm_sfe_ipv6_lock);
 
+#ifdef ECM_FRONT_END_FSE_ENABLE
+	/*
+	 * After removing SFE entry, check if this connection has a
+	 * valid entry in FSE block. If yes, destroy that entry.
+	 */
+	spin_lock_bh(&feci->lock);
+	if (feci->fse_configure) {
+		struct ecm_front_end_fse_info fse_info = {0};
+		struct ecm_front_end_fse_callbacks *fse_ops;
+		bool status = false;
+
+		if (ecm_front_end_fse_info_get(feci, &fse_info)) {
+			spin_unlock_bh(&feci->lock);
+
+			/*
+			 * Invoke FSE wlan callback for rule deletion.
+			 */
+			rcu_read_lock_bh();
+			fse_ops = rcu_dereference(ecm_fe_fse_cb);
+			if (fse_ops)
+				status = fse_ops->destroy_fse_rule(&fse_info);
+			rcu_read_unlock_bh();
+
+			/*
+			 * In case of a successful rule deletion in FSE,
+			 * reset fse_configure flag in feci.
+			 * Retake the lock which was released for
+			 * invoking the callback.
+			 */
+			spin_lock_bh(&feci->lock);
+			if (status)
+				feci->fse_configure = false;
+		}
+	}
+	spin_unlock_bh(&feci->lock);
+#endif
 	/*
 	 * Release the connections.
 	 */
@@ -2026,11 +2027,33 @@ static void ecm_sfe_ported_ipv6_connection_accel_ceased(struct ecm_front_end_con
 		feci->stats.no_action_seen_total++;
 	}
 
+	/*
+	 * If the no_action_seen indicates successive cessations of acceleration without any offload action occuring
+	 * then we fail out this connection
+	 */
+	if (feci->stats.no_action_seen >= feci->stats.no_action_seen_limit) {
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_NO_ACTION;
+	} else {
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+	}
+	spin_unlock_bh(&feci->lock);
+
+	/*
+	 * Ported acceleration ends
+	 */
+	spin_lock_bh(&ecm_sfe_ipv6_lock);
+	ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index]--;	/* Protocol specific counter */
+	DEBUG_ASSERT(ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index] >= 0, "Bad ported accel counter\n");
+	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
+	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
+	spin_unlock_bh(&ecm_sfe_ipv6_lock);
+
 #ifdef ECM_FRONT_END_FSE_ENABLE
 	/*
 	 * After removing SFE entry, check if this connection has a
 	 * valid entry in FSE block. If yes, destroy that entry.
 	 */
+	spin_lock_bh(&feci->lock);
 	if (feci->fse_configure) {
 		struct ecm_front_end_fse_info fse_info = {0};
 		struct ecm_front_end_fse_callbacks *fse_ops;
@@ -2059,28 +2082,8 @@ static void ecm_sfe_ported_ipv6_connection_accel_ceased(struct ecm_front_end_con
 				feci->fse_configure = false;
 		}
 	}
-#endif
-
-	/*
-	 * If the no_action_seen indicates successive cessations of acceleration without any offload action occuring
-	 * then we fail out this connection
-	 */
-	if (feci->stats.no_action_seen >= feci->stats.no_action_seen_limit) {
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_NO_ACTION;
-	} else {
-		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
-	}
 	spin_unlock_bh(&feci->lock);
-
-	/*
-	 * Ported acceleration ends
-	 */
-	spin_lock_bh(&ecm_sfe_ipv6_lock);
-	ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index]--;	/* Protocol specific counter */
-	DEBUG_ASSERT(ecm_sfe_ported_ipv6_accelerated_count[feci->ported_accelerated_count_index] >= 0, "Bad ported accel counter\n");
-	ecm_sfe_ipv6_accelerated_count--;		/* General running counter */
-	DEBUG_ASSERT(ecm_sfe_ipv6_accelerated_count >= 0, "Bad accel counter\n");
-	spin_unlock_bh(&ecm_sfe_ipv6_lock);
+#endif
 }
 
 #ifdef ECM_STATE_OUTPUT_ENABLE
