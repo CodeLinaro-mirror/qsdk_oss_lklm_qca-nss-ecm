@@ -889,8 +889,10 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 	 */
 	ecm_classifier_emesh_sawf_fill_vlan_info(ci, sender, flow_input_params, return_input_params, skb);
 
-	flow_input_params->ifindex = dest_dev->ifindex;
-	return_input_params->ifindex = src_dev->ifindex;
+	flow_input_params->dst_ifindex = dest_dev->ifindex;
+	flow_input_params->src_ifindex = src_dev->ifindex;
+	return_input_params->src_ifindex = dest_dev->ifindex;
+	return_input_params->dst_ifindex = src_dev->ifindex;
 
 	/*
 	 *  Get the netdevice addres in case of wds repeater cases.
