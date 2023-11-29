@@ -447,9 +447,14 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 #endif
 
 #if defined(ECM_FRONT_END_PPE_ENABLE) && defined(ECM_FRONT_END_SFE_ENABLE)
+	/*
+	 * TODO: Remove the devsoc machine compatibility check after SOD.
+	 */
 	if ((front_end_selection == ECM_FRONT_END_TYPE_PPE_SFE)
 		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq9574"))
-		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq5332"))) {
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq5332"))
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,devsoc"))
+		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq5424"))) {
 		return ECM_FRONT_END_TYPE_PPE_SFE;
 	}
 #endif
