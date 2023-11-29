@@ -392,7 +392,7 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 					ECM_IP_ADDR_COPY(addr, gw_addr);
 				}
 
-				if (ecm_front_end_is_bridge_port(dev)) {
+				if (!ecm_ipv6_dev_has_ipaddr(dev) && ecm_front_end_is_bridge_port(dev)) {
 					struct net_device *master;
 					master = ecm_interface_get_and_hold_dev_master(dev);
 					if (!master) {
