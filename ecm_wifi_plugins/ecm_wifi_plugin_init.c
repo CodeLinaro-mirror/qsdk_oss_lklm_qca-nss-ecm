@@ -39,13 +39,13 @@ int __init ecm_wifi_plugin_init_module(void)
 		return ret;
 	}
 
-#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	ret = ecm_wifi_plugin_fse_cb_register();
 	if (ret) {
 		ecm_wifi_plugin_warning("FSE callback registration failed\n");
 		return ret;
 	}
 
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	ret = ecm_wifi_plugin_mscs_register();
 	if (ret) {
 		ecm_wifi_plugin_warning("MSCS callback registration failed\n");
@@ -64,9 +64,9 @@ int __init ecm_wifi_plugin_init_module(void)
 static void __exit ecm_wifi_plugin_exit_module(void)
 {
 	ecm_wifi_plugin_emesh_unregister();
+	ecm_wifi_plugin_fse_cb_unregister();
 #ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	ecm_wifi_plugin_mscs_unregister();
-	ecm_wifi_plugin_fse_cb_unregister();
 #endif
 	ecm_wifi_plugin_info("ECM_WIFI_PLUGIN unloaded\n");
 }
