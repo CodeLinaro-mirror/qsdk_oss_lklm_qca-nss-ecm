@@ -1173,7 +1173,6 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		aci->sync_from_v4(aci, &ecrc);
 #endif
 	}
-	ecm_db_connection_assignments_release(assignment_count, assignments);
 
 	/*
 	 * Release the interface lists
@@ -1239,6 +1238,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
 		DEBUG_TRACE("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_ppe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+		ecm_db_connection_assignments_release(assignment_count, assignments);
 		kfree(pd4rc);
 		return;
 	}
@@ -1294,6 +1294,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			spin_unlock_bh(&feci->lock);
 
+			ecm_db_connection_assignments_release(assignment_count, assignments);
 			ecm_db_connection_deref(feci->ci);
 			kfree(pd4rc);
 			return;
@@ -1319,6 +1320,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * Release feci->lock taken above.
 			 */
 			spin_unlock_bh(&feci->lock);
+			ecm_db_connection_assignments_release(assignment_count, assignments);
 
 			/*
 			 * If the pending decelerate was done through defunct process, we should
@@ -1344,6 +1346,19 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		ecm_db_connection_deref(feci->ci);
 		DEBUG_TRACE("%px: ppe_drv_v4_create() success with ret=%d\n", feci, pdrt);
 		kfree(pd4rc);
+
+		/*
+		 * Get the assigned classifiers and call their create notify callbacks. If they are interested in this type of
+		 * create, they will handle the event.
+		 */
+		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+			struct ecm_classifier_instance *aci;
+			aci = assignments[aci_index];
+			if (aci->notify_create) {
+				aci->notify_create(aci, NULL);
+			}
+		}
+		ecm_db_connection_assignments_release(assignment_count, assignments);
 
 		/*
 		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
@@ -1407,6 +1422,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	/*
 	 * Release the connection.
 	 */
+	ecm_db_connection_assignments_release(assignment_count, assignments);
 	ecm_db_connection_deref(feci->ci);
 	DEBUG_TRACE("%px: ppe_drv_v4_create() failed with ret=%d\n", feci, pdrt);
 	kfree(pd4rc);

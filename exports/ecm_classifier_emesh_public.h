@@ -30,6 +30,8 @@
  * @{
  */
 
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID		0xffffffff
+
 /**
  * State of the connection while informing 5-tuple
  * information to FSE (Flow search engine) via register callback.
@@ -42,8 +44,8 @@ enum ecm_classifier_fse_connection_state {
 typedef enum ecm_classifier_fse_connection_state ecm_classifier_fse_connection_state_t;
 
 /**
- * This structure collects 5-tuple information to send it to
- * WLAN driver via the registered FSE (Flow Search Engine) callback.
+ * This structure collects 5-tuple information along with SAWF metadata and
+ * informs WLAN driver to update FSE(Flow Search Engine) entry via registered callback.
  */
 struct ecm_classifier_fse_info {
 	union {
@@ -58,6 +60,12 @@ struct ecm_classifier_fse_info {
 	uint16_t src_port;			/**< Source port. */
 	uint16_t dest_port;			/**< Destination port. */
 	uint16_t protocol;			/**< Protocol number. */
+	uint8_t src_mac[ETH_ALEN];			/**< Source MAC. */
+	uint8_t dest_mac[ETH_ALEN];			/**< Destination MAC. */
+	uint32_t fw_svc_info;			/**< Forward SAWF info. */
+	uint32_t rv_svc_info;			/**< Reverse SAWF info. */
+	struct net_device *src_dev;		/**< Source dev. */
+	struct net_device *dest_dev;		/**< Destination dev. */
 };
 
 /**
@@ -127,7 +135,7 @@ typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct ecm
 /**
  * FSE flow update callback to which emesh-sawf will register.
  */
-typedef void (*ecm_classifier_emesh_fse_flow_callback_t)(void *appdata, ecm_classifier_fse_connection_state_t state);
+typedef bool (*ecm_classifier_emesh_fse_flow_callback_t)(struct ecm_classifier_fse_info *fse_info);
 
 /**
  * Data structure for easy mesh-sawf classifier callbacks.
