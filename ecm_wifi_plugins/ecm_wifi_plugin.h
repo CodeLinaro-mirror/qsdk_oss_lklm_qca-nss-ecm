@@ -25,6 +25,7 @@
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 #include <ath_sawf.h>
+#include <ath_fse.h>
 #else
 #include <qca_mscs_if.h>
 #include <qca_mesh_latency_if.h>
@@ -91,6 +92,18 @@ extern int ecm_wifi_plugin_emesh_register(void);
  */
 extern void ecm_wifi_plugin_emesh_unregister(void);
 
+/*
+ * ecm_wifi_plugin_fse_cb_register()
+ *	API to register FSE (Flow Search Engine) programming callbacks.
+ */
+extern int ecm_wifi_plugin_fse_cb_register(void);
+
+/*
+ * ecm_wifi_plugin_fse_cb_unregister()
+ *	API to unregister FSE (Flow Search Engine) programming callbacks.
+ */
+extern void ecm_wifi_plugin_fse_cb_unregister(void);
+
 #ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 /*
  * ecm_wifi_plugin_mscs_register()
@@ -103,16 +116,4 @@ extern int ecm_wifi_plugin_mscs_register(void);
  *	API to unregister the mscs callbacks.
  */
 extern void ecm_wifi_plugin_mscs_unregister(void);
-
-/*
- * ecm_wifi_plugin_fse_cb_register()
- *	API to register FSE (Flow Search Engine) programming callbacks.
- */
-extern int ecm_wifi_plugin_fse_cb_register(void);
-
-/*
- * ecm_wifi_plugin_fse_cb_unregister()
- *	API to unregister FSE (Flow Search Engine) programming callbacks.
- */
-extern void ecm_wifi_plugin_fse_cb_unregister(void);
 #endif
