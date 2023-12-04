@@ -1,5 +1,5 @@
 ##########################################################################
-# Copyright (c) 2014-2016, 2018-2021, The Linux Foundation. All rights reserved.
+# Copyright (c) 2014-2016, 2018-2021 The Linux Foundation. All rights reserved.
 # Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
 #
 # Permission to use, copy, modify, and/or distribute this software for
@@ -17,9 +17,6 @@
 # ###################################################
 # Makefile for the QCA NSS ECM
 # ###################################################
-ifneq ($(findstring 6.1., $(KERNELVERSION)),)
-include $(obj)/Makefile_61.mk
-else
 ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 obj-m += examples/ecm_sfe_l2.o
 endif
@@ -519,4 +516,3 @@ endif
 ccflags-y += -Wall -Werror
 
 obj ?= .
-endif
