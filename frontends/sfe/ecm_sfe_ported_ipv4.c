@@ -266,14 +266,33 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 	ecm_sfe_ipv4_accelerated_count++;		/* General running counter */
 
 	if (!_ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_ACCEL)) {
+		int assignment_count;
+		int aci_index;
+		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 		/*
 		 * Increment the no-action counter, this is reset if offload action is seen
 		 */
 		feci->stats.no_action_seen++;
 
 		spin_unlock_bh(&ecm_sfe_ipv4_lock);
+		spin_unlock_bh(&feci->lock);
+
+		/*
+		 * Get the assigned classifiers and call their create notify callbacks. If they are interested in this type of
+		 * create, they will handle the event.
+		 */
+		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+			struct ecm_classifier_instance *aci;
+			aci = assignments[aci_index];
+			if (aci->notify_create) {
+				aci->notify_create(aci, NULL);
+			}
+		}
+		ecm_db_connection_assignments_release(assignment_count, assignments);
 
 #ifdef ECM_FRONT_END_FSE_ENABLE
+		spin_lock_bh(&feci->lock);
 		/*
 		 * Check if FSE flow rule programming is enabled or not.
 		 * If yes, call the Wi-Fi registered callback to add a rule in
@@ -307,8 +326,8 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 					feci->fse_configure = true;
 			}
 		}
-#endif
 		spin_unlock_bh(&feci->lock);
+#endif
 
 		/*
 		 * Release the connection.
