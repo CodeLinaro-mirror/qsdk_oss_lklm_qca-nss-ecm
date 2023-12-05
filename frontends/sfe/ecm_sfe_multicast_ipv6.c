@@ -2433,11 +2433,11 @@ process_packet:
 			 * No updates to this multicast flow. Move on to the next
 			 * flow for the same group
 			 */
+			ecm_front_end_connection_deref(feci);
 			goto find_next_tuple;
 		}
 
 		DEBUG_TRACE("BRIDGE UPDATE callback ===> leave_cnt %d, join_cnt %d\n", mc_sync.if_leave_cnt, mc_sync.if_join_cnt);
-		feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 		/*
 		 * Do we have any new interfaces that have joined?
@@ -2570,7 +2570,6 @@ find_next_tuple:
 		ecm_db_multicast_connection_deref(ti);
 		ti = ti_next;
 	}
-
 }
 
 /*
