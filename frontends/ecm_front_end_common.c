@@ -632,6 +632,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), 1);
 #else
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->src.u3.in6), NULL);
+		dev_hold(dev);
 #endif
 		if (dev) {
 			/*
@@ -646,6 +647,7 @@ bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), 1);
 #else
 		dev = ipv6_dev_find(&init_net, &(orig_tuple->dst.u3.in6), NULL);
+		dev_hold(dev);
 #endif
 		if (dev) {
 			/*
