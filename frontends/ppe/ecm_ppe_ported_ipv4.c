@@ -981,31 +981,11 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * SAWF information
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
-		bool sawf_rule_valid = true;
 		pd4rc->sawf_rule.flow_mark = pr->flow_sawf_metadata;
 		pd4rc->sawf_rule.flow_service_class = pr->flow_service_class;
 		pd4rc->sawf_rule.return_mark = pr->return_sawf_metadata;
 		pd4rc->sawf_rule.return_service_class = pr->return_service_class;
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_SAWF;
-
-		/*
-		 * In case of SAWF denying acceleration through PPE-DS
-		 * Allowing acceleration only through PPE-VP
-		 * For legacy scs and non-SPM rule case, do not deny acceleration through PPE-DS
-		 * TODO: configure accel using DS for SAWF and SPM rule valid case as well.
-		 */
-		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
-		if (aci) {
-			sawf_rule_valid = ecm_classifier_emesh_is_sawf_rule_valid((struct ecm_classifier_emesh_sawf_instance *)aci);
-			aci->deref(aci);
-		}
-
-		if (!(pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) && sawf_rule_valid) {
-			spin_lock_bh(&feci->lock);
-			feci->fe_info.front_end_flags &= (~ECM_FRONT_END_ENGINE_FLAG_PPE_DS);
-			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_PPE_VP;
-			spin_unlock_bh(&feci->lock);
-		}
         }
 
 	/*
