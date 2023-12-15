@@ -1017,8 +1017,6 @@ static ecm_ae_classifier_result_t ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_r
 		return ECM_AE_CLASSIFIER_RESULT_PPE_DS;
 	case SP_RULE_AE_TYPE_PPE_VP:
 		return ECM_AE_CLASSIFIER_RESULT_PPE_VP;
-	case SP_RULE_AE_TYPE_DEFAULT:
-		return ECM_AE_CLASSIFIER_RESULT_SFE;
 	default:
 		return ECM_AE_CLASSIFIER_RESULT_DONT_CARE;
 	}
@@ -1044,11 +1042,13 @@ static void ecm_classifier_emesh_sawf_process_ae_type(struct ecm_classifier_inst
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
 
 	/*
-	 * If no ae type was selected from sawf rule match then return.
+	 * If no ae type was selected from sawf rule match then select SFE as default ae.
 	 */
 	if ((return_ae_path == ECM_AE_CLASSIFIER_RESULT_DONT_CARE) && (flow_ae_path == ECM_AE_CLASSIFIER_RESULT_DONT_CARE)) {
+		return_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
+		flow_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
+		ae_type = flow_ae_path;
 		DEBUG_INFO("%px : using the default acceleration engine\n", cemi);
-		return;
 	}
 
 	spin_lock_bh(&feci->lock);
