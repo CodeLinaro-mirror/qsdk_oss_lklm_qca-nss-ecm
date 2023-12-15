@@ -910,6 +910,18 @@ done:
 #endif
 
 	/*
+	 * Identify which side of the connection is sending
+	 * NOTE: This may be different than what sender is at the moment
+	 * given the connection we have located.
+	 */
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
 	 * TODO: check if this is applicable for NPT66?
 	 * In nat reflection scenarios SNAT rule is getting applied on the packet after packet
 	 * passed through bridge post routing hook
@@ -958,18 +970,6 @@ done:
 		ecm_db_connection_deref(ci);
 		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_PORTED, ECM_STATS_V6_EXCEPTION_PORTED_DB_CONN_TIMER_EXPIRED);
 		return NF_ACCEPT;
-	}
-
-	/*
-	 * Identify which side of the connection is sending
-	 * NOTE: This may be different than what sender is at the moment
-	 * given the connection we have located.
-	 */
-	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
-	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
-		sender = ECM_TRACKER_SENDER_TYPE_SRC;
-	} else {
-		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
 
 	/*
