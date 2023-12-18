@@ -1041,6 +1041,15 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 #endif
 
+#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_HLOS_TID_VALID) {
+		/*
+		 * Set HLOS TID valid flag as true.
+		 */
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_WIFI_TID;
+	}
+#endif
+
 	/*
 	 * Policer/ACL info
 	 */
