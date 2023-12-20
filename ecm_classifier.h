@@ -241,6 +241,7 @@ typedef int (*ecm_classifier_state_get_callback_t)(struct ecm_classifier_instanc
 											/* Get state output.  Returns 0 upon success. */
 #endif
 
+typedef void (*ecm_classifier_notify_create_t)(struct ecm_classifier_instance *ci, void *arg);
 typedef void (*ecm_classifier_update_t)(struct ecm_classifier_instance *ci, enum ecm_rule_update_type type, void *arg);
 
 /*
@@ -276,6 +277,7 @@ struct ecm_classifier_instance {
 	ecm_classifier_state_get_callback_t state_get;
 							/* Return its state */
 #endif
+	ecm_classifier_notify_create_t notify_create;	/* Notify connection create to classifier instance */
 	ecm_classifier_update_t update;			/* Updates the classifier instance */
 
 	ecm_classifier_ref_method_t ref;
