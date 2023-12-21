@@ -2645,7 +2645,6 @@ void ecm_classifier_emesh_sawf_conn_sync_callback_unregister(void)
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_conn_sync_callback_unregister);
 
-#ifdef ECM_FRONT_END_FSE_ENABLE
 /*
  * ecm_classifier_emesh_sawf_update_fse_flow_callback_register()
  */
@@ -2674,7 +2673,6 @@ void ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister(void)
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister);
-#endif
 
 /*
  * ecm_classifier_emesh_sawf_spm_notifier
