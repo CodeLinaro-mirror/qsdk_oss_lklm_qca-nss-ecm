@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -429,7 +429,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	int protocol;
 	uint32_t became_relevant = 0;
 	ecm_classifier_mscs_process_callback_t cb = NULL;
-	ecm_classifier_mscs_result_t result = 0;
+	bool scs_result = false;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
 	bool mscs_rule_match = false;
@@ -551,7 +551,8 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			/*
 			 * Set result true for Multi AP mode.
 			 */
-			result = true;
+			scs_result = true;
+
 			/*
 			 * Invoke the WiFi datapath callback registered with MSCS client to check
 			 * if SCS priority is valid for WiFi peer corresponding to
@@ -568,7 +569,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 				rule_match_info.dst_mac = dmac;
 				rule_match_info.src_dev = src_dev;
 				rule_match_info.dst_dev = dest_dev;
-				result = scs_cb(&rule_match_info);
+				scs_result = scs_cb(&rule_match_info);
 			}
 		}
 
@@ -576,7 +577,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 		 * Check the result of the callback. If we have a valid priority and peer is SCS
 		 * capable, we set the priority (we do not check MSCS as SCS have higher precedence).
 		 */
-		if (result) {
+		if (scs_result) {
 			/*
 			 * Update skb priority.
 			 */
@@ -619,13 +620,14 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	 * Check MSCS classifer.
 	 */
 	if (ecm_classifier_mscs_enabled) {
-		result =  false;
 		/*
 		 * Check if MSCS multi AP mode is enabled or not -
 		 * If yes, we need to query SPM database for rule match.
 		 * Else legacy MSCS should work for single AP mode.
 		 */
 		if (!ecm_classifier_mscs_scs_multi_ap_enabled) {
+			ecm_classifier_mscs_result_t result;
+
 			/*
 			 * Get the WiFi datapath callback registered with MSCS client to check
 			 * if MSCS QoS tag is valid for WiFi peer corresponding to

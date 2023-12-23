@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -8295,24 +8295,6 @@ static struct ctl_table ecm_interface_table[] = {
 	{ }
 };
 
-static struct ctl_table ecm_interface_root_dir[] = {
-	{
-		.procname		= "ecm",
-		.mode			= 0555,
-		.child			= ecm_interface_table,
-	},
-	{ }
-};
-
-static struct ctl_table ecm_interface_root[] = {
-	{
-		.procname		= "net",
-		.mode			= 0555,
-		.child			= ecm_interface_root_dir,
-	},
-	{ }
-};
-
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 /*
  * ecm_interface_ipsec_register_callbacks()
@@ -8809,7 +8791,7 @@ int ecm_interface_init(void)
 	/*
 	 * Register sysctl table.
 	 */
-	ecm_interface_ctl_table_header = register_sysctl_table(ecm_interface_root);
+	ecm_interface_ctl_table_header = register_sysctl("net/ecm", ecm_interface_table);
 
 	result = register_netdevice_notifier(&ecm_interface_netdev_notifier);
 	if (result != 0) {

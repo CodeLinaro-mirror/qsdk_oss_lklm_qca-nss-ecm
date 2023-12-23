@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -35,6 +35,9 @@
 #include <net/addrconf.h>
 #include <net/gre.h>
 #include <net/xfrm.h>
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(6, 6, 0))
+#include <net/tcx.h>
+#endif
 #include <linux/hashtable.h>
 #include <net/sch_generic.h>
 #ifdef ECM_FRONT_END_PPE_ENABLE
@@ -1173,24 +1176,6 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 	{}
 };
 
-static struct ctl_table ecm_front_end_common_root[] = {
-	{
-		.procname	= "ecm",
-		.mode		= 0555,
-		.child		= ecm_front_end_sysctl_tbl,
-	},
-	{ }
-};
-
-static struct ctl_table ecm_front_end_common_root_dir[] = {
-	{
-		.procname		= "net",
-		.mode			= 0555,
-		.child			= ecm_front_end_common_root,
-	},
-	{ }
-};
-
 /*
  * ecm_front_end_common_sysctl_register()
  *	Function to register sysctl node during front end init
@@ -1200,7 +1185,7 @@ void ecm_front_end_common_sysctl_register()
 	/*
 	 * Register sysctl table.
 	 */
-	ecm_front_end_ctl_tbl_hdr = register_sysctl_table(ecm_front_end_common_root_dir);
+	ecm_front_end_ctl_tbl_hdr = register_sysctl("net/ecm", ecm_front_end_sysctl_tbl);
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	if (ecm_front_end_ctl_tbl_hdr) {
 		ecm_sfe_sysctl_tbl_init();
@@ -1720,7 +1705,12 @@ bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
 	}
 
 	BUG_ON(!rcu_read_lock_bh_held());
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	miniq = rcu_dereference_bh(dev->miniq_ingress);
+#else
+	struct bpf_mprog_entry *entry = rcu_dereference_bh(dev->tcx_ingress);
+	miniq = entry ? tcx_entry(entry)->miniq : NULL;
+#endif
 	if (miniq) {
 		DEBUG_INFO("Ingress Qdisc is present for device[%s]\n", dev->name);
 		dev_put(dev);
@@ -1775,7 +1765,12 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 	}
 
 #if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	miniq = rcu_dereference_bh(dev->miniq_egress);
+#else
+	struct bpf_mprog_entry *entry = rcu_dereference_bh(dev->tcx_egress);
+	miniq = entry ? tcx_entry(entry)->miniq : NULL;
+#endif
 	if (miniq) {
 		DEBUG_INFO("Egress needed\n");
 		dev_put(dev);
