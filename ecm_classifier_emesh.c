@@ -1351,11 +1351,6 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * (received from spm rule lookup), netdev, and mac address.
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
-			bool wlan_hdl_done_flow, wlan_hdl_done_return;
-
-			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-			wlan_hdl_done_flow = cemi->wlan_hdl_done_flow;
-			wlan_hdl_done_return = cemi->wlan_hdl_done_return;
 			if (dest_dev) {
 				sawf_flow_info.netdev = dest_dev;
 				sawf_flow_info.peer_mac = dmac;
@@ -1364,20 +1359,14 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.rule_id = flow_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = flow_output_params.sawf_rule_type;
 				sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
-				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
-				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-					if (!wlan_hdl_done_flow) {
-						msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
-					}
-				} else {
-					if (!wlan_hdl_done_return) {
-						msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
-					}
-				}
-				spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+				msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
+
+				/*
+				 * Mark the skb with SAWF meta data for flow creation packet.
+				 */
+				skb->mark = msduq_forward;
 			}
-
 			if (src_dev) {
 				sawf_flow_info.netdev = src_dev;
 				sawf_flow_info.peer_mac = smac;
@@ -1386,20 +1375,9 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.rule_id = return_output_params.rule_id;
 				sawf_flow_info.sawf_rule_type = return_output_params.sawf_rule_type;
 				sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
-				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
-				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-					if (!wlan_hdl_done_return) {
-						msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
-					}
-				} else {
-					if (!wlan_hdl_done_flow) {
-						msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
-					}
-				}
-				spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+				msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 			}
-			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		}
 
 		/*
@@ -1417,28 +1395,17 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			ecm_classifier_emesh_sawf_check_cake_qdisc(src_dev, &cake_return_handle);
 		}
 
-		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-			if (!cemi->wlan_hdl_done_flow) {
-				ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &flow_output_params, &return_output_params,
-					msduq_forward, msduq_reverse);
-				cemi->wlan_hdl_done_flow = true;
-			}
-			if (cemi->process_response.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
-				skb->mark = cemi->process_response.flow_sawf_metadata;
-			}
+			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+			ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &flow_output_params, &return_output_params,
+				msduq_forward, msduq_reverse);
+			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		} else {
-			if (!cemi->wlan_hdl_done_return) {
-				ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &return_output_params, &flow_output_params,
-					msduq_reverse, msduq_forward);
-				cemi->wlan_hdl_done_return = true;
-			}
-			if (cemi->process_response.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
-				skb->mark = cemi->process_response.return_sawf_metadata;
-			}
+			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+			ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &return_output_params, &flow_output_params,
+				msduq_reverse, msduq_forward);
+			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		}
-		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-
 		DEBUG_TRACE("%px: skb->mark: %u", cemi, skb->mark);
 
 		is_sawf_relevant = true;
