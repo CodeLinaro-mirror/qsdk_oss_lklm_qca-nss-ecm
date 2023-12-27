@@ -2494,25 +2494,6 @@ static void ecm_classifier_emesh_sawf_should_keep_connection(struct ecm_classifi
 }
 
 /*
- * ecm_classifier_emesh_is_sawf_rule_valid()
- *	Check if the SAWF SPM rule is valid
- */
-bool ecm_classifier_emesh_is_sawf_rule_valid(struct ecm_classifier_emesh_sawf_instance *cemi)
-{
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
-
-	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	if ((cemi->flow_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID) ||
-			(cemi->return_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
-		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-		return true;
-	}
-	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-
-	return false;
-}
-
-/*
  * ecm_classifier_emesh_sawf_instance_alloc()
  *	Allocate an instance of the EMESH classifier
  */
@@ -2594,7 +2575,7 @@ EXPORT_SYMBOL(ecm_classifier_emesh_sawf_instance_alloc);
  * ecm_db_connection_make_defunct_sawf_connections()
  *      Make defunct all connections that are currently assigned to a classifier of the given type
  */
-void ecm_db_connection_make_defunct_sawf_connections(uint16_t rule_id)
+static void ecm_db_connection_make_defunct_sawf_connections(uint32_t rule_id)
 {
 	struct ecm_db_connection_instance *ci;
 	DEBUG_INFO("Make defunct all connections assigned to SAWF\n");
@@ -2667,9 +2648,9 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 
 	/*
 	 * Return if E-Mesh or SAWF functionality is not enabled or the rule
-	 * classifier type is SCS.
+	 * classifier type is MSCS.
 	 */
-	if (r->classifier_type == SP_RULE_TYPE_SCS || r->classifier_type == SP_RULE_TYPE_MSCS) {
+	if (r->classifier_type == SP_RULE_TYPE_MSCS) {
 		DEBUG_INFO("Not an EMESH / SAWF rule notification !\n");
 		return NOTIFY_DONE;
 	}

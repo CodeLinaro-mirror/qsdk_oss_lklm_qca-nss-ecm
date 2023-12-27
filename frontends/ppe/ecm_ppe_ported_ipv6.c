@@ -1000,7 +1000,16 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		pd6rc->sawf_rule.return_mark = pr->return_sawf_metadata;
 		pd6rc->sawf_rule.return_service_class = pr->return_service_class;
 		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SAWF;
-        }
+	}
+
+	/*
+	 * Set sawf valid flag as false and mark scs
+	 * flag as true.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG) {
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_SCS;
+		pd6rc->valid_flags &= (~PPE_DRV_V6_VALID_FLAG_SAWF);
+	}
 
         /*
          * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
