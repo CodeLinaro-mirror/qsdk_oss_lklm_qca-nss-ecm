@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -5039,7 +5039,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
 			 * the check specific to routed flow in case of IPSEC passthrough traffic.
 			 */
-			if ((protocol == IPPROTO_IPV6) || ((protocol == IPPROTO_ESP) && is_routed)) {
+			if ((protocol == IPPROTO_IPV6 || protocol == IPPROTO_ESP) && is_routed) {
 				skip = true;
 				break;
 			}
@@ -5064,7 +5064,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
 			 * the check specific to routed flow in case of IPSEC passthrough traffic.
 			 */
-			if ((protocol == IPPROTO_IPIP) || ((protocol == IPPROTO_ESP) && is_routed)) {
+			if ((protocol == IPPROTO_IPIP || protocol == IPPROTO_ESP) && is_routed) {
 				skip = true;
 				break;
 			}
