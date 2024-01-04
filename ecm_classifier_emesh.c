@@ -1,7 +1,7 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -1699,6 +1699,16 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 		return;
 	}
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &sawf_sync_params.src_dev, &sawf_sync_params.dest_dev);
+	/*
+	 * In case of interface unregister events, the netdevice that we lookup with the connection instance's
+	 * interface index number cannot be found and we should avoid passing NULL netdevice to the wlan driver.
+	 */
+	if (!sawf_sync_params.src_dev || !sawf_sync_params.dest_dev) {
+		DEBUG_WARN("%px: NULL src or dest dev\n", cemi);
+		goto done;
+	}
+
 	/*
 	 * Get mac address for destination node
 	 */
@@ -1708,8 +1718,6 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 	 * Get mac address for source node
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, sawf_sync_params.src_mac);
-
-	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &sawf_sync_params.src_dev, &sawf_sync_params.dest_dev);
 
 	/*
 	 * Sync sawf connection with wlan driver.
@@ -1725,7 +1733,7 @@ void ecm_classifier_emesh_sawf_params_sync_on_conn_decel(struct ecm_classifier_i
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_DECEL] = true;
 		cemi->ul_parameters_sync[ECM_CLASSIFIER_EMESH_MODE_ACCEL] = false;
 	}
-
+done:
 	if (sawf_sync_params.src_dev)
 		dev_put(sawf_sync_params.src_dev);
 
