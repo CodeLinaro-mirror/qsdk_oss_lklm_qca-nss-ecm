@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -36,6 +36,8 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_DSCPCTE_VALID		0x8
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ         0xffffffff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID		0xffffffff
+
+#define ECM_CLASSIFIER_EMESH_MULTICAST_IF_MAX 		16
 
 /**
  * State of the connection while informing 5-tuple
@@ -92,6 +94,7 @@ struct ecm_classifier_emesh_sawf_flow_info {
 	uint32_t valid_flag;
 	uint32_t rule_id;
 	uint8_t sawf_rule_type;
+	bool is_mc_flow;
 };
 
 /**
@@ -127,6 +130,26 @@ struct ecm_classifer_emesh_sawf_sync_params {
 };
 
 /**
+ * Structure collecting sawf param for multicast traffic to
+ * send to wlan driver via registered callback at connection accel/decel.
+ */
+struct ecm_classifier_emesh_sawf_multicast_sync_params {
+	union {
+		__be32 v4_addr;							/**< Source IPv4 address. */
+		struct in6_addr v6_addr;					/**< Source IPv6 address. */
+	} src;
+	union {
+		__be32 v4_addr;							/**< Destination IPv4 address. */
+		struct in6_addr v6_addr;					/**< Destination IPv6 address. */
+	} dest;
+	uint8_t src_ifindex;							/**< Source interface index. */
+	uint8_t dest_ifindex[ECM_CLASSIFIER_EMESH_MULTICAST_IF_MAX];		/**< Destination interface index. */
+	uint32_t dest_dev_count;						/**< Count of destination devices. */
+	uint8_t add_or_sub;							/**< Add or Subtract a Flow */
+	uint16_t ip_version;							/**< IP version. */
+};
+
+/**
  * Mesh latency configuration update callback function to which MSCS client will register.
  */
 typedef void (*ecm_classifier_emesh_callback_t)(struct ecm_classifer_emesh_sawf_mesh_latency_params *mesh_params);
@@ -140,6 +163,11 @@ typedef uint32_t (*ecm_classifier_emesh_msduq_callback_t)(struct ecm_classifier_
  * SAWF params sync callback function pointer.
  */
 typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct ecm_classifer_emesh_sawf_sync_params *sawf_sync_params);
+
+/**
+ * Multicast interface heirarchy update callback to which emesh-sawf will register.
+ */
+typedef void (*ecm_classifier_emesh_sawf_multicast_conn_params_sync_callback_t)(struct ecm_classifier_emesh_sawf_multicast_sync_params *sawf_multicast_sync_params);
 
 /**
  * FSE flow update callback to which emesh-sawf will register.
@@ -158,6 +186,8 @@ struct ecm_classifier_emesh_sawf_callbacks {
 						/**< Update fse flow callback. */
 	ecm_classifier_emesh_sawf_conn_params_sync_callback_t sawf_conn_sync;
 						/**< Sync SAWF parameters. */
+	ecm_classifier_emesh_sawf_multicast_conn_params_sync_callback_t sawf_multicast_conn_sync;
+						/**< Sync SAWF parameters for multicast traffic. */
 };
 
 /**
@@ -213,6 +243,24 @@ int ecm_classifier_emesh_sawf_conn_sync_callback_register(struct ecm_classifier_
  * None.
  */
 void ecm_classifier_emesh_sawf_conn_sync_callback_unregister(void);
+
+/**
+ * Registers EMESH-SAWF connection sync callback.
+ *
+ * @param       mesh_cb EMESH-SAWF callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
+int ecm_classifier_emesh_mcast_conn_sync_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+
+/**
+ * Unregisters EMESH-SAWF connection sync callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_mcast_conn_sync_callback_unregister(void);
 
 /**
  * Registers EMESH-SAWF fse flow update callback.
