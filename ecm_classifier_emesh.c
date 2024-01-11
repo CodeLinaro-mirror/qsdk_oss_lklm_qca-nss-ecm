@@ -3006,6 +3006,35 @@ void ecm_classifier_emesh_sawf_msduq_callback_unregister(void)
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_msduq_callback_unregister);
 
 /*
+ * ecm_classifier_emesh_sdwf_deprio_response_callback_register()
+ */
+int ecm_classifier_emesh_sdwf_deprio_response_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if (ecm_emesh.sawf_deprio_response) {
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		DEBUG_ERROR("deprio callback already registered\n");
+		return -1;
+	}
+
+	ecm_emesh.sawf_deprio_response = emesh_cb->sawf_deprio_response;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+	return 0;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sdwf_deprio_response_callback_register);
+
+/*
+ * ecm_classifier_emesh_sdwf_deprio_response_callback_unregister()
+ */
+void ecm_classifier_emesh_sdwf_deprio_response_callback_unregister(void)
+{
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	ecm_emesh.sawf_deprio_response = NULL;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sdwf_deprio_response_callback_unregister);
+
+/*
  * ecm_classifier_emesh_conn_sync_callback_register()
  */
 int ecm_classifier_emesh_sawf_conn_sync_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
@@ -3156,6 +3185,17 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	return 0;
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_init);
+
+/*
+ * ecm_classifier_emesh_sdwf_deprio()
+ */
+void ecm_classifier_emesh_sdwf_deprio(struct ecm_classifier_emesh_flow_deprio_param *param)
+{
+	/*
+	 * TODO: definition of this function
+	 */
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sdwf_deprio);
 
 /*
  * ecm_classifier_emesh_sawf_exit()
