@@ -342,6 +342,7 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t ad
 	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, 1);
 #else
 	dev = (struct net_device *)ipv6_dev_find(&init_net, &addr6, NULL);
+	dev_hold(dev);
 #endif
 	return dev;
 }
@@ -805,6 +806,7 @@ static bool ecm_interface_mac_addr_get_ipv6_no_route(struct net_device *dev, ip_
 	local_dev = ipv6_dev_find(&init_net, &daddr, 1);
 #else
 	local_dev = ipv6_dev_find(&init_net, &daddr, NULL);
+	dev_hold(local_dev);
 #endif
 	if (local_dev) {
 		DEBUG_TRACE("%pi6 is a local address\n", &daddr);

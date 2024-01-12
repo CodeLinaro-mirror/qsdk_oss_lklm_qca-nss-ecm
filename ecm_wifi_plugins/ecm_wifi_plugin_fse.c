@@ -41,7 +41,12 @@ static inline void ecm_wifi_plugin_fill_fse_wlan_info(struct ecm_front_end_fse_i
 	fse_wlan_info->src_port = fse_info->src_port;
 	fse_wlan_info->dest_port = fse_info->dest_port;
 	fse_wlan_info->protocol = fse_info->protocol;
+	fse_wlan_info->protocol = fse_info->protocol;
 	fse_wlan_info->version = fse_info->ip_version;
+	fse_wlan_info->src_mac = fse_info->src_mac;
+	fse_wlan_info->dest_mac = fse_info->dest_mac;
+	fse_wlan_info->fw_svc_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
+	fse_wlan_info->rv_svc_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
 }
 
 /*
