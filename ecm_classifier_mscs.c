@@ -77,6 +77,7 @@
  */
 #define ECM_CLASSIFIER_MSCS_INSTANCE_MAGIC 0x1234
 #define ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS 0x4
+#define ECM_CLASSIFIER_MSCS_UL_ACCEL_DELAY_PACKETS 0x14
 #define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
 #define ECM_CLASSIFIER_MSCS_INVALID_RULE_ID 0xffff
 
@@ -111,6 +112,7 @@ struct ecm_classifier_mscs_instance {
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
+	uint16_t slow_ul_pkts;                                  /* count of slow ul packets */
 };
 
 /*
@@ -564,11 +566,13 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 					goto check_mscs_classifier;
 				}
 
+				spin_lock_bh(&ecm_classifier_mscs_lock);
 				rule_match_info.rule_id = flow_output_params.rule_id;
 				rule_match_info.dst_mac = dmac;
 				rule_match_info.src_dev = src_dev;
 				rule_match_info.dst_dev = dest_dev;
 				result = scs_cb(&rule_match_info);
+				spin_unlock_bh(&ecm_classifier_mscs_lock);
 			}
 		}
 
@@ -581,10 +585,12 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			 * Update skb priority.
 			 */
 			skb->priority = flow_output_params.priority;
+			spin_lock_bh(&ecm_classifier_mscs_lock);
 			cmscsi->scs_priority_update = true;
 			cmscsi->classifier_type = ECM_CLASSIFIER_SCS;
 			scs_rule_match = true;
 			cmscsi->rule_id = flow_output_params.rule_id;
+			spin_unlock_bh(&ecm_classifier_mscs_lock);
 
 			/*
 			 * For IPSEC protocol, we update both side priority values and let it go via slow path.
@@ -648,11 +654,13 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			result = cb(&get_priority_info);
 
 			if (result == ECM_CLASSIFIER_MSCS_RESULT_UPDATE_PRIORITY) {
+				spin_lock_bh(&ecm_classifier_mscs_lock);
 				cmscsi->mscs_priority_update = true;
 				mscs_rule_match = true;
 				if (!cmscsi->scs_priority_update) {
 					cmscsi->classifier_type = ECM_CLASSIFIER_MSCS;
 				}
+				spin_unlock_bh(&ecm_classifier_mscs_lock);
 			}
 		}
 
@@ -669,12 +677,14 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 			if (flow_output_params.priority != SP_RULE_INVALID_PRIORITY) {
 				DEBUG_INFO("%px: Found MSCS rule in SPM\n", ci);
 				skb->priority = flow_output_params.priority;
+				spin_lock_bh(&ecm_classifier_mscs_lock);
 				cmscsi->mscs_priority_update = true;
 				mscs_rule_match = true;
 				if (!cmscsi->scs_priority_update) {
 					cmscsi->classifier_type = ECM_CLASSIFIER_MSCS;
 					cmscsi->rule_id = flow_output_params.rule_id;
 				}
+				spin_unlock_bh(&ecm_classifier_mscs_lock);
 			}
 		}
 #endif
@@ -687,10 +697,18 @@ mscs_classifier_exit:
 	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
-	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
+	if (src_dev->ieee80211_ptr) {
+		/*
+		 * MSCS classification information comes in UL packets from WLAN side.
+		 * Waiting on slow packets to update right priority in ECM flow entry
+		 */
 		spin_lock_bh(&ecm_classifier_mscs_lock);
-		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
-		goto mscs_classifier_out;
+		cmscsi->slow_ul_pkts++;
+		spin_unlock_bh(&ecm_classifier_mscs_lock);
+	}
+
+	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
+		DEBUG_TRACE("%x: not relevant accel_mode: %d, this is a race condition while ae switch happens from ppe to sfe\n",feci->ci->serial, accel_mode);
 	}
 
 	/*
@@ -703,28 +721,49 @@ mscs_classifier_exit:
 	spin_lock_bh(&ecm_classifier_mscs_lock);
 	cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
 	cmscsi->process_response.became_relevant = became_relevant;
-
 	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
-	cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
-	spin_unlock_bh(&ecm_classifier_mscs_lock);
 
 	/*
-	 * Store the priority value in the classifier instance. Wait until
-	 * seeing ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS and deny the
-	 * acceleration if both side priority value is not yet available.
+	 * Store the priority value in the classifier instance.
 	 */
 	ecm_classifier_mscs_scs_fill_priority(cmscsi, sender, skb, cmscsi->scs_priority_update, mscs_rule_match, cmscsi->mscs_priority_update, scs_rule_match);
 
-	if ((ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS == 1) || (slow_pkts < ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS)) {
-			spin_lock_bh(&ecm_classifier_mscs_lock);
+	if (ecm_classifier_scs_enabled) {
+		/*
+		 * If SCS classifier is enabled, give chance to SCS first for
+		 * ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS packets to see if it
+		 * has to update the priority, if not fall back to MSCS.
+		 */
+		if (slow_pkts < ECM_CLASSIFIER_MSCS_ACCEL_DELAY_PACKETS) {
+			if (!scs_rule_match && cmscsi->process_response.accel_mode != ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
+				cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				goto mscs_classifier_out;
+			}
+		}
+	} else {
+		if(cmscsi->slow_ul_pkts < ECM_CLASSIFIER_MSCS_UL_ACCEL_DELAY_PACKETS) {
+			/*
+			 * Deny acceleration for ECM_CLASSIFIER_MSCS_UL_ACCEL_DELAY_PACKETS
+			 * slow uplink packets.
+			 */
 			cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
 			goto mscs_classifier_out;
+		}
+
+		if (result == ECM_CLASSIFIER_MSCS_RESULT_DENY_PRIORITY) {
+			/*
+			 *  Do not accelerate if Uplink packet is not seen at all.
+			 */
+			cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			goto mscs_classifier_out;
+		}
 	}
 
 	DEBUG_TRACE("Protocol: %d, Flow Priority: %d, Return priority: %d, sender: %d\n",
 			protocol, cmscsi->priority[ECM_CONN_DIR_FLOW],
 			cmscsi->priority[ECM_CONN_DIR_RETURN], sender);
-	spin_lock_bh(&ecm_classifier_mscs_lock);
+
+	cmscsi->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	cmscsi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	cmscsi->process_response.flow_qos_tag = cmscsi->priority[ECM_CONN_DIR_FLOW];
 	cmscsi->process_response.return_qos_tag = cmscsi->priority[ECM_CONN_DIR_RETURN];
