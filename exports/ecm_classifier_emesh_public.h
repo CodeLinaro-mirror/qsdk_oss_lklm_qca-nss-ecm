@@ -130,6 +130,18 @@ struct ecm_classifer_emesh_sawf_sync_params {
 	uint8_t add_or_sub;			/**< Add or Subtract a Flow */
 };
 
+/**
+ * ecm_classifier_emesh_sdwf_deprio_status
+ * 	Status of the connection while deprioritizing the flow
+ */
+enum ecm_classifier_emesh_sdwf_deprio_status {
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_NOT_FOUND,		/**< Connection for deprioritization not found. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_FAIL,		/**< Deprioritization of connection failed. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS,		/**< Deprioritization of connection successful.. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_MAX				/**< Indicates the last item. */
+};
+typedef enum ecm_classifier_emesh_sdwf_deprio_status ecm_classifier_emesh_sdwf_deprio_status_t;
+
 /*
  * ecm_classifier_emesh_sdwf_deprio_response
  * 	Response to send to wlan

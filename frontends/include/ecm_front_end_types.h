@@ -33,6 +33,12 @@
 #define ECM_FRONT_END_INVALID_VLAN_PCP 0xFF
 
 /*
+ * FLOW DEPRIO flag
+ */
+#define ECM_FRONT_END_DEPRIO_FLOW 0x1
+#define ECM_FRONT_END_DEPRIO_RETURN 0x2
+
+/*
  * Bridge device macros
  */
 #define ecm_front_end_is_bridge_port(dev) (dev && (dev->priv_flags & IFF_BRIDGE_PORT))
@@ -363,6 +369,7 @@ struct ecm_front_end_flowsawf_msg {
 	uint32_t return_dest_ip[4];
 	uint8_t ip_version;
 	uint8_t protocol;
+	uint32_t flags;
 
 	/*
 	 * SAWF meta

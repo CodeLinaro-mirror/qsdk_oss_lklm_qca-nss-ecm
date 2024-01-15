@@ -699,6 +699,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	if (flow_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.flow_service_class = flow_output_params->service_class_id;
 		cemi->process_response.flow_sawf_metadata = msduq_forward;
+		cemi->process_response.flow_mark = msduq_forward;
 
 		/*
 		 * Output params recieved from SPM after rule look up
@@ -718,6 +719,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	if (return_output_params->service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		cemi->process_response.return_service_class = return_output_params->service_class_id;
 		cemi->process_response.return_sawf_metadata = msduq_reverse;
+		cemi->process_response.return_mark = msduq_reverse;
 
 		/*
 		 * Output params recieved from SPM after rule look up
@@ -3187,13 +3189,225 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_init);
 
 /*
+ * ecm_classifier_emesh_sdwf_check_and_deprio_connection()
+ * 	Parameters recieved :
+ * 	1. peer_mac
+ * 	2. peer_netdev info(valid/mac/if_num)
+ * 	3. MSDUQ
+ */
+ecm_classifier_emesh_sdwf_deprio_status_t ecm_classifier_emesh_sdwf_check_and_deprio_connection(struct ecm_db_connection_instance *ci, struct ecm_classifier_emesh_flow_deprio_param *param, struct net_device *dev, uint8_t *svc_id)
+{
+	struct ecm_front_end_flowsawf_msg msg = {0};
+	ecm_classifier_emesh_sdwf_deprio_status_t status;
+	struct ecm_front_end_connection_instance *feci = NULL;
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct net_device *netdev = NULL;
+	uint32_t mark_param, mark_flow, mark_return;
+	uint8_t dmac[ETH_ALEN], mac[ETH_ALEN];
+	ecm_tracker_sender_type_t sender;
+	bool match = false;
+
+	ether_addr_copy(mac, param->peer_mac);
+	mark_param = param->mark_metadata;
+
+	/*
+	 * Check if emesh classifier is assigned.
+	 */
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+	if (!cemi) {
+		DEBUG_WARN("%px: emesh classifier is not assigned. %u\n", ci, ci->serial);
+		status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_NOT_FOUND;
+		return status;
+	}
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	if (!feci->update_rule) {
+		DEBUG_WARN("%px: Frontend update_rule callback is not registered %p", param, feci);
+		status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_FAIL;
+		goto release_ref;
+	}
+
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	mark_flow = cemi->process_response.flow_mark;
+	mark_return = cemi->process_response.return_mark;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+
+	DEBUG_INFO("%px: mark in param: %u, mark in flow dir %u, mark in return dir %u", param, mark_param, mark_flow, mark_return);
+
+	/*
+	 * Check for all three conditions at one go for deprio in flow direction.
+	 * TODO: Check if both directional deprio needs to be done in case of MSDUQ match
+	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	netdev = ecm_db_connection_first_iface_dev_get_and_ref(ci, ECM_DB_OBJ_DIR_TO);
+	if ((mark_param == mark_flow) && (!ecm_mac_addr_equal(dmac, mac) || (dev == netdev))) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+		match = true;
+	}
+
+	dev_put(netdev);
+
+	/*
+	 * Check for all three conditions at one go for deprio in return direction.
+	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
+	netdev = ecm_db_connection_first_iface_dev_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM);
+	if ((mark_param == mark_return) && (!ecm_mac_addr_equal(dmac, mac) || (dev == netdev))) {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+		match = true;
+	}
+
+	dev_put(netdev);
+
+	/*
+	 * If the match is not foud any direction return
+	 */
+	if (!match) {
+		status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_NOT_FOUND;
+		goto release_ref;
+	}
+
+	/**
+	 * Fill msg to call update rule API
+	 */
+	msg.ip_version = ecm_db_connection_ip_version_get(ci);
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		msg.flow_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
+		msg.flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+		msg.return_service_class_id = cemi->process_response.return_service_class;
+		msg.return_mark = cemi->process_response.return_mark;
+		msg.flags |= ECM_FRONT_END_DEPRIO_FLOW;
+	} else {
+		msg.flow_service_class_id = cemi->process_response.flow_service_class;
+		msg.flow_mark = cemi->process_response.flow_mark;
+		msg.return_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
+		msg.return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+		msg.flags |= ECM_FRONT_END_DEPRIO_RETURN;
+	}
+
+	msg.protocol = ecm_db_connection_protocol_get(ci);
+	msg.flow_src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+	msg.flow_dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, msg.flow_src_ip);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO,  msg.flow_dest_ip);
+
+	if (msg.ip_version == 4) {
+		msg.flow_src_ip[0] = htonl(msg.flow_src_ip[0]);
+		msg.flow_dest_ip[0] = htonl(msg.flow_dest_ip[0]);
+	} else {
+		msg.flow_src_ip[0] = htonl(msg.flow_src_ip[0]);
+		msg.flow_src_ip[1] = htonl(msg.flow_src_ip[1]);
+		msg.flow_src_ip[2] = htonl(msg.flow_src_ip[2]);
+		msg.flow_src_ip[3] = htonl(msg.flow_src_ip[3]);
+
+		msg.flow_dest_ip[0] = htonl(msg.flow_dest_ip[0]);
+		msg.flow_dest_ip[1] = htonl(msg.flow_dest_ip[1]);
+		msg.flow_dest_ip[2] = htonl(msg.flow_dest_ip[2]);
+		msg.flow_dest_ip[3] = htonl(msg.flow_dest_ip[3]);
+	}
+
+	DEBUG_INFO("%px: Ready to deprioritize the flow with params: proto %d, sport %d, dport %d src ip %pI4 dest ip %pI4\n",
+			param, msg.protocol, msg.flow_src_port, msg.flow_dest_port, msg.flow_src_ip, msg.flow_dest_ip);
+
+	/*
+	 * Check the accel mode just before sending the msg to SFE
+	 * to avoid the case where flow get deprioritize even if accel mode is 0
+	 */
+	spin_lock_bh(&feci->lock);
+	if (feci->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+		spin_unlock_bh(&feci->lock);
+		status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_FAIL;
+		goto release_ref;
+	}
+	spin_unlock_bh(&feci->lock);
+
+	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, &msg);
+	status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS;
+
+	DEBUG_INFO("%px: Deprioritization is successful for flow\n", param);
+
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		*svc_id = cemi->process_response.flow_service_class;
+		cemi->process_response.flow_service_class = msg.flow_service_class_id;
+		cemi->process_response.flow_mark = msg.flow_mark;
+		cemi->process_response.flow_sawf_metadata = msg.flow_mark;
+	} else {
+		*svc_id = cemi->process_response.return_service_class;
+		cemi->process_response.return_service_class = msg.return_service_class_id;
+		cemi->process_response.return_mark = msg.return_mark;
+		cemi->process_response.return_sawf_metadata = msg.return_mark;
+	}
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+
+release_ref:
+	ecm_front_end_connection_deref(feci);
+	cemi->base.deref((struct ecm_classifier_instance *)cemi);
+	return status;
+}
+
+/*
  * ecm_classifier_emesh_sdwf_deprio()
+ * 	Parameters recieved :
+ * 	1. peer_mac
+ * 	2. peer_netdev info(valid/mac/if_num)
+ * 	3. MSDUQ
  */
 void ecm_classifier_emesh_sdwf_deprio(struct ecm_classifier_emesh_flow_deprio_param *param)
 {
-	/*
-	 * TODO: definition of this function
-	 */
+	struct ecm_classifier_emesh_sdwf_deprio_response sawf_deprio_response = {0};
+	struct ecm_db_connection_instance *ci;
+	struct net_device *dev = NULL;
+	uint32_t count = 0, fail = 0;
+	uint8_t svc_id = 0;
+
+	if (!param || !ecm_emesh.sawf_deprio_response) {
+		DEBUG_WARN("Deprio command has sent null params or response callback is not registered");
+		return;
+	}
+
+	DEBUG_INFO("%px: params recieved as mark_metadata %u, peer_mac %pM, dev_if %d", param, param->mark_metadata, param->peer_mac, param->netdev_ifindex);
+
+	dev = dev_get_by_index(&init_net, param->netdev_ifindex);
+	if (!dev) {
+		DEBUG_WARN("%px: Recieved incorrect dev interface number from deprio command %d", param, param->netdev_ifindex);
+		return;
+	}
+
+	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ECM_CLASSIFIER_TYPE_EMESH);
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		ecm_classifier_emesh_sdwf_deprio_status_t status = ecm_classifier_emesh_sdwf_check_and_deprio_connection(ci, param, dev, &svc_id);
+		if (status == ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS) {
+			DEBUG_TRACE("%px: Deprioritization is successful for svc_id %d\n", param, svc_id);
+			count++;
+		} else if (status == ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_FAIL) {
+			fail++;
+		}
+
+		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		ecm_db_connection_by_classifier_type_assignment_deref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		ci = cin;
+	}
+
+	if (!count) {
+		DEBUG_TRACE("%px: No need to send response as no connections deprioritized.", param);
+		goto release_dev;
+	}
+
+	sawf_deprio_response.netdev = dev;
+	ether_addr_copy(sawf_deprio_response.mac_addr, param->peer_mac);
+	sawf_deprio_response.service_id = svc_id;
+	sawf_deprio_response.success_count = count;
+	sawf_deprio_response.fail_count = fail;
+	sawf_deprio_response.mark_metadata = param->mark_metadata;;
+	ecm_emesh.sawf_deprio_response(&sawf_deprio_response);
+
+release_dev:
+	if (dev) {
+		dev_put(dev);
+	}
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sdwf_deprio);
 
