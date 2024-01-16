@@ -5060,7 +5060,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
 			 * the check specific to routed flow in case of IPSEC passthrough traffic.
 			 */
-			if ((protocol == IPPROTO_IPV6) || ((protocol == IPPROTO_ESP) && is_routed)) {
+			if ((protocol == IPPROTO_IPV6 || protocol == IPPROTO_ESP) && is_routed) {
 				skip = true;
 				break;
 			}
@@ -5085,7 +5085,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			 * interface hierarchy for IPSEC passthrough / UDP Encapsulated IPSEC traffic. Hence making
 			 * the check specific to routed flow in case of IPSEC passthrough traffic.
 			 */
-			if ((protocol == IPPROTO_IPIP) || ((protocol == IPPROTO_ESP) && is_routed)) {
+			if ((protocol == IPPROTO_IPIP || protocol == IPPROTO_ESP) && is_routed) {
 				skip = true;
 				break;
 			}
