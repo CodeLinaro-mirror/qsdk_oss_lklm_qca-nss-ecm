@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -473,6 +473,8 @@ bool ecm_db_connection_decel_v6(struct in6_addr *src_ip, int src_port,
 				struct in6_addr *dest_ip, int dest_port, int protocol);
 void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci,
 					   struct ecm_front_end_connection_instance *feci);
+void ecm_db_netdevs_get_and_hold(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+				struct net_device **src_dev, struct net_device **dest_dev);
 
 void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t flag);
 

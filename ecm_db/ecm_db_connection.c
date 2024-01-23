@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -4316,6 +4316,75 @@ void ecm_db_front_end_instance_ref_and_set(struct ecm_db_connection_instance *ci
 	ci->feci = feci;
 }
 EXPORT_SYMBOL(ecm_db_front_end_instance_ref_and_set);
+
+/*
+ * ecm_db_netdevs_get_and_hold()
+ *	Get source and the destination net devices for a flow
+ */
+void ecm_db_netdevs_get_and_hold(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
+				struct net_device **src_dev, struct net_device **dest_dev)
+{
+	uint32_t first_index;
+	ecm_db_obj_dir_t dir;
+	struct net_device *dev;
+	struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+
+	/*
+	 * Obtained destination netdev from ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	}
+
+	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			goto get_source_dev;
+		}
+
+		*dest_dev = dev;
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		goto get_source_dev;
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
+	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+get_source_dev:
+	/*
+	 * Obtained source netdev form ECM's 'to' or 'from' interface list
+	 * according to the type of sender.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_FROM);
+		dir = ECM_DB_OBJ_DIR_FROM;
+	} else {
+		first_index = ecm_db_connection_interfaces_get_and_ref(ci, interfaces, ECM_DB_OBJ_DIR_TO);
+		dir = ECM_DB_OBJ_DIR_TO;
+	}
+
+	if (likely(first_index != ECM_DB_IFACE_HEIRARCHY_MAX)) {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(interfaces[first_index]));
+		if (!dev) {
+			DEBUG_WARN("%px: Failed to get net device with %d index\n", ci, first_index);
+			ecm_db_connection_interfaces_deref(interfaces, first_index);
+			return;
+		}
+
+		*src_dev = dev;
+		ecm_db_connection_interfaces_deref(interfaces, first_index);
+		return;
+	}
+
+	ecm_db_connection_interfaces_deref(interfaces, first_index);
+	DEBUG_WARN("%px: Failed to get %s interfaces list\n", ci, ecm_db_obj_dir_strings[dir]);
+}
 
 /*
  * ecm_db_get_connection_counts_simple()
