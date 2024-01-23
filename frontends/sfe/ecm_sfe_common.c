@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -406,10 +405,10 @@ bool ecm_sfe_ipv4_is_conn_limit_reached(void)
 		return false;
 	}
 
-	if (ecm_sfe_ipv4_accelerated_count == sfe_ipv4_max_conn_count()) {
-		DEBUG_INFO("ECM DB connection limit %d reached, for SFE frontend \
-			   new flows cannot be accelerated.\n",
-			   ecm_sfe_ipv4_accelerated_count);
+	if ((ecm_sfe_ipv4_pending_accel_count + ecm_sfe_ipv4_accelerated_count) >= sfe_ipv4_max_conn_count()) {
+		DEBUG_INFO("ECM DB connection limit reached with accelerated count:%d, pending accel count:%d, for SFE frontend \
+				new flows cannot be accelerated.\n",
+				ecm_sfe_ipv4_accelerated_count, ecm_sfe_ipv4_pending_accel_count);
 		return true;
 	}
 
@@ -432,10 +431,10 @@ bool ecm_sfe_ipv6_is_conn_limit_reached(void)
 		return false;
 	}
 
-	if (ecm_sfe_ipv6_accelerated_count == sfe_ipv6_max_conn_count()) {
-		DEBUG_INFO("ECM DB connection limit %d reached, for SFE frontend \
-			   new flows cannot be accelerated.\n",
-			   ecm_sfe_ipv6_accelerated_count);
+	if ((ecm_sfe_ipv6_pending_accel_count + ecm_sfe_ipv6_accelerated_count) >= sfe_ipv6_max_conn_count()) {
+		DEBUG_INFO("ECM DB connection limit reached with accelerated count:%d, pending accel count:%d, for SFE frontend \
+				new flows cannot be accelerated.\n",
+				ecm_sfe_ipv6_accelerated_count, ecm_sfe_ipv6_pending_accel_count);
 		return true;
 	}
 
