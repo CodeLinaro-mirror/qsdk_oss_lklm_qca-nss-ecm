@@ -8082,11 +8082,7 @@ static int ecm_interface_wifi_event_handler(unsigned char *buf, int len)
 static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *addr, unsigned char *buf, int len)
 {
 	struct msghdr msg;
-	struct iovec  iov;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	mm_segment_t oldfs = get_fs();
-#endif
-	int size;
+	struct kvec iov;
 
 	iov.iov_base = buf;
 	iov.iov_len  = len;
@@ -8096,16 +8092,8 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	msg.msg_namelen = sizeof(struct sockaddr_nl);
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	set_fs(KERNEL_DS);
-#endif
-	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
-	size = sock_recvmsg(sock, &msg, msg.msg_flags);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	set_fs(oldfs);
-#endif
 
-	return size;
+	return kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
 }
 
 /*
