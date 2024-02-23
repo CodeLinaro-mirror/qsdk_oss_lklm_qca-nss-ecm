@@ -7915,6 +7915,15 @@ static int ecm_interface_neigh_mac_update_notify_event(struct notifier_block *nb
 {
 	struct neigh_mac_update *nmu = (struct neigh_mac_update *)data;
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	/*
+	 * We handle only mac addr 'update' event and ignore add/delete
+	 * Below enum is defined only in 5.4 kernel
+	 */
+	if (val != NEIGH_EVENT_NOTIFY_UPDATE) {
+		return NOTIFY_DONE;
+	}
+#endif
 	/*
 	 * If the old and new mac addresses are equal, do nothing.
 	 * This case shouldn't happen.
