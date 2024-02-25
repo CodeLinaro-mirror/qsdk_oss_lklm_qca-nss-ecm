@@ -1479,6 +1479,28 @@ process_packet:
 					ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SP_FLOW;
 		}
+
+		/*
+		 * E-MESH SAWF metadata is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF metadata is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
+			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
+			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
+		}
+
+		/*
+		 * E-MESH SAWF has valid pcp remark values to be updated in vlan tag.
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, egress vlan pcp remark: %d, ingress vlan pcp remark: %d\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_vlan_pcp, aci_pr.return_vlan_pcp);
+			prevalent_pr.flow_vlan_pcp = aci_pr.flow_vlan_pcp;
+			prevalent_pr.return_vlan_pcp = aci_pr.return_vlan_pcp;
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK;
+		}
 #endif
 
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
