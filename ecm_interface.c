@@ -3245,6 +3245,16 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			ii = ecm_interface_ovs_bridge_interface_establish(&type_info.ovsb, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			goto identifier_update;
 		}
+
+		/*
+		 * The below call would return true for internal ports of ovs bridge for which
+		 * offload is not supported. Since ovsmgr_is_ovs_master(dev) it would only match
+		 * for ports which are not bridge ports.
+		 */
+		if (ecm_front_end_is_ovs_bridge_device(dev)) {
+			DEBUG_WARN("%px: ECM offload not supported for OVS internal port: %s\n", feci, dev->name);
+			return NULL;
+		}
 #endif
 
 #ifdef ECM_INTERFACE_BOND_ENABLE
