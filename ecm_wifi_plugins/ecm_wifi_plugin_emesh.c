@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -103,6 +103,24 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct ecm_classifer_eme
 
 #ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 /*
+ * ecm_wifi_plugin_emesh_sawf_multicast_conn_sync()
+ *	Callback for Multicast interface heirarchy update.
+ */
+static inline void ecm_wifi_plugin_emesh_sawf_multicast_conn_sync(struct ecm_classifier_emesh_sawf_multicast_sync_params *sawf_multicast_sync_params)
+{
+	qca_sawf_mcast_sync_param_t params = {0};
+
+	memcpy(&params.src, &sawf_multicast_sync_params->src, sizeof(params.src));
+	memcpy(&params.dest, &sawf_multicast_sync_params->dest, sizeof(params.dest));
+	params.src_ifindex = sawf_multicast_sync_params->src_ifindex;
+	memcpy(params.dest_ifindex, sawf_multicast_sync_params->dest_ifindex, ECM_CLASSIFIER_EMESH_MULTICAST_IF_MAX);
+	params.dest_dev_count = sawf_multicast_sync_params->dest_dev_count;
+	params.add_or_sub = sawf_multicast_sync_params->add_or_sub;
+	params.ip_version = sawf_multicast_sync_params->ip_version;
+	qca_sawf_mcast_connection_sync(&params);
+}
+
+/*
  * ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid()
  *	Convert the ECM SAWF valid flags to Wi-Fi driver valid flags.
  */
@@ -165,6 +183,7 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	sawf_params.pcp = sawf_flow_info->vlan_pcp;
 	sawf_params.dscp = sawf_flow_info->dscp;
 	sawf_params.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
+	sawf_params.mcast_flag = sawf_flow_info->is_mc_flow;
 
 	return qca_sawf_get_mark_metadata(&sawf_params);
 #endif
@@ -178,6 +197,7 @@ static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 #ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	.update_peer_mesh_latency_params = ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params,
 	.update_fse_flow_info = ecm_wifi_plugin_emesh_sawf_update_fse_flow,
+	.sawf_multicast_conn_sync = ecm_wifi_plugin_emesh_sawf_multicast_conn_sync,
 #endif
 	.update_service_id_get_msduq = ecm_wifi_plugin_emesh_sawf_get_mark_data,
 	.sawf_conn_sync = ecm_wifi_plugin_emesh_sawf_conn_sync,
@@ -214,6 +234,16 @@ int ecm_wifi_plugin_emesh_register(void)
 		ecm_wifi_plugin_warning("ecm emesh fse callback registration failed.\n");
 		return -1;
 	}
+
+	if (ecm_classifier_emesh_mcast_conn_sync_callback_register(&ecm_wifi_plugin_emesh)) {
+		ecm_classifier_emesh_latency_config_callback_unregister();
+		ecm_classifier_emesh_sawf_msduq_callback_unregister();
+		ecm_classifier_emesh_sawf_conn_sync_callback_unregister();
+		ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister();
+		ecm_wifi_plugin_warning("ecm emesh multicast flow sync callback registration failed.\n");
+		return -1;
+	}
+
 	ecm_wifi_plugin_info("EMESH classifier callbacks registered\n");
 	return 0;
 }
@@ -228,5 +258,6 @@ void ecm_wifi_plugin_emesh_unregister(void)
 	ecm_classifier_emesh_sawf_msduq_callback_unregister();
 	ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister();
 	ecm_classifier_emesh_sawf_conn_sync_callback_unregister();
+	ecm_classifier_emesh_mcast_conn_sync_callback_unregister();
 	ecm_wifi_plugin_info("EMESH classifier callbacks unregistered\n");
 }
