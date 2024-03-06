@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2018, 2021, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -601,7 +601,7 @@ static unsigned int ecm_pcc_test_update_rule(char *name,
 	o_feature_flags = rule->feature_flags;
 	rule->accel = accel;
 	rule->feature_flags = feature_flags;
-	strcpy(rule->name, name);
+	strlcpy(rule->name, name, sizeof(rule->name));
 	strlcpy(rule->mirror_info.tuple_mirror_dev, tuple_mirror_dev, IFNAMSIZ);
 	strlcpy(rule->mirror_info.tuple_ret_mirror_dev, tuple_ret_mirror_dev, IFNAMSIZ);
 	rule->ap_info.flow_ap_index = flow_ap_index;
@@ -722,7 +722,7 @@ static unsigned int ecm_pcc_test_add_rule(char *name,
 	if (!new_rule)
 		return 0;
 
-	strcpy(new_rule->name, name);
+	strlcpy(new_rule->name, name, sizeof(new_rule->name));
 	new_rule->accel = accel;
 	new_rule->proto = proto;
 	new_rule->src_port = src_port;
@@ -839,7 +839,7 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 	/*
 	 * Convert fields
 	 */
-	strncpy(name, fields[0], sizeof(name));
+	strlcpy(name, fields[0], sizeof(name));
 
 	name[sizeof(name) - 1] = 0;
 	if (sscanf(fields[1], "%u", &oper) != 1)
