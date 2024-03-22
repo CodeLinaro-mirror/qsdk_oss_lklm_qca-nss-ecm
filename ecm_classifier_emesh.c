@@ -249,9 +249,11 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
+#ifdef ECM_MULTICAST_ENABLE
+	bool is_mc_flow = false;
+#endif
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	struct ecm_classifier_emesh_sawf_instance *cemi;
-	bool is_mc_flow = false;
 
 	/*
 	 * Check if MSDUQ callback is registered.

@@ -275,6 +275,7 @@ int ecm_wifi_plugin_emesh_register(void)
 	return 0;
 }
 
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 /*
  * ecm_wifi_plugin_sdwf_deprio
  * 	SDWF deprioritization API
@@ -324,6 +325,7 @@ void ecm_wifi_plugin_adm_ctrl_cb_unregister(void)
 	ecm_classifier_emesh_sdwf_deprio_response_callback_unregister();
 	ecm_wifi_plugin_info("Emesh all deprio Un-registration success\n");
 }
+#endif
 
 /*
  * ecm_wifi_plugin_emesh_unregister()
