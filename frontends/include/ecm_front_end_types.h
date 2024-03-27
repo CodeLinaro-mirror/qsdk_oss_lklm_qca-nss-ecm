@@ -35,8 +35,8 @@
 /*
  * FLOW DEPRIO flag
  */
-#define ECM_FRONT_END_DEPRIO_FLOW 0x1
-#define ECM_FRONT_END_DEPRIO_RETURN 0x2
+#define ECM_FRONT_END_PRIO_UPDATE_FLOW 0x1
+#define ECM_FRONT_END_PRIO_UPDATE_RETURN 0x2
 
 /*
  * Bridge device macros

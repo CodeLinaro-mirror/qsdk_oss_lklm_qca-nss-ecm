@@ -297,7 +297,7 @@ bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 	return true;
 }
 
- /* ecm_ppe_common_init_fe_info()
+/* ecm_ppe_common_init_fe_info()
  *	Initialize common fe info
  */
 void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
@@ -453,3 +453,110 @@ bool ecm_ppe_tunipip6_is_flow_offload_enabled(struct ecm_front_end_connection_in
 }
 #endif
 
+/*
+ * ecm_ppe_common_update_rule()
+ *	Updates the frontend specifc data.
+ *
+ * Currently, only updates the mark values of the connection and updates the PPE AE.
+ */
+void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg)
+{
+	switch (type) {
+	case ECM_RULE_UPDATE_TYPE_SAWFMARK:
+	{
+		struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
+		int aci_index;
+		int assignment_count;
+		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+		ppe_drv_ret_t ppe_status;
+
+		if (msg->ip_version == 4) {
+			struct ppe_drv_v4_sawf_mark_update mark = {0};
+
+			mark.sawf_rule.flow_mark = msg->flow_mark;
+			mark.sawf_rule.flow_service_class = msg->flow_service_class_id;
+			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
+				mark.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
+			}
+
+			mark.sawf_rule.return_mark = msg->return_mark;
+			mark.sawf_rule.return_service_class = msg->return_service_class_id;
+			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
+				mark.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
+			}
+
+			mark.tuple.protocol = msg->protocol;
+			mark.tuple.flow_ident = msg->flow_src_port;
+			mark.tuple.return_ident = msg->flow_dest_port;
+			mark.tuple.flow_ip = msg->flow_src_ip[0];
+			mark.tuple.return_ip = msg->flow_dest_ip[0];
+
+			ppe_status = ppe_drv_v4_rule_sawf_mark_update(&mark);
+			if (ppe_status != PPE_DRV_RET_SUCCESS) {
+				DEBUG_WARN("%px: Failed to update mark value in PPE\n", feci);
+				return;
+			}
+
+			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
+					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
+					&mark.tuple.flow_ip, mark.tuple.flow_ident,
+					&mark.tuple.return_ip, mark.tuple.return_ident,
+					mark.tuple.protocol);
+		} else {
+			struct ppe_drv_v6_sawf_mark_update mark = {0};
+
+			mark.sawf_rule.flow_mark = msg->flow_mark;
+			mark.sawf_rule.flow_service_class = msg->flow_service_class_id;
+			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
+				mark.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
+			}
+
+			mark.sawf_rule.return_mark = msg->return_mark;
+			mark.sawf_rule.return_service_class = msg->return_service_class_id;
+			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
+				mark.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
+			}
+
+			mark.tuple.protocol = msg->protocol;
+			mark.tuple.flow_ident = msg->flow_src_port;
+			mark.tuple.return_ident = msg->flow_dest_port;
+
+			ECM_IP_ADDR_COPY(mark.tuple.flow_ip, msg->flow_src_ip);
+			ECM_IP_ADDR_COPY(mark.tuple.return_ip, msg->flow_dest_ip);
+
+			ppe_status = ppe_drv_v6_rule_sawf_mark_update(&mark);
+			if (ppe_status != PPE_DRV_RET_SUCCESS) {
+				DEBUG_WARN("%px: Failed to update mark value in PPE\n", feci);
+				return;
+			}
+
+			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6:%u -> %pI6:%u protocol=%u\n",
+					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
+					mark.tuple.flow_ip, mark.tuple.flow_ident,
+					mark.tuple.return_ip, mark.tuple.return_ident,
+					mark.tuple.protocol);
+		}
+
+		/*
+		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of case
+		 * update, they will handle the event.
+		 */
+		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+			struct ecm_classifier_instance *aci;
+			aci = assignments[aci_index];
+			if (aci->update) {
+				aci->update(aci, type, msg);
+			}
+		}
+
+		ecm_db_connection_assignments_release(assignment_count, assignments);
+
+		break;
+	}
+
+	default:
+		DEBUG_WARN("%px: unsupported update rule type: %d\n", feci, type);
+		break;
+	}
+}

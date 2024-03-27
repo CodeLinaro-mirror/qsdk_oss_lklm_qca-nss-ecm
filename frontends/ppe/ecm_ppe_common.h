@@ -176,8 +176,8 @@ int ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(struct ecm_front_end_connection_i
 		struct sk_buff *skb, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
 #endif
 void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info);
-
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
 bool ecm_ppe_tunipip6_is_flow_offload_enabled(struct ecm_front_end_connection_instance *feci,
 			struct ecm_db_iface_instance *ii, bool is_encap);
 #endif
+void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);

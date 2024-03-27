@@ -3650,13 +3650,13 @@ ecm_classifier_emesh_sdwf_deprio_status_t ecm_classifier_emesh_sdwf_check_and_de
 		msg.flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		msg.return_service_class_id = cemi->process_response.return_service_class;
 		msg.return_mark = cemi->process_response.return_mark;
-		msg.flags |= ECM_FRONT_END_DEPRIO_FLOW;
+		msg.flags |= ECM_FRONT_END_PRIO_UPDATE_FLOW;
 	} else {
 		msg.flow_service_class_id = cemi->process_response.flow_service_class;
 		msg.flow_mark = cemi->process_response.flow_mark;
 		msg.return_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
 		msg.return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-		msg.flags |= ECM_FRONT_END_DEPRIO_RETURN;
+		msg.flags |= ECM_FRONT_END_PRIO_UPDATE_RETURN;
 	}
 
 	msg.protocol = ecm_db_connection_protocol_get(ci);
