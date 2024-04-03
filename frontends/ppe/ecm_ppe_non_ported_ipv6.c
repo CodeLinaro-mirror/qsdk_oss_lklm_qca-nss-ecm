@@ -922,21 +922,27 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	/*
 	 * The flow_ip is where the connection established from
+	 * NAT is not supported for tunnel flows, so flow_ip and flow_ip_xlate will be same
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->tuple.flow_ip, src_ip);
+	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->conn_rule.flow_ip_xlate, src_ip);
 
 	/*
 	 * The return_ip is where the connection is established to
+	 * NAT is not supported for tunnel flows, so return_ip and return_ip_xlate will be same
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->tuple.return_ip, dest_ip);
+	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->conn_rule.return_ip_xlate, dest_ip);
 
 	/*
 	 * Same approach as above for port information
 	 */
 	pd6rc->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	pd6rc->conn_rule.flow_ident_xlate = pd6rc->tuple.flow_ident;
 	pd6rc->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
+	pd6rc->conn_rule.return_ident_xlate = pd6rc->tuple.return_ident;
 
 	/*
 	 * Get mac addresses.

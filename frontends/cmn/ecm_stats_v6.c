@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -72,6 +72,7 @@ static const char* ecm_stats_v6_exception_name_str[] = {
 	"v6_mcast_stopped",
 	"v6_mucast_not_supported",
 	"v6_mcast_feature_disabled",
+	"v6_exception_bridge_ecm_dir_mismatch",
 	"v6_dest_ip_not_ucast",
 	"v6_src_ip_not_ucast",
 	"v6_non_ported_not_supported",

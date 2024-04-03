@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,6 +20,12 @@
 #include <ppe_drv_v4.h>
 #include <ppe_drv_v6.h>
 #include <ppe_vp_public.h>
+
+#ifdef CONFIG_NF_CONNTRACK_NPTV6_EXT
+#include <net/netfilter/nf_conntrack_nptv6_ext.h>
+
+#define ECM_NPTV6_MAX_ADDR_LEN 128
+#endif
 
 extern int ecm_ppe_ipv6_no_action_limit_default;		/* Default no-action limit. */
 extern int ecm_ppe_ipv6_driver_fail_limit_default;		/* Default driver fail limit. */
@@ -50,6 +56,93 @@ extern int ecm_ppe_ipv6_vlan_passthrough_enable;
  * NOTE: It is safe to take this lock WHILE HOLDING a feci->lock. The reverse is NOT SAFE.
  */
 extern spinlock_t ecm_ppe_ipv6_lock;			/* Protect against SMP access between netfilter, events and private threaded function. */
+
+#ifdef CONFIG_NF_CONNTRACK_NPTV6_EXT
+/*
+ * ecm_ppe_nptv6_info
+ *	Contains the extracted information from the NPTv6 Extension
+ */
+struct ecm_ppe_nptv6_info {
+	uint32_t src_pfx[4];	/* Source Prefix used by the NPTv6 translator for the packet */
+	uint32_t dst_pfx[4];	/* Destination Prefix used by the NPTv6 translator for the packet */
+	uint16_t nptv6_flags;	/* NPTv6 specfic flags set for the packet */
+	uint8_t src_pfx_len;	/* Source Prefix length set by the NPTv6 translator for the packet */
+	uint8_t dst_pfx_len;	/* Destination Prefix length set by the NPTv6 translator for the packet */
+};
+
+/*
+ * ecm_v6_clear_low_bits()
+ *	Clears the Lower bits of IPv6 address
+ */
+static inline void ecm_v6_clear_low_bits(uint16_t len, uint32_t *prefix)
+{
+	uint8_t i = 0;
+	uint8_t ints_to_clear = len / 32;
+	uint8_t bits_to_clear = len % 32;
+
+	for (i = 0; i < ints_to_clear; i++) {
+		prefix[3 - i] = 0;
+	}
+
+	if (bits_to_clear > 0) {
+		prefix[3 - ints_to_clear] &= ~((1U << bits_to_clear) - 1);
+	}
+}
+
+/*
+ * ecm_nptv6_info_fill()
+ *	Fills the NPTv6 Extension info.
+ */
+static inline bool ecm_nptv6_info_fill(uint32_t *match_ip, uint32_t *xlate_ip, uint32_t *ret_match,
+				uint32_t *ret_match_xlate, struct nf_ct_nptv6_ext *nptcte,
+				bool is_outbound, struct ecm_ppe_nptv6_info *npt)
+{
+	uint16_t src_clear_len = ECM_NPTV6_MAX_ADDR_LEN - nptcte->src_pfx_len;
+	uint16_t dst_clear_len = ECM_NPTV6_MAX_ADDR_LEN - nptcte->dst_pfx_len;
+	uint32_t src_pfx[4], dst_pfx[4];
+
+	/*
+	 * Verify whether the src/dst Prefix programed by NFTABLES
+	 * is matching the IPv6 addresses obtained from ECM's database
+	 */
+	ECM_IP_ADDR_COPY(src_pfx, match_ip);
+	ECM_IP_ADDR_COPY(dst_pfx, xlate_ip);
+	ecm_v6_clear_low_bits(src_clear_len, src_pfx);
+	ecm_v6_clear_low_bits(dst_clear_len, dst_pfx);
+	if ((ECM_IP_ADDR_MATCH(nptcte->src_pfx, src_pfx))
+		&& (ECM_IP_ADDR_MATCH(nptcte->dst_pfx, dst_pfx))) {
+		npt->src_pfx_len = nptcte->src_pfx_len;
+		npt->dst_pfx_len = nptcte->dst_pfx_len;
+		npt->nptv6_flags = nptcte->nptv6_flags;
+		ECM_IP_ADDR_COPY(npt->src_pfx, nptcte->src_pfx);
+		ECM_IP_ADDR_COPY(npt->dst_pfx, nptcte->dst_pfx);
+		return true;
+	}
+
+	/*
+	 * for bi-di flows, ECM pushes rule in one direction,
+	 * while conntrack extension points to other direction.
+	 */
+	ECM_IP_ADDR_COPY(src_pfx, ret_match_xlate);
+	ECM_IP_ADDR_COPY(dst_pfx, ret_match);
+	ecm_v6_clear_low_bits(src_clear_len, src_pfx);
+	ecm_v6_clear_low_bits(dst_clear_len, dst_pfx);
+	if ((ECM_IP_ADDR_MATCH(nptcte->src_pfx, src_pfx))
+		&& (ECM_IP_ADDR_MATCH(nptcte->dst_pfx, dst_pfx))) {
+		npt->src_pfx_len = nptcte->dst_pfx_len;
+		npt->dst_pfx_len = nptcte->src_pfx_len;
+		ECM_IP_ADDR_COPY(npt->dst_pfx, nptcte->src_pfx);
+		ECM_IP_ADDR_COPY(npt->src_pfx, nptcte->dst_pfx);
+		npt->nptv6_flags = is_outbound ? NF_CT_NPTV6_EXT_DNPT: NF_CT_NPTV6_EXT_SNPT;
+		return true;
+	}
+
+	return false;
+}
+
+bool ecm_ppe_nptv6_validate_pkt(struct sk_buff *skb, uint32_t *flow_ip, uint32_t *flow_ip_xlate,
+				uint32_t *return_ip, uint32_t *return_ip_xlate, struct ecm_ppe_nptv6_info *npt);
+#endif
 
 /*
  * ecm_ppe_ipv6_accel_pending_set()
