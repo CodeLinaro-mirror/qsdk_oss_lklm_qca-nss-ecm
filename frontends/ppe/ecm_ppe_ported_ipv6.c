@@ -198,13 +198,20 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	bool rule_invalid;
 	ip_addr_t src_ip;
 	ip_addr_t dest_ip;
+	ip_addr_t src_nat_ip;
+	ip_addr_t dest_nat_ip;
 	bool is_defunct = false;
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 	bool is_ppeq = false;
 #endif
+	ecm_db_direction_t ecm_dir;
+	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_front_end_acceleration_mode_t result_mode;
 	struct ecm_classifier_instance *aci;
 	struct ecm_classifier_rule_create ecrc;
+#ifdef CONFIG_NF_CONNTRACK_NPTV6_EXT
+	struct ecm_ppe_nptv6_info npt = {0};
+#endif
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -1155,16 +1162,51 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->tuple.flow_ip, src_ip);
 
 	/*
-	 * The dest_ip is where the connection is established to
+	 * The dest_ip is where the connection is established to, however, in the case of ingress
+	 * the dest_ip would be the routers WAN IP - i.e. the NAT'ed version.
+	 * Getting the NAT'ed version here works for ingress or egress packets, for egress
+	 * the NAT'ed version would be the same as the normal address
 	 */
-	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->tuple.return_ip, dest_ip);
+
+	/*
+	 * When the packet is forwarded to the next interface get the address the source IP of the
+	 * packet should be translated to. For egress this is the NAT'ed from address.
+	 * This also works for ingress as the NAT'ed version of the WAN host would be the same as non-NAT'ed
+	 */
+        ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT, src_nat_ip);
+        ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->conn_rule.flow_ip_xlate, src_nat_ip);
+
+	/*
+	 * The destination address is what the destination IP is translated to as it is forwarded to the next interface.
+	 * For egress this would yield the normal wan host and for ingress this would correctly NAT back to the LAN host
+	 */
+        ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_nat_ip);
+        ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rc->conn_rule.return_ip_xlate, dest_nat_ip);
 
 	/*
 	 * Same approach as above for port information
 	 */
 	pd6rc->tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	pd6rc->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	pd6rc->tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
+        pd6rc->conn_rule.flow_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT);
+        pd6rc->conn_rule.return_ident_xlate = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
+	 * NPTv6 information?
+	 */
+	memset(&pd6rc->npt6_rule, 0, sizeof(pd6rc->npt6_rule));
+#ifdef CONFIG_NF_CONNTRACK_NPTV6_EXT
+	if (ecm_ppe_nptv6_validate_pkt(skb, pd6rc->tuple.flow_ip, pd6rc->conn_rule.flow_ip_xlate,
+				pd6rc->tuple.return_ip, pd6rc->conn_rule.return_ip_xlate, &npt)) {
+		pd6rc->npt6_rule.src_pfx_len = npt.src_pfx_len;
+		pd6rc->npt6_rule.dst_pfx_len = npt.dst_pfx_len;
+		pd6rc->npt6_rule.nptv6_flags = npt.nptv6_flags;
+		ECM_IP_ADDR_COPY(pd6rc->npt6_rule.src_pfx, npt.src_pfx);
+		ECM_IP_ADDR_COPY(pd6rc->npt6_rule.dst_pfx, npt.dst_pfx);
+	}
+#endif
 
 	/*
 	 * Get mac addresses.
@@ -1178,7 +1220,33 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * For ingress it is the node adress of the NAT'ed 'to' IP.
 	 * Essentially it is the MAC of node associated with create.dest_ip and this is "to nat" side.
 	 */
-	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, (uint8_t *)pd6rc->conn_rule.return_mac);
+	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, (uint8_t *)pd6rc->conn_rule.return_mac);
+
+	/*
+	 * Routed or bridged?
+	 * Also, the dest_mac_xlate is the mac address to replace the pkt.dst_mac when a packet is sent to->from
+	 * For bridged connections this does not change.
+	 * For routed connections this is the mac of the 'to' node side of the connection.
+	 */
+        if (pd6rc->rule_flags & PPE_DRV_V6_RULE_FLAG_ROUTED_FLOW) {
+                ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac_xlate);
+        } else {
+                /*
+                 * Bridge flows preserve the MAC addressing
+                 */
+                ether_addr_copy(dest_mac_xlate, (uint8_t *)pd6rc->conn_rule.return_mac);
+        }
+
+	/*
+	 * Refer to the Example 2 and 3 in ecm_ppe_ipv6_ip_process() function for egress
+	 * and ingress NAT'ed cases. In these cases, the destination node is the one which has the
+	 * ip_dest_addr. So, above we get the mac address of this host and use that mac address
+	 * for the destination node address in NAT'ed cases.
+	 */
+	ecm_dir = ecm_db_connection_direction_get(feci->ci);
+	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT)) {
+		ether_addr_copy(pd6rc->conn_rule.return_mac, dest_mac_xlate);
+	}
 
 	/*
 	 * Sync our creation command from the assigned classifiers to get specific additional creation rules.
@@ -1223,6 +1291,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			"to_mtu: %u\n"
 			"from_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
 			"to_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+			"from_ip_xlate: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+			"to_ip_xlate: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
 			"from_mac: %pM\n"
 			"to_mac: %pM\n"
 			"src_iface_num: %u\n"
@@ -1250,6 +1320,8 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			pd6rc->conn_rule.return_mtu,
 			ECM_IP_ADDR_TO_OCTAL(src_ip), pd6rc->tuple.flow_ident,
 			ECM_IP_ADDR_TO_OCTAL(dest_ip), pd6rc->tuple.return_ident,
+			ECM_IP_ADDR_TO_OCTAL(src_nat_ip), pd6rc->conn_rule.flow_ident_xlate,
+			ECM_IP_ADDR_TO_OCTAL(dest_nat_ip), pd6rc->conn_rule.return_ident_xlate,
 			pd6rc->conn_rule.flow_mac,
 			pd6rc->conn_rule.return_mac,
 			pd6rc->conn_rule.rx_if,
@@ -1557,10 +1629,10 @@ static bool ecm_ppe_ported_ipv6_connection_decelerate_send(struct ecm_front_end_
 	 */
 	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rd.tuple.flow_ip, src_ip);
-	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
 	ECM_IP_ADDR_TO_PPE_IPV6_ADDR(pd6rd.tuple.return_ip, dest_ip);
 	pd6rd.tuple.flow_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	pd6rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	pd6rd.tuple.return_ident = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT);
 
 	/*
 	 * Take a ref to the feci->ci so that it will persist until we get a response from the PPE.

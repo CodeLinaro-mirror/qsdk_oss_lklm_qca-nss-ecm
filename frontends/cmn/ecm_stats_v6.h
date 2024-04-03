@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -89,6 +89,8 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of IPv6 Packets ignored as multicast is unsupported by selected fronend */
 	ECM_STATS_V6_EXCEPTION_MCAST_FEATURE_DISABLED,
 			/* Number of IPv6 packets ignored multicast feature is disabled */
+	ECM_STATS_V6_EXCEPTION_BRIDGE_ECM_DIR_MISMATCH,
+			/* Number of IPv6 packets ignored as mismatch in packet dir */
 	ECM_STATS_V6_EXCEPTION_DEST_IP_NOT_UCAST,
 			/* Number of IPv6 packets ignored IP destination IP is not unicast */
 	ECM_STATS_V6_EXCEPTION_SRC_IP_NOT_UCAST,

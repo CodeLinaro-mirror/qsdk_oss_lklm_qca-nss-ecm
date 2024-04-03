@@ -197,6 +197,63 @@ void ecm_ppe_ipv6_decel_done_time_update(struct ecm_front_end_connection_instanc
 	spin_unlock_bh(&ecm_ppe_ipv6_lock);
 }
 
+#ifdef CONFIG_NF_CONNTRACK_NPTV6_EXT
+/*
+ * ecm_ppe_nptv6_validate_pkt()
+ *	Validates the packet against NPTv6 flow.
+ */
+bool ecm_ppe_nptv6_validate_pkt(struct sk_buff *skb, uint32_t *flow_ip, uint32_t *flow_ip_xlate,
+				uint32_t *return_ip, uint32_t *return_ip_xlate, struct ecm_ppe_nptv6_info *npt)
+{
+	struct nf_ct_nptv6_ext *nptcte;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+	bool is_snpt, ret;
+
+	/*
+	 * Is there a valid conntrack?
+	 */
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct) {
+		DEBUG_WARN("%px: no conntrack found\n", skb);
+		return false;
+	}
+
+	/*
+	 * Is there a NPTV6 extension?
+	 */
+	spin_lock_bh(&ct->lock);
+	nptcte = nf_ct_nptv6_ext_find(ct);
+	if (!nptcte) {
+		spin_unlock_bh(&ct->lock);
+		DEBUG_WARN("%px: no NPTV6 conntrack extension found\n", skb);
+		return false;
+	}
+
+	if (!nptcte->nptv6_flags) {
+		spin_unlock_bh(&ct->lock);
+		DEBUG_WARN("%px: Flow is not using the NPT target\n", skb);
+		return false;
+	}
+
+	is_snpt = nptcte->nptv6_flags & NF_CT_NPTV6_EXT_SNPT ? true : false;
+	spin_unlock_bh(&ct->lock);
+
+	/*
+	 * Fill NPTv6 Connection info into ECM object
+	 */
+	if (is_snpt) {
+		ret = ecm_nptv6_info_fill(flow_ip, flow_ip_xlate, return_ip,
+				return_ip_xlate, nptcte, true, npt);
+	} else {
+		ret = ecm_nptv6_info_fill(return_ip, return_ip_xlate, flow_ip,
+				flow_ip_xlate, nptcte, false, npt);
+	}
+
+	return ret;
+}
+#endif
+
 /*
  * ecm_ppe_ipv6_process_one_conn_sync_msg()
  *	Process one connection sync message.
@@ -214,6 +271,7 @@ static inline void ecm_ppe_ipv6_process_one_conn_sync_msg(struct ppe_drv_v6_conn
 	int aci_index;
 	int assignment_count;
 	ip_addr_t flow_ip;
+	ip_addr_t return_ip_xlate;
 	ip_addr_t return_ip;
 	struct in6_addr group6 __attribute__((unused));
 	struct in6_addr origin6 __attribute__((unused));
@@ -225,6 +283,7 @@ static inline void ecm_ppe_ipv6_process_one_conn_sync_msg(struct ppe_drv_v6_conn
 
 	ECM_PPE_IPV6_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
 	ECM_PPE_IPV6_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
+	ECM_PPE_IPV6_ADDR_TO_IP_ADDR(return_ip_xlate, sync->return_ip_xlate);
 
 	/*
 	 * Look up ecm connection with a view to synchronising the connection, classifier and data tracker.
@@ -234,13 +293,15 @@ static inline void ecm_ppe_ipv6_process_one_conn_sync_msg(struct ppe_drv_v6_conn
 	DEBUG_INFO("%px: PPE Sync, lookup connection using\n" \
 			"Protocol: %d\n" \
 			"src_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n" \
-			"dest_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
+			"dest_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n" \
+			"dest_addr_xlate: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
 			sync,
 			(int)sync->protocol,
 			ECM_IP_ADDR_TO_OCTAL(flow_ip), (int)sync->flow_ident,
-			ECM_IP_ADDR_TO_OCTAL(return_ip), (int)sync->return_ident);
+			ECM_IP_ADDR_TO_OCTAL(return_ip), (int)sync->return_ident,
+			ECM_IP_ADDR_TO_OCTAL(return_ip_xlate), (int)sync->return_ident_xlate);
 
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident);
+	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident_xlate);
 	if (!ci) {
 		DEBUG_TRACE("%px: PPE Sync: no connection\n", sync);
 		return;

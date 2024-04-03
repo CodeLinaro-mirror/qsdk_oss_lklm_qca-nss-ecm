@@ -518,7 +518,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 			goto feci_alloc_check;
 
 		case ECM_AE_CLASSIFIER_RESULT_PPE:
-			if ((!ecm_ppe_feature_check(skb, iph)) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT)) {
+			if (!ecm_ppe_feature_check(skb, iph)) {
 				DEBUG_WARN("Unsupported feature found for PPE acceleration\n");
 				ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_PORTED, ECM_STATS_V6_EXCEPTION_PORTED_PPE_ACCEL_NOT_SUPPORTED);
 				return NF_ACCEPT;
@@ -561,18 +561,13 @@ precedence_alloc:
 			}
 
 			/*
-			 * NPT66 acceleration is supported only through SFE
+			 * NPT66 acceleration is supported only through SFE and PPE
 			 */
 			if ((ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT)) {
-#ifdef ECM_FRONT_END_SFE_ENABLE
-				if (ae_precedence[i].ae_type != ECM_FRONT_END_ENGINE_SFE) {
+				if ((ae_precedence[i].ae_type != ECM_FRONT_END_ENGINE_SFE) && (ae_precedence[i].ae_type != ECM_FRONT_END_ENGINE_PPE)) {
 					DEBUG_WARN("Unsupported feature found for the selected AE: %d\n", ae_precedence[i].ae_type);
 					continue;
 				}
-#else
-				DEBUG_WARN("Unsupported feature found for the selected AE: %d\n", ae_precedence[i].ae_type);
-				return NF_ACCEPT;
-#endif
 			}
 
 			/*

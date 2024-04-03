@@ -908,8 +908,8 @@ void ecm_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_t
 		ecm_front_end_fill_ovs_params(ovs_params,
 				      ip_src_addr, ip_src_addr_nat,
 				      ip_dest_addr, ip_dest_addr_nat,
-				      src_port, src_port,
-				      dest_port, dest_port, ecm_dir);
+				      src_port, src_port_nat,
+				      dest_port, dest_port_nat, ecm_dir);
 
 		from_ovs_params = &ovs_params[ECM_DB_OBJ_DIR_FROM];
 		to_ovs_params = &ovs_params[ECM_DB_OBJ_DIR_TO];
@@ -958,8 +958,8 @@ void ecm_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_t
 	ecm_front_end_ipv6_interface_construct_netdev_put(&efeici);
 
 	ecm_front_end_connection_deref(feci);
-	ecm_db_connection_interfaces_reset(ci, to_list, to_list_first, ECM_DB_OBJ_DIR_TO);
-	ecm_db_connection_interfaces_deref(to_list, to_list_first);
+	ecm_db_connection_interfaces_reset(ci, to_nat_list, to_nat_list_first, ECM_DB_OBJ_DIR_TO_NAT);
+	ecm_db_connection_interfaces_deref(to_nat_list, to_nat_list_first);
 
 	/*
 	 * Get list of assigned classifiers to reclassify.
@@ -1249,6 +1249,21 @@ vxlan_done:
 		 * Bridged
 		 */
 		ecm_dir = ECM_DB_DIRECTION_BRIDGED;
+	}
+
+	/*
+	 * Is ecm_dir consistent with is_routed flag?
+	 * In SNAT and hairpin NAT scenario, while accessing the LAN side server with its private
+	 * IP address from another client in the same LAN, the packets come through the bridge post routing hook
+	 * have the WAN interface IP address as the SNAT address. Then in the above ecm_dir calculation,
+	 * it is calculated as ECM_DB_DIRECTION_EGRESS_NAT. So, we shouldn't accelerate the flow this time
+	 * and wait for the packet to pass through the post routing hook.
+	 *
+	 */
+	if (!is_routed && (ecm_dir != ECM_DB_DIRECTION_BRIDGED)) {
+		DEBUG_TRACE("Packet comes from bridge post routing hook but ecm_dir is not bridge\n");
+		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_ECM_DIR_MISMATCH);
+		return NF_ACCEPT;
 	}
 
 	/*
