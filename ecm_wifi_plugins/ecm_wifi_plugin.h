@@ -26,6 +26,7 @@
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 #include <ath_sawf.h>
 #include <ath_fse.h>
+#include <ath_dp_accel_cfg.h>
 #else
 #include <qca_mscs_if.h>
 #include <qca_mesh_latency_if.h>
@@ -137,6 +138,7 @@ int ecm_wifi_plugin_mscs_register(void);
  *	API to unregister the mscs callbacks.
  */
 void ecm_wifi_plugin_mscs_unregister(void);
+#endif
 
 /*
  * ecm_wifi_plugin_wifi_cb_register()
@@ -149,4 +151,3 @@ extern int ecm_wifi_plugin_wifi_cb_register(void);
  *	API to unregister WIFI programming callbacks.
  */
 extern void ecm_wifi_plugin_wifi_cb_unregister(void);
-#endif
