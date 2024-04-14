@@ -744,10 +744,8 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 			 * the ovs tracks statistics only for bridge flow. so ovs flow in openvswitch is created
 			 * between eth2 and ovs-br2. so skip evaluating gretap dev and check if we can find in to_dev hierarchy.
 			 */
-			if (netif_is_gretap(from_dev) || netif_is_ip6gretap(from_dev)) {
-				if (ecm_interface_is_ovs_bridge_port(from_dev) && to_dev) {
+			if ((netif_is_gretap(from_dev) || netif_is_ip6gretap(from_dev)) && to_dev) {
 					goto check_to_dev;
-				}
 			}
 
 			goto route_not_relevant;
@@ -1882,10 +1880,8 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 			 * the ovs tracks statistics only for bridge flow. so ovs flow in openvswitch is created
 			 * between eth2 and ovs-br2. so skip evaluating gretap dev since it is routed.
 			 */
-			if (netif_is_gretap(from_dev) || netif_is_ip6gretap(from_dev)) {
-				if (ecm_interface_is_ovs_bridge_port(from_dev) && to_dev) {
+			if ((netif_is_gretap(from_dev) || netif_is_ip6gretap(from_dev)) && to_dev) {
 					goto check_to_dev;
-				}
 			}
 
 			goto done;
