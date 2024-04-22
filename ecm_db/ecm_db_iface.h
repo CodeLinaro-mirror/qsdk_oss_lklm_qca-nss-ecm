@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -143,6 +143,7 @@ struct ecm_db_iface_instance {
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		struct ecm_db_interface_info_ovs_bridge ovsb;			/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
+		struct ecm_db_interface_info_ovs_internal ovsi;			/* type == ECM_DB_IFACE_TYPE_OVS_INTERNAL */
 #endif
 	} type_info;
 
@@ -183,6 +184,7 @@ void ecm_db_iface_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 void ecm_db_iface_ovs_bridge_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
+void ecm_db_iface_ovs_internal_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
 #endif
 
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
@@ -228,6 +230,7 @@ void ecm_db_iface_macvlan_address_get(struct ecm_db_iface_instance *ii, uint8_t 
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_bridge(uint8_t *address, int32_t if_num);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_internal(uint8_t *address, int32_t if_num);
 #endif
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_unknown(uint32_t os_specific_ident);
 
@@ -357,6 +360,9 @@ void ecm_db_iface_add_macvlan(struct ecm_db_iface_instance *ii,
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 void ecm_db_iface_add_ovs_bridge(struct ecm_db_iface_instance *ii,
+				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
+				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
+void ecm_db_iface_add_ovs_internal(struct ecm_db_iface_instance *ii,
 				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
 				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 #endif
