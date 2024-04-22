@@ -1166,6 +1166,12 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	DEBUG_TRACE("%px: ECM IPv4 Non-Ported Rule ready to be pushed in PPE:%px\n", feci, feci->ci);
 
 	/*
+	 * Get the valid and rule flags before rule create
+	 */
+	feci->fe_info.valid_flags = pd4rc->valid_flags;
+	feci->fe_info.rule_flags = pd4rc->rule_flags;
+
+	/*
 	 * Call the rule create function
 	 */
 	pdrt = ppe_drv_v4_create(pd4rc);
@@ -1681,7 +1687,7 @@ struct ecm_front_end_connection_instance *ecm_ppe_non_ported_ipv4_connection_ins
 	feci->ip_version = 4;
 	feci->protocol = protocol;
 	ecm_ppe_non_ported_ipv4_connection_set(feci, accel_flags);
-	
+
 	return feci;
 }
 
