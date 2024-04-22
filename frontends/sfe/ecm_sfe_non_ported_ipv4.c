@@ -1411,6 +1411,12 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	spin_unlock_bh(&feci->lock);
 
 	/*
+	 * Get the valid and rule flags before rule create
+	 */
+	feci->fe_info.valid_flags = nircm->valid_flags;
+	feci->fe_info.rule_flags = nircm->rule_flags;
+
+	/*
 	 * Call the rule create function
 	 */
 	sfe_tx_status = sfe_ipv4_tx(ecm_sfe_ipv4_mgr, nim);

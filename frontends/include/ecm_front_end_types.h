@@ -260,6 +260,8 @@ struct ecm_front_end_common_fe_info {
 	uint32_t from_stats_bitmap;     /* Bitmap of L2 features enabled for from direction */
 	uint32_t to_stats_bitmap;       /* Bitmap of L2 features enabled for to direction */
 	uint32_t front_end_flags;	/* Front end related flags */
+	uint32_t valid_flags;		/* Bit flags associated with paramater validity */
+	uint32_t rule_flags;		/* Bit flags associated with the rule */
 };
 
 /*

@@ -479,10 +479,14 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	ecm_front_end_acceleration_mode_t accel_mode;
 	struct ecm_front_end_connection_mode_stats stats;
 	char *ae_selection_done = "precedence-array";
+	uint32_t valid_flags;
+	uint32_t rule_flags;
 
 	spin_lock_bh(&feci->lock);
 	can_accel = feci->can_accel;
 	accel_mode = feci->accel_mode;
+	valid_flags = feci->fe_info.valid_flags;
+	rule_flags = feci->fe_info.rule_flags;
 
 	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE) {
 		ae_selection_done = "sawf-classifier";
@@ -537,6 +541,12 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 		return result;
 	}
 	if ((result = ecm_state_write(sfi, "slow_path_packets", "%llu", stats.slow_path_packets))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "valid_flags", "0x%x", valid_flags))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "rule_flags", "0x%x", rule_flags))) {
 		return result;
 	}
 	if ((result = ecm_state_write(sfi, "ae_selection_done", "%s", ae_selection_done))) {
