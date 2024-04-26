@@ -22,6 +22,7 @@
 #include <linux/of.h>
 #include <linux/module.h>
 #include <linux/skbuff.h>
+#include <linux/etherdevice.h>
 
 #include "ecm_wifi_plugin.h"
 
@@ -140,6 +141,31 @@ static inline uint32_t ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(uint32_t va
 
 	return 0;
 }
+
+/*
+ * ecm_wifi_plugin_emesh_deprio_response()
+ *	Send the deprioritization response to wlan driver.
+ */
+static inline void ecm_wifi_plugin_emesh_deprio_response(struct ecm_classifier_emesh_sdwf_deprio_response *sawf_deprio_response)
+{
+	struct qca_sawf_flow_deprioritize_resp_params resp_params = {0};
+
+	if (!sawf_deprio_response) {
+		ecm_wifi_plugin_warning("%px: Response params recieved are null sawf_deprio_response", sawf_deprio_response);
+		return;
+	}
+
+	resp_params.netdev = sawf_deprio_response->netdev;
+	resp_params.mac_addr = sawf_deprio_response->mac_addr;
+	resp_params.service_id = sawf_deprio_response->service_id;
+	resp_params.success_count = sawf_deprio_response->success_count;
+	resp_params.fail_count = sawf_deprio_response->fail_count;
+	resp_params.mark_metadata = sawf_deprio_response->mark_metadata;
+
+	ecm_wifi_plugin_info("%px: ecm_wifi_pluging call deprio response to wlan driver netdev : %p, mac_addr %pM, svc_id %d, no of flows %d, mark %u",
+			sawf_deprio_response, resp_params.netdev, resp_params.mac_addr, resp_params.service_id, resp_params.success_count, resp_params.mark_metadata);
+	return qca_sawf_flow_deprioritize_response(&resp_params);
+}
 #endif
 
 /*
@@ -198,6 +224,7 @@ static struct ecm_classifier_emesh_sawf_callbacks ecm_wifi_plugin_emesh = {
 	.update_peer_mesh_latency_params = ecm_wifi_plugin_emesh_sawf_update_peer_mesh_params,
 	.update_fse_flow_info = ecm_wifi_plugin_emesh_sawf_update_fse_flow,
 	.sawf_multicast_conn_sync = ecm_wifi_plugin_emesh_sawf_multicast_conn_sync,
+	.sawf_deprio_response = ecm_wifi_plugin_emesh_deprio_response,
 #endif
 	.update_service_id_get_msduq = ecm_wifi_plugin_emesh_sawf_get_mark_data,
 	.sawf_conn_sync = ecm_wifi_plugin_emesh_sawf_conn_sync,
@@ -247,6 +274,58 @@ int ecm_wifi_plugin_emesh_register(void)
 	ecm_wifi_plugin_info("EMESH classifier callbacks registered\n");
 	return 0;
 }
+
+#ifndef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+/*
+ * ecm_wifi_plugin_sdwf_deprio
+ * 	SDWF deprioritization API
+ */
+void ecm_wifi_plugin_sdwf_deprio(struct qca_sawf_flow_deprioritize_params *param)
+{
+	struct ecm_classifier_emesh_flow_deprio_param d_param = {0};
+
+	ether_addr_copy(d_param.peer_mac, param->peer_mac);
+	d_param.mark_metadata = param->mark_metadata;
+	d_param.netdev_info_valid = param->netdev_info_valid;
+	d_param.netdev_ifindex = param->netdev_ifindex;
+	ether_addr_copy(d_param.netdev_mac, param->netdev_mac);
+
+	ecm_classifier_emesh_sdwf_deprio(&d_param);
+}
+EXPORT_SYMBOL(ecm_wifi_plugin_sdwf_deprio);
+
+/*
+ * ecm_wifi_plugin_adm_ctrl_cb_register()
+ *	Register admission control callbacks.
+ */
+int ecm_wifi_plugin_adm_ctrl_cb_register(void)
+{
+	if (!qca_sawf_register_flow_deprioritize_callback(&ecm_wifi_plugin_sdwf_deprio)) {
+		ecm_wifi_plugin_warning("ecm emesh admission control callback registration failed.\n");
+		return -1;
+	}
+
+	if (ecm_classifier_emesh_sdwf_deprio_response_callback_register(&ecm_wifi_plugin_emesh)) {
+		qca_sawf_unregister_flow_deprioritize_callback();
+		ecm_wifi_plugin_warning("ecm emesh admission ctrl callback registration failed.\n");
+		return -1;
+	}
+
+	ecm_wifi_plugin_info("Emesh all deprio registration success\n");
+	return 0;
+}
+
+/*
+ * ecm_wifi_plugin_adm_ctrl_cb_unregister()
+ *	Unregister admission control callbacks.
+ */
+void ecm_wifi_plugin_adm_ctrl_cb_unregister(void)
+{
+	qca_sawf_unregister_flow_deprioritize_callback();
+	ecm_classifier_emesh_sdwf_deprio_response_callback_unregister();
+	ecm_wifi_plugin_info("Emesh all deprio Un-registration success\n");
+}
+#endif
 
 /*
  * ecm_wifi_plugin_emesh_unregister()

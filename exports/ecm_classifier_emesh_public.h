@@ -36,6 +36,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_DSCPCTE_VALID		0x8
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ         0xffffffff
 #define ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID		0xffffffff
+#define ECM_CLASSIFIER_EMESH_SAWF_HBUCKET_MAX		256
 
 #define ECM_CLASSIFIER_EMESH_MULTICAST_IF_MAX 		16
 
@@ -130,6 +131,43 @@ struct ecm_classifer_emesh_sawf_sync_params {
 };
 
 /**
+ * ecm_classifier_emesh_sdwf_deprio_status
+ * 	Status of the connection while deprioritizing the flow
+ */
+enum ecm_classifier_emesh_sdwf_deprio_status {
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_NOT_FOUND,		/**< Connection for deprioritization not found. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_FAIL,		/**< Deprioritization of connection failed. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS,		/**< Deprioritization of connection successful.. */
+	ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_MAX				/**< Indicates the last item. */
+};
+typedef enum ecm_classifier_emesh_sdwf_deprio_status ecm_classifier_emesh_sdwf_deprio_status_t;
+
+/*
+ * ecm_classifier_emesh_sdwf_deprio_response
+ * 	Response to send to wlan
+ */
+struct ecm_classifier_emesh_sdwf_deprio_response {
+	struct net_device *netdev;		/**< Destination Net device. */
+	uint8_t mac_addr[ETH_ALEN];		/**< Destination MAC. */
+	uint8_t service_id;			/**< Service ID. */
+	uint16_t success_count;			/**< Success count of flows. */
+	uint16_t fail_count;			/**< Fail count of flows. */
+	uint32_t mark_metadata;			/**< Mark metadata. */
+};
+
+/*
+ * ecm_classifier_emesh_flow_deprio_param
+ * 	Parameters to be recived from wlan
+ */
+struct ecm_classifier_emesh_flow_deprio_param {
+	uint8_t peer_mac[ETH_ALEN];		/**< Peer MAC. */
+	uint32_t mark_metadata;			/**< Mark metadata. */
+	bool netdev_info_valid;			/**< Netdevice valid flag. */
+	uint32_t netdev_ifindex;		/**< Netdevice interface number. */
+	uint8_t netdev_mac[ETH_ALEN];		/**< Netdevice MAC. */
+};
+
+/**
  * Structure collecting sawf param for multicast traffic to
  * send to wlan driver via registered callback at connection accel/decel.
  */
@@ -160,6 +198,11 @@ typedef void (*ecm_classifier_emesh_callback_t)(struct ecm_classifer_emesh_sawf_
 typedef uint32_t (*ecm_classifier_emesh_msduq_callback_t)(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info);
 
 /**
+ * MSDUQ callback to which emesh-sawf will register.
+ */
+typedef void (*ecm_classifier_emesh_deprio_response_callback_t)(struct ecm_classifier_emesh_sdwf_deprio_response *sawf_deprio_response);
+
+/**
  * SAWF params sync callback function pointer.
  */
 typedef void (*ecm_classifier_emesh_sawf_conn_params_sync_callback_t)(struct ecm_classifer_emesh_sawf_sync_params *sawf_sync_params);
@@ -188,6 +231,7 @@ struct ecm_classifier_emesh_sawf_callbacks {
 						/**< Sync SAWF parameters. */
 	ecm_classifier_emesh_sawf_multicast_conn_params_sync_callback_t sawf_multicast_conn_sync;
 						/**< Sync SAWF parameters for multicast traffic. */
+	ecm_classifier_emesh_deprio_response_callback_t sawf_deprio_response;
 };
 
 /**
@@ -225,6 +269,32 @@ int ecm_classifier_emesh_sawf_msduq_callback_register(struct ecm_classifier_emes
  * None.
  */
 void ecm_classifier_emesh_sawf_msduq_callback_unregister(void);
+
+/**
+ * Registers msduq EMESH-SAWF callback.
+ *
+ * @param	mesh_cb	EMESH-SAWF callback pointer.
+ *
+ * @return
+ * The status of the callback registration operation.
+ */
+int ecm_classifier_emesh_sdwf_deprio_response_callback_register(struct ecm_classifier_emesh_sawf_callbacks *mesh_cb);
+
+/**
+ * Unregisters msduq EMESH-SAWF callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_sdwf_deprio_response_callback_unregister(void);
+
+/**
+ * Registers msduq deprio callback.
+ *
+ * @return
+ * None.
+ */
+void ecm_classifier_emesh_sdwf_deprio(struct ecm_classifier_emesh_flow_deprio_param *param);
 
 /**
  * Registers EMESH-SAWF connection sync callback.

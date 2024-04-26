@@ -1,19 +1,3 @@
-##########################################################################
-# Copyright (c) 2014-2016, 2018-2021 The Linux Foundation. All rights reserved.
-# Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
-#
-# Permission to use, copy, modify, and/or distribute this software for
-# any purpose with or without fee is hereby granted, provided that the
-# above copyright notice and this permission notice appear in all copies.
-# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
-# OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-##########################################################################
-
 # ###################################################
 # Makefile for the QCA NSS ECM
 # ###################################################
@@ -352,6 +336,10 @@ ccflags-$(ECM_CLASSIFIER_EMESH_ENABLE) += -DECM_CLASSIFIER_EMESH_ENABLE
 # Define ECM_MHT_ENABLE=y in order to enable MHT related features.
 # #############################################################################
 ccflags-$(ECM_MHT_ENABLE) += -DECM_MHT_ENABLE
+# Define ECM_CLASSIFIER_WIFI_ENABLE=y in order to enable WIFI classifier.
+# #############################################################################
+ecm-$(ECM_CLASSIFIER_WIFI_ENABLE) += ecm_classifier_wifi.o
+ccflags-$(ECM_CLASSIFIER_WIFI_ENABLE) += -DECM_CLASSIFIER_WIFI_ENABLE
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_NON_PORTED_SUPPORT_ENABLE) += frontends/nss/ecm_nss_non_ported_ipv4.o
@@ -499,6 +487,7 @@ ccflags-y += -DECM_OPENWRT_SUPPORT=1
 ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_AE_CLASSIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATS_DEBUG_LEVEL=1
+ccflags-y += -DECM_CLASSIFIER_WIFI_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 
