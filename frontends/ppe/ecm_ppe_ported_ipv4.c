@@ -91,6 +91,9 @@
 #include "ecm_ppe_ipv4.h"
 #include "ecm_ppe_common.h"
 #include "ecm_front_end_common.h"
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+#include "ecm_classifier_wifi.h"
+#endif
 
 static int ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX] = {0};
 						/* Array of Number of TCP and UDP connections currently offloaded */
@@ -1006,6 +1009,33 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		pd4rc->valid_flags &= (~PPE_DRV_V4_VALID_FLAG_SAWF);
 	}
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+	/*
+	 * WIFI information
+	 * Set up the flow and return mark.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
+		if (pr->flow_mark) {
+			pd4rc->wifi_rule.flow_mark = pr->flow_mark;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_FLOW_WIFI_MDATA;
+		}
+
+		if (pr->return_mark) {
+			pd4rc->wifi_rule.return_mark = pr->return_mark;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_RETURN_WIFI_MDATA;
+		}
+
+		if (pr->flow_wifi_ds_node_id != ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID) {
+			pd4rc->wifi_rule.flow_ds_node_mdata = pr->flow_wifi_ds_node_id;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_FLOW_WIFI_DS;
+		}
+
+		if (pr->return_wifi_ds_node_id != ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID) {
+			pd4rc->wifi_rule.return_ds_node_mdata = pr->return_wifi_ds_node_id;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_RETURN_WIFI_DS;
+		}
+	}
+#endif
 	/*
 	 * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
 	 * and send the update VLAN tag to PPE.
