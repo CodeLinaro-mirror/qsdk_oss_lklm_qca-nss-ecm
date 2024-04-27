@@ -1257,7 +1257,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
-#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE
+#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE || ECM_CLASSIFIER_WIFI_ENABLE
 	/*
 	 * DSCP information?
 	 */
@@ -1341,6 +1341,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		return;
 	}
 #endif
+
 	protocol = ecm_db_connection_protocol_get(feci->ci);
 
 	/*
