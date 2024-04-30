@@ -243,6 +243,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	if (!ecm_wifi.get_wifi_metadata) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
+		DEBUG_WARN("%px: No callback registered to get metadata \n", cwifii);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
 	}
@@ -315,7 +316,12 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		return_ds_metadata = wifi_metadata_info.wifi_mdata.out_ppe_ds_node_id;
 	}
 
-	if (!wifi_flow_metadata && !wifi_return_metadata) {
+	/*
+	 * Make this classifier not relevant if neither DS node id nor wifi metadata is
+	 * valid in any of the direction.
+	 */
+	if (!wifi_flow_metadata && !wifi_return_metadata && (flow_ds_metadata == ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID)
+			&& (return_ds_metadata == ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID)) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
@@ -336,6 +342,11 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	cwifii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	cwifii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+
+	DEBUG_TRACE("%px: flow mark: %x, return mark: %x, flow DS node id %d, return DS node id %d, sender %d\n",
+			cwifii, cwifii->process_response.flow_mark, cwifii->process_response.return_mark,
+			cwifii->process_response.flow_wifi_ds_node_id, cwifii->process_response.return_wifi_ds_node_id,
+			sender);
 
 process_wifi_classifier_out:
 
