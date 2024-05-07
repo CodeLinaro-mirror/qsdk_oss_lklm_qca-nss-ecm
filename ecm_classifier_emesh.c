@@ -211,7 +211,7 @@ static void ecm_classifier_emesh_sawf_mark_set(
 				struct ecm_front_end_flowsawf_msg *msg,
 				struct ecm_classifier_emesh_sawf_instance *cemi)
 {
-	if (msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+	if (flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		msg->flow_mark = msduq_forward;
 		cemi->process_response.flow_service_class = flow_service_class_id;
 		cemi->process_response.flow_sawf_metadata = msduq_forward;
@@ -222,7 +222,7 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
 
-	if (msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+	if (return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		msg->return_mark = msduq_reverse;
 		cemi->process_response.return_service_class = return_service_class_id;
 		cemi->process_response.return_sawf_metadata = msduq_reverse;
@@ -245,7 +245,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_classifier_instance *aci;
-	ip_addr_t src_ip, dest_ip, match_addr;
+	ip_addr_t src_ip, dest_ip, match_addr, dest_ip_xlate;
 	ecm_tracker_sender_type_t sender;
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
@@ -267,44 +267,88 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		return;
 	}
 
-	msg->ip_version = in->ip_version_type;
-	msg->protocol = in->protocol_number;
-	msg->flow_service_class_id = in->service_class_id;
-	msg->flow_src_port = htons(in->src_port);
-	msg->flow_dest_port = htons(in->dst_port);
-	msg->return_service_class_id = in->service_class_id;
 	if (in->ip_version_type == 4) {
-		msg->flow_src_ip[0] = in->src_ipv4_addr;
-		msg->flow_dest_ip[0] = in->dst_ipv4_addr;
-
-		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI4n:%u -> %pI4n:%u protocol=%d\n", r,
-				msg->flow_service_class_id, msg->return_service_class_id,
-				msg->flow_src_ip, ntohs(msg->flow_src_port),
-				msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
-
 		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, in->src_ipv4_addr);
 		ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv4_addr);
 	} else {
-		ECM_IP_ADDR_COPY(msg->flow_src_ip, in->src_ipv6_addr);
-		ECM_IP_ADDR_COPY(msg->flow_dest_ip, in->dst_ipv6_addr);
-
-		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI6c@%u -> %pI6c@%u protocol=%d\n", r,
-				msg->flow_service_class_id, msg->return_service_class_id,
-				msg->flow_src_ip, ntohs(msg->flow_src_port),
-				msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
-
-		ECM_NET_IPV6_ADDR_TO_IP_ADDR(src_ip, msg->flow_src_ip);
-		ECM_NET_IPV6_ADDR_TO_IP_ADDR(dest_ip, msg->flow_dest_ip);
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(src_ip, in->src_ipv6_addr);
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv6_addr);
 	}
 
+	/*
+	 * Find the ECM connection based on the IP addresses got from the rule.
+	 */
 	ci = ecm_db_connection_find_and_ref(src_ip,
 					    dest_ip,
-					    msg->protocol,
+					    in->protocol_number,
 					    in->src_port,
 					    in->dst_port);
 	if (unlikely(!ci)) {
 		DEBUG_WARN("%px: no ci\n", r);
 		return;
+	}
+
+	/*
+	 * Get the direction in which this rule is to be applied.
+	 */
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+	if (ECM_IP_ADDR_MATCH(src_ip, match_addr))
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	else
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+
+	/*
+	 * Construct the message to be sent to AEs for the 5 tuple information and the
+	 * mark value.
+	 *
+	 * NOTE: While filling the message, get the IP / ports as per the ECM's 5 tuple
+	 * database instead of the tuples specified in rule. This is to ensure that the right
+	 * direction is updated in AEs, as AEs connections are created based on ECM's 5 tuple
+	 * database.
+	 *
+	 * Following are the directions in which ECM's connection and AE's connections are
+	 * created wrt ECM's directions:
+	 *	ECM connection:		ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO
+	 *	AE's connection:	ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO_NAT
+	 *	AE's orig cme:		ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO-NAT
+	 *	AE's reply cme:		ECM_DB_OBJ_DIR_TO – ECM_DB_OBJ_DIR_FROM
+	 *
+	 * We are supposed to find the SFE connection which takes the from and to_nat
+	 * IP addresses from the ECM database. So take these IPs to send the message to SFE.
+	 */
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip_xlate);
+	msg->flow_src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+	msg->flow_dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
+
+	msg->ip_version = in->ip_version_type;
+	msg->protocol = in->protocol_number;
+
+	/*
+	 * Get the service class as per the rule direction.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		msg->flow_service_class_id = in->service_class_id;
+		msg->return_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+	} else {
+		msg->flow_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+		msg->return_service_class_id = in->service_class_id;
+	}
+
+	if (in->ip_version_type == 4) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(msg->flow_src_ip, src_ip[0]);
+		ECM_NIN4_ADDR_TO_IP_ADDR(msg->flow_dest_ip, dest_ip_xlate[0]);
+		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI4n:%u -> %pI4n:%u protocol=%d\n", r,
+				msg->flow_service_class_id, msg->return_service_class_id,
+				msg->flow_src_ip, ntohs(msg->flow_src_port),
+				msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
+	} else {
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(msg->flow_src_ip, src_ip);
+		ECM_NET_IPV6_ADDR_TO_IP_ADDR(msg->flow_dest_ip, dest_ip_xlate);
+		DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI6c@%u -> %pI6c@%u protocol=%d\n", r,
+				msg->flow_service_class_id, msg->return_service_class_id,
+				msg->flow_src_ip, ntohs(msg->flow_src_port),
+				msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
@@ -338,29 +382,21 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 * IFLI is given lowest prority among classifiers, So return if already a classifier is used
 	 */
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
-	if (cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID) {
+	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID) &&
+			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID)) {
 		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
 		aci->deref(aci);
 		goto end;
 	}
 
-	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
-	if (ECM_IP_ADDR_MATCH(src_ip, match_addr)) {
-		sender = ECM_TRACKER_SENDER_TYPE_SRC;
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
-	} else {
-		sender = ECM_TRACKER_SENDER_TYPE_DEST;
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
-	}
-
-	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
 
 	/*
 	 * Get the bidirectional msduq by calling wlan driver API
 	 * using the service id, netdev, and peer's mac address.
 	 */
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
 	if (dest_dev) {
 		sawf_flow_info.netdev = dest_dev;
 		sawf_flow_info.peer_mac = dmac;
@@ -400,13 +436,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	/*
 	 * Set msg's flow/return marks to sawf_meta created from service ids and msduqs
 	 */
-	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
-				msduq_forward, msduq_reverse, msg, cemi);
-	} else {
-		ecm_classifier_emesh_sawf_mark_set(msg->return_service_class_id, msg->flow_service_class_id,
-				msduq_reverse, msduq_forward, msg, cemi);
-	}
+	ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
+			msduq_forward, msduq_reverse, msg, cemi);
 
 	/*
 	 * Update frontend's mark rule
