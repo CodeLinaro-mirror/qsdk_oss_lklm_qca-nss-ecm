@@ -179,14 +179,23 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	uint32_t sawf_mark = 0;
 	struct ath_dl_params sawf_params = {0};
 #else
-	struct qca_sawf_metadata_param sawf_params = {0};
+	struct qca_wifi_metadata_info metadata = {0};
 #endif
 
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	sawf_params.netdev = sawf_flow_info->netdev;
 	sawf_params.peer_mac = sawf_flow_info->peer_mac;
 	sawf_params.service_id = sawf_flow_info->service_id;
 	sawf_params.dscp = sawf_flow_info->dscp;
 	sawf_params.rule_id = sawf_flow_info->rule_id;
+#else
+	metadata.is_sawf_param_valid = 1;
+	metadata.sawf_param.netdev = sawf_flow_info->netdev;
+	metadata.sawf_param.peer_mac = sawf_flow_info->peer_mac;
+	metadata.sawf_param.service_id = sawf_flow_info->service_id;
+	metadata.sawf_param.dscp = sawf_flow_info->dscp;
+	metadata.sawf_param.rule_id = sawf_flow_info->rule_id;
+#endif
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	/*
@@ -205,13 +214,13 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 
 	return sawf_mark;
 #else
-	sawf_params.sawf_rule_type = sawf_flow_info->sawf_rule_type;
-	sawf_params.pcp = sawf_flow_info->vlan_pcp;
-	sawf_params.dscp = sawf_flow_info->dscp;
-	sawf_params.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
-	sawf_params.mcast_flag = sawf_flow_info->is_mc_flow;
+	metadata.sawf_param.sawf_rule_type = sawf_flow_info->sawf_rule_type;
+	metadata.sawf_param.pcp = sawf_flow_info->vlan_pcp;
+	metadata.sawf_param.dscp = sawf_flow_info->dscp;
+	metadata.sawf_param.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
+	metadata.sawf_param.mcast_flag = sawf_flow_info->is_mc_flow;
 
-	return qca_sawf_get_mark_metadata(&sawf_params);
+	return qca_wifi_get_metadata_info(&metadata);
 #endif
 }
 

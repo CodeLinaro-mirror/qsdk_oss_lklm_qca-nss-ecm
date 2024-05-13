@@ -215,7 +215,9 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->flow_mark = msduq_forward;
 		cemi->process_response.flow_service_class = flow_service_class_id;
 		cemi->process_response.flow_sawf_metadata = msduq_forward;
+		cemi->flow_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->flow_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
 	} else {
 		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
@@ -224,7 +226,9 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->return_mark = msduq_reverse;
 		cemi->process_response.return_service_class = return_service_class_id;
 		cemi->process_response.return_sawf_metadata = msduq_reverse;
+		cemi->return_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->return_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
+		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
 	} else {
 		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
