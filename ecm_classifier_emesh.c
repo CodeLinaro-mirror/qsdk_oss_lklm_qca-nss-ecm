@@ -2167,6 +2167,45 @@ bool ecm_classifier_emesh_sawf_fill_multicast_sync_params (struct ecm_db_connect
 #endif
 
 /*
+ * ecm_classifier_emesh_sawf_fill_del_params()
+ *      Fill parameters for deleting tuple based rule from spm
+ */
+static void ecm_classifier_emesh_sawf_fill_del_params(struct ecm_db_connection_instance *ci,
+							struct ecm_classifier_emesh_sawf_instance *cemi,
+							struct sp_rule_del_params *del_params, int dir)
+{
+	ip_addr_t sip, dip;
+	int src_dir, dst_dir;
+
+	if (dir == ECM_DB_OBJ_DIR_FROM) {
+		src_dir = ECM_DB_OBJ_DIR_FROM;
+		dst_dir = ECM_DB_OBJ_DIR_TO;
+		del_params->rule_id = cemi->flow_rule_id;
+		del_params->key = cemi->flow_rule_key;
+	} else if (dir == ECM_DB_OBJ_DIR_TO) {
+		src_dir = ECM_DB_OBJ_DIR_TO;
+		dst_dir = ECM_DB_OBJ_DIR_FROM;
+		del_params->rule_id = cemi->return_rule_id;
+		del_params->key = cemi->return_rule_key;
+	}
+
+	ecm_db_connection_address_get(ci, src_dir, sip);
+	ecm_db_connection_address_get(ci, dst_dir, dip);
+	del_params->src_port = ecm_db_connection_port_get(ci, src_dir);
+	del_params->dest_port = ecm_db_connection_port_get(ci, dst_dir);
+	if (ci->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(del_params->src_ip[0], sip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(del_params->dest_ip[0], dip);
+	} else {
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(del_params->src_ip, sip);
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(del_params->dest_ip, dip);
+	}
+
+	del_params->protocol = ci->protocol;
+	del_params->ip_version = ci->ip_version;
+}
+
+/*
  * ecm_classifier_emesh_sawf_params_sync_common()
  *	Common sync function for SAWF parameters to WLAN driver.
  */
@@ -2177,6 +2216,7 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
+	struct sp_rule_del_params del_params = {0};
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
 
@@ -2189,23 +2229,25 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 		return;
 	}
 
+	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+	if (!ci) {
+		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+		return;
+	}
+
 	if (mode == ECM_CLASSIFIER_EMESH_MODE_DECEL) {
 		/*
 		 * Call delete rule for IFLI classifier
 	 	 */
 		if (cemi->flow_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
-			sp_mapdb_ifli_rule_flush(cemi->flow_rule_id, cemi->flow_rule_key);
+			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_FROM);
+			sp_mapdb_ifli_rule_flush(&del_params);
 		}
 
 		if (cemi->return_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
-			sp_mapdb_ifli_rule_flush(cemi->return_rule_id, cemi->return_rule_key);
+			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_TO);
+			sp_mapdb_ifli_rule_flush(&del_params);
 		}
-	}
-
-	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
-	if (!ci) {
-		DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
-		return;
 	}
 
 #ifdef ECM_MULTICAST_ENABLE
