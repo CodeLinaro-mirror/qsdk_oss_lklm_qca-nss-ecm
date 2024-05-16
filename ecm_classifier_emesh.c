@@ -209,12 +209,15 @@ static void ecm_classifier_emesh_sawf_mark_set(
 				uint32_t flow_service_class_id, uint32_t return_service_class_id,
 				uint32_t msduq_forward, uint32_t msduq_reverse,
 				struct ecm_front_end_flowsawf_msg *msg,
-				struct ecm_classifier_emesh_sawf_instance *cemi)
+				struct ecm_classifier_emesh_sawf_instance *cemi,
+				uint32_t key, uint32_t rule_id)
 {
 	if (flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		msg->flow_mark = msduq_forward;
 		cemi->process_response.flow_service_class = flow_service_class_id;
 		cemi->process_response.flow_sawf_metadata = msduq_forward;
+		cemi->flow_rule_id = rule_id;
+		cemi->flow_rule_key = key;
 		cemi->flow_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->flow_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
@@ -226,6 +229,8 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->return_mark = msduq_reverse;
 		cemi->process_response.return_service_class = return_service_class_id;
 		cemi->process_response.return_sawf_metadata = msduq_reverse;
+		cemi->return_rule_id = rule_id;
+		cemi->return_rule_key = key;
 		cemi->return_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->return_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
@@ -437,7 +442,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 * Set msg's flow/return marks to sawf_meta created from service ids and msduqs
 	 */
 	ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
-			msduq_forward, msduq_reverse, msg, cemi);
+			msduq_forward, msduq_reverse, msg, cemi, r->key, r->id);
 
 	/*
 	 * Update frontend's mark rule
