@@ -265,6 +265,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
+	bool update_rule = false;
 #ifdef ECM_MULTICAST_ENABLE
 	bool is_mc_flow = false;
 #endif
@@ -474,7 +475,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	/*
 	 * Update frontend's mark rule
 	 */
-	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+	update_rule = true;
 
 	/*
 	 * Shares sync messages with WLAN driver regarding msduq usage
@@ -543,6 +544,27 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 * All done
 	 */
 done:
+	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
+		switch(r->inner.ae_type) {
+		case SP_RULE_AE_TYPE_PPE:
+		case SP_RULE_AE_TYPE_PPE_DS:
+		case SP_RULE_AE_TYPE_PPE_VP:
+			spin_lock_bh(&feci->lock);
+			feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+			spin_unlock_bh(&feci->lock);
+			feci->decelerate(feci);
+			break;
+		default:
+			if (update_rule) {
+				feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+			}
+			break;
+		}
+	} else if (update_rule) {
+			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+	}
+
 	if (src_dev) {
 		dev_put(src_dev);
 	}
@@ -2663,6 +2685,8 @@ void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum 
 static void ecm_classifier_emesh_sawf_sync_to_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct ecm_db_connection_instance *ci;
+	struct ecm_front_end_connection_instance *feci;
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
 
@@ -2679,6 +2703,25 @@ static void ecm_classifier_emesh_sawf_sync_to_v4(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
 		ecm_classifier_emesh_sawf_params_sync_on_conn_decel(aci, sync);
+		break;
+	case ECM_FRONT_END_IPV4_RULE_SYNC_REASON_FLUSH_SWITCH_AE:
+		if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
+			ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+			if (!ci) {
+				DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+				break;
+			}
+
+			feci = ecm_db_connection_front_end_get_and_ref(ci);
+			if(feci->next_accel_engine != ECM_FRONT_END_ENGINE_PPE) {
+				spin_lock_bh(&feci->lock);
+				feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
+				feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+				spin_unlock_bh(&feci->lock);
+			}
+			ecm_front_end_connection_deref(feci);
+			ecm_db_connection_deref(ci);
+		}
 		break;
 	default:
 		break;
@@ -2701,6 +2744,8 @@ static void ecm_classifier_emesh_sawf_sync_from_v4(struct ecm_classifier_instanc
 static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct ecm_db_connection_instance *ci;
+	struct ecm_front_end_connection_instance *feci;
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
 
@@ -2717,6 +2762,25 @@ static void ecm_classifier_emesh_sawf_sync_to_v6(struct ecm_classifier_instance 
 	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY:
 		ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(aci, sync);
 		ecm_classifier_emesh_sawf_params_sync_on_conn_decel(aci, sync);
+		break;
+	case ECM_FRONT_END_IPV6_RULE_SYNC_REASON_FLUSH_SWITCH_AE:
+		if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
+			ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
+			if (!ci) {
+				DEBUG_WARN("%px: No ci found for %u\n", cemi, cemi->ci_serial);
+				break;
+			}
+
+			feci = ecm_db_connection_front_end_get_and_ref(ci);
+			if(feci->next_accel_engine != ECM_FRONT_END_ENGINE_PPE) {
+				spin_lock_bh(&feci->lock);
+				feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
+				feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+				spin_unlock_bh(&feci->lock);
+			}
+			ecm_front_end_connection_deref(feci);
+			ecm_db_connection_deref(ci);
+		}
 		break;
 	default:
 		break;
@@ -3102,6 +3166,7 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 	 */
 	if (r->classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 		ecm_classfier_emesh_stc_mark_set(r);
+		DEBUG_INFO("classifier type SP_RULE_TYPE_SAWF_IFLI\n");
 		return NOTIFY_DONE;
 	}
 

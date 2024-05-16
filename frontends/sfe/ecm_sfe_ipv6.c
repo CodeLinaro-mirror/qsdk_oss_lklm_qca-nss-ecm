@@ -374,6 +374,7 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		break;
 	case SFE_RULE_SYNC_REASON_FLUSH:
 	case SFE_RULE_SYNC_REASON_EVICT:
+	case SFE_RULE_SYNC_REASON_FLUSH_SWITCH_AE:
 		/*
 		 * SFE has ended acceleration without instruction from the ECM.
 		 */
