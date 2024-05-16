@@ -92,7 +92,8 @@ enum ecm_front_end_ipv4_rule_sync_reason {
 	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_STATS = 0,	/* Sync is to synchronize stats */
 	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_FLUSH,	/* Sync is to flush a cache entry */
 	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_EVICT,	/*Sync is to evict a cache entry */
-	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY	/* Sync is to destroy a cache entry */
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_DESTROY,	/* Sync is to destroy a cache entry */
+	ECM_FRONT_END_IPV4_RULE_SYNC_REASON_FLUSH_SWITCH_AE /*< Sync is to flush an entry and direct ECM to accelerate the connection with next AE */
 };
 
 extern void ecm_front_end_ipv4_stop_temp(int num);
