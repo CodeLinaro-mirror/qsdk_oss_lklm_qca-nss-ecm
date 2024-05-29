@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -71,6 +71,7 @@
 #include "ecm_db.h"
 #include "ecm_classifier_dscp.h"
 #include "ecm_front_end_common.h"
+#include <ecm_classifier_dscp_stats_public.h>
 
 /*
  * Magic numbers
@@ -122,6 +123,9 @@ static DEFINE_SPINLOCK(ecm_classifier_dscp_lock);			/* Protect SMP access. */
 static struct ecm_classifier_dscp_instance *ecm_classifier_dscp_instances = NULL;
 								/* list of all active instances */
 static int ecm_classifier_dscp_count = 0;			/* Tracks number of instances allocated */
+
+static bool ecm_classifier_dscp_stats_enabled;
+struct ecm_classifier_dscp_stats_registrant ecm_classifier_dscp_client_stats_reg;
 
 /*
  * ecm_classifier_dscp_ref()
@@ -591,15 +595,158 @@ dscp_classifier_out:
 }
 
 /*
+ * ecm_classifier_dscp_stats_register()
+ *	Register notification callback for dscp stats.
+ */
+int ecm_classifier_dscp_stats_register(struct ecm_classifier_dscp_stats_registrant *r)
+{
+	/*
+	 * Hold the module of the registrant
+	 */
+	if (!try_module_get(r->this_module)) {
+		return -ESHUTDOWN;
+	}
+
+	spin_lock_bh(&ecm_classifier_dscp_lock);
+	if (ecm_classifier_dscp_client_stats_reg.cb) {
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		module_put(r->this_module);
+		DEBUG_WARN("Registrant already\n");
+		return -EALREADY;
+	}
+	ecm_classifier_dscp_client_stats_reg.cb = r->cb;
+	ecm_classifier_dscp_client_stats_reg.this_module = r->this_module;
+	ecm_classifier_dscp_stats_enabled = true;
+	spin_unlock_bh(&ecm_classifier_dscp_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ecm_classifier_dscp_stats_register);
+
+/*
+ * ecm_classifier_dscp_stats_unregister()
+ *	Unregister notification callback for dscp stats.
+ */
+void ecm_classifier_dscp_stats_unregister(struct ecm_classifier_dscp_stats_registrant *r)
+{
+	struct module *stats_module;
+
+	spin_lock_bh(&ecm_classifier_dscp_lock);
+	if (!ecm_classifier_dscp_stats_enabled) {
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		DEBUG_WARN("No Registrant\n");
+		return;
+	}
+
+	stats_module = ecm_classifier_dscp_client_stats_reg.this_module;
+
+	ecm_classifier_dscp_client_stats_reg.cb = NULL;
+	ecm_classifier_dscp_client_stats_reg.this_module = NULL;
+	ecm_classifier_dscp_stats_enabled = false;
+	spin_unlock_bh(&ecm_classifier_dscp_lock);
+
+	/*
+	 * Release the module of the registrant
+	 */
+	module_put(stats_module);
+}
+EXPORT_SYMBOL(ecm_classifier_dscp_stats_unregister);
+
+/*
+ * ecm_classifier_dscp_sync_stats()
+ *	Get the stats info from sync and pass to callback handler.
+ */
+static void ecm_classifier_dscp_sync_stats(struct ecm_classifier_dscp_instance *cdscpi, struct ecm_classifier_rule_sync *sync, bool is_ipv6)
+{
+	struct ecm_db_connection_instance *ci;
+	struct net_device *from_dev;
+	struct net_device *to_dev;
+	uint8_t smac[ETH_ALEN];
+	uint8_t dmac[ETH_ALEN];
+	uint8_t flow_mark, reply_mark, flow_dscp, reply_dscp;
+	uint8_t dscp_marked;
+	struct ecm_classifier_dscp_stats_registrant *r;
+
+	if (!(sync->tx_packet_count[ECM_CONN_DIR_FLOW] || sync->tx_packet_count[ECM_CONN_DIR_RETURN])) {
+		return;
+	}
+
+	spin_lock_bh(&ecm_classifier_dscp_lock);
+	if (!ecm_classifier_dscp_stats_enabled) {
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		return;
+	}
+
+	r = &ecm_classifier_dscp_client_stats_reg;
+	if (!try_module_get(r->this_module)) {
+		spin_unlock_bh(&ecm_classifier_dscp_lock);
+		return;
+	}
+	spin_unlock_bh(&ecm_classifier_dscp_lock);
+
+	ci = ecm_db_connection_serial_find_and_ref(cdscpi->ci_serial);
+	if (!ci) {
+		module_put(r->this_module);
+		DEBUG_TRACE("%px: No ci found for %u\n", cdscpi, cdscpi->ci_serial);
+		return;
+	}
+
+	/*
+	 * Since we need to check traffic between LAN to WAN. skipping bridged flows.
+	 */
+	if (!ecm_db_connection_is_routed_get(ci)) {
+		module_put(r->this_module);
+		ecm_db_connection_deref(ci);
+		return;
+	}
+
+	from_dev = ecm_db_connection_top_iface_dev_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM);
+	if (!from_dev) {
+		module_put(r->this_module);
+		ecm_db_connection_deref(ci);
+		DEBUG_TRACE("%px: from_dev not found\n", ci);
+		return;
+	}
+
+	to_dev = ecm_db_connection_top_iface_dev_get_and_ref(ci, ECM_DB_OBJ_DIR_TO);
+	if (!to_dev) {
+		module_put(r->this_module);
+		dev_put(from_dev);
+		ecm_db_connection_deref(ci);
+		DEBUG_TRACE("%px: to_dev not found\n", ci);
+		return;
+	}
+
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+
+	ecm_db_connection_deref(ci);
+
+	flow_mark = cdscpi->process_response.flow_mark;
+	reply_mark = cdscpi->process_response.return_mark;
+	flow_dscp = cdscpi->process_response.flow_dscp;
+	reply_dscp = cdscpi->process_response.return_dscp;
+
+	dscp_marked = !!(cdscpi->process_response.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP);
+
+	r->cb(from_dev, to_dev, smac, dmac, dscp_marked, flow_mark, reply_mark, flow_dscp, reply_dscp,
+		sync->tx_byte_count[ECM_CONN_DIR_FLOW], sync->rx_byte_count[ECM_CONN_DIR_FLOW], is_ipv6);
+
+	module_put(r->this_module);
+	dev_put(from_dev);
+	dev_put(to_dev);
+}
+
+/*
  * ecm_classifier_dscp_sync_to_v4()
  *	Front end is pushing accel engine state to us
  */
 static void ecm_classifier_dscp_sync_to_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
-	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
-
-	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
+	struct ecm_classifier_dscp_instance *cdscpi = (struct ecm_classifier_dscp_instance *)aci;
 	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
+
+	ecm_classifier_dscp_sync_stats(cdscpi, sync, false);
 }
 
 /*
@@ -620,10 +767,10 @@ static void ecm_classifier_dscp_sync_from_v4(struct ecm_classifier_instance *aci
  */
 static void ecm_classifier_dscp_sync_to_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_sync *sync)
 {
-	struct ecm_classifier_dscp_instance *cdscpi __attribute__((unused));
-
-	cdscpi = (struct ecm_classifier_dscp_instance *)aci;
+	struct ecm_classifier_dscp_instance *cdscpi = (struct ecm_classifier_dscp_instance *)aci;
 	DEBUG_CHECK_MAGIC(cdscpi, ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC, "%px: magic failed", cdscpi);
+
+	ecm_classifier_dscp_sync_stats(cdscpi, sync, true);
 }
 
 /*

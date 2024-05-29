@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -417,6 +417,8 @@ int32_t ecm_db_connection_interfaces_get_and_ref(struct ecm_db_connection_instan
 						 struct ecm_db_iface_instance *interfaces[],
 						 ecm_db_obj_dir_t dir);
 struct net_device *ecm_db_connection_first_iface_dev_get_and_ref(struct ecm_db_connection_instance *ci,
+								 ecm_db_obj_dir_t dir);
+struct net_device *ecm_db_connection_top_iface_dev_get_and_ref(struct ecm_db_connection_instance *ci,
 								 ecm_db_obj_dir_t dir);
 void ecm_db_connection_classifier_assign(struct ecm_db_connection_instance *ci,
 					 struct ecm_classifier_instance *new_ca);
