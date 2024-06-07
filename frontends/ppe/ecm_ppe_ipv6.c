@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -102,6 +102,7 @@
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
 #include "ecm_ipv6.h"
+#include "ecm_ppe_stats_v6.h"
 
 #define ECM_PPE_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(60)
 			/* Stats sync happens every 60ms, such that max of 2K conn are synced in 1sec; (1000ms / 60ms) * 128 = ~2K */
@@ -800,6 +801,8 @@ int ecm_ppe_ipv6_init(struct dentry *dentry)
 {
 	int result = -1;
 
+	struct dentry *ecm_stats_dentry = NULL;
+
 	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_PPE)) {
 		DEBUG_INFO("PPE IPv6 is disabled\n");
 		return 0;
@@ -890,6 +893,17 @@ int ecm_ppe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup_1;
 	}
 #endif
+
+	ecm_stats_dentry = debugfs_lookup("stats", dentry);
+	if (!ecm_stats_dentry) {
+		DEBUG_ERROR("Stats dentry not created\n");
+		goto task_cleanup_1;
+	}
+
+	if (ecm_ppe_stats_v6_debugfs_init(ecm_stats_dentry)) {
+		DEBUG_ERROR("Failed to create ecm_ppe_v6_exception_stats file in ecm\n");
+		goto task_cleanup_1;
+	}
 
 	/*
 	 * Register this module with the Linux PPE Network driver.

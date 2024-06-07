@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -94,6 +94,7 @@
 #ifdef ECM_CLASSIFIER_WIFI_ENABLE
 #include "ecm_classifier_wifi.h"
 #endif
+#include "ecm_ppe_stats_v6.h"
 
 static int ecm_ppe_ported_ipv6_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX] = {0};
 						/* Array of Number of TCP and UDP connections currently offloaded */
@@ -218,12 +219,14 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Test if acceleration is permitted
 	 */
 	if (!ecm_ppe_ipv6_accel_pending_set(feci)) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_ACCEL_NOT_PERMITTED);
 		DEBUG_TRACE("%px: Acceleration not permitted: %px accel_mode=%d\n", feci, feci->ci, feci->accel_mode);
 		return;
 	}
 
 	pd6rc = (struct ppe_drv_v6_rule_create *)kzalloc(sizeof(struct ppe_drv_v6_rule_create), GFP_ATOMIC | __GFP_NOWARN);
 	if (!pd6rc) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_NO_MEM);
 		DEBUG_WARN("%px: no memory for ppe ipv6 message structure instance: %px\n", feci, feci->ci);
 		ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		return;
@@ -251,6 +254,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_NO_FROM_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
 		goto ported_accel_bad_rule;
 	}
@@ -261,6 +265,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 	to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
 	if (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_NO_TO_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no interfaces in to_interfaces list!\n", feci);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		goto ported_accel_bad_rule;
@@ -321,6 +326,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
 		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_INGRESS_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -330,6 +336,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -350,6 +357,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_BRIDGE_CASCADE);
 				DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 				break;
 			}
@@ -373,6 +381,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_CASCADE);
 				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
 				break;
 			}
@@ -381,6 +390,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED);
 			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
 #endif
 			break;
@@ -409,6 +419,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * More than one PPPoE in the list is not valid!
 			 */
 			if (interface_type_counts[ii_type] != 0) {
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
 				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 				rule_invalid = true;
 				break;
@@ -426,6 +437,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_PPPOE_FLOW_INVALID);
 #endif
 			break;
 
@@ -441,6 +453,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Can only support two vlans
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_ONLY_TWO_VLANS_SUPPORTED);
 				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
@@ -485,6 +498,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
@@ -495,6 +509,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			/*
 			 * TODO: Add support for IPsec in PPE Frontend.
 			 */
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_IPSEC_NOT_ENABLED);
 			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
 			rule_invalid = true;
 #endif
@@ -516,6 +531,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				/*
 				 * Can support only one VxLAN interface.
 				 */
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLAN_ADDITIONAL_IGNORE);
 				DEBUG_WARN("%px: VxLAN - ignore additional\n", feci);
 				rule_invalid = true;
 				break;
@@ -525,6 +541,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
 			if (vp_status == NSS_PPE_VXLANMGR_VP_CREATION_IN_PROGRESS) {
 				/* Retry with the subsequent packets */
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLANMGR_VP_CREATION_IN_PROGRESS);
 				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 				ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
@@ -533,6 +550,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			if ((vp_status != NSS_PPE_VXLANMGR_VP_CREATION_SUCCESS) || (vxlan_ppe_dev_id < 0)) {
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLAN_RETRIED_ENOUGH);
 				DEBUG_WARN("%px: VXLAN: Re-tried enough\n", feci);
 				rule_invalid = true;
 				break;
@@ -546,6 +564,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VXLAN);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 		}
@@ -556,6 +575,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		}
 
 		if (ae_iface_id < 0) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_INVALID_IFACE_ID);
 			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -585,6 +605,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (pd6rc->conn_rule.rx_if < 0) {
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_INVALID_BOTTOM_IFACE);
 		DEBUG_TRACE("%px: Accel attempt failed - FIRST interfaces for 'from'(%d) interface list!\n", feci, pd6rc->conn_rule.rx_if);
 		goto ported_accel_bad_rule;
 	}
@@ -596,6 +617,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (pd6rc->top_rule.rx_if < 0) {
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_INVALID_TOP_IFACE);
 		DEBUG_TRACE("%px: Accel attempt failed - TOP interfaces for 'from'(%d) interface list!\n", feci, pd6rc->top_rule.rx_if);
 		goto ported_accel_bad_rule;
 	}
@@ -629,6 +651,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				feci, list_index, ii, ii->name, iface_id, ii_type, ii_name, ae_iface_id);
 
 		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INGRESS_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support ingress qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -638,6 +661,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -658,6 +682,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_BRIDGE_CASCADE);
 				DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 				break;
 			}
@@ -681,6 +706,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Cannot cascade bridges
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_CASCADE);
 				DEBUG_TRACE("%px: OVS Bridge - ignore additional\n", feci);
 				break;
 			}
@@ -689,6 +715,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
 			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
 #endif
 			break;
@@ -717,6 +744,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * More than one PPPoE in the list is not valid!
 			 */
 			if (interface_type_counts[ii_type] != 0) {
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
 				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 				rule_invalid = true;
 				break;
@@ -735,6 +763,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 					pd6rc->pppoe_rule.flow_session.server_mac);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_PPPOE_FLOW_INVALID);
 #endif
 			break;
 
@@ -750,6 +779,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				 * Can only support two vlans
 				 */
 				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_ONLY_TWO_VLANS_SUPPORTED);
 				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
@@ -794,6 +824,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
@@ -804,6 +835,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			/*
 			 * TODO: Add support for IPsec in PPE Frontend.
 			 */
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_IPSEC_NOT_ENABLED);
 			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
 			rule_invalid = true;
 #endif
@@ -822,11 +854,13 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 				ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VXLANMGR_VP_CREATION_IN_PROGRESS);
 				kfree(pd6rc);
 				return;
 			}
 
 			if ((vp_status != NSS_PPE_VXLANMGR_VP_CREATION_SUCCESS) || (vxlan_ppe_dev_id < 0)) {
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED);
 				DEBUG_WARN("%px: VXLAN: Re-tried enough\n", feci);
 				rule_invalid = true;
 				break;
@@ -840,6 +874,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VXLAN);
 #else
 			rule_invalid = true;
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 		}
@@ -850,6 +885,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		}
 
 		if (ae_iface_id < 0) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INVALID_IFACE_ID);
 			DEBUG_TRACE("%px: PPE doesn't support iface_id:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -879,6 +915,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (pd6rc->conn_rule.tx_if < 0) {
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INVALID_BOTTOM_IFACE);
 		DEBUG_TRACE("%px: Accel attempt failed - FIRST interfaces for 'to'(%d) interface list!\n", feci, pd6rc->conn_rule.tx_if);
 		goto ported_accel_bad_rule;
 	}
@@ -890,6 +927,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	if (pd6rc->top_rule.tx_if < 0) {
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INVALID_TOP_IFACE);
 		DEBUG_TRACE("%px: Accel attempt failed - TOP interfaces for 'to'(%d) interfaces list!\n", feci, pd6rc->top_rule.tx_if);
 		goto ported_accel_bad_rule;
 	}
@@ -899,6 +937,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	if (!ppe_drv_iface_check_flow_offload_enabled(pd6rc->conn_rule.rx_if,
 						pd6rc->conn_rule.tx_if)) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_PPE_OFFLOAD_DISABLED);
 		DEBUG_TRACE("%px: PPE offload is disabled for rx if: %d, tx: %d\n",
 				feci, pd6rc->conn_rule.rx_if, pd6rc->conn_rule.tx_if);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -1242,6 +1281,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * after this check passes, the connection will be decelerated and refreshed very quickly.
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
+		ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_REGEN_OCCURRED);
 		DEBUG_INFO("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		ecm_db_connection_assignments_release(assignment_count, assignments);
@@ -1292,6 +1332,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		feci->stats.driver_fail = 0;
 
 		if (feci->stats.flush_happened) {
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_IMMEDIATE_FLUSH);
 			DEBUG_TRACE("%px: flush happened just after ppe IPv6 rule push success and before calling accelerate_done.\n", feci);
 			ecm_ppe_ported_ipv6_handle_flush(feci);
 
@@ -1311,6 +1352,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * Connection couldn't be accelerated successfully, as decelerate was pending.
 			 */
 
+			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_DECELERATE_PENDING);
 			DEBUG_INFO("%px: Decelerate was pending(IPv6/ported) %p\n", feci, feci->ci);
 
 			/*
@@ -1429,6 +1471,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	ecm_db_connection_assignments_release(assignment_count, assignments);
 	ecm_db_connection_deref(feci->ci);
+	ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_PPE_ACCEL_FAILED);
 	DEBUG_TRACE("%px: ppe_drv_v6_create() failed with ret=%d\n", feci, ppe_tx_status);
 	kfree(pd6rc);
 	return;
