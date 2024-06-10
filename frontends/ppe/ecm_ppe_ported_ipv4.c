@@ -1053,6 +1053,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * WIFI information
 	 * Set up the flow and return mark.
 	 */
+	pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_WIFI_TAG;
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
 		if (pr->flow_mark) {
 			pd4rc->wifi_rule.flow_mark = pr->flow_mark;
