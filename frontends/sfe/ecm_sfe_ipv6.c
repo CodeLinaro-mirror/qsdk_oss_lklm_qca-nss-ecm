@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -103,6 +103,7 @@
 #include "ecm_sfe_ported_ipv6.h"
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv6.h"
+#include "ecm_sfe_stats_v6.h"
 
 #define ECM_SFE_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_SFE_IPV6_STATS_SYNC_UDELAY 4000	/* Delay for 4ms */
@@ -932,6 +933,8 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 {
 	int result = -1;
 
+	struct dentry *ecm_stats_dentry = NULL;
+
 	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE)) {
 		DEBUG_INFO("SFE IPv6 is disabled\n");
 		return 0;
@@ -1024,6 +1027,18 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 #endif
+
+	ecm_stats_dentry = debugfs_lookup("stats", dentry);
+	if (!ecm_stats_dentry) {
+		DEBUG_ERROR("Stats dentry not created\n");
+		goto task_cleanup;
+	}
+
+	if (ecm_sfe_stats_v6_debugfs_init(ecm_stats_dentry)) {
+		DEBUG_ERROR("Failed to create ecm_sfe_v6_exception_stats file in ecm\n");
+		goto task_cleanup;
+	}
+
 	/*
 	 * Register this module with the Linux SFE Network driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there

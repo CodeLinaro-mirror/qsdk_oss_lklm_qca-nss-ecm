@@ -82,6 +82,7 @@ ccflags-$(ECM_FRONT_END_NSS_ENABLE) += -DECM_FRONT_END_NSS_ENABLE
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_common.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ipv4.o
 ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv4.o
+ecm-$(ECM_FRONT_END_SFE_ENABLE) += frontends/sfe/ecm_sfe_stats_v4.o
 ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
 
 # #############################################################################
@@ -91,6 +92,7 @@ ccflags-$(ECM_FRONT_END_SFE_ENABLE) += -DECM_FRONT_END_SFE_ENABLE
 ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_common.o
 ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ipv4.o
 ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv4.o
+ecm-$(ECM_FRONT_END_PPE_ENABLE) += frontends/ppe/ecm_ppe_stats_v4.o
 ccflags-$(ECM_FRONT_END_PPE_ENABLE) += -DECM_FRONT_END_PPE_ENABLE
 
 # #############################################################################
@@ -260,10 +262,12 @@ endif
 ifeq ($(ECM_FRONT_END_SFE_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_ported_ipv6.o
+ecm-$(ECM_IPV6_ENABLE) += frontends/sfe/ecm_sfe_stats_v6.o
 endif
 ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
 ecm-$(ECM_IPV6_ENABLE) += frontends/ppe/ecm_ppe_ipv6.o
 ecm-$(ECM_IPV6_ENABLE) += frontends/ppe/ecm_ppe_ported_ipv6.o
+ecm-$(ECM_IPV6_ENABLE) += frontends/ppe/ecm_ppe_stats_v6.o
 endif
 
 # #############################################################################
@@ -488,6 +492,8 @@ ccflags-y += -DECM_NOTIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_AE_CLASSIFIER_DEBUG_LEVEL=1
 ccflags-y += -DECM_STATS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_WIFI_DEBUG_LEVEL=1
+ccflags-y += -DECM_SFE_STATS_DEBUG_LEVEL=1
+ccflags-y += -DECM_PPE_STATS_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 
