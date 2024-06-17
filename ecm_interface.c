@@ -7483,11 +7483,11 @@ void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version
 	}
 
 	/*
-	 * Disable frontend processing until defunct function call is completed.
+	 * Disable frontend processing temporarily until defunct function call is completed.
 	 */
-	ecm_front_end_ipv4_stop(1);
+	ecm_front_end_ipv4_stop_temp(1);
 #ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(1);
+	ecm_front_end_ipv6_stop_temp(1);
 #endif
 	ni = ecm_db_node_chain_get_and_ref_first(mac);
 	while (ni) {
@@ -7525,9 +7525,9 @@ void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version
 	/*
 	 * Re-enable frontend processing.
 	 */
-	ecm_front_end_ipv4_stop(0);
+	ecm_front_end_ipv4_stop_temp(0);
 #ifdef ECM_IPV6_ENABLE
-	ecm_front_end_ipv6_stop(0);
+	ecm_front_end_ipv6_stop_temp(0);
 #endif
 }
 
