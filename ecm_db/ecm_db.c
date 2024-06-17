@@ -215,16 +215,16 @@ static int ecm_db_ipv4_route_table_update_event(struct notifier_block *nb,
 	DEBUG_TRACE("route table update event v4\n");
 
 	/*
-	 * Disable IPv4 frontend processing until defunct function call is completed.
+	 * Disable IPv4 frontend processing temporarily until defunct function call is completed.
 	 */
-	ecm_front_end_ipv4_stop(1);
+	ecm_front_end_ipv4_stop_temp(1);
 
 	ecm_db_connection_defunct_ip_version(4);
 
 	/*
 	 * Re-enable IPv4 frontend processing.
 	 */
-	ecm_front_end_ipv4_stop(0);
+	ecm_front_end_ipv4_stop_temp(0);
 
 	return NOTIFY_DONE;
 }
@@ -264,9 +264,9 @@ static int ecm_db_ipv6_route_table_update_event(struct notifier_block *nb,
 	}
 
 	/*
-	 * Disable IPv6 frontend processing until defunct function call is completed.
+	 * Disable IPv6 frontend processing temporarily until defunct function call is completed.
 	 */
-	ecm_front_end_ipv6_stop(1);
+	ecm_front_end_ipv6_stop_temp(1);
 
 	/*
 	 * Iterate all connections
@@ -417,7 +417,7 @@ next:
 	/*
 	 * Re-enable IPv6 frontend processing.
 	 */
-	ecm_front_end_ipv6_stop(0);
+	ecm_front_end_ipv6_stop_temp(0);
 	return NOTIFY_DONE;
 }
 

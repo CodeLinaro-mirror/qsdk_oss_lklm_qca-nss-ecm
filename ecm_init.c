@@ -348,10 +348,10 @@ static void __exit ecm_exit(void)
 	DEBUG_INFO("stop conntrack notifier\n");
 	ecm_conntrack_notifier_stop(1);
 	DEBUG_INFO("stop front_end_ipv4\n");
-	ecm_front_end_ipv4_stop(1);
+	ecm_front_end_ipv4_stop_temp(1);
 #ifdef ECM_IPV6_ENABLE
 	DEBUG_INFO("stop front_end_ipv6\n");
-	ecm_front_end_ipv6_stop(1);
+	ecm_front_end_ipv6_stop_temp(1);
 #endif
 #ifdef ECM_INTERFACE_BOND_ENABLE
 	DEBUG_INFO("stop bond notifier\n");

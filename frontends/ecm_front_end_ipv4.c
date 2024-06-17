@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2016, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -52,10 +52,16 @@
 #include "ecm_interface.h"
 #include "ecm_ipv4.h"
 #include "ecm_stats_v4.h"
+
 /*
  * General operational control
  */
 int ecm_front_end_ipv4_stopped = 0;	/* When non-zero further traffic will not be processed */
+
+/*
+ * Temporary operational control
+ */
+int ecm_front_end_ipv4_stopped_temp = 0;	/* When non-zero further traffic/process will not be processed where it is checked */
 
 /*
  * ecm_front_end_ipv4_interface_construct_ip_addr_set()
@@ -371,11 +377,11 @@ bool ecm_front_end_ipv4_interface_construct_set_and_hold(struct sk_buff *skb, ec
 }
 
 /*
- * ecm_front_end_ipv4_stop()
+ * ecm_front_end_ipv4_stop_temp()
  */
-void ecm_front_end_ipv4_stop(int num)
+void ecm_front_end_ipv4_stop_temp(int num)
 {
-	ecm_front_end_ipv4_stopped = num;
+	ecm_front_end_ipv4_stopped_temp = num;
 }
 
 /*

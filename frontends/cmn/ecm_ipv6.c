@@ -1619,7 +1619,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv6_lock);
-	if (unlikely(ecm_front_end_ipv6_stopped)) {
+	if (unlikely(ecm_front_end_ipv6_stopped) || unlikely(ecm_front_end_ipv6_stopped_temp)) {
 		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_FRONT_END_STOPPED);
@@ -1842,7 +1842,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv6_lock);
-	if (unlikely(ecm_front_end_ipv6_stopped)) {
+	if (unlikely(ecm_front_end_ipv6_stopped) || unlikely(ecm_front_end_ipv6_stopped_temp)) {
 		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_FRONT_END_STOPPED);
@@ -2089,7 +2089,7 @@ unsigned int ecm_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device *out
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv6_lock);
-	if (unlikely(ecm_front_end_ipv6_stopped)) {
+	if (unlikely(ecm_front_end_ipv6_stopped) || unlikely(ecm_front_end_ipv6_stopped_temp)) {
 		spin_unlock_bh(&ecm_ipv6_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return 1;

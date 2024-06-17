@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2017, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -53,10 +53,16 @@
 #include "ecm_interface.h"
 #include "ecm_ipv6.h"
 #include"ecm_stats_v6.h"
+
 /*
  * General operational control
  */
 int ecm_front_end_ipv6_stopped = 0;	/* When non-zero further traffic will not be processed */
+
+/*
+ * Temporary operational control
+ */
+int ecm_front_end_ipv6_stopped_temp = 0;	/* When non-zero further traffic/process will not be processed where it is checked */
 
 /*
  * ecm_front_end_ipv6_interface_construct_ip_addr_set()
@@ -405,11 +411,11 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 }
 
 /*
- * ecm_front_end_ipv6_stop()
+ * ecm_front_end_ipv6_stop_temp()
  */
-void ecm_front_end_ipv6_stop(int num)
+void ecm_front_end_ipv6_stop_temp(int num)
 {
-	ecm_front_end_ipv6_stopped = num;
+	ecm_front_end_ipv6_stopped_temp = num;
 }
 
 /*
