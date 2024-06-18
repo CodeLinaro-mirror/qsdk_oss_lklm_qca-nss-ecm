@@ -134,6 +134,10 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG	0x00100000	/* Mark the Wi-Fi tag */
 #endif
 
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+#define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_IPV4_FRAG_THRESH_VALID 0x00200000  /* Threshold valid flag */
+#endif
+
 /*
  * struct ecm_classifier_process_response
  *	Response structure returned by a process call
@@ -190,6 +194,8 @@ struct ecm_classifier_process_response {
 	uint8_t return_service_class;			/* Return service class ID */
 	uint8_t flow_vlan_pcp;				/* Flow VLAN pcp remark value */
 	uint8_t return_vlan_pcp;			/* Return VLAN pcp remark value */
+	uint16_t flow_frag_thresh;			/* Fragmentation threshold value in flow direction. */
+	uint16_t return_frag_thresh;			/* Fragmentation threshold value in return direction. */
 #endif
 	ecm_classifier_acceleration_mode_t accel_mode;	/* Acceleration needed for this connection */
 	ecm_db_timer_group_t timer_group;		/* Timer group the connection should be in */

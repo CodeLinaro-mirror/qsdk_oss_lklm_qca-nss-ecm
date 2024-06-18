@@ -849,6 +849,16 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 		cemi->process_response.flow_mark = msduq_forward;
 
 		/*
+		 * Set the IPv4 fragment threshold value if it's valid (value 0 represents invalid value)
+		 */
+		if (flow_output_params->ipv4_frag_thresh) {
+			/*
+			 * If the threshold value is less than ETH_MIN_MTU, update the threshold value to ETH_MIN_MTU
+			 */
+			cemi->process_response.flow_frag_thresh = max((uint16_t)ETH_MIN_MTU, flow_output_params->ipv4_frag_thresh);
+		}
+
+		/*
 		 * Output params recieved from SPM after rule look up
 		 * rule classifier type and rule id will be printed in ecm dump for debug
 		 * key will be used to delete the IFLI rule
@@ -869,6 +879,16 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 		cemi->process_response.return_mark = msduq_reverse;
 
 		/*
+		 * Set the IPv4 fragment threshold value if it's valid (value 0 represents invalid value)
+		 */
+		if (return_output_params->ipv4_frag_thresh) {
+			/*
+			 * If the threshold value is less than ETH_MIN_MTU, update the threshold value to ETH_MIN_MTU
+			 */
+			cemi->process_response.return_frag_thresh = max((uint16_t)ETH_MIN_MTU, return_output_params->ipv4_frag_thresh);
+		}
+
+		/*
 		 * Output params recieved from SPM after rule look up
 		 * rule classifier type and rule id will be printed in ecm dump for debug
 		 * key will be used to delete the IFLI rule
@@ -883,6 +903,13 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	 * Indicates response contains SAWF information.
 	 */
 	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
+
+	/*
+	 * Check if IPv4 fragmentation threshold is valid in any of the direction.
+	 */
+	if ((flow_output_params->ipv4_frag_thresh) || (return_output_params->ipv4_frag_thresh)) {
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_IPV4_FRAG_THRESH_VALID;
+	}
 
 	/*
 	 * Checks if legacy scs rule match has happened

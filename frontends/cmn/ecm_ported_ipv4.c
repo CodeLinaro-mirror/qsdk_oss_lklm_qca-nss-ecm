@@ -1188,12 +1188,21 @@ done:
 		 */
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
 			DEBUG_TRACE("%px: aci: %px, type: %d, E-Mesh SAWF metadata is valid\n",
-				ci, aci, aci->type_get(aci));
+					ci, aci, aci->type_get(aci));
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 			prevalent_pr.flow_sawf_metadata = aci_pr.flow_sawf_metadata;
 			prevalent_pr.flow_service_class = aci_pr.flow_service_class;
 			prevalent_pr.return_sawf_metadata = aci_pr.return_sawf_metadata;
 			prevalent_pr.return_service_class = aci_pr.return_service_class;
+
+			if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_IPV4_FRAG_THRESH_VALID) {
+				/*
+				 * IPv4 fragmentation threshold is valid in any of the direction
+				 */
+				prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_IPV4_FRAG_THRESH_VALID;
+				prevalent_pr.flow_frag_thresh = aci_pr.flow_frag_thresh;
+				prevalent_pr.return_frag_thresh = aci_pr.return_frag_thresh;
+			}
 		}
 
 		/*
