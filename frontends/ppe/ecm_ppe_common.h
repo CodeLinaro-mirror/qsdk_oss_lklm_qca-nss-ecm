@@ -167,6 +167,8 @@ bool ecm_ppe_ipv4_is_conn_limit_reached(void);
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
-											ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
+		ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
+int ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
+		struct sk_buff *skb, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
 #endif
 void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info);

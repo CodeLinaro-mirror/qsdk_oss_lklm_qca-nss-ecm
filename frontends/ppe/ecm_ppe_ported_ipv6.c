@@ -560,6 +560,7 @@ process_next_iface_flow:
 			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
 			 */
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+			struct ecm_db_interface_info_vxlan vxlan_info = {0};
 			int32_t vxlan_ppe_dev_id;
 			uint32_t vp_status;
 
@@ -574,8 +575,19 @@ process_next_iface_flow:
 				break;
 			}
 
-			vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_FROM, &vp_status);
-			DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+			if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_NONE) {
+				vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_FROM, &vp_status);
+				DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			} else if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(feci, ii, skb, &vp_status);
+				DEBUG_TRACE("%px: VXLAN-GPE: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			} else {
+				DEBUG_WARN("%px: VXLAN: Unsupported vxlan extension", feci);
+				rule_invalid = true;
+				break;
+			}
+
 			if (vp_status == NSS_PPE_VXLANMGR_VP_CREATION_IN_PROGRESS) {
 				/* Retry with the subsequent packets */
 				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLANMGR_VP_CREATION_IN_PROGRESS);
@@ -899,11 +911,23 @@ process_next_iface_return:
 		case ECM_DB_IFACE_TYPE_VXLAN:
 		{
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+			struct ecm_db_interface_info_vxlan vxlan_info = {0};
 			int32_t vxlan_ppe_dev_id;
 			uint32_t vp_status;
 
-			vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_TO, &vp_status);
-			DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+			if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_NONE) {
+				vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_ppe_dev_index(feci, ii, ECM_DB_OBJ_DIR_TO, &vp_status);
+				DEBUG_TRACE("%px: VXLAN: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			} else if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				vxlan_ppe_dev_id = ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(feci, ii, skb, &vp_status);
+				DEBUG_TRACE("%px: VXLAN-GPE: vxlan_ppe_dev_id:%d vp_status:%u", feci, vxlan_ppe_dev_id, vp_status);
+			} else {
+				DEBUG_WARN("%px: VXLAN: Unsupported vxlan extension", feci);
+				rule_invalid = true;
+				break;
+			}
+
 			if (vp_status == NSS_PPE_VXLANMGR_VP_CREATION_IN_PROGRESS) {
 				/* Retry with the subsequent packets */
 				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);

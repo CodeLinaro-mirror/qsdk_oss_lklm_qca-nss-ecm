@@ -582,20 +582,44 @@ done:
 #endif
 		case ECM_DB_IFACE_TYPE_VXLAN:
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
-			local_dev = ecm_interface_dev_find_by_local_addr(addr);
-			if (!local_dev) {
-				DEBUG_WARN("%px: Failed to find local netdevice of VxLAN tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n",
-						feci, ECM_IP_ADDR_TO_OCTAL(addr));
+			struct ecm_db_interface_info_vxlan vxlan_info;
+
+			/*
+			 * Check if VxLAN / VxLAN-GPE interface.
+			 */
+			ecm_db_iface_vxlan_info_get(interface_list[i], &vxlan_info);
+			if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_NONE) {
+				DEBUG_TRACE("%px: VXLAN net device\n", feci);
+				local_dev = ecm_interface_dev_find_by_local_addr(addr);
+				if (!local_dev) {
+					DEBUG_WARN("%px: Failed to find local netdevice of VxLAN tunnel for " ECM_IP_ADDR_OCTAL_FMT "\n",
+							feci, ECM_IP_ADDR_TO_OCTAL(addr));
+					return NULL;
+				}
+
+				if (!ecm_interface_mac_addr_get_no_route(local_dev, addr, node_addr)) {
+					DEBUG_WARN("%px: Couldn't find mac address for local dev\n", feci);
+					dev_put(local_dev);
+					return NULL;
+				}
+				DEBUG_TRACE("%px: Found the mac address for local dev\n", feci);
+				dev_put(local_dev);
+			} else if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				DEBUG_TRACE("%px: VXLAN-GPE net device\n", feci);
+				in = dev_get_by_index(&init_net, skb->skb_iif);
+				if (!in) {
+					DEBUG_WARN("%px: failed to obtain node address for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, ECM_IP_ADDR_TO_OCTAL(addr));
+					return NULL;
+				}
+
+				ether_addr_copy(node_addr, in->dev_addr);
+				DEBUG_TRACE("%px: VXLAN-GPE found the mac address for dev: %s \n", feci, in->name);
+				dev_put(in);
+			} else {
+				DEBUG_WARN("%px: Unsupported VxLAN extension: %d for " ECM_IP_ADDR_OCTAL_FMT "\n", feci, vxlan_info.extension, ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
 
-			if (!ecm_interface_mac_addr_get_no_route(local_dev, addr, node_addr)) {
-				DEBUG_WARN("%px: Couldn't find mac address for local dev\n", feci);
-				dev_put(local_dev);
-				return NULL;
-			}
-			DEBUG_TRACE("%px: Found the mac address for local dev\n", feci);
-			dev_put(local_dev);
 			done = true;
 			break;
 #else

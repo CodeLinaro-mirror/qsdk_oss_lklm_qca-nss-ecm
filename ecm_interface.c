@@ -1253,6 +1253,112 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 	DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
 	return 1;
 }
+
+/*
+ * ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner()
+ * 	Find the VNI and remote IP from the inner IP address.
+ *
+ * For VxLAN-GPE encap details are part of the route entry, so we need to figure out the correct route
+ * entry and get the details. The inner flow could be before encap or after decap and it should be
+ * taken care during route lookup.
+ * This function can be also called to get only VNI and in that case remote_ip pointer will be NULL.
+ */
+__be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *dev, const struct sk_buff *skb, union vxlan_addr *remote_ip)
+{
+	struct lwtunnel_state *lwtstate;
+	struct ip_tunnel_info *tun_info;
+	struct net_device *indev;
+	struct dst_entry *dst;
+	__be32 vni = 0;
+
+	indev = dev_get_by_index(&init_net, skb->skb_iif);
+	if (!indev) {
+		DEBUG_WARN("%px: Could not get the indev \n", dev);
+		return vni;
+	}
+
+	/*
+	 * Route loookup to get the LW tunnel state.
+	 * For outbound packet daddr is used and for inbound packet saddr is used
+	 * to get the route entry.
+	 */
+	if (ip_hdr(skb)->version == IPVERSION) {
+		struct rtable *rt;
+		__be32 daddr;
+
+		daddr = netif_is_vxlan(indev) ? ip_hdr(skb)->saddr : ip_hdr(skb)->daddr;
+		rt = ip_route_output(&init_net, daddr, 0, 0, 0);
+		if (IS_ERR(rt)) {
+			DEBUG_WARN("%px: VXLAN-GPE failed to get IPv4 route to: %pI4\n", dev, &daddr);
+			goto rt_error;
+		}
+
+		dst = &rt->dst;
+	} else {
+		struct in6_addr *ip6_daddr;
+		struct flowi6 fl6;
+
+		ip6_daddr = netif_is_vxlan(indev) ? &ipv6_hdr(skb)->saddr : &ipv6_hdr(skb)->daddr;
+		memset(&fl6, 0, sizeof(struct flowi6));
+		memcpy(&fl6.daddr, ip6_daddr, sizeof(fl6.daddr));
+
+		dst = ip6_route_output(&init_net, NULL, &fl6);
+		if (!dst) {
+			DEBUG_WARN("%px: VXLAN-GPE failed to get IPv6 route to: %pI6 \n", dev, ip6_daddr);
+			goto rt_error;
+		}
+
+		if (dst->error) {
+			DEBUG_WARN("%px: VXLAN-GPE dst error: %d \n", dev, dst->error);
+			goto release_dst;
+		}
+	}
+
+	/*
+	 * Sanity check for tunnel state
+	 */
+	lwtstate = dst->lwtstate;
+	if (!lwtstate) {
+		DEBUG_TRACE("%px: VXLAN-GPE invalid LW tunnel state \n", dev);
+		goto release_dst;
+	}
+
+	tun_info = lwt_tun_info(lwtstate);
+	if (!tun_info) {
+		DEBUG_TRACE("%px: VXLAN-GPE invalid tunnel info \n", dev);
+		goto release_dst;
+	}
+
+	/*
+	 * Get VNI as 24-bit value
+	 */
+	vni = tunnel_id_to_key32(tun_info->key.tun_id);
+	vni = vxlan_vni_field(vni);
+
+	/*
+	 * Sanity check for remote ip pointer
+	 */
+	if (!remote_ip) {
+		DEBUG_TRACE("%px: Skip remote ip \n", dev);
+		goto release_dst;
+	}
+
+	if (ip_tunnel_info_af(tun_info) == AF_INET) {
+		remote_ip->sa.sa_family = AF_INET;
+		remote_ip->sin.sin_addr.s_addr = tun_info->key.u.ipv4.dst;
+		DEBUG_TRACE("%px: Remote_ip: %pI4h", dev, &remote_ip->sin.sin_addr.s_addr);
+	} else {
+		remote_ip->sa.sa_family = AF_INET6;
+		remote_ip->sin6.sin6_addr = tun_info->key.u.ipv6.dst;
+		DEBUG_TRACE("%px: Remote_ip: %pI6h", dev, &remote_ip->sin6.sin6_addr);
+	}
+
+release_dst:
+	dst_release(dst);
+rt_error:
+	dev_put(indev);
+	return vni;
+}
 #endif
 
 /*
@@ -2726,19 +2832,76 @@ static struct ecm_db_iface_instance *ecm_interface_ovpn_interface_establish(stru
  *	Returns a reference to a iface of the VxLAN type, possibly creating one if necessary.
  * Returns NULL on failure or a reference to interface.
  */
-static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(struct ecm_db_interface_info_vxlan *type_info,
-							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(struct ecm_front_end_connection_instance *feci,
+		struct net_device *dev, struct sk_buff *skb, char *dev_name, int32_t dev_interface_num, int32_t dev_type)
 {
+	ecm_db_interface_vxlan_extension_t extension;
+	ip_addr_t vxlan_saddr, vxlan_daddr;
 	struct ecm_db_iface_instance *nii;
 	struct ecm_db_iface_instance *ii;
+	struct vxlan_dev *vxlan_tun;
+	int32_t dev_mtu = dev->mtu;
+	int32_t ae_interface_num;
+	int32_t if_type;
+	__be32 vni = 0;
 
-	DEBUG_INFO("Establish VxLAN iface: %s with vxlan id: %u, MTU: %d, if num: %d, if_type: %d, accel engine if id: %d, extension: %d\n",
-			dev_name, type_info->vni, mtu, dev_interface_num, type_info->if_type, ae_interface_num, type_info->extension);
+	vxlan_tun = netdev_priv(dev);
+	if_type = ecm_interface_vxlan_type_get(skb, vxlan_tun);
+	if (if_type < 0) {
+		DEBUG_WARN("%px: VxLAN tunnel direction cannot be found: %d\n", feci, if_type);
+		return NULL;
+	}
+
+	ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, if_type);
+
+	/*
+	 * Get the VNI and extension type, VxLAN or VxLAN-GPE?
+	 */
+	if (dev_type == ARPHRD_ETHER) {
+		extension = ECM_DB_IFACE_VXLAN_EXTENSION_NONE;
+		vni =  vxlan_vni_field(vxlan_tun->cfg.vni);
+	} else if (dev_type == ARPHRD_NONE) {
+		extension = ECM_DB_IFACE_VXLAN_EXTENSION_GPE;
+
+		/*
+		 * For VxLAN-GPE get the VNI from skb for outer flow and using route lookup for inner flow.
+		 */
+		if (!if_type) {
+			vni = vxlan_hdr(skb)->vx_vni;
+		} else {
+			vni = ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(dev, skb, NULL);
+			if (!vni) {
+				DEBUG_WARN("%px: VxLAN-GPE tunnel invalid VNI\n", feci);
+				return NULL;
+			}
+		}
+	}
+
+	DEBUG_TRACE("%px: VxLAN mac: %pM, vni: %d\n", feci, dev->dev_addr, vni);
+
+	/*
+	 * Copy IP addresses from skb
+	 */
+	if (ip_hdr(skb)->version == IPVERSION) {
+		ECM_NIN4_ADDR_TO_IP_ADDR(vxlan_saddr, ip_hdr(skb)->saddr);
+		ECM_NIN4_ADDR_TO_IP_ADDR(vxlan_daddr, ip_hdr(skb)->daddr);
+	} else {
+		ECM_NIN6_ADDR_TO_IP_ADDR(vxlan_saddr, ipv6_hdr(skb)->saddr);
+		ECM_NIN6_ADDR_TO_IP_ADDR(vxlan_daddr, ipv6_hdr(skb)->daddr);
+	}
+
+	if (ecm_interface_tunnel_mtu_update(vxlan_saddr, vxlan_daddr,
+				ECM_DB_IFACE_TYPE_VXLAN, &dev_mtu)) {
+		DEBUG_TRACE("%px: VxLAN netdevice mtu updated: %d\n", feci, dev_mtu);
+	}
+
+	DEBUG_INFO("%px: Establish VxLAN iface: %s with vxlan id: %u, MTU: %d, if num: %d, if_type: %d, accel engine if id: %d, extension: %d\n",
+			feci, dev_name, vni, dev_mtu, dev_interface_num, if_type, ae_interface_num, extension);
 
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_vxlan(type_info->vni, type_info->if_type);
+	ii = ecm_db_iface_find_and_ref_vxlan(vni, if_type);
 	if (ii) {
 		DEBUG_TRACE("%px: vxlan iface established\n", ii);
 		/*
@@ -2761,7 +2924,7 @@ static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(str
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_vxlan(type_info->vni, type_info->if_type);
+	ii = ecm_db_iface_find_and_ref_vxlan(vni, if_type);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
@@ -2769,7 +2932,7 @@ static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(str
 		DEBUG_TRACE("%px: vxlan iface established\n", ii);
 		return ii;
 	}
-	ecm_db_iface_add_vxlan(nii, type_info->vni, type_info->if_type, type_info->extension, dev_name, mtu,
+	ecm_db_iface_add_vxlan(nii, vni, if_type, extension, dev_name, dev_mtu,
 			dev_interface_num, ae_interface_num, NULL, nii);
 	spin_unlock_bh(&ecm_interface_lock);
 
@@ -3124,9 +3287,6 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 		struct ecm_db_interface_info_ovpn ovpn;			/* type == ECM_DB_IFACE_TYPE_OVPN */
 #endif
-#ifdef ECM_INTERFACE_VXLAN_ENABLE
-		struct ecm_db_interface_info_vxlan vxlan;		/* type == ECM_DB_IFACE_TYPE_VXLAN */
-#endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		struct ecm_db_interface_info_ovs_bridge ovsb;		/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
 		struct ecm_db_interface_info_ovs_internal ovsi;		/* type == ECM_DB_IFACE_TYPE_OVS_INTERNAL */
@@ -3234,51 +3394,10 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		 * VxLAN?
 		 */
 		if (netif_is_vxlan(dev)) {
-			u32 vni;
-			struct vxlan_dev *vxlan_tun;
-			ip_addr_t vxlan_saddr, vxlan_daddr;
-
-			/*
-			 * VxLAN
-			 */
-			vxlan_tun = netdev_priv(dev);
-			vni = vxlan_get_vni(vxlan_tun);
-			DEBUG_TRACE("%px: Net device: %px is VxLAN, mac: %pM, vni: %d\n",
-					feci, dev, dev->dev_addr, vni);
-			interface_type = ecm_interface_vxlan_type_get(skb, vxlan_tun);
-			if (interface_type < 0) {
-				DEBUG_TRACE("%p: VxLAN tunnel direction cannot be found: %d\n", feci, interface_type);
-				return NULL;
-			}
-
-			ae_interface_num = feci->ae_interface_number_by_dev_type_get(dev, interface_type);
-			DEBUG_TRACE("%px: VxLAN netdevice interface ae_interface_num: %d, interface_type: %d\n",
-					feci, ae_interface_num, interface_type);
-
-			type_info.vxlan.vni = vni;
-			type_info.vxlan.if_type = interface_type;
-			type_info.vxlan.extension = ECM_DB_IFACE_VXLAN_EXTENSION_NONE;
-
-			/*
-			 * Copy IP addresses from skb
-			 */
-			if (ip_hdr(skb)->version == IPVERSION) {
-				ECM_NIN4_ADDR_TO_IP_ADDR(vxlan_saddr, ip_hdr(skb)->saddr);
-				ECM_NIN4_ADDR_TO_IP_ADDR(vxlan_daddr, ip_hdr(skb)->daddr);
-			} else {
-				ECM_NIN6_ADDR_TO_IP_ADDR(vxlan_saddr, ipv6_hdr(skb)->saddr);
-				ECM_NIN6_ADDR_TO_IP_ADDR(vxlan_daddr, ipv6_hdr(skb)->daddr);
-			}
-
-			if (ecm_interface_tunnel_mtu_update(vxlan_saddr, vxlan_daddr,
-						ECM_DB_IFACE_TYPE_VXLAN, &dev_mtu)) {
-				DEBUG_TRACE("%px: VxLAN netdevice mtu updated: %d\n", feci, dev_mtu);
-			}
-
 			/*
 			 * Establish this type of interface
 			 */
-			ii = ecm_interface_vxlan_interface_establish(&type_info.vxlan, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+			ii = ecm_interface_vxlan_interface_establish(feci, dev, skb, dev_name, dev_interface_num, dev_type);
 			goto identifier_update;
 		}
 #endif
@@ -3488,8 +3607,8 @@ identifier_update:
 	}
 #endif
 
-#ifdef ECM_INTERFACE_MAP_T_ENABLE
 	if (dev_type == ARPHRD_NONE) {
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
 		if (is_map_t_dev(dev)) {
 			type_info.map_t.if_index = dev_interface_num;
 			interface_type = feci->ae_interface_type_get(feci, dev);
@@ -3503,8 +3622,29 @@ identifier_update:
 			ii = ecm_interface_map_t_interface_establish(&type_info.map_t, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			return ii;
 		}
-	}
 #endif
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+		/*
+		 * VxLAN-GPE?
+		 */
+		if (netif_is_vxlan(dev)) {
+			struct vxlan_dev *vxlan_tun;
+
+			vxlan_tun = netdev_priv(dev);
+			if (!(vxlan_tun->cfg.flags & VXLAN_F_GPE)) {
+				DEBUG_WARN("%px: <%s> Not a VxLAN-GPE device \n", feci, dev->name);
+				return NULL;
+			}
+
+			/*
+			 * Establish this type of interface
+			 */
+			ii = ecm_interface_vxlan_interface_establish(feci, dev, skb, dev_name, dev_interface_num, dev_type);
+			return ii;
+		}
+#endif
+	}
 
 #ifdef ECM_INTERFACE_SIT_ENABLE
 #ifdef CONFIG_IPV6_SIT_6RD
@@ -5079,11 +5219,11 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 	/*
-	 * if the address is a local address and indev=VxLAN.
+	 * if the address is a local address and indev=VxLAN / VXLAN-GPE.
 	 */
 	if (from_local_addr &&
 	    given_dest_dev &&
-	    (given_dest_dev->type == ARPHRD_ETHER) &&
+	    (given_dest_dev->type == ARPHRD_ETHER || given_dest_dev->type == ARPHRD_NONE) &&
 	    (netif_is_vxlan(given_dest_dev))) {
 		dev_put(dest_dev);
 		dest_dev = given_dest_dev;
@@ -5707,17 +5847,26 @@ lag_success:
 				break;
 			}
 
-#ifdef ECM_INTERFACE_MAP_T_ENABLE
-			/*
-			 * MAP-T xlate ?
-			 */
 			if (dest_dev_type == ARPHRD_NONE) {
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+				/*
+				 * MAP-T xlate ?
+				 */
 				if (is_map_t_dev(dest_dev)) {
 					DEBUG_TRACE("%px: Net device: %px is MAP-T type: %d\n", feci, dest_dev, dest_dev_type);
 					break;
 				}
-			}
 #endif
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+				/*
+				 * VXLAN-GPE tunnel ?
+				 */
+				if (netif_is_vxlan(dest_dev)) {
+					DEBUG_TRACE("%px: Net device: %px is VXLAN-GPE type: %d\n", feci, dest_dev, dest_dev_type);
+					break;
+				}
+#endif
+			}
 
 #ifdef ECM_INTERFACE_RAWIP_ENABLE
 			/*
