@@ -253,6 +253,39 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 }
 
 /*
+ * ecm_front_end_is_xfrm_transport_inner
+ * 	Return true if it's a inner packet destined for
+ * 	IPsec transport mode encap
+ */
+bool ecm_front_end_is_xfrm_transport_inner(struct sk_buff *skb)
+{
+#ifdef CONFIG_XFRM
+	struct dst_entry *dst;
+
+	/*
+	 * IPsec transport mode inner is only offloaded for TunnelOverTunnel usecase,
+	 * which will be pushed only for encap direction.
+	 * dst->xfrm is valid if packet is destined for xfrm
+	 */
+	dst = skb_dst(skb);
+	if (dst && dst->xfrm) {
+		struct xfrm_state *xs;
+
+		xs = dst->xfrm;
+
+		/*
+		 * Avoid pre encap fragmentation for IPsec transport mode
+		 */
+		if (xs->props.mode == XFRM_MODE_TRANSPORT) {
+			return true;
+		}
+	}
+#endif
+
+	return false;
+}
+
+/*
  * ecm_front_end_is_xfrm_flow()
  *	Returns true if the flow is an xfrm flow and identifies if the flow is xfrm inner.
  */

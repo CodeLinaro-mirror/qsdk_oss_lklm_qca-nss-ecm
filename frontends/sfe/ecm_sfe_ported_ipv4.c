@@ -1097,6 +1097,14 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 			DEBUG_TRACE("%px: IPSEC\n", feci);
+
+			if (ecm_front_end_is_xfrm_transport_inner(skb)) {
+				/*
+				 * Set the SFE valid flag for frag offload if inline fragmentation has to be skipped
+				 */
+				nircm->valid_flags |= SFE_RULE_CREATE_SKIP_FRAG_OFFLOAD_VALID;
+			}
+
 			if (interface_type_counts[ii_type] != 0) {
 				/*
 				 * Can only support one ipsec
