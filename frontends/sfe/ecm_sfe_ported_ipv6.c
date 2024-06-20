@@ -1701,14 +1701,14 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		kfree(nim);
 
 		/*
-		 * For emesh classifier sync_from_v4 to be called after rule is successfully created.
+		 * For emesh classifier sync_from_v6 to be called after rule is successfully created.
 		 */
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
 		if (aci) {
 			ecrc.skb = skb;
 			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
-			aci->sync_from_v4(aci, &ecrc);
+			aci->sync_from_v6(aci, &ecrc);
 			aci->deref(aci);
 		}
 #endif

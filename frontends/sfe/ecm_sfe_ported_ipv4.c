@@ -1266,6 +1266,18 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		nircm->sawf_rule.flow_svc_id = pr->flow_service_class;
 		nircm->sawf_rule.return_mark = pr->return_sawf_metadata;
 		nircm->sawf_rule.return_svc_id = pr->return_service_class;
+
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_IPV4_FRAG_THRESH_VALID) {
+			if (pr->flow_frag_thresh) {
+				nircm->sawf_rule.flow_frag_thresh = pr->flow_frag_thresh;
+				nircm->valid_flags |= SFE_RULE_CREATE_FLOW_FRAG_THRESH_VALID;
+			}
+
+			if (pr->return_frag_thresh) {
+				nircm->sawf_rule.return_frag_thresh = pr->return_frag_thresh;
+				nircm->valid_flags |= SFE_RULE_CREATE_RETURN_FRAG_THRESH_VALID;
+			}
+		}
 	}
 
 	/*
