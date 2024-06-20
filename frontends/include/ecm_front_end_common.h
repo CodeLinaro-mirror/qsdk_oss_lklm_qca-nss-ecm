@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -421,6 +421,7 @@ int ecm_sfe_sysctl_tbl_init(void);
 void ecm_sfe_sysctl_tbl_exit(void);
 bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr);
 bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool *inner);
+bool ecm_front_end_is_xfrm_transport_inner(struct sk_buff *skb);
 
 ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci);
 void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci);
