@@ -254,8 +254,14 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	ecm_tracker_sender_type_t sender;
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
-	uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint32_t msduq_forward;
+	uint32_t msduq_reverse;
+	uint32_t msduq_forward_prev;
+	uint32_t msduq_reverse_prev;
+	uint32_t flow_svid_prev;
+	uint32_t return_svid_prev;
+	uint8_t flow_valid_flag_prev;
+	uint8_t return_valid_flag_prev;
 	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
@@ -338,13 +344,23 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 */
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
-	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID) ||
-			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID)) {
+	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI) ||
+			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI)) {
 		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		aci->deref(aci);
 		goto end;
 	}
+
+	/*
+	 * Set previous variables for SUB sync message
+	 */
+	msduq_forward_prev = cemi->process_response.flow_sawf_metadata;
+	msduq_reverse_prev = cemi->process_response.return_sawf_metadata;
+	flow_valid_flag_prev = cemi->flow_valid_flag;
+	return_valid_flag_prev = cemi->return_valid_flag;
+	flow_svid_prev = cemi->process_response.flow_service_class;
+	return_svid_prev = cemi->process_response.return_service_class;
 
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
@@ -465,8 +481,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 */
 	if (ecm_emesh.sawf_conn_sync && (msduq_forward || msduq_reverse)) {
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-		if (msduq_forward == cemi->process_response.flow_sawf_metadata &&
-			msduq_reverse == cemi->process_response.return_sawf_metadata){
+		if (msduq_forward == msduq_forward_prev &&
+			msduq_reverse == msduq_reverse_prev){
 			DEBUG_TRACE("%px: ci=%px not calling WLAN sync due to no difference in MSDUQ\n", r, ci);
 			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 			goto done;
@@ -485,14 +501,14 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		/*
 		 * Get metadata and svid for SUB message
 		 */
-		if (cemi->flow_valid_flag & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
-			sawf_sync_params.fwd_mark_metadata = cemi->process_response.flow_sawf_metadata;
-			sawf_sync_params.fwd_service_id = cemi->process_response.flow_service_class;
+		if (flow_valid_flag_prev & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+			sawf_sync_params.fwd_mark_metadata = msduq_forward_prev;
+			sawf_sync_params.fwd_service_id = flow_svid_prev;
 		}
 
-		if (cemi->return_valid_flag & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
-			sawf_sync_params.rev_mark_metadata = cemi->process_response.return_sawf_metadata;
-			sawf_sync_params.rev_service_id = cemi->process_response.return_service_class;
+		if (return_valid_flag_prev & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+			sawf_sync_params.rev_mark_metadata = msduq_reverse_prev;
+			sawf_sync_params.rev_service_id = return_svid_prev;
 		}
 
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
@@ -500,7 +516,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		/*
 		 * If the flow was previously mapped to a non default msduq, send a SUB message to WLAN Driver
 		 */
-		if (sawf_sync_params.fwd_mark_metadata || sawf_sync_params.rev_mark_metadata) {
+		if (msduq_forward_prev || msduq_reverse_prev) {
 			sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW;
 			DEBUG_TRACE("%px: SUB SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
 				cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
