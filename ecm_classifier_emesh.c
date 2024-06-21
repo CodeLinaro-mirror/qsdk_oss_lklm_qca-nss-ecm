@@ -256,6 +256,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	struct net_device *dest_dev = NULL;
 	uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
 #ifdef ECM_MULTICAST_ENABLE
@@ -301,6 +302,51 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	else
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+
+#ifdef ECM_MULTICAST_ENABLE
+	/*
+	 * Return here if the flow is multicast type.
+	 * We do not support multicast traffic in smart classifier type.
+	 */
+	is_mc_flow = ecm_db_multicast_connection_to_interfaces_set_check(ci);
+	if (is_mc_flow) {
+		ecm_db_connection_deref(ci);
+		return;
+	}
+#endif
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	if (!feci->update_rule) {
+		DEBUG_WARN("%px: frontend update_rule callback is not registered\n", r);
+		goto end;
+	}
+
+	/*
+	 * Check if emesh classifier is assigned.
+	 */
+	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+	if (!aci) {
+		DEBUG_WARN("%px: emesh classifier is not assigned. ci=%px %u\n", r, ci, ci->serial);
+		goto end;
+	}
+
+	/*
+	 * IFLI is given lowest prority among classifiers, So return if already a classifier is used
+	 *
+	 * TODO: need to take care of inter VAP cases so that IFLI can prioritize flow in one direction
+	 * if there is no admin configured svc
+	 */
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
+	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID) ||
+			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID)) {
+		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		aci->deref(aci);
+		goto end;
+	}
+
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
 	 * Construct the message to be sent to AEs for the 5 tuple information and the
@@ -356,44 +402,9 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 				msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
 	/*
-	 * Return here if the flow is multicast type.
-	 * We do not support multicast traffic in smart classifier type.
+	 * TODO: Add support for rules with WLAN<->WLAN traffic
 	 */
-	is_mc_flow = ecm_db_multicast_connection_to_interfaces_set_check(ci);
-	if (is_mc_flow) {
-		ecm_db_connection_deref(ci);
-		return;
-	}
-#endif
-
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
-	if (!feci->update_rule) {
-		DEBUG_WARN("%px: frontend update_rule callback is not registered\n", r);
-		goto end;
-	}
-
-	/*
-	 * Check if emesh classifier is assigned.
-	 */
-	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
-	if (!aci) {
-		DEBUG_WARN("%px: emesh classifier is not assigned. ci=%px %u\n", r, ci, ci->serial);
-		goto end;
-	}
-
-	/*
-	 * IFLI is given lowest prority among classifiers, So return if already a classifier is used
-	 */
-	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
-	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID) &&
-			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID)) {
-		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
-		aci->deref(aci);
-		goto end;
-	}
-
 	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
 
 	/*
@@ -448,6 +459,69 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 * Update frontend's mark rule
 	 */
 	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+
+	/*
+	 * Shares sync messages with WLAN driver regarding msduq usage
+	 */
+	if (ecm_emesh.sawf_conn_sync && (msduq_forward || msduq_reverse)) {
+		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+		if (msduq_forward == cemi->process_response.flow_sawf_metadata &&
+			msduq_reverse == cemi->process_response.return_sawf_metadata){
+			DEBUG_TRACE("%px: ci=%px not calling WLAN sync due to no difference in MSDUQ\n", r, ci);
+			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+			goto done;
+		}
+
+		/*
+		 * Fill default values for sync message
+		 */
+		sawf_sync_params.fwd_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
+		sawf_sync_params.rev_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
+		sawf_sync_params.src_dev = src_dev;
+		sawf_sync_params.dest_dev = dest_dev;
+		ether_addr_copy(sawf_sync_params.src_mac, smac);
+		ether_addr_copy(sawf_sync_params.dest_mac, dmac);
+
+		/*
+		 * Get metadata and svid for SUB message
+		 */
+		if (cemi->flow_valid_flag & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+			sawf_sync_params.fwd_mark_metadata = cemi->process_response.flow_sawf_metadata;
+			sawf_sync_params.fwd_service_id = cemi->process_response.flow_service_class;
+		}
+
+		if (cemi->return_valid_flag & (ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID | ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+			sawf_sync_params.rev_mark_metadata = cemi->process_response.return_sawf_metadata;
+			sawf_sync_params.rev_service_id = cemi->process_response.return_service_class;
+		}
+
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+
+		/*
+		 * If the flow was previously mapped to a non default msduq, send a SUB message to WLAN Driver
+		 */
+		if (sawf_sync_params.fwd_mark_metadata || sawf_sync_params.rev_mark_metadata) {
+			sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW;
+			DEBUG_TRACE("%px: SUB SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
+				cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
+				sawf_sync_params.fwd_mark_metadata, sawf_sync_params.rev_mark_metadata);
+
+			ecm_emesh.sawf_conn_sync(&sawf_sync_params);
+		}
+
+		/*
+		 * If either of the new MSDUQs recieved from WLAN driver are not default, send ADD message
+		 */
+		sawf_sync_params.fwd_service_id = msg->flow_service_class_id;
+		sawf_sync_params.rev_service_id = msg->return_service_class_id;
+		sawf_sync_params.fwd_mark_metadata = msduq_forward;
+		sawf_sync_params.rev_mark_metadata = msduq_reverse;
+		sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW;
+		DEBUG_TRACE("%px: ADD SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
+			cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
+			sawf_sync_params.fwd_mark_metadata, sawf_sync_params.rev_mark_metadata);
+		ecm_emesh.sawf_conn_sync(&sawf_sync_params);
+	}
 
 	/*
 	 * All done
@@ -2561,10 +2635,6 @@ void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum 
 	 */
 	nf_ct_put(ct);
 
-	/*
-	 * Invoke wlan callbacks on connection update.
-	 */
-	ecm_classifier_emesh_sawf_params_sync_on_conn_accel(aci);
 #ifdef ECM_FRONT_END_FSE_ENABLE
 	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_EMESH_SAWF_FSE_UPDATE);
 #endif
