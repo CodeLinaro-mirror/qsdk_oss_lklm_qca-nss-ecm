@@ -220,7 +220,11 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	metadata.sawf_param.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
 	metadata.sawf_param.mcast_flag = sawf_flow_info->is_mc_flow;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	return qca_wifi_get_metadata_info(&metadata);
+#else
+	return qca_sawf_get_mark_metadata(&(metadata.sawf_param));
+#endif
 #endif
 }
 
