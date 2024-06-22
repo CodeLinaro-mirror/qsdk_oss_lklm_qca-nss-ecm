@@ -25,6 +25,8 @@
 #ifndef __ECM_CLASSIFIER_EMESH_PUBLIC_H__
 #define __ECM_CLASSIFIER_EMESH_PUBLIC_H__
 
+#include <net/netfilter/nf_conntrack.h>
+
 /**
  * @addtogroup ecm_classifier_emesh_subsystem
  * @{
@@ -350,6 +352,22 @@ int ecm_classifier_emesh_sawf_update_fse_flow_callback_register(struct ecm_class
  * None.
  */
 void ecm_classifier_emesh_sawf_update_fse_flow_callback_unregister(void);
+
+/**
+ * Gets iface names used by fls for sdwf + mesh setups for ipv4 connections
+ *
+ * @return
+ * None.
+ */
+uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv4(struct nf_conn *ct, char *from_buff, char *to_buff);
+
+/**
+ * Gets iface names used by fls for sdwf + mesh setups for ipv6 connections
+ *
+ * @return
+ * None.
+ */
+uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char *from_buff, char *to_buff);
 
 /**
  * @}

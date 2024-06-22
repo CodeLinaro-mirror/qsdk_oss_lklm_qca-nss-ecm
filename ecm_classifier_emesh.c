@@ -544,6 +544,111 @@ end:
 }
 
 /*
+ * ecm_classifier_emesh_sawf_get_iface_names_ipv4
+ *	Function used by FLS to get interfaces for ipv4 conn
+ */
+uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv4(struct nf_conn *ct, char *from_buff, char *to_buff)
+{
+	struct ecm_db_connection_instance *ci;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	struct nf_conntrack_tuple orig_tuple;
+	struct nf_conntrack_tuple reply_tuple;
+	ip_addr_t match_addr, src_addr, dst_addr;
+	ecm_tracker_sender_type_t sender;
+
+	ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
+	if (!ci) {
+		DEBUG_TRACE("%px: not found\n", ct);
+		return 0;
+	}
+
+	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+	ECM_NIN4_ADDR_TO_IP_ADDR(src_addr, orig_tuple.src.u3.ip);
+	ECM_NIN4_ADDR_TO_IP_ADDR(dst_addr, reply_tuple.src.u3.ip);
+
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+
+	if (ECM_IP_ADDR_MATCH(match_addr, src_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else if (ECM_IP_ADDR_MATCH(match_addr, dst_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	} else {
+		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		return 0;
+	}
+
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+	memcpy(from_buff, src_dev->name, IFNAMSIZ);
+	memcpy(to_buff, dest_dev->name, IFNAMSIZ);
+
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+	ecm_db_connection_deref(ci);
+
+	return 1;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_get_iface_names_ipv4);
+
+/*
+ * ecm_classifier_emesh_sawf_get_iface_names_ipv6
+ *	Function used by FLS to get interfaces for ipv6 conn
+ */
+uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char *from_buff, char *to_buff)
+{
+	struct ecm_db_connection_instance *ci;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	struct nf_conntrack_tuple orig_tuple;
+	struct nf_conntrack_tuple reply_tuple;
+	ip_addr_t match_addr, src_addr, dst_addr;
+	ecm_tracker_sender_type_t sender;
+
+	ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
+	if (!ci) {
+		DEBUG_TRACE("%px: not found\n", ct);
+		return 0;
+	}
+
+	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+	ECM_NIN6_ADDR_TO_IP_ADDR(src_addr, orig_tuple.src.u3.in6);
+	ECM_NIN6_ADDR_TO_IP_ADDR(dst_addr, reply_tuple.src.u3.in6);
+
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+
+	if (ECM_IP_ADDR_MATCH(match_addr, src_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else if (ECM_IP_ADDR_MATCH(match_addr, dst_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	} else {
+		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		return 0;
+	}
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+	memcpy(from_buff, src_dev->name, IFNAMSIZ);
+	memcpy(to_buff, dest_dev->name, IFNAMSIZ);
+
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+	ecm_db_connection_deref(ci);
+
+	return 1;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_get_iface_names_ipv6);
+
+/*
  * ecm_classifier_emesh_sawf_ref()
  *	Ref
  */
