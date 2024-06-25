@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,6 +17,7 @@
  */
 
 extern int ecm_front_end_ipv6_stopped;	/* When non-zero further traffic will not be processed */
+extern int ecm_front_end_ipv6_stopped_temp;	/* When non-zero further traffic/process will not be processed where it is checked */
 
 #ifdef ECM_MULTICAST_ENABLE
 extern int ecm_front_end_ipv6_mc_stopped;	/* When non-zero further traffic will not be processed */
@@ -95,7 +96,7 @@ enum ecm_front_end_ipv6_rule_sync_reason {
 	ECM_FRONT_END_IPV6_RULE_SYNC_REASON_DESTROY	/* Sync is to destroy a cache entry */
 };
 
-extern void ecm_front_end_ipv6_stop(int num);
+extern void ecm_front_end_ipv6_stop_temp(int num);
 extern int ecm_front_end_ipv6_init(struct dentry *dentry);
 extern void ecm_front_end_ipv6_exit(void);
 
