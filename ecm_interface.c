@@ -136,6 +136,23 @@
 #include "ecm_front_end_common.h"
 
 /*
+ * Peer authorization event coming from WLAN driver.
+ */
+#define ECM_INTERFACE_WIFI_EVENT_NODE_AUTH	30
+
+/*
+ * Wi-Fi event node authorized information structure.
+ */
+struct ecm_interface_wifi_event_node_authorized {
+	u_int8_t  mac_addr[ETH_ALEN];	/* MAC address */
+	u_int8_t  channel_num;		/* Operating channel number */
+	u_int16_t assoc_id;		/* Assoc id */
+	u_int16_t phymode;		/* Phymode(11ac/abgn) */
+	u_int8_t  nss;			/* TX/RX chains */
+	u_int8_t  is_256qam;		/* TX/RX chains */
+};
+
+/*
  * Wifi event handler structure.
  */
 struct ecm_interface_wifi_event {
@@ -7968,7 +7985,10 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
 static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, size_t len)
 {
 	struct iw_event iwe_buf, *iwe = &iwe_buf;
-	char *pos, *end;
+	char *pos, *end, *custom, *dpos;
+	int dlen;
+	void *dbuf;
+	struct ecm_interface_wifi_event_node_authorized *wifi_ev_au;
 
 	pos = buf;
 	end = buf + len;
@@ -7981,13 +8001,54 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 
 		/*
 		 * Check that len is valid and that we have that much in the buffer.
-		 *
 		 */
 		if (iwe->len < IW_EV_LCP_LEN) {
 			return -1;
 		}
 
-		if ((iwe->len > sizeof (struct iw_event)) || (iwe->len + pos) > end) {
+		/*
+		 * Check for any custom events like STA authorized.
+		 */
+		custom = pos + IW_EV_POINT_LEN;
+		if (iwe->cmd == IWEVCUSTOM) {
+			dpos = (char *)&iwe_buf.u.data.length;
+			dlen = dpos - (char *)&iwe_buf;
+
+			memcpy(dpos, pos + IW_EV_LCP_LEN, sizeof(struct iw_event) - dlen);
+
+			if (custom + iwe->u.data.length > end) {
+				DEBUG_WARN("Invalid buffer length received in the event iwe->u.data.length %d\n", iwe->u.data.length);
+				return -1;
+			}
+
+			/*
+			 * Check the flags of iw event if it indicates the IW authorized signal.
+			 */
+			if (iwe->u.data.flags == ECM_INTERFACE_WIFI_EVENT_NODE_AUTH) {
+				dbuf = kzalloc((iwe->u.data.length + 1), GFP_KERNEL);
+				if (!dbuf) {
+					DEBUG_WARN("Failed to allocated a buffer to process the custom event");
+					return -1;
+				}
+
+				/*
+				 * Copy the user content of custom event to extract information.
+				 */
+				memset(dbuf, 0, iwe->u.data.length);
+				memcpy(dbuf, custom, iwe->u.data.length);
+
+				wifi_ev_au = (struct ecm_interface_wifi_event_node_authorized *)dbuf;
+
+				DEBUG_INFO("STA %pM is authorized \n", (uint8_t *)wifi_ev_au->mac_addr);
+				ecm_interface_node_connections_defunct_by_type((uint8_t *)wifi_ev_au->mac_addr, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
+
+				kfree(dbuf);
+			}
+
+			return 0;
+		}
+
+		if ((iwe->len > sizeof(struct iw_event)) || (iwe->len + pos) > end) {
 			return -1;
 		}
 
@@ -7996,11 +8057,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 		 */
 		memcpy(&iwe_buf, pos, iwe->len);
 
-		if (iwe->cmd == IWEVREGISTERED) {
-			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_defunct_by_type((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE,
-								ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
-		} else if (iwe->cmd == IWEVEXPIRED) {
+		if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
 			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);
 		} else {
