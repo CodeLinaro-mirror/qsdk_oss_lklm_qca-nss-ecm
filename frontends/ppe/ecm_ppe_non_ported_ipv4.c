@@ -872,6 +872,10 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		pd4rc->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		pd4rc->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		pd4rc->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		pd4rc->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
+		pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
 		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_QOS;
 	}
 
@@ -1103,6 +1107,8 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			"valid_flags: %x\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"flow_int_pri: %x (%u)\n"
+			"return_int_pri: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
@@ -1124,6 +1130,8 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			pd4rc->valid_flags,
 			pd4rc->qos_rule.flow_qos_tag, pd4rc->qos_rule.flow_qos_tag,
 			pd4rc->qos_rule.return_qos_tag, pd4rc->qos_rule.return_qos_tag,
+			pd4rc->qos_rule.flow_int_pri, pd4rc->qos_rule.flow_int_pri,
+			pd4rc->qos_rule.return_int_pri, pd4rc->qos_rule.return_int_pri,
 			pd4rc->dscp_rule.flow_dscp,
 			pd4rc->dscp_rule.return_dscp,
 			pd4rc->conn_rule.rx_if, (from_ifaces[from_ifaces_first])->name,

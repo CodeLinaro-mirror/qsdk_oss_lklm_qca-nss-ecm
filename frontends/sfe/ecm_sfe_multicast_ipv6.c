@@ -1682,8 +1682,10 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG)
 	{
 		create->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
-		create->qos_rule.return_qos_tag	= (uint32_t)pr->return_qos_tag;
-		create->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
+		create->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		create->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		create->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
+		create->valid_flags |= SFE_MC_RULE_CREATE_FLAG_QOS_VALID;
 	}
 
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
