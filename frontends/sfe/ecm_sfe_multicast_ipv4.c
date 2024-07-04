@@ -1671,6 +1671,8 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	{
 		create->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		create->qos_rule.return_qos_tag	= (uint32_t)pr->return_qos_tag;
+		create->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		create->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
 		create->valid_flags |= SFE_MC_RULE_CREATE_FLAG_QOS_VALID;
 	}
 
