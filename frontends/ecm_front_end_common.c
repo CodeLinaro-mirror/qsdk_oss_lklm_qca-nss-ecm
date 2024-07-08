@@ -1794,6 +1794,55 @@ bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
 }
 
 /*
+ * ecm_front_end_common_check_if_vap
+ *	Returns true if the dev is VAP.
+ */
+bool ecm_front_end_common_check_if_vap(int32_t interface_num)
+{
+	struct net_device *vap_dev = dev_get_by_index(&init_net, interface_num);
+	if (!vap_dev) {
+		DEBUG_WARN("Failed to get net device with %d index\n", interface_num);
+		return false;
+	}
+
+	/*
+	 * Dev is not a wifi dev
+	 */
+	if (!vap_dev->ieee80211_ptr) {
+		dev_put(vap_dev);
+		return false;
+	}
+
+	dev_put(vap_dev);
+	return true;
+}
+
+#ifdef ECM_FRONT_END_PPE_ENABLE
+/*
+ * ecm_front_end_common_check_dl_vp_qdisc
+ *	Returns true if the interface is part of DL VP qdisc
+ */
+bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num)
+{
+	int32_t ppe_id;
+
+	/*
+	 * If the bottom interface is a wifi interface
+	 * and the flow is offloaded to VP i.e
+	 * flow is a VP Downlink flow.
+	 */
+	if (ecm_front_end_common_check_if_vap(interface_num)) {
+		ppe_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(interface_num);
+		if (ppe_drv_iface_check_if_vp_flow(ppe_id)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+#endif
+
+/*
  * ecm_front_end_common_intf_qdisc_check()
  *      Checks if qdisc is configured on the given interface
  */
