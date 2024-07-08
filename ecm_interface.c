@@ -48,6 +48,7 @@
 #include <linux/socket.h>
 #include <linux/wireless.h>
 #include <net/genetlink.h>
+#include <linux/nl80211.h>
 #include <net/gre.h>
 #ifdef ECM_INTERFACE_BOND_ENABLE
 #include <net/bonding.h>
