@@ -8633,7 +8633,7 @@ int ecm_interface_wifi_event_stop(void)
 {
 	int err;
 
-	if (__ewn.thread == NULL) {
+	if (__ewn.thread == NULL || __ewn.sock == NULL) {
 		return 0;
 	}
 
