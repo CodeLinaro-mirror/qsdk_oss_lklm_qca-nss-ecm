@@ -200,8 +200,11 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	bool rule_invalid;
 	bool is_defunct = false;
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+	int32_t bottom_iface_id;
 	bool is_ppeq = false;
 #endif
+	bool is_flow_dl_vp = false, is_return_dl_vp = false;
+	int err = -1;
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
 	ecm_front_end_acceleration_mode_t result_mode;
@@ -330,6 +333,22 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			/*
+			 * if is_flow_dl_vp is already set to true that means there is already linux qdisc
+			 * found on DL flows and this is another qdisc so reject this flow, since
+			 * we dont support more than one qdisc in the hierarchy. If is_flow_dl_vp
+			 * is false then go ahead and find whether this is ppe-vp DL flow, if yes
+			 * then accept the flow otherwise reject it since Linux qdisc is present
+			 * but flow is not ppe-vp DL.
+			 */
+			if (!is_flow_dl_vp) {
+				bottom_iface_id = ecm_db_iface_interface_identifier_get(from_ifaces[from_ifaces_first]);
+				is_flow_dl_vp = ecm_front_end_common_check_dl_vp_qdisc(bottom_iface_id);
+				if (is_flow_dl_vp) {
+					goto process_next_iface_flow;
+				}
+			}
+
 			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
@@ -337,6 +356,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 			goto ported_accel_bad_rule;
 		}
+
+process_next_iface_flow:
 #endif
 
 		/*
@@ -665,6 +686,22 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
+			/*
+			 * if is_flow_dl_vp is already set to true that means there is already linux qdisc
+			 * found on DL flows and this is another qdisc so reject this flow, since
+			 * we dont support more than one qdisc in the hierarchy. If is_flow_dl_vp
+			 * is false then go ahead and find whether this is ppe-vp DL flow, if yes
+			 * then accept the flow otherwise reject it since Linux qdisc is present
+			 * but flow is not ppe-vp DL.
+			 */
+			if (!is_return_dl_vp) {
+				bottom_iface_id = ecm_db_iface_interface_identifier_get(to_ifaces[to_ifaces_first]);
+				is_return_dl_vp = ecm_front_end_common_check_dl_vp_qdisc(bottom_iface_id);
+				if (is_return_dl_vp) {
+					goto process_next_iface_return;
+				}
+			}
+
 			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_QDISC_UNSUPPORTED);
 			DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 					feci, iface_id, ii_type, ii_name);
@@ -672,6 +709,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 			goto ported_accel_bad_rule;
 		}
+
+process_next_iface_return:
 #endif
 
 		/*
@@ -1250,6 +1289,39 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 		aci->sync_from_v4(aci, &ecrc);
 #endif
+	}
+
+	/*
+	 * Fill Qdisc rule
+	 */
+	if (is_return_dl_vp) {
+		/*
+		 * if dl vp is found in return, fill the qdisc rule in flow direction
+		 */
+		err = ecm_ppe_common_qdisc_rule_set(to_ifaces, to_ifaces_first, (uint32_t)pr->return_qos_tag,
+				true, &pd4rc->qdisc_rule);
+
+		/*
+		 * If qdisc rule is set then add valid flag for qdisc info
+		 */
+		if (!err) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_FLOW_HOST_QDISC_VALID;
+		}
+	}
+
+	if (is_flow_dl_vp) {
+		/*
+		 * if dl vp is found in flow, fill the qdisc rule in return direction
+		 */
+		err = ecm_ppe_common_qdisc_rule_set(from_ifaces, from_ifaces_first, (uint32_t)pr->flow_qos_tag,
+				false, &pd4rc->qdisc_rule);
+
+		/*
+		 * If qdisc rule is set , add valid flag for qdisc info
+		 */
+		if (!err) {
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_RETURN_HOST_QDISC_VALID;
+		}
 	}
 
 	/*
