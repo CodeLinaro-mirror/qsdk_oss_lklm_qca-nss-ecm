@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -115,6 +115,7 @@ enum ecm_front_end_type {
 	ECM_FRONT_END_TYPE_PPE,
 	ECM_FRONT_END_TYPE_NSS_SFE,
 	ECM_FRONT_END_TYPE_PPE_SFE,
+	ECM_FRONT_END_TYPE_SFE_PPE,
 	ECM_FRONT_END_TYPE_MAX
 };
 
@@ -464,6 +465,11 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 		|| ((front_end_selection == ECM_FRONT_END_TYPE_AUTO) && of_machine_is_compatible("qcom,ipq5424"))) {
 		return ECM_FRONT_END_TYPE_PPE_SFE;
 	}
+
+	if ((front_end_selection == ECM_FRONT_END_TYPE_SFE_PPE) &&
+	    (of_machine_is_compatible("qcom,ipq9574") || of_machine_is_compatible("qcom,ipq5332"))) {
+		return ECM_FRONT_END_TYPE_SFE_PPE;
+	}
 #endif
 
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -539,6 +545,16 @@ static inline bool ecm_front_end_set_ae_precendence_array(enum ecm_front_end_typ
 		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
 
 		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_SFE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_1]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_MAX].ae_type = ECM_FRONT_END_ENGINE_MAX;
+		break;
+
+	case ECM_FRONT_END_TYPE_SFE_PPE:
+		ae_precedence[ECM_AE_PRECEDENCE_0].ae_type = ECM_FRONT_END_ENGINE_SFE;
+		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_0]);
+
+		ae_precedence[ECM_AE_PRECEDENCE_1].ae_type = ECM_FRONT_END_ENGINE_PPE;
 		ecm_front_end_set_ae_alloc_methods(&ae_precedence[ECM_AE_PRECEDENCE_1]);
 
 		ae_precedence[ECM_AE_PRECEDENCE_MAX].ae_type = ECM_FRONT_END_ENGINE_MAX;
