@@ -85,6 +85,7 @@ static const char *ecm_sfe_stats_v6_exception_ported_name_str[] = {
 	"v6_exception_ported_to_iface_only_one_ipsec_supported",
 	"v6_exception_ported_to_iface_ipsec_not_enabled",
 	"v6_exception_ported_to_iface_lag_not_enabled",
+	"v6_exception_ported_to_iface_vxlan_not_enabled",
 	"v6_exception_ported_to_iface_tun6rd_not_enabled",
 	"v6_exception_ported_mht_port_failed",
 	"v6_exception_ported_regen_occurred",

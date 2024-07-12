@@ -128,6 +128,8 @@ enum ecm_sfe_stats_v6_exception_ported_events {
     /* Number of IPv6 packets ignored in to interface ported flow as ipsec not enabled */
     ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_LAG_NOT_ENABLED,
     /* Number of IPv6 packets ignored in to interface ported flow as lag not enabled */
+    ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED,
+    /* Number of IPv6 packets ignored in to interface ported flow as vxlan not enabled */
     ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_TUN6RD_NOT_ENABLED,
     /* Number of IPv6 packets ignored in to interface ported flow as tun6rd not enabled */
     ECM_SFE_STATS_V6_EXCEPTION_PORTED_MHT_PORT_FAIL,

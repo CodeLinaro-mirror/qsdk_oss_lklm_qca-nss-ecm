@@ -890,6 +890,14 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			if (!vxlan_info.if_type) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
+
+			/*
+			 * Set VxLAN-GPE flag in return direction for inner flow coming from VXLAN-GPE device
+			 */
+			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VXLAN_GPE;
+				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
+			}
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_VXLAN_NOT_ENABLED);
@@ -1234,6 +1242,26 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_LAG_NOT_ENABLED);
 			DEBUG_TRACE("%px: LAG - unsupported\n", feci);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			struct ecm_db_interface_info_vxlan vxlan_info;
+
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+
+			/*
+			 * Set VxLAN-GPE flag for inner flow going TO VXLAN-GPE device
+			 */
+			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VXLAN_GPE;
+				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
+			}
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED);
+			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
 #endif
 			break;
 

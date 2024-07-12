@@ -84,6 +84,7 @@ static const char *ecm_sfe_stats_v4_exception_ported_name_str[] = {
 	"v4_exception_ported_to_iface_only_one_ipsec_supported",
 	"v4_exception_ported_to_iface_ipsec_not_enabled",
 	"v4_exception_ported_to_iface_lag_not_enabled",
+	"v4_exception_ported_to_iface_vxlan_not_enabled",
 	"v4_exception_ported_mht_port_failed",
 	"v4_exception_ported_regen_occurred",
 	"v4_exception_ported_tx_failed"
