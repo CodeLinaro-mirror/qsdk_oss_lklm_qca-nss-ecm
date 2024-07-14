@@ -2792,7 +2792,7 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 									skb, dest_mac_addr, *vid, next_dev->name);
 							goto fail;
 						}
-
+						dev_put(next_dev);
 					}
 				} else {
 					DEBUG_TRACE("%px: src_mac_addr lookup success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
@@ -2972,6 +2972,7 @@ bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, s
 									skb, dest_mac_addr, *vid, next_dev->name);
 							goto fail;
 						}
+						dev_put(next_dev);
 					}
 				} else {
 					DEBUG_TRACE("%px: src_mac_addr lookup success. vlan tag found for dev:%s, mac:%pM, vid=%d netdev=%s\n",
