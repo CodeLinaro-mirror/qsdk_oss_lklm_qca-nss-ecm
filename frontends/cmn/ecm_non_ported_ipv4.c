@@ -786,6 +786,19 @@ done:
 			}
 		}
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+		/*
+		 * WIFI classifier is Valid
+		 */
+		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
+			DEBUG_TRACE("%px: aci: %px, type: %d, WIFI classifier is valid\n",
+				ci, aci, aci->type_get(aci));
+			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG;
+			prevalent_pr.flow_wifi_ds_node_id = aci_pr.flow_wifi_ds_node_id;
+			prevalent_pr.return_wifi_ds_node_id = aci_pr.return_wifi_ds_node_id;
+		}
+#endif
+
 		/*
 		 * Timer group (the last classifier i.e. the highest priority one) will 'win'
 		 */

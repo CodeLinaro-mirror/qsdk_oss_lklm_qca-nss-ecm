@@ -284,10 +284,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	}
 
 	protocol = ecm_db_connection_protocol_get(ci);
-	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP)) {
-		/*
-		 * TODO: Support this for GRE over WLAN.
-		 */
+	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP) && (protocol != IPPROTO_GRE)) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
