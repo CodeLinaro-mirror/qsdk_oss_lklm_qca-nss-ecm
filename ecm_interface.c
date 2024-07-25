@@ -47,6 +47,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/socket.h>
 #include <linux/wireless.h>
+#include <net/genetlink.h>
 #include <net/gre.h>
 #ifdef ECM_INTERFACE_BOND_ENABLE
 #include <net/bonding.h>
@@ -134,6 +135,28 @@
 #include "ecm_interface_ovpn.h"
 #endif
 #include "ecm_front_end_common.h"
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+#define ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID	-1
+#define ECM_INTERFACE_GENEL_MESSAGE_SIZE		4096
+#endif
+
+/*
+ * Peer authorization event coming from WLAN driver.
+ */
+#define ECM_INTERFACE_WIFI_EVENT_NODE_AUTH	30
+
+/*
+ * Wi-Fi event node authorized information structure.
+ */
+struct ecm_interface_wifi_event_node_authorized {
+	u_int8_t  mac_addr[ETH_ALEN];	/* MAC address */
+	u_int8_t  channel_num;		/* Operating channel number */
+	u_int16_t assoc_id;		/* Assoc id */
+	u_int16_t phymode;		/* Phymode(11ac/abgn) */
+	u_int8_t  nss;			/* TX/RX chains */
+	u_int8_t  is_256qam;		/* TX/RX chains */
+};
 
 /*
  * Wifi event handler structure.
@@ -7962,13 +7985,434 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
 #endif
 
 /*
- * ecm_interface_wifi_event_iwevent
+ * ecm_interface_wifi_event_rx()
+ *	Receive netlink message from socket
+ */
+static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *addr, unsigned char *buf, int len)
+{
+	struct msghdr msg;
+	struct kvec iov;
+
+	iov.iov_base = buf;
+	iov.iov_len  = len;
+
+	msg.msg_flags = 0;
+	msg.msg_name  = addr;
+	msg.msg_namelen = sizeof(struct sockaddr_nl);
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
+
+	return kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
+}
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+/*
+ * ecm_interface_wifi_process_link_events()
+ *	Parse and process link add / delete events received from Wi-Fi.
+ */
+void ecm_interface_wifi_process_link_events(struct nlmsghdr *nlh, int cmd)
+{
+	struct nlattr **tb = NULL;
+	uint8_t mac[ETH_ALEN];
+	int res;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
+		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
+		return;
+	}
+
+	tb = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
+	if (!tb) {
+		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
+		return;
+	}
+
+	/*
+	 * Parse the event coming from Wi-Fi.
+	 */
+	res = nla_parse(tb, NL80211_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
+			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
+
+	if (res < 0) {
+		DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
+		kfree(tb);
+		return;
+	}
+
+	/*
+	 * Get the MAC address of the peer and process the event.
+	 */
+	if (tb[NL80211_ATTR_MAC]) {
+		memcpy(mac, nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
+
+		if (cmd == NL80211_CMD_NEW_STATION) {
+			DEBUG_INFO("STA %pM joining\n", (uint8_t *)mac);
+			ecm_interface_node_connections_defunct_by_type((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE,
+									ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
+		}
+
+		if (cmd == NL80211_CMD_DEL_STATION) {
+			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)mac);
+			ecm_interface_node_connections_defunct((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE);
+		}
+	}
+
+	kfree(tb);
+}
+
+/*
+ * ecm_interface_wifi_event_handler()
+ *	Netlink event handler
+ */
+static int ecm_interface_wifi_event_handler(void *buf, int len)
+{
+	struct nlmsghdr *nlh;
+	struct genlmsghdr *hdr;
+	int left;
+
+	nlh = (struct nlmsghdr *) buf;
+	left = len;
+
+	/*
+	 * Check the command type and parse the message accordingly.
+	 */
+	while (NLMSG_OK(nlh, left)) {
+		hdr = NLMSG_DATA(nlh);
+
+		switch (hdr->cmd) {
+		case NL80211_CMD_NEW_STATION:
+		case NL80211_CMD_DEL_STATION:
+			ecm_interface_wifi_process_link_events(nlh, hdr->cmd);
+			break;
+		}
+
+		nlh = NLMSG_NEXT(nlh, left);
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_parse_genl_ctrl_response()
+ *	Parse the generic control family response message and
+ *	get the multicast id of MLME multicast group of nl80211 family.
+ */
+int ecm_interface_parse_genl_ctrl_response(struct nlmsghdr *nlh)
+{
+	struct nlattr *tb[CTRL_ATTR_MAX+1];
+	struct nlattr *mcgrp;
+	char data[16];
+	int family_id;
+	int res = -1;
+	int i;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
+		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
+		return res;
+	}
+
+	res = nla_parse(tb, CTRL_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
+			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
+	if (res < 0) {
+		DEBUG_WARN("%px: Error in parsing NL message %d err\n", nlh, res);
+		return res;
+	}
+
+	/*
+	 * Get the family ID for nl80211 family.
+	 */
+	if (!tb[CTRL_ATTR_FAMILY_ID]) {
+		DEBUG_INFO("%px: Failed to get the family ID of nl80211 \n", nlh);
+		return -1;
+	}
+
+	if (!tb[CTRL_ATTR_MCAST_GROUPS]) {
+		DEBUG_WARN("%px: Failed to fetch the multicast groups \n", nlh);
+		return -1;
+	}
+
+	/*
+	 * Parse the multicast groups and get the ID of MLME group.
+	 */
+	family_id = nla_get_u16(tb[CTRL_ATTR_FAMILY_ID]);
+	nla_for_each_nested(mcgrp, tb[CTRL_ATTR_MCAST_GROUPS], i) {
+		struct nlattr *tb2[CTRL_ATTR_MCAST_GRP_MAX + 1];
+
+		res = nla_parse(tb2, CTRL_ATTR_MCAST_GRP_MAX, (struct nlattr *)nla_data(mcgrp), nla_len(mcgrp), NULL, NULL);
+		if (res < 0) {
+			DEBUG_WARN("%px: Error in parsing NL message multicast group %d res\n", nlh, res);
+			return res;
+		}
+
+		/*
+		 * Look for MLME multicast group and get the ID.
+		 */
+		if (tb2[CTRL_ATTR_MCAST_GRP_NAME]) {
+			nla_strscpy(data, tb2[CTRL_ATTR_MCAST_GRP_NAME], sizeof(data));
+			if (strcmp(data, "mlme") == 0) {
+				if (tb2[CTRL_ATTR_MCAST_GRP_ID]) {
+					res = nla_get_u32(tb2[CTRL_ATTR_MCAST_GRP_ID]);
+					DEBUG_INFO("%px: Successfully fetched the MLME group ID %d family ID %d\n", nlh, res, family_id);
+					return res;
+				}
+			}
+		}
+	};
+
+	DEBUG_WARN("%px: Failed to get the MLME group from ctrl msg response \n", nlh);
+	return -1;
+}
+
+/*
+ * ecm_interface_construct_nl_message()
+ *	Construct a message to generic control family to resolve the
+ *	nl80211 multicast groups.
+ */
+struct nlmsghdr *ecm_interface_construct_nl_message(void)
+{
+	int flags = GFP_ATOMIC;
+	struct sk_buff *skb;
+	struct nlmsghdr *nlh;
+	struct genlmsghdr *ghdr;
+	int res = 0;
+
+	/*
+	 * Allocate a genl message structure to send a resolution
+	 * request to generic control family.
+	 */
+	skb = genlmsg_new(NLMSG_DEFAULT_SIZE, flags);
+	if (!skb) {
+		DEBUG_WARN("Not enough space to allocate genl message !\n");
+		return NULL;
+	}
+
+	/*
+	 * Construct the nl header with command addressing to control
+	 * family.
+	 */
+	nlh = nlmsg_put(skb, 0, 0, GENL_ID_CTRL, GENL_HDRLEN, 0);
+	if (!nlh) {
+		DEBUG_WARN("%px: Error in constructing nl header !\n", skb);
+		nlmsg_free(skb);
+		return NULL;
+	}
+
+	/*
+	 * Construct the genl header.
+	 */
+	nlh->nlmsg_flags |= NLM_F_REQUEST;
+
+	ghdr = nlmsg_data(nlh);
+	ghdr->cmd = CTRL_CMD_GETFAMILY;
+	ghdr->version = 1;
+	ghdr->reserved = 0;
+
+	/*
+	 * Add the family name attribute that ECM wants to resolve.
+	 */
+	res = nla_put_string(skb, CTRL_ATTR_FAMILY_NAME, "nl80211");
+	if (res) {
+		DEBUG_WARN("%px: Failed to put family name attribute \n", skb);
+		goto err;
+	}
+
+	nlh->nlmsg_len = skb->len;
+
+	return nlh;
+err:
+	genlmsg_cancel(skb, ghdr);
+	nlmsg_free(skb);
+
+	return NULL;
+}
+
+/*
+ * ecm_interface_resolve_nl80211_family()
+ *	Resolve the nl80211 family multicast groups to
+ *	receive Wi-Fi specific events.
+ */
+int ecm_interface_resolve_nl80211_family(struct socket *sock, struct sockaddr_nl *addr)
+{
+	struct nlmsghdr *nlh;
+	struct kvec iov = {0};
+	struct msghdr mhdr = {0};
+	unsigned char *buf;
+	int mc_group_id = ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID;
+	int len = ECM_INTERFACE_GENEL_MESSAGE_SIZE;
+	int ret = -1;
+	int size = 0;
+
+	/*
+	 * Construct the NL message to generic control family to resolve the
+	 * nl80211 multicast groups.
+	 */
+	nlh = (struct nlmsghdr *)ecm_interface_construct_nl_message();
+	if (!nlh) {
+		DEBUG_WARN("%px: Failed to construct the NL message\n", sock);
+		return ret;
+	}
+
+	/*
+	 * Fill the message buffer and send the control message.
+	 */
+	iov.iov_base = (void *) nlh;
+	iov.iov_len = nlh->nlmsg_len;
+
+	mhdr.msg_name = 0;
+	mhdr.msg_namelen = 0;
+
+	iov_iter_kvec(&mhdr.msg_iter, WRITE, &iov, 1, iov.iov_len);
+
+	ret = sock_sendmsg(sock, &mhdr);
+	if (ret < 0) {
+		DEBUG_WARN("%px: Failed to send the NL ctrl message\n", sock);
+		return ret;
+	}
+
+	/*
+	 * Allocate a buffer to receive the reply message from
+	 * generic control family having information about the
+	 * multicast groups of nl80211.
+	 */
+	buf = (char *)kzalloc(len, GFP_ATOMIC | __GFP_NOWARN);
+	if (!buf) {
+		DEBUG_WARN("%px: Failed to allocate a buffer to receive message!\n", sock);
+		return -1;
+	}
+
+	size = ecm_interface_wifi_event_rx(sock, addr, buf, len);
+	if (size < 0) {
+		DEBUG_WARN("%px: Netlink RX error !\n", sock);
+		kfree(buf);
+		return size;
+	}
+
+	/*
+	 * Parse the NL message response received from kernel.
+	 * This has all the information about the family, its multicast groups,
+	 * callbacks etc.
+	 */
+	nlh = (struct nlmsghdr *)buf;
+	while (NLMSG_OK(nlh, size)) {
+		DEBUG_INFO("%px: Received an NL response, length %d type %d\n", nlh, nlh->nlmsg_len, nlh->nlmsg_type);
+		mc_group_id = ecm_interface_parse_genl_ctrl_response(nlh);
+		if (mc_group_id < 0) {
+			DEBUG_WARN("%px: Failed to parse the multicast group message %d\n", sock, mc_group_id);
+			kfree(buf);
+			return mc_group_id;
+		}
+
+		nlh = NLMSG_NEXT(nlh, size);
+	}
+
+	/*
+	 * Release the buffer allocated for receiving the message.
+	 */
+	kfree(buf);
+
+	/*
+	 * Add this socket as a memeber to the MLME multicast group of the
+	 * nl80211 family.
+	 */
+	if (mc_group_id != ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID) {
+		ret = sock->ops->setsockopt(sock, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, KERNEL_SOCKPTR((void *)&mc_group_id), sizeof(mc_group_id));
+		if (ret < 0) {
+			DEBUG_WARN("%px: Failed to set the multicast membership %d ret %d\n", sock, mc_group_id, ret);
+			return ret;
+		}
+
+		DEBUG_INFO("%px: Adding a this sokcet as a member to NL80211 MLME multicast group %d \n", sock, mc_group_id);
+	}
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wifi_event_thread()
+ */
+static void ecm_interface_wifi_event_thread(void)
+{
+	int err;
+	int size;
+	struct sockaddr_nl saddr;
+	unsigned char *buf;
+	int len = ECM_INTERFACE_GENEL_MESSAGE_SIZE;
+
+	kernel_sigaction(SIGKILL, SIG_DFL);
+
+	/*
+	 * Create a socket to listen to the events coming from nl80211 family.
+	 */
+	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC, &__ewn.sock);
+	if (err < 0) {
+		DEBUG_ERROR("failed to create sock err %d\n", err);
+		goto exit1;
+	}
+
+	memset(&saddr, 0, sizeof(saddr));
+	saddr.nl_family = AF_NETLINK;
+	saddr.nl_pid    = current->pid;
+
+	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
+	if (err < 0) {
+		DEBUG_ERROR("failed to bind sock err %d\n", err);
+		goto exit2;
+	}
+
+	/*
+	 * ECM is supposed to listen to the multicast events sent from the nl80211 family.
+	 * So resolve the family and the multicast event.
+	 */
+	err = ecm_interface_resolve_nl80211_family(__ewn.sock, &saddr);
+	if (err < 0) {
+		DEBUG_ERROR("Failed to resolve the nl80211 generic netlink family err %d\n", err);
+		goto exit2;
+	}
+
+	buf = (char *)kzalloc(len, GFP_ATOMIC | __GFP_NOWARN);
+	if (!buf) {
+		DEBUG_ERROR("Failed to allocate the buffer %d\n", err);
+		goto exit2;
+	}
+
+	/*
+	 * Start listening to the Wi-Fi events.
+	 */
+	DEBUG_INFO("ecm_interface_wifi_event thread started\n");
+	while (!kthread_should_stop()) {
+		size = ecm_interface_wifi_event_rx(__ewn.sock, &saddr, buf, len);
+		DEBUG_TRACE("got a netlink msg with len %d\n", size);
+
+		if (signal_pending(current))
+			break;
+
+		if (size < 0) {
+			DEBUG_WARN("netlink rx error\n");
+		} else {
+			ecm_interface_wifi_event_handler((void *)buf, size);
+		}
+	}
+
+	kfree(buf);
+	DEBUG_INFO("ecm_interface_wifi_event thread stopped\n");
+exit2:
+	sock_release(__ewn.sock);
+exit1:
+	__ewn.sock = NULL;
+}
+
+#else
+/*
+ * ecm_interface_wifi_event_iwevent()
  *	wireless event handler
  */
 static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, size_t len)
 {
 	struct iw_event iwe_buf, *iwe = &iwe_buf;
-	char *pos, *end;
+	char *pos, *end, *custom, *dpos;
+	int dlen;
+	void *dbuf;
+	struct ecm_interface_wifi_event_node_authorized *wifi_ev_au;
 
 	pos = buf;
 	end = buf + len;
@@ -7981,13 +8425,54 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 
 		/*
 		 * Check that len is valid and that we have that much in the buffer.
-		 *
 		 */
 		if (iwe->len < IW_EV_LCP_LEN) {
 			return -1;
 		}
 
-		if ((iwe->len > sizeof (struct iw_event)) || (iwe->len + pos) > end) {
+		/*
+		 * Check for any custom events like STA authorized.
+		 */
+		custom = pos + IW_EV_POINT_LEN;
+		if (iwe->cmd == IWEVCUSTOM) {
+			dpos = (char *)&iwe_buf.u.data.length;
+			dlen = dpos - (char *)&iwe_buf;
+
+			memcpy(dpos, pos + IW_EV_LCP_LEN, sizeof(struct iw_event) - dlen);
+
+			if (custom + iwe->u.data.length > end) {
+				DEBUG_WARN("Invalid buffer length received in the event iwe->u.data.length %d\n", iwe->u.data.length);
+				return -1;
+			}
+
+			/*
+			 * Check the flags of iw event if it indicates the IW authorized signal.
+			 */
+			if (iwe->u.data.flags == ECM_INTERFACE_WIFI_EVENT_NODE_AUTH) {
+				dbuf = kzalloc((iwe->u.data.length + 1), GFP_KERNEL);
+				if (!dbuf) {
+					DEBUG_WARN("Failed to allocated a buffer to process the custom event");
+					return -1;
+				}
+
+				/*
+				 * Copy the user content of custom event to extract information.
+				 */
+				memset(dbuf, 0, iwe->u.data.length);
+				memcpy(dbuf, custom, iwe->u.data.length);
+
+				wifi_ev_au = (struct ecm_interface_wifi_event_node_authorized *)dbuf;
+
+				DEBUG_INFO("STA %pM is authorized \n", (uint8_t *)wifi_ev_au->mac_addr);
+				ecm_interface_node_connections_defunct_by_type((uint8_t *)wifi_ev_au->mac_addr, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
+
+				kfree(dbuf);
+			}
+
+			return 0;
+		}
+
+		if ((iwe->len > sizeof(struct iw_event)) || (iwe->len + pos) > end) {
 			return -1;
 		}
 
@@ -7996,11 +8481,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 		 */
 		memcpy(&iwe_buf, pos, iwe->len);
 
-		if (iwe->cmd == IWEVREGISTERED) {
-			DEBUG_INFO("STA %pM joining\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_defunct_by_type((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE,
-								ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
-		} else if (iwe->cmd == IWEVEXPIRED) {
+		if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
 			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);
 		} else {
@@ -8014,7 +8495,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 }
 
 /*
- * ecm_interface_wifi_event_newlink
+ * ecm_interface_wifi_event_newlink()
  *	Link event handler
  */
 static int ecm_interface_wifi_event_newlink(struct ifinfomsg *ifi, unsigned char *buf, size_t len)
@@ -8039,10 +8520,10 @@ static int ecm_interface_wifi_event_newlink(struct ifinfomsg *ifi, unsigned char
 }
 
 /*
- * ecm_interface_wifi_event_handler
+ * ecm_interface_wifi_event_handler()
  *	Netlink event handler
  */
-static int ecm_interface_wifi_event_handler(unsigned char *buf, int len)
+static int ecm_interface_wifi_event_handler(void *buf, int len)
 {
 	struct nlmsghdr *nlh;
 	struct ifinfomsg *ifi;
@@ -8076,40 +8557,7 @@ static int ecm_interface_wifi_event_handler(unsigned char *buf, int len)
 }
 
 /*
- * ecm_interface_wifi_event_rx
- *	Receive netlink message from socket
- */
-static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *addr, unsigned char *buf, int len)
-{
-	struct msghdr msg;
-	struct iovec  iov;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	mm_segment_t oldfs = get_fs();
-#endif
-	int size;
-
-	iov.iov_base = buf;
-	iov.iov_len  = len;
-
-	msg.msg_flags = 0;
-	msg.msg_name  = addr;
-	msg.msg_namelen = sizeof(struct sockaddr_nl);
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	set_fs(KERNEL_DS);
-#endif
-	iov_iter_init(&msg.msg_iter, READ, &iov, 1, len);
-	size = sock_recvmsg(sock, &msg, msg.msg_flags);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	set_fs(oldfs);
-#endif
-
-	return size;
-}
-
-/*
- * ecm_interface_wifi_event_thread
+ * ecm_interface_wifi_event_thread()
  */
 static void ecm_interface_wifi_event_thread(void)
 {
@@ -8148,7 +8596,7 @@ static void ecm_interface_wifi_event_thread(void)
 		if (size < 0) {
 			DEBUG_WARN("netlink rx error\n");
 		} else {
-			ecm_interface_wifi_event_handler(buf, size);
+			ecm_interface_wifi_event_handler((void *)buf, size);
 		}
 	}
 
@@ -8157,9 +8605,8 @@ exit2:
 	sock_release(__ewn.sock);
 exit1:
 	__ewn.sock = NULL;
-
-	return;
 }
+#endif
 
 /*
  * ecm_interface_wifi_event_start()
@@ -8186,7 +8633,7 @@ int ecm_interface_wifi_event_stop(void)
 {
 	int err;
 
-	if (__ewn.thread == NULL) {
+	if (__ewn.thread == NULL || __ewn.sock == NULL) {
 		return 0;
 	}
 

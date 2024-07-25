@@ -1053,6 +1053,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 * WIFI information
 	 * Set up the flow and return mark.
 	 */
+	pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_WIFI_TAG;
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
 		if (pr->flow_mark) {
 			pd4rc->wifi_rule.flow_mark = pr->flow_mark;
@@ -1826,6 +1827,8 @@ void ecm_ppe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance
 	feci->regenerate = ecm_ppe_common_connection_regenerate;
 	feci->defunct = ecm_ppe_ported_ipv4_connection_defunct_callback;
 
+	ecm_ppe_common_init_fe_info(&feci->fe_info);
+
 	feci->get_stats_bitmap = ecm_front_end_common_get_stats_bitmap;
 	feci->set_stats_bitmap = ecm_front_end_common_set_stats_bitmap;
 	feci->fe_info.front_end_flags = flags;
@@ -1835,10 +1838,10 @@ void ecm_ppe_ported_ipv4_connection_set(struct ecm_front_end_connection_instance
 	 * Just in case this function is called while switching AE to PPE
 	 * let's reset the failure stats which was increased by the old AE.
 	 */
-	feci->stats.driver_fail_total = 0;
-	feci->stats.driver_fail = 0;
-	feci->stats.ae_nack = 0;
-	feci->stats.ae_nack_total = 0;
+        feci->stats.driver_fail_total = 0;
+        feci->stats.driver_fail = 0;
+        feci->stats.ae_nack = 0;
+        feci->stats.ae_nack_total = 0;
 }
 
 /*

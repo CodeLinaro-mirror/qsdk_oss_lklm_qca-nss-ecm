@@ -195,6 +195,19 @@ uint32_t ecm_fe_feature_list[ECM_FRONT_END_TYPE_MAX] = {
 	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
 	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_SRC_IF_CHECK,
 #endif
+
+	/*
+	 * SFE_PPE type
+	 */
+#ifndef ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE
+	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
+	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_MULTICAST,
+#else
+	ECM_FE_FEATURE_SFE | ECM_FE_FEATURE_NON_PORTED | ECM_FE_FEATURE_CONN_LIMIT |
+	ECM_FE_FEATURE_OVS_BRIDGE | ECM_FE_FEATURE_OVS_VLAN | ECM_FE_FEATURE_BRIDGE |
+	ECM_FE_FEATURE_BONDING | ECM_FE_FEATURE_PPE | ECM_FE_FEATURE_MULTICAST | ECM_FE_FEATURE_SRC_IF_CHECK,
+#endif
 };
 
 struct ecm_ae_precedence ae_precedence[ECM_AE_PRECEDENCE_MAX + 1];
@@ -250,6 +263,39 @@ bool ecm_front_end_is_feature_supported(enum ecm_fe_feature feature)
 	enum ecm_front_end_type type = ecm_front_end_type_get();
 
 	return !!(ecm_fe_feature_list[type] & feature);
+}
+
+/*
+ * ecm_front_end_is_xfrm_transport_inner
+ * 	Return true if it's a inner packet destined for
+ * 	IPsec transport mode encap
+ */
+bool ecm_front_end_is_xfrm_transport_inner(struct sk_buff *skb)
+{
+#ifdef CONFIG_XFRM
+	struct dst_entry *dst;
+
+	/*
+	 * IPsec transport mode inner is only offloaded for TunnelOverTunnel usecase,
+	 * which will be pushed only for encap direction.
+	 * dst->xfrm is valid if packet is destined for xfrm
+	 */
+	dst = skb_dst(skb);
+	if (dst && dst->xfrm) {
+		struct xfrm_state *xs;
+
+		xs = dst->xfrm;
+
+		/*
+		 * Avoid pre encap fragmentation for IPsec transport mode
+		 */
+		if (xs->props.mode == XFRM_MODE_TRANSPORT) {
+			return true;
+		}
+	}
+#endif
+
+	return false;
 }
 
 /*
@@ -1301,7 +1347,7 @@ static void ecm_front_end_non_ported_ipv6_connection_update(struct ecm_front_end
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_non_ported_ipv6_connection_set(feci, 0);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -1332,7 +1378,7 @@ static void ecm_front_end_non_ported_ipv4_connection_update(struct ecm_front_end
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	case ECM_FRONT_END_ENGINE_PPE:
-		DEBUG_ASSERT(NULL, "%px: cannot switch to PPE from any other AEs\n", feci);
+		ecm_ppe_non_ported_ipv4_connection_set(feci, 0);
 		break;
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
@@ -1463,7 +1509,7 @@ bool ecm_front_end_connection_limit_reached(enum ecm_front_end_engine ae_type, i
 bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_connection_instance *feci)
 {
 	int i;
-	int new_ae_type = ECM_AE_PRECEDENCE_MAX;
+	int new_ae_type = ECM_FRONT_END_ENGINE_MAX;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
