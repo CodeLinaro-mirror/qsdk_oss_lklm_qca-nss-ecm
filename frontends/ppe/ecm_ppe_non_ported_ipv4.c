@@ -402,7 +402,10 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_bridge_address_get(ii, from_ppe_iface_address);
-
+			if (is_valid_ether_addr(from_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd4rc->src_mac_rule.flow_src_mac, from_ppe_iface_address);
+				pd4rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_FLOW;
+			}
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
@@ -420,6 +423,10 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, from_ppe_iface_address);
+			if (is_valid_ether_addr(from_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd4rc->src_mac_rule.flow_src_mac, from_ppe_iface_address);
+				pd4rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_FLOW;
+			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_ppe_iface_address);
 #else
 			rule_invalid = true;
@@ -669,7 +676,10 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_bridge_address_get(ii, to_ppe_iface_address);
-
+			if (is_valid_ether_addr(to_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd4rc->src_mac_rule.return_src_mac, to_ppe_iface_address);
+				pd4rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_RETURN;
+			}
 			DEBUG_TRACE("%px: Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 			break;
 
@@ -687,6 +697,10 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, to_ppe_iface_address);
+			if (is_valid_ether_addr(to_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd4rc->src_mac_rule.return_src_mac, to_ppe_iface_address);
+				pd4rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_RETURN;
+			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_ppe_iface_address);
 #else
 			rule_invalid = true;
