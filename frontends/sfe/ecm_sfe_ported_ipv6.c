@@ -1276,8 +1276,18 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 #ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
 	if (feci->ci->vlan_filter_valid) {
-		ecm_sfe_common_ipv6_vlan_filter_set(feci->ci, nircm);
+		DEBUG_INFO("%px: Bridge vlan filter is valid. Updating the create rule\n", feci);
+		if (ecm_sfe_common_vlan_filter_set(feci->ci, &nircm->flow_vlan_filter_rule, true) &&
+			ecm_sfe_common_vlan_filter_set(feci->ci, &nircm->return_vlan_filter_rule, false)) {
+			/*
+			 * Both flow and return directions are valid.
+			 */
+			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_FILTER_VALID;
+		} else {
+			nircm->valid_flags &= ~SFE_RULE_CREATE_VLAN_FILTER_VALID;
+		}
 	}
+
 
 	/*
 	 * if bridge vlan filtering is enabled
@@ -1578,12 +1588,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			"secondary_ingress_vlan_tag: %x\n"
 			"secondary_egress_vlan_tag: %x\n"
 			"flags: rule=%x valid=%x src_mac_valid=%x\n"
-#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
-			"flow_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
-			"flow_vlan_filter_egress_vlan_tag: %x, flags: %x\n"
-			"return_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
-			"return_vlan_filter_egress_vlan_tag: %x, flags: %x\n"
-#endif
 			"return_pppoe_session_id: %u\n"
 			"return_pppoe_remote_mac: %pM\n"
 			"flow_pppoe_session_id: %u\n"
@@ -1618,12 +1622,6 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			nircm->rule_flags,
 			nircm->valid_flags,
 			nircm->src_mac_rule.mac_valid_flags,
-#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
-			nircm->flow_vlan_filter_rule.ingress_vlan_tag, nircm->flow_vlan_filter_rule.ingress_flags,
-			nircm->flow_vlan_filter_rule.egress_vlan_tag, nircm->flow_vlan_filter_rule.egress_flags,
-			nircm->return_vlan_filter_rule.ingress_vlan_tag, nircm->return_vlan_filter_rule.ingress_flags,
-			nircm->return_vlan_filter_rule.egress_vlan_tag, nircm->return_vlan_filter_rule.egress_flags,
-#endif
 			nircm->pppoe_rule.return_pppoe_session_id,
 			nircm->pppoe_rule.return_pppoe_remote_mac,
 			nircm->pppoe_rule.flow_pppoe_session_id,
@@ -1634,6 +1632,17 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			nircm->dscp_rule.return_dscp,
 			nircm->mark_rule.flow_mark,
 			nircm->mark_rule.return_mark);
+
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+	DEBUG_INFO("flow_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
+			"flow_vlan_filter_egress_vlan_tag: %x, flags: %x\n"
+			"return_vlan_filter_ingress_vlan_tag: %x, flags: %x\n"
+			"return_vlan_filter_egress_vlan_tag: %x, flags: %x\n",
+			nircm->flow_vlan_filter_rule.ingress_vlan_tag, nircm->flow_vlan_filter_rule.ingress_flags,
+			nircm->flow_vlan_filter_rule.egress_vlan_tag, nircm->flow_vlan_filter_rule.egress_flags,
+			nircm->return_vlan_filter_rule.ingress_vlan_tag, nircm->return_vlan_filter_rule.ingress_flags,
+			nircm->return_vlan_filter_rule.egress_vlan_tag, nircm->return_vlan_filter_rule.egress_flags);
+#endif
 
 	if (protocol == IPPROTO_TCP) {
 		DEBUG_INFO("flow_window_scale: %u\n"
