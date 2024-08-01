@@ -85,6 +85,9 @@
 #include "ecm_ppe_common.h"
 #include "ecm_front_end_common.h"
 #include "ecm_ppe_stats_v6.h"
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+#include "ecm_classifier_wifi.h"
+#endif
 
 static int ecm_ppe_non_ported_ipv6_accelerated_count;		/* Number of Non-Ported connections currently offloaded */
 
@@ -882,6 +885,35 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_QINQ_TAG) {
 		pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag = pr->ingress_vlan_tag[1];
 		pd6rc->vlan_rule.secondary_vlan.egress_vlan_tag = pr->egress_vlan_tag[1];
+	}
+#endif
+
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+	/*
+	 * WIFI information
+	 * Set up the flow and return mark.
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_WIFI_TAG;
+		if (pr->flow_mark) {
+			pd6rc->wifi_rule.flow_mark = pr->flow_mark;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_WIFI_MDATA;
+		}
+
+		if (pr->return_mark) {
+			pd6rc->wifi_rule.return_mark = pr->return_mark;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_WIFI_MDATA;
+		}
+
+		if (pr->flow_wifi_ds_node_id != ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID) {
+			pd6rc->wifi_rule.flow_ds_node_mdata = pr->flow_wifi_ds_node_id;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_WIFI_DS;
+		}
+
+		if (pr->return_wifi_ds_node_id != ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID) {
+			pd6rc->wifi_rule.return_ds_node_mdata = pr->return_wifi_ds_node_id;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_WIFI_DS;
+		}
 	}
 #endif
 
