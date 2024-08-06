@@ -1348,6 +1348,12 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	DEBUG_TRACE("%px: ECM IPv4 Ported Rule ready to be pushed in PPE:%px\n", feci, feci->ci);
 
 	/*
+	 * Get the valid and rule flags before rule create
+	 */
+	feci->fe_info.valid_flags = pd4rc->valid_flags;
+	feci->fe_info.rule_flags = pd4rc->rule_flags;
+
+	/*
 	 * Call the rule create function
 	 */
 	pdrt = ppe_drv_v4_create(pd4rc);
