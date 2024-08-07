@@ -1111,6 +1111,12 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	DEBUG_TRACE("%px: ECM IPv6 Non-Ported Rule ready to be pushed in PPE:%px\n", feci, feci->ci);
 
 	/*
+	 * Get the valid and rule flags before rule create
+	 */
+	feci->fe_info.valid_flags = pd6rc->valid_flags;
+	feci->fe_info.rule_flags = pd6rc->rule_flags;
+
+	/*
 	 * Call the rule create function
 	 */
 	ppe_tx_status = ppe_drv_v6_create(pd6rc);
