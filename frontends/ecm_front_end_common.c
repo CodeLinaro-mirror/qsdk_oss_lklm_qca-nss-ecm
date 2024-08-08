@@ -1543,7 +1543,21 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 		feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE;
 		goto change_ae;
 	}
+	/*
+	 * Check the accel_mode of the existing connection.
+	 * If it is set to one of the FAIL modes and the current accel engine is ppe, this means that, we tried to accelerate
+	 * the connection to ppe from sfe and it is not accepted. We can fallback to sfe.
+	 */
+	if ((selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) && ((ECM_FRONT_END_ACCELERATION_FAILED(feci->accel_mode)
+					|| (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED))
+				&&  (feci->accel_engine == ECM_FRONT_END_ENGINE_PPE)
+				&& (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE))) {
 
+		feci->next_accel_engine = ECM_FRONT_END_ENGINE_SFE;
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		new_ae_type = feci->next_accel_engine;
+		goto change_ae;
+	}
 	/*
 	 * Check the accel_mode of the existing connection.
 	 * If it is set to one of the FAIL modes, this means that, we tried to accelerate
