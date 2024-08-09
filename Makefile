@@ -427,6 +427,11 @@ ccflags-$(ECM_BRIDGE_VLAN_FILTERING_ENABLE) += -DECM_BRIDGE_VLAN_FILTERING_ENABL
 ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
 
 # #############################################################################
+# Define ECM_256M_PROFILE=y in order to reduce hash slots for LM256 profile.
+# #############################################################################
+ccflags-$(ECM_256M_PROFILE) += -DECM_256M_PROFILE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.

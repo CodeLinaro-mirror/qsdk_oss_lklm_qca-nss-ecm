@@ -74,7 +74,11 @@ struct ecm_db_mapping_instance *ecm_db_mappings = NULL;
 /*
  * Mapping hash table
  */
+#ifdef ECM_256M_PROFILE
+#define ECM_DB_MAPPING_HASH_SLOTS 1024
+#else
 #define ECM_DB_MAPPING_HASH_SLOTS 32768
+#endif
 static struct ecm_db_mapping_instance **ecm_db_mapping_table;
 							/* Slots of the mapping hash table */
 static int *ecm_db_mapping_table_lengths;

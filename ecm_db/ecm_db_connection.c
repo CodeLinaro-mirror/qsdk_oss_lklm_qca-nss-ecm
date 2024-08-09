@@ -90,7 +90,11 @@ struct ecm_db_connection_instance *ecm_db_connections = NULL;
 /*
  * Connection hash table
  */
+#ifdef ECM_256M_PROFILE
+#define ECM_DB_CONNECTION_HASH_SLOTS 1024
+#else
 #define ECM_DB_CONNECTION_HASH_SLOTS 32768
+#endif
 static struct ecm_db_connection_instance **ecm_db_connection_table;
 						/* Slots of the connection hash table */
 static int *ecm_db_connection_table_lengths;
@@ -100,7 +104,11 @@ static int ecm_db_connection_count = 0;		/* Number of connections allocated */
 /*
  * Connection serial number hash table
  */
+#ifdef ECM_256M_PROFILE
+#define ECM_DB_CONNECTION_SERIAL_HASH_SLOTS 1024
+#else
 #define ECM_DB_CONNECTION_SERIAL_HASH_SLOTS 32768
+#endif
 struct ecm_db_connection_instance **ecm_db_connection_serial_table;
 						/* Slots of the connection serial hash table */
 int *ecm_db_connection_serial_table_lengths;

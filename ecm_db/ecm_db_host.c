@@ -74,7 +74,11 @@ struct ecm_db_host_instance *ecm_db_hosts;
 /*
  * Host hash table
  */
+#ifdef ECM_256M_PROFILE
+#define ECM_DB_HOST_HASH_SLOTS 1024
+#else
 #define ECM_DB_HOST_HASH_SLOTS 32768
+#endif
 static struct ecm_db_host_instance **ecm_db_host_table;	/* Slots of the host hash table */
 static int *ecm_db_host_table_lengths;			/* Tracks how long each chain is */
 
