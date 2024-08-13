@@ -1224,6 +1224,8 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 
 	flow_input_params->src_ifindex = src_dev->ifindex;
 	return_input_params->dst_ifindex = src_dev->ifindex;
+	flow_input_params->src_dev = return_input_params->dest_dev = src_dev;
+	flow_input_params->dest_dev = return_input_params->src_dev = dest_dev;
 
 	/*
 	 *  Get the netdevice addres in case of wds repeater cases.
