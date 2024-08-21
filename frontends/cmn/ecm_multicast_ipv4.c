@@ -658,7 +658,7 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 		 */
 		if (ecm_front_end_is_bridge_device(in_dev)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-				|| ecm_front_end_is_ovs_bridge_device(in_dev)
+				|| ovsmgr_is_ovs_master(in_dev)
 #endif
 		   ) {
 			int32_t if_cnt_bridge;

@@ -1007,7 +1007,7 @@ bool ecm_interface_multicast_check_for_br_dev(uint32_t dest_if[], uint8_t max_if
 
 		if (ecm_front_end_is_bridge_device(br_dev)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			|| ecm_front_end_is_ovs_bridge_device(br_dev)
+			|| ovsmgr_is_ovs_master(br_dev)
 #endif
 				) {
 			dev_put(br_dev);
@@ -1040,7 +1040,7 @@ bool ecm_interface_multicast_check_for_ovs_br_dev(uint32_t dest_if[], uint8_t ma
 			continue;
 		}
 
-		if (ecm_front_end_is_ovs_bridge_device(br_dev)) {
+		if (ovsmgr_is_ovs_master(br_dev)) {
 			dev_put(br_dev);
 			return true;
 		}
@@ -1934,6 +1934,56 @@ static struct ecm_db_iface_instance *ecm_interface_ovs_bridge_interface_establis
 	spin_unlock_bh(&ecm_interface_lock);
 
 	DEBUG_TRACE("%px: OVS bridge iface established\n", nii);
+	return nii;
+}
+
+/*
+ * ecm_interface_ovs_internal_interface_establish()
+ *	Returns a reference to a iface of the OVS INTERNAL type, possibly creating one if necessary.
+ * Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_ovs_internal_interface_establish(struct ecm_db_interface_info_ovs_internal *type_info,
+							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish OVS INTERNAL iface: %s with address: %pM, MTU: %d, if num: %d, accel engine if id: %d\n",
+			dev_name, type_info->address, mtu, dev_interface_num, ae_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_ovs_internal(type_info->address, dev_interface_num);
+	if (ii) {
+		DEBUG_TRACE("%px: iface established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_ovs_internal(type_info->address, dev_interface_num);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+	ecm_db_iface_add_ovs_internal(nii, type_info->address, dev_name,
+			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%px: OVS INTERNAL iface established\n", nii);
 	return nii;
 }
 #endif
@@ -3078,6 +3128,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		struct ecm_db_interface_info_ovs_bridge ovsb;		/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
+		struct ecm_db_interface_info_ovs_internal ovsi;		/* type == ECM_DB_IFACE_TYPE_OVS_INTERNAL */
 #endif
 	} type_info;
 
@@ -3269,14 +3320,33 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 			goto identifier_update;
 		}
 
-		/*
-		 * The below call would return true for internal ports of ovs bridge for which
-		 * offload is not supported. Since ovsmgr_is_ovs_master(dev) it would only match
-		 * for ports which are not bridge ports.
-		 */
 		if (ecm_front_end_is_ovs_bridge_device(dev)) {
-			DEBUG_WARN("%px: ECM offload not supported for OVS internal port: %s\n", feci, dev->name);
-			return NULL;
+			/*
+			 * TODO: When OVS internal interface support is added to host datapath platforms, remove this check.
+			 *
+			 * OVS internal port is supported only for NSS acceleration for now.
+			 * NSS frontend is enabled only on the supported platforms. So, if ECM is
+			 * initialized with the frontends which are supported for host datapath,
+			 * we will not accelerate these flows. NSS frontend is not enabled with another
+			 * frontend which can be used as a backup acceleration engine.
+			 */
+			if (feci->accel_engine != ECM_FRONT_END_ENGINE_NSS) {
+				DEBUG_WARN("%px: OVS internal port is supported only for NSS acceleration\n", feci);
+				return NULL;
+			}
+			/*
+			 * OVS Internal port
+			 */
+			ether_addr_copy(type_info.ovsi.address, dev->dev_addr);
+
+			DEBUG_TRACE("%px: Net device: %px is OVS INTERNAL port, mac: %pM\n",
+					feci, dev, type_info.ovsi.address);
+
+			/*
+			 * Establish this type of interface
+			 */
+			ii = ecm_interface_ovs_internal_interface_establish(&type_info.ovsi, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+			goto identifier_update;
 		}
 #endif
 
@@ -4014,7 +4084,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 				 */
 				if (ecm_front_end_is_bridge_device(dest_dev)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-					|| ecm_front_end_is_ovs_bridge_device(dest_dev)
+					|| ovsmgr_is_ovs_master(dest_dev)
 #endif
 				   ) {
 					if (!br_slave_dev) {
@@ -4036,6 +4106,12 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 					break;
 				}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+				if (ecm_front_end_is_ovs_bridge_device(dest_dev)) {
+					DEBUG_WARN("%px: OVS internal port is not supported for multicast flows\n", feci);
+					goto fail;
+				}
+#endif
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
 				/*
 				 * MAC-VLAN?
@@ -4424,7 +4500,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 		dest_dev_type = dest_dev->type;
 		if (ecm_front_end_is_bridge_device(dest_dev)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			|| ecm_front_end_is_ovs_bridge_device(dest_dev)
+			|| ovsmgr_is_ovs_master(dest_dev)
 #endif
 		   ) {
 			struct net_device *mc_br_slave_dev = NULL;
@@ -5365,7 +5441,10 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				}
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-				if (ovsmgr_is_ovs_master(dest_dev)) {
+				/*
+				 * Lookup for the next netdev is the same for OVS master bridge and the OVS internal bridge interfaces.
+				 */
+				if (ovsmgr_is_ovs_master(dest_dev) || ecm_front_end_is_ovs_bridge_device(dest_dev)) {
 					ip_addr_t look_up_addr;
 					uint8_t mac_addr[ETH_ALEN];
 					struct net_device *tmp_dev;
@@ -6268,7 +6347,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 				/*
 				 * OVS_BRIDGE?
 				 */
-				if (ecm_front_end_is_ovs_bridge_device(dest_dev)) {
+				if (ovsmgr_is_ovs_master(dest_dev)) {
 					/*
 					 * Bridge
 					 * Figure out which port device the skb will go to using the dest_addr.
@@ -6797,7 +6876,6 @@ skip_bridge_refresh:
 			dev_put(dev);
 			continue;
 #endif
-
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 			DEBUG_INFO("BRIDGE\n");
 			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
@@ -6814,7 +6892,6 @@ skip_bridge_refresh:
 			br_dev_update_stats(dev, &stats);
 			dev_put(dev);
 			continue;
-
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 			DEBUG_INFO("OVS BRIDGE\n");
@@ -6827,8 +6904,33 @@ skip_bridge_refresh:
 			ovsmgr_bridge_interface_stats_update(dev, rx_packets, rx_bytes, tx_packets, tx_bytes);
 			dev_put(dev);
 			continue;
-#endif
 
+		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
+		{
+			/*
+			 * TODO: This code block can be implemented as separate function in ovsmgr module.
+			 */
+			struct pcpu_sw_netstats *ovs_stats;
+			DEBUG_INFO("OVS INTERNAL\n");
+
+			ovs_stats = this_cpu_ptr(dev->tstats);
+			u64_stats_update_begin(&ovs_stats->syncp);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+			ovs_stats->rx_packets += rx_packets;
+			ovs_stats->rx_bytes += rx_bytes;
+			ovs_stats->tx_packets += tx_packets;
+			ovs_stats->tx_bytes += tx_bytes;
+#else
+			u64_stats_add(&ovs_stats->rx_packets, rx_packets);
+			u64_stats_add(&ovs_stats->rx_bytes, rx_bytes);
+			u64_stats_add(&ovs_stats->tx_packets, tx_packets);
+			u64_stats_add(&ovs_stats->tx_bytes, tx_bytes);
+#endif
+			u64_stats_update_end(&ovs_stats->syncp);
+			dev_put(dev);
+			continue;
+		}
+#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		case ECM_DB_IFACE_TYPE_VLAN:
 			DEBUG_INFO("VLAN\n");
@@ -9155,7 +9257,7 @@ static void ecm_interface_multicast_ovs_flow_update_connections(struct ovsmgr_dp
 	/*
 	 * Get the OVS bridge device.
 	 */
-	if (ecm_front_end_is_ovs_bridge_device(flow->outdev)) {
+	if (ovsmgr_is_ovs_master(flow->outdev)) {
 		brdev = flow->outdev;
 	} else if (ecm_interface_is_ovs_bridge_port(flow->outdev)) {
 		brdev = ovsmgr_dev_get_master(flow->outdev);

@@ -622,6 +622,11 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, from_sfe_iface_address);
+			if (is_valid_ether_addr(from_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, from_sfe_iface_address);
 #else
 			rule_invalid = true;
@@ -942,6 +947,11 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			ecm_db_iface_ovs_bridge_address_get(ii, to_sfe_iface_address);
+			if (is_valid_ether_addr(to_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_sfe_iface_address);
 #else
 			rule_invalid = true;
