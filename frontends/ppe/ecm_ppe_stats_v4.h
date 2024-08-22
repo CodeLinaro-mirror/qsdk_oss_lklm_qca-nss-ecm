@@ -102,6 +102,8 @@ enum ecm_ppe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in ported flow as decelerate was pending */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_PPE_ACCEL_FAILED,
 	/* Number of IPv4 packets ignored in ported flow as the ppe_drv_v4_create() failed */
+	ECM_PPE_STATS_V4_EXCEPTION_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in ported flow as bridge vlan filtering not supported in PPE */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_MAX
 };
 
@@ -177,6 +179,8 @@ enum ecm_ppe_stats_v4_exception_non_ported_events {
 	/* Number of IPv4 packets ignored in non-ported flow as decelerate was pending */
 	ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED_PPE_ACCEL_FAILED,
 	/* Number of IPv4 packets ignored in non-ported flow as the ppe_drv_v4_create() failed */
+	ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in non-ported flow as bridge vlan filtering not supported in PPE */
 	ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED_MAX
 };
 #endif

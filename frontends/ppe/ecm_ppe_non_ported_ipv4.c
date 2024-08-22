@@ -231,6 +231,15 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		return;
 	}
 
+#ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
+	if (feci->ci->vlan_filter_valid) {
+		ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED);
+		DEBUG_TRACE("%px: PPE doesn't support bridge vlan filtering for this flow\n", feci);
+		ecm_ppe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_FAIL_RULE);
+		return;
+	}
+#endif
+
 	pd4rc = (struct ppe_drv_v4_rule_create *)kzalloc(sizeof(struct ppe_drv_v4_rule_create), GFP_ATOMIC | __GFP_NOWARN);
 	if (!pd4rc) {
 		ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V4_EXCEPTION_NON_PORTED_NO_MEM);
