@@ -544,6 +544,17 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
 
 	/*
+	 * If there is not src / destination dev, make the classifier relevance NO.
+	 */
+	if (!src_dev || !dest_dev) {
+		DEBUG_TRACE("%px: Not able to find the dev information, make the classifier not relevant !\n", ci);
+		ecm_db_connection_deref(ci);
+		spin_lock_bh(&ecm_classifier_mscs_lock);
+		cmscsi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		goto mscs_classifier_out;
+	}
+
+	/*
 	 * Make the classifier relevance NO for non wlan flows.
 	 */
 	if (!src_dev->ieee80211_ptr && !dest_dev->ieee80211_ptr) {
