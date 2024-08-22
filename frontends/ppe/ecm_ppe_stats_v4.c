@@ -70,7 +70,8 @@ static const char *ecm_ppe_stats_v4_exception_ported_name_str[] = {
 	"v4_exception_ported_regen_occurred",
 	"v4_exception_ported_immediate_flush",
 	"v4_exception_ported_decelerate_pending",
-	"v4_exception_ported_ppe_accel_failed"
+	"v4_exception_ported_ppe_accel_failed",
+	"v4_exception_ported_bridge_vlan_filter_unsupported"
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
@@ -109,7 +110,8 @@ static const char *ecm_ppe_stats_v4_exception_non_ported_name_str[] = {
 	"v4_exception_non_ported_regen_occurred",
 	"v4_exception_non_ported_immediate_flush",
 	"v4_exception_non_ported_decelerate_pending",
-	"v4_exception_non_ported_ppe_accel_failed"
+	"v4_exception_non_ported_ppe_accel_failed",
+	"v4_exception_non_ported_bridge_vlan_filter_unsupported"
 };
 #endif
 
