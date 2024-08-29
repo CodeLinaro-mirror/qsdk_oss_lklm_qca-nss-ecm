@@ -5262,6 +5262,11 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 		 */
 		ii = ecm_interface_establish_and_ref(feci, dest_dev, skb);
 
+		if (!(dest_dev->flags & IFF_UP)) {
+			DEBUG_WARN("%px: dest interface(%s) is not up\n", feci, dest_dev->name);
+			goto done;
+		}
+
 		/*
 		 * If the interface could not be established then we abort
 		 */
