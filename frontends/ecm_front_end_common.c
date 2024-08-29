@@ -131,6 +131,8 @@ unsigned int ecm_front_end_ppe_fse_enable = 1;
 #define ECM_FRONT_END_DENIED_PORTS_HASH_BITS 6
 #define ECM_FRONT_END_DENIED_PORTS_HTABLE_SIZE (1 << ECM_FRONT_END_DENIED_PORTS_HASH_BITS)
 
+#define ECM_FRONT_END_QDISC_NOQUEUE "noqueue"
+
 /*
  * Denied acceleration port hash tables and port counts in the tables.
  */
@@ -1847,9 +1849,10 @@ bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num)
 bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 {
 	struct net_device *dev;
-        struct netdev_queue *txq;
-        struct Qdisc *q;
-        int i;
+	struct netdev_queue *txq;
+	struct Qdisc *q;
+	struct Qdisc *sleeping_q;
+	int i;
 #if defined(CONFIG_NET_CLS_ACT) && defined(CONFIG_NET_EGRESS)
 	struct mini_Qdisc *miniq;
 #endif
@@ -1866,6 +1869,15 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 		txq = netdev_get_tx_queue(dev, i);
 		q = rcu_dereference_bh(txq->qdisc);
 		if ((!q) || (!q->enqueue)) {
+			continue;
+		}
+
+		/*
+		 * if sleeping qdisc is noqueue, ignore
+		 */
+		sleeping_q = rtnl_dereference(txq->qdisc_sleeping);
+		if (sleeping_q && !strncmp(ECM_FRONT_END_QDISC_NOQUEUE,
+					sleeping_q->ops->id, strlen(ECM_FRONT_END_QDISC_NOQUEUE))) {
 			continue;
 		}
 
