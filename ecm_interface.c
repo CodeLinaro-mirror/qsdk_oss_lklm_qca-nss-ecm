@@ -2933,8 +2933,10 @@ static struct net_device *ecm_interface_ovs_bridge_port_dev_get_and_ref(struct s
 			flow.tuple.dst_port = udp_hdr->dest;
 		} else if (protocol == IPPROTO_GRE) {
 			DEBUG_TRACE("%px: Protocol is GRE\n", skb);
+		} else if (protocol == IPPROTO_ESP) {
+			DEBUG_TRACE("%px: Protocol is ESP\n", skb);
 		} else {
-			DEBUG_WARN("%px: Protocol is not udp/tcp/gre\n", skb);
+			DEBUG_WARN("%px: Protocol is not udp/tcp/gre/ESP\n", skb);
 			return NULL;
 		}
 
