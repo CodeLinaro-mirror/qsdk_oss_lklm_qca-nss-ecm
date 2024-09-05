@@ -659,31 +659,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #endif
 			break;
 
-		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Internal\n", feci);
-			if (interface_type_counts[ii_type] != 0) {
-				/*
-				 * Cannot cascade OVS internal interfaces
-				 */
-				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
-				break;
-			}
-
-			ecm_db_iface_ovs_internal_address_get(ii, from_nss_iface_address);
-			if (is_valid_ether_addr(from_nss_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_FLOW_VALID;
-				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
-			}
-
-			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, from_nss_iface_address);
-#else
-			rule_invalid = true;
-#endif
-			break;
-
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -971,31 +946,6 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			}
 
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_nss_iface_address);
-#else
-			rule_invalid = true;
-#endif
-			break;
-
-		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Internal\n", feci);
-			if (interface_type_counts[ii_type] != 0) {
-				/*
-				 * Cannot cascade OVS internal interfaces
-				 */
-				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
-				break;
-			}
-
-			ecm_db_iface_ovs_internal_address_get(ii, to_nss_iface_address);
-			if (is_valid_ether_addr(to_nss_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV4_SRC_MAC_RETURN_VALID;
-				nircm->valid_flags |= NSS_IPV4_RULE_CREATE_SRC_MAC_VALID;
-			}
-
-			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, to_nss_iface_address);
 #else
 			rule_invalid = true;
 #endif

@@ -529,7 +529,6 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 		case ECM_DB_IFACE_TYPE_BRIDGE:
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
-		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
 #endif
 			/*
 			 * If dev is a bridge port, we should use the bridge device for the MAC lookup and ARP request.
