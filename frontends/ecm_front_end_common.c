@@ -308,12 +308,6 @@ bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_heade
 {
 #ifdef CONFIG_XFRM
 	struct dst_entry *dst;
-	struct net *net;
-
-	net = dev_net(skb->dev);
-	if (likely(!net->xfrm.policy_count[XFRM_POLICY_OUT])) {
-		return false;
-	}
 
 	/*
 	 * Packet seen after output transformation. We use the IPCB(skb) to check
