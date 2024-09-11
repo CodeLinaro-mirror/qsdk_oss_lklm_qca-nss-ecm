@@ -1158,8 +1158,6 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 	struct net_device *local_dev;
 	struct net_device *lower_dev = NULL;
 	union vxlan_addr *src_ip, *remote_ip;
-	bool packet_type_v4 = true;
-	bool tunnel_type_v4 = true;
 
 	if (!skb) {
 		return -1;
@@ -1171,7 +1169,6 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		ECM_NIN4_ADDR_TO_IP_ADDR(daddr, ip_hdr(skb)->daddr);
 		break;
 	case ETH_P_IPV6:
-		packet_type_v4 = false;
 		ECM_NIN6_ADDR_TO_IP_ADDR(saddr, ipv6_hdr(skb)->saddr);
 		ECM_NIN6_ADDR_TO_IP_ADDR(daddr, ipv6_hdr(skb)->daddr);
 		break;
@@ -1186,7 +1183,7 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		if (lower_dev == local_dev) {
 			dev_put(local_dev);
 			dev_put(lower_dev);
-			DEBUG_TRACE("%p: VxLAN outer interface type.\n", skb);
+			DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
 			return 0;
 		}
 
@@ -1195,7 +1192,34 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		}
 
 		dev_put(lower_dev);
-		DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
+		DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
+		return 1;
+	}
+
+	/*
+	 * If lower dev is not specified for VxLAN-GPE, try to find the tunnel direction using skb details.
+	 */
+	if (vxlan_tun->cfg.flags & VXLAN_F_GPE) {
+		/*
+		 * For VxLAN-GPE skb tunnel info is set for the inner packet going for encapsulation.
+		 */
+		if (skb_tunnel_info(skb)) {
+			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
+			return 1;
+		}
+
+		/*
+		 * Now there are two possibilities, either its outer flow or inner flow post decapsulation.
+		 * For outer flow we should be able to find the local netdevice using source address.
+		 */
+		local_dev = ecm_interface_dev_find_by_local_addr(saddr);
+		if (local_dev) {
+			DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
+			dev_put(local_dev);
+			return 0;
+		}
+
+		DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
 		return 1;
 	}
 
@@ -1204,53 +1228,60 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 	 * One may assume that the packet must be inner since their type doesn't match. However, we need to verify that the tunnel has valid IP address
 	 * So, we shouldn't accelerate traffic if tunnel doesn't have valid IP address.
 	 */
-	DEBUG_TRACE("%p: lower device is not set, check with source IP address.\n", skb);
+	DEBUG_TRACE("%px: lower device is not set, check with source IP address.\n", skb);
 	src_ip = &vxlan_tun->cfg.saddr;
 	if (src_ip->sa.sa_family == AF_INET) {
 		if (src_ip->sin.sin_addr.s_addr != htonl(INADDR_ANY)) {
 			ECM_NIN4_ADDR_TO_IP_ADDR(vx_addr, src_ip->sin.sin_addr.s_addr);
 			ECM_IP_ADDR_COPY(packet_addr, saddr);
 		} else {
-			DEBUG_TRACE("%p: Src IP addr is not set. Check with remote IP addr.\n", skb);
+			DEBUG_TRACE("%px: Src IP addr is not set. Check with remote IP addr.\n", skb);
 			remote_ip = &vxlan_tun->cfg.remote_ip;
 			if (remote_ip->sin.sin_addr.s_addr == htonl(INADDR_ANY)) {
-				DEBUG_TRACE("%p: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
+				DEBUG_TRACE("%px: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
 				return -1;
 			}
 			ECM_NIN4_ADDR_TO_IP_ADDR(vx_addr, remote_ip->sin.sin_addr.s_addr);
 			ECM_IP_ADDR_COPY(packet_addr, daddr);
 		}
+
+		/*
+		 * If packet and tunnel in different INET, it must be inner direction
+		 */
+		if (ntohs(skb->protocol) != ETH_P_IP) {
+			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
+			return 1;
+		}
 	} else {
-		tunnel_type_v4 = false;
 		if (!ipv6_addr_any(&src_ip->sin6.sin6_addr)) {
 			ECM_NIN6_ADDR_TO_IP_ADDR(vx_addr, src_ip->sin6.sin6_addr);
 			ECM_IP_ADDR_COPY(packet_addr, saddr);
 		} else {
-			DEBUG_TRACE("%p: Src IP addr is not set. Check with remote IP addr.\n", skb);
+			DEBUG_TRACE("%px: Src IP addr is not set. Check with remote IP addr.\n", skb);
 			remote_ip = &vxlan_tun->cfg.remote_ip;
 			if (ipv6_addr_any(&remote_ip->sin6.sin6_addr)) {
-				DEBUG_TRACE("%p: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
+				DEBUG_TRACE("%px: Src/Remote IP addr are not set. Cannot determine tunnel direction.\n", skb);
 				return -1;
 			}
 			ECM_NIN6_ADDR_TO_IP_ADDR(vx_addr, remote_ip->sin6.sin6_addr);
 			ECM_IP_ADDR_COPY(packet_addr, daddr);
 		}
-	}
 
-	/*
-	 * If packet and tunnel in different INET, it must be inner direction
-	 */
-	if (tunnel_type_v4 != packet_type_v4) {
-		DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
-		return 1;
+		/*
+		 * If packet and tunnel in different INET, it must be inner direction
+		 */
+		if (ntohs(skb->protocol) != ETH_P_IPV6) {
+			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
+			return 1;
+		}
 	}
 
 	if (ECM_IP_ADDR_MATCH(vx_addr, packet_addr)) {
-		DEBUG_TRACE("%p: VxLAN outer interface type.\n", skb);
+		DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
 		return 0;
 	}
 
-	DEBUG_TRACE("%p: VxLAN inner interface type.\n", skb);
+	DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
 	return 1;
 }
 
