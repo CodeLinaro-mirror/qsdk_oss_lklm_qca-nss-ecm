@@ -231,11 +231,7 @@ static inline struct net_device *ecm_classifier_ovs_interface_get_and_ref(struct
 			}
 
 		} else {
-			/*
-			 * If the lookup is not intended for a physical OVS port, we return the OVS master bridge or the OVS internal bridge
-			 * port in the hierarchy. When there is a OVS internal bridge port in the hierarchy, OVS master bridge is not there.
-			 */
-			if (ovsmgr_is_ovs_master(dev) || ecm_front_end_is_ovs_bridge_device(dev)) {
+			if (ovsmgr_is_ovs_master(dev)) {
 				ecm_db_connection_interfaces_deref(interfaces, if_first);
 				DEBUG_TRACE("%px: %s_dev: %s at %d index is an OVS bridge dev\n", ci, ecm_db_obj_dir_strings[dir], dev->name, i);
 				return dev;
@@ -720,11 +716,6 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 	 * for tunnel rule
 	 * 	FROM hierarchy will have gretap dev (from_dev = gretap dev)
 	 * 	TO hierarchy will have eth0 (to_dev = NULL)
-	 *
-	 * 6. OVS bridge internal port case
-	 *	PC1------->eth1-ovs-br.int (DUT) ovs-br-eth2-------> PC2
-	 *		eth1, eth2 and ovs-br.int ports are in the ovs-br. ovs-br.int has its own IP address
-	 *		which is in a different subnet than ovs-br.
 	 */
 	if (from_dev) {
 		/*
@@ -739,10 +730,6 @@ static void ecm_classifier_ovs_process_route_flow(struct ecm_classifier_ovs_inst
 		 * case 5
 		 * from_dev = greptap
 		 * br_dev = NULL
-		 *
-		 * case 6
-		 * from_dev = eth1
-		 * br_dev = ovs-br.int
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_FROM, false);
 		if (!br_dev) {
@@ -881,10 +868,6 @@ check_to_dev:
 		 * Case 3/4
 		 * from_dev = eth1
 		 * br_dev = ovs-br1
-		 *
-		 * case 6
-		 * from_dev = eth2
-		 * br_dev = ovs-br
 		 */
 		br_dev = ecm_classifier_ovs_interface_get_and_ref(ci, ECM_DB_OBJ_DIR_TO, false);
 		if (!br_dev) {

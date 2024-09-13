@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014,2015,2017-2020 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -283,7 +283,6 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_OVS_BRIDGE,			/* Interface is a OpenvSwitch bridge interface */
 	ECM_DB_IFACE_TYPE_MACVLAN,			/* Interface is a MACVLAN interface */
 	ECM_DB_IFACE_TYPE_L2TPV3,			/* Interface is a L2TPV3 over ethernet interface */
-	ECM_DB_IFACE_TYPE_OVS_INTERNAL,			/* Interface is a OpenvSwitch bridge internal interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -328,9 +327,6 @@ struct ecm_db_interface_info_bridge {			/* type == ECM_DB_IFACE_TYPE_BRIDGE */
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_interface_info_ovs_bridge {		/* type == ECM_DB_IFACE_TYPE_OVS_BRIDGE */
-	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
-};
-struct ecm_db_interface_info_ovs_internal {		/* type == ECM_DB_IFACE_TYPE_OVS_INTERNAL */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 };
 #endif

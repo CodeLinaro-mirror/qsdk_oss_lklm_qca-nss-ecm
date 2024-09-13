@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -536,31 +536,6 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #endif
 			break;
 
-		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Internal\n", feci);
-			if (interface_type_counts[ii_type] != 0) {
-				/*
-				 * Cannot cascade OVS internal interfaces
-				 */
-				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
-				break;
-			}
-
-			ecm_db_iface_ovs_internal_address_get(ii, from_nss_iface_address);
-			if (is_valid_ether_addr(from_nss_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_FLOW_VALID;
-				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
-			}
-
-			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, from_nss_iface_address);
-#else
-			rule_invalid = true;
-#endif
-			break;
-
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -817,31 +792,6 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_nss_iface_address);
-#else
-			rule_invalid = true;
-#endif
-			break;
-
-		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
-#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
-			DEBUG_TRACE("%px: OVS Internal\n", feci);
-			if (interface_type_counts[ii_type] != 0) {
-				/*
-				 * Cannot cascade OVS internal interfaces
-				 */
-				rule_invalid = true;
-				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
-				break;
-			}
-
-			ecm_db_iface_ovs_internal_address_get(ii, to_nss_iface_address);
-			if (is_valid_ether_addr(to_nss_iface_address)) {
-				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
-				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_RETURN_VALID;
-				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
-			}
-
-			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, to_nss_iface_address);
 #else
 			rule_invalid = true;
 #endif

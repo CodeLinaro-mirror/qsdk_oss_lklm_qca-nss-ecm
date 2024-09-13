@@ -2588,7 +2588,7 @@ process_packet:
 		/*
 		 * Verify the 'to' interface list with OVS classifier.
 		 */
-		if (ovsmgr_is_ovs_master(brdev) &&
+		if (ecm_front_end_is_ovs_bridge_device(brdev) &&
 			ecm_db_multicast_ovs_verify_to_list(ci, &aci_pr)) {
 			/*
 			 * We defunct the flow when the OVS returns "DENY_ACCEL" for the port.
