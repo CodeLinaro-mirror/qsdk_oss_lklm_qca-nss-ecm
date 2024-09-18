@@ -110,7 +110,8 @@ static const char *ecm_ppe_stats_v6_exception_non_ported_name_str[] = {
 	"v6_exception_non_ported_immediate_flush",
 	"v6_exception_non_ported_decelerate_pending",
 	"v6_exception_non_ported_ppe_accel_failed",
-	"v6_exception_non_ported_bridge_vlan_filter_unsupported"
+	"v6_exception_non_ported_bridge_vlan_filter_unsupported",
+	"v6_exception_non_ported_tunipip6_fmr_flow_offload_unsupported"
 };
 #endif
 

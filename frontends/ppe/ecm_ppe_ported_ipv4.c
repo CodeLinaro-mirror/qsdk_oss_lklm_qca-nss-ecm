@@ -602,6 +602,22 @@ process_next_iface_flow:
 #endif
 			break;
 		}
+
+		case ECM_DB_IFACE_TYPE_TUNIPIP6:
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+			DEBUG_TRACE("%px: From TUNIPIP6 interface\n", feci);
+
+			/*
+			 * Flows matching FMR rules will not be offloaded to PPE
+			 */
+			if (!ecm_ppe_tunipip6_is_flow_offload_enabled(feci, ii, false)) {
+				rule_invalid = true;
+				ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
+				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
+			}
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
@@ -929,6 +945,22 @@ process_next_iface_return:
 #endif
 			break;
 		}
+
+		case ECM_DB_IFACE_TYPE_TUNIPIP6:
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+			DEBUG_TRACE("%px: TO TUNIPIP6 interface\n", feci);
+
+			/*
+			 * Flows matching FMR rules will not be offloaded to PPE
+			 */
+			if (!ecm_ppe_tunipip6_is_flow_offload_enabled(feci, ii, true)) {
+				rule_invalid = true;
+				ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
+				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
+			}
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}

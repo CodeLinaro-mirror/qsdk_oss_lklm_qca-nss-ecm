@@ -31,6 +31,10 @@
 #include <nss_ppe_vxlanmgr.h>
 #endif
 
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+#include <nss_ppe_tun_drv.h>
+#endif
+
 /*
  * This macro converts ECM ip_addr_t to PPE IPv6 address
  */
@@ -170,3 +174,8 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 											ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status);
 #endif
 void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info);
+
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+bool ecm_ppe_tunipip6_is_flow_offload_enabled(struct ecm_front_end_connection_instance *feci,
+			struct ecm_db_iface_instance *ii, bool is_encap);
+#endif

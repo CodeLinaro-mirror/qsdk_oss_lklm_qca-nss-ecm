@@ -576,6 +576,15 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * inner flow's QoS classification.
 			 */
 			DEBUG_TRACE("%px: Ignoring check for TUNIPIP6: %d (%s)\n", feci, ii_type, ii_name);
+
+			/*
+			 * Flows matching FMR rules will not be offloaded to PPE
+			 */
+			if (!ecm_ppe_tunipip6_is_flow_offload_enabled(feci, ii, true)) {
+				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
+				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
+			}
 #endif
 			break;
 
@@ -819,6 +828,19 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			rule_invalid = true;
 			ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TO_IFACE_IPSEC_NOT_ENABLED);
 			DEBUG_TRACE("%px: IPSEC - unsupported\n", feci);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_TUNIPIP6:
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+			/*
+			 * Flows matching FMR rules will not be offloaded to PPE
+			 */
+			if (!ecm_ppe_tunipip6_is_flow_offload_enabled(feci, ii, false)) {
+				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
+				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
+			}
 #endif
 			break;
 

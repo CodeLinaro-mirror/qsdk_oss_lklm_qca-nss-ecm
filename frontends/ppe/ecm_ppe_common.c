@@ -51,6 +51,10 @@
 extern int nf_ct_tcp_no_window_check;
 #endif
 
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+#include <net/ip6_tunnel.h>
+#endif
+
 #ifdef ECM_IPV6_ENABLE
 /*
  * ecm_ppe_ipv6_is_conn_limit_reached()
@@ -348,3 +352,68 @@ int ecm_ppe_common_qdisc_rule_set(struct ecm_db_iface_instance *ifaces[ECM_DB_IF
 	dev_put(qdisc_netdev);
 	return 0;
 }
+
+#ifdef ECM_INTERFACE_TUNIPIP6_ENABLE
+/*
+ * ecm_ppe_tunipip6_is_flow_offload_enabled()
+ *	Is tunipip6 flow offload enabled in PPE?
+ */
+bool ecm_ppe_tunipip6_is_flow_offload_enabled(struct ecm_front_end_connection_instance *feci,
+			struct ecm_db_iface_instance *ii, bool is_encap)
+{
+	struct net_device *tundev = NULL;
+	uint32_t local_ip[4] = {0};
+	uint32_t remote_ip[4] = {0};
+	ip_addr_t saddr = {0};
+	ip_addr_t daddr = {0};
+	enum ppe_drv_iface_type iface;
+	uint8_t ip_type;
+
+	tundev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+	ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+
+	/*
+	 * If encap flow, local/remote address would be SRC/DST address.
+	 * Otherwise, local/remote address would be DST/SRC address
+	 */
+	if (feci->ip_version == 4) {
+		ip_type = AF_INET;
+
+		if (is_encap) {
+			ECM_IP_ADDR_TO_HIN4_ADDR(local_ip[0], saddr);
+			ECM_IP_ADDR_TO_HIN4_ADDR(remote_ip[0], daddr);
+		} else {
+			ECM_IP_ADDR_TO_HIN4_ADDR(local_ip[0], daddr);
+			ECM_IP_ADDR_TO_HIN4_ADDR(remote_ip[0], saddr);
+		}
+	} else {
+		ip_type = AF_INET6;
+
+		if (is_encap) {
+			ECM_IP_ADDR_TO_PPE_IPV6_ADDR(local_ip, saddr);
+			ECM_IP_ADDR_TO_PPE_IPV6_ADDR(remote_ip, daddr);
+		} else {
+			ECM_IP_ADDR_TO_PPE_IPV6_ADDR(local_ip, daddr);
+			ECM_IP_ADDR_TO_PPE_IPV6_ADDR(remote_ip, saddr);
+		}
+	}
+
+	iface = ppe_tun_tunipip6_iface_get(tundev, local_ip, remote_ip, ip_type);
+	dev_put(tundev);
+
+	/*
+	 * If interface is invalid, packet may have matched FMR as
+	 * FMR rule is not offloaded to PPE
+	 */
+	if (iface == PPE_DRV_IFACE_TYPE_INVALID) {
+		DEBUG_TRACE("%px: TUNIPIP6 FMR is used for the flow\n", ii);
+		return false;
+	}
+
+	DEBUG_TRACE("%px: TUNIPIP6 BMR is used for the flow\n", ii);
+	return true;
+}
+#endif
+
