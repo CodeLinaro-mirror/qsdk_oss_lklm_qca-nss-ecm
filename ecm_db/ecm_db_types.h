@@ -296,9 +296,17 @@ struct ecm_db_interface_info_ethernet {			/* type == ECM_DB_IFACE_TYPE_ETHERNET 
 };
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
+enum ecm_db_interface_vxlan_extension {
+	ECM_DB_IFACE_VXLAN_EXTENSION_NONE,		/* VxLAN */
+	ECM_DB_IFACE_VXLAN_EXTENSION_GPE,		/* VxLAN Generic Protocol Extension */
+	ECM_DB_IFACE_VXLAN_EXTENSION_GPO,		/* VxLAN Group Policy Option */
+};
+typedef enum ecm_db_interface_vxlan_extension ecm_db_interface_vxlan_extension_t;
+
 struct ecm_db_interface_info_vxlan {			/* type == ECM_DB_IFACE_TYPE_VXLAN */
 	uint32_t vni;					/* VxLAN network identifier */
 	uint32_t if_type;				/* VxLAN interface type */
+	ecm_db_interface_vxlan_extension_t extension;	/* VxLAN extension */
 };
 #endif
 

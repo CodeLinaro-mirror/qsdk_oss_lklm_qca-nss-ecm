@@ -327,7 +327,7 @@ void ecm_db_iface_add_ovpn(struct ecm_db_iface_instance *ii,
 void ecm_db_iface_vxlan_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_vxlan *vxlan_info);
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_vxlan(uint32_t vni, uint32_t if_type);
 void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii,
-			   uint32_t vni, uint32_t if_type, char *name,
+			   uint32_t vni, uint32_t if_type, uint8_t extension, char *name,
 			   int32_t mtu, int32_t interface_identifier,
 			   int32_t ae_interface_identifier,
 			   ecm_db_iface_final_callback_t final, void *arg);

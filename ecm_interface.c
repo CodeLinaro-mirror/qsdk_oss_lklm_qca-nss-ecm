@@ -2732,8 +2732,8 @@ static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(str
 	struct ecm_db_iface_instance *nii;
 	struct ecm_db_iface_instance *ii;
 
-	DEBUG_INFO("Establish VxLAN iface: %s with vxlan id: %u, MTU: %d, if num: %d, if_type: %d, accel engine if id: %d\n",
-			dev_name, type_info->vni, mtu, dev_interface_num, type_info->if_type, ae_interface_num);
+	DEBUG_INFO("Establish VxLAN iface: %s with vxlan id: %u, MTU: %d, if num: %d, if_type: %d, accel engine if id: %d, extension: %d\n",
+			dev_name, type_info->vni, mtu, dev_interface_num, type_info->if_type, ae_interface_num, type_info->extension);
 
 	/*
 	 * Locate the iface
@@ -2769,7 +2769,7 @@ static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(str
 		DEBUG_TRACE("%px: vxlan iface established\n", ii);
 		return ii;
 	}
-	ecm_db_iface_add_vxlan(nii, type_info->vni, type_info->if_type, dev_name, mtu,
+	ecm_db_iface_add_vxlan(nii, type_info->vni, type_info->if_type, type_info->extension, dev_name, mtu,
 			dev_interface_num, ae_interface_num, NULL, nii);
 	spin_unlock_bh(&ecm_interface_lock);
 
@@ -3257,6 +3257,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 
 			type_info.vxlan.vni = vni;
 			type_info.vxlan.if_type = interface_type;
+			type_info.vxlan.extension = ECM_DB_IFACE_VXLAN_EXTENSION_NONE;
 
 			/*
 			 * Copy IP addresses from skb
@@ -3502,7 +3503,6 @@ identifier_update:
 			ii = ecm_interface_map_t_interface_establish(&type_info.map_t, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
 			return ii;
 		}
-
 	}
 #endif
 
