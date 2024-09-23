@@ -75,6 +75,9 @@ bool ecm_db_multicast_connection_to_interfaces_set_check(struct ecm_db_connectio
 int _ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instance *ti);
 int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instance *ci, struct ecm_state_file_instance *sfi);
 int ecm_db_multicast_connection_to_interfaces_get_count(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_mcuc_address_get(struct ecm_db_connection_instance *ci, uint8_t *mac_addr);
+bool ecm_db_connection_mcuc_address_update(struct ecm_db_connection_instance *ci, uint8_t *mac_addr);
+
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 bool ecm_db_multicast_ovs_verify_to_list(struct ecm_db_connection_instance *ci, struct ecm_classifier_process_response *aci_pr);
