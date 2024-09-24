@@ -321,15 +321,41 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 				 * set fse_configure flag in feci.
 				 * Retake the lock here which was released for
 				 * invoking the callback.
+				 *
+				 * TODO: There is a potential race condition here,
+				 * because of feci lock release before adding FSE
+				 * rule. After making connection into MODE_ACCEL,
+				 * till the time FSE is added, destroy might come
+				 * (via defunct or accel ceased cases) which make one
+				 * stale entry in FSE. To avoid this, check if connection
+				 * is in decel mode or not. If it is MODE_DECEL, delete FSE
+				 * entry. This is a WAR as FSE SFE path does not have
+				 * any robust error handling and have to redesign it in future.
 				 */
 				spin_lock_bh(&feci->lock);
-				if (status)
-					feci->fse_configure = true;
+				if (status) {
+					if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+						feci->fse_configure = true;
+					} else {
+						spin_unlock_bh(&feci->lock);
+
+						/*
+						 * Invoke the FSE rule delete callback.
+						 */
+						rcu_read_lock_bh();
+						fse_ops = rcu_dereference(ecm_fe_fse_cb);
+						if (fse_ops)
+							fse_ops->destroy_fse_rule(&fse_info);
+
+						rcu_read_unlock_bh();
+						goto release;
+					}
+				}
 			}
 		}
 		spin_unlock_bh(&feci->lock);
+release:
 #endif
-
 		/*
 		 * Release the connection.
 		 */
