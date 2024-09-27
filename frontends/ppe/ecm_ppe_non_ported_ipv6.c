@@ -474,6 +474,18 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, from_ppe_iface_address);
 			break;
 
+#ifdef ECM_INTERFACE_GRE_TUN_ENABLE
+		case ECM_DB_IFACE_TYPE_GRE_TUN:
+
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, (uint32_t *)&(pd6rc->conn_rule.flow_mtu))) {
+				rule_invalid = true;
+				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETUN_IFACE_MTU_UNKNOWN);
+				DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", feci);
+			}
+			break;
+#endif
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
