@@ -666,6 +666,38 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #endif
 			break;
 
+		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Internal\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade OVS internal ports
+				 */
+				rule_invalid = true;
+				ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_OVS_INTERNAL_CASCADE);
+				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
+				break;
+			}
+
+			/*
+			 * If there is an OVS internal interface in the hierarchy,
+			 * we have to use the bottom interface by default.
+			 */
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+
+			ecm_db_iface_ovs_internal_address_get(ii, from_sfe_iface_address);
+			if (is_valid_ether_addr(from_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, from_sfe_iface_address);
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -999,6 +1031,38 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
 			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_sfe_iface_address);
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Internal\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade OVS internal ports
+				 */
+				rule_invalid = true;
+				ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_OVS_INTERNAL_CASCADE);
+				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
+				break;
+			}
+
+			/*
+			 * If there is an OVS internal interface in the hierarchy,
+			 * we have to use the bottom interface by default.
+			 */
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+
+			ecm_db_iface_ovs_internal_address_get(ii, to_sfe_iface_address);
+			if (is_valid_ether_addr(to_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, to_sfe_iface_address);
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);

@@ -3324,19 +3324,6 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 
 		if (ecm_front_end_is_ovs_bridge_device(dev)) {
 			/*
-			 * TODO: When OVS internal interface support is added to host datapath platforms, remove this check.
-			 *
-			 * OVS internal port is supported only for NSS acceleration for now.
-			 * NSS frontend is enabled only on the supported platforms. So, if ECM is
-			 * initialized with the frontends which are supported for host datapath,
-			 * we will not accelerate these flows. NSS frontend is not enabled with another
-			 * frontend which can be used as a backup acceleration engine.
-			 */
-			if (feci->accel_engine != ECM_FRONT_END_ENGINE_NSS) {
-				DEBUG_WARN("%px: OVS internal port is supported only for NSS acceleration\n", feci);
-				return NULL;
-			}
-			/*
 			 * OVS Internal port
 			 */
 			ether_addr_copy(type_info.ovsi.address, dev->dev_addr);
