@@ -16,6 +16,10 @@
  **************************************************************************
  */
 
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+#include <net/vxlan.h>
+#endif
+
 extern int ecm_interface_src_check;	/* Source interface check flag */
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 extern int ecm_interface_igs_enabled;	/* IGS enabled check flag */
@@ -128,4 +132,7 @@ struct net_device *ecm_interface_get_and_hold_ipsec_tun_netdev(struct net_device
 void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir,
 						uint32_t tx_packets, uint32_t tx_bytes,
 						uint32_t rx_packets, uint32_t rx_bytes);
+#endif
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+__be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *dev, const struct sk_buff *skb, union vxlan_addr *remote_ip);
 #endif

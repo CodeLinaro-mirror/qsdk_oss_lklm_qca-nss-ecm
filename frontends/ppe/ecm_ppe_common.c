@@ -107,20 +107,75 @@ bool ecm_ppe_ipv4_is_conn_limit_reached(void)
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 /*
+ * ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index()
+ *	Check whether virtual port is created for the given ecm iface instance of type VXLAN-GPE and get the index.
+ */
+int ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
+		struct sk_buff *skb, enum nss_ppe_vxlanmgr_vp_creation *vp_status)
+{
+	struct ecm_db_interface_info_vxlan vxlan_info = {0};
+	union vxlan_addr remote_ip = {0};
+	struct net_device *dev;
+	int if_index = -1;
+	__be32 vni;
+
+	dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+	if (!dev) {
+		DEBUG_INFO("%px: VXLAN-GPE: could not get the dev\n", feci);
+		return if_index;
+	}
+
+	ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+	vni = vxlan_info.vni;
+	if (!vxlan_info.if_type) {
+		ip_addr_t addr = {0};
+
+		DEBUG_TRACE("%px: VXLAN-GPE: It is an outer rule\n", feci);
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
+		if (ip_hdr(skb)->version == IPVERSION) {
+			remote_ip.sa.sa_family = AF_INET;
+			ECM_IP_ADDR_TO_NIN4_ADDR(remote_ip.sin.sin_addr.s_addr, addr);
+			DEBUG_TRACE("%px: VXLAN-GPE: remote ip:%pI4h\n", feci, &remote_ip.sin.sin_addr.s_addr);
+		} else {
+			remote_ip.sa.sa_family = AF_INET6;
+			ECM_IP_ADDR_TO_NIN6_ADDR(remote_ip.sin6.sin6_addr, addr);
+			DEBUG_TRACE("%px: VXLAN-GPE: remote ip:%pI6h\n", feci, &remote_ip.sin6.sin6_addr.s6_addr32);
+		}
+	} else {
+		DEBUG_TRACE("%px: VXLAN-GPE: It is an inner rule\n", feci);
+
+		/*
+		 * For VxLAN-GPE inner flow we cannot determine the remote ip address family
+		 * from skb. For an inner flow, outer could be IPv4/IPv6.
+		 */
+		if (!ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(dev, skb, &remote_ip)) {
+			DEBUG_WARN("%px: VXLAN-GPE: failed to get the remote IP\n", feci);
+			goto vxlan_gpe_fail;
+		}
+	}
+
+	*vp_status = nss_ppe_vxlanmgr_get_ifindex_and_vp_status(dev, &remote_ip, vni, &if_index);
+	DEBUG_TRACE("%px: VXLAN-GPE: vni: %X, netdev:%s if_index:%d vp_status:%u\n", feci, vni, dev->name, if_index, *vp_status);
+
+vxlan_gpe_fail:
+	dev_put(dev);
+	return if_index;
+}
+
+/*
  * ecm_ppe_ported_get_vxlan_ppe_dev_index()
  *	Check and get whether the given ecm iface instance of type VXLAN virtual port is created in PPE.
  */
 int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *ii,
-											ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status)
+		ecm_db_obj_dir_t dir, enum nss_ppe_vxlanmgr_vp_creation *vp_status)
 {
 	int if_index = -1;
-	uint32_t remote_ip[4] = {0};
 	struct ecm_db_interface_info_vxlan vxlan_info = {0};
+	union vxlan_addr remote_ip = {0};
 	struct net_device *dev;
-	struct vxlan_config *cfg;
 	struct vxlan_dev *priv;
 	union vxlan_addr *src_ip;
-	uint8_t ip_type;
+	__be32 vni;
 
 	dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 	if (!dev) {
@@ -129,13 +184,9 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 	}
 
 	priv = netdev_priv(dev);
-	cfg = &priv->cfg;
-	src_ip = &cfg->saddr;
-	if (src_ip->sa.sa_family == AF_INET) {
-		ip_type = AF_INET;
-	} else {
-		ip_type = AF_INET6;
-	}
+	src_ip = &priv->cfg.saddr;
+	vni = vxlan_vni_field(priv->cfg.vni);
+	remote_ip.sa.sa_family = (src_ip->sa.sa_family == AF_INET) ? AF_INET : AF_INET6;
 
 	ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
 	if (!vxlan_info.if_type) {
@@ -143,44 +194,29 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 
 		DEBUG_TRACE("%px: VXLAN: It is an outer rule", feci);
 		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
-		if (ip_type == AF_INET) {
-			ECM_IP_ADDR_TO_NIN4_ADDR(remote_ip[0], addr);
+		if (remote_ip.sa.sa_family == AF_INET) {
+			ECM_IP_ADDR_TO_NIN4_ADDR(remote_ip.sin.sin_addr.s_addr, addr);
+			DEBUG_TRACE("%px: VXLAN: rip:%pI4h\n", feci, &remote_ip.sin.sin_addr.s_addr);
 		} else {
-			uint32_t temp[4] = {0};
-
-			ECM_IP_ADDR_TO_PPE_IPV6_ADDR(temp, addr);
-			remote_ip[0] = ntohl(temp[0]);
-			remote_ip[1] = ntohl(temp[1]);
-			remote_ip[2] = ntohl(temp[2]);
-			remote_ip[3] = ntohl(temp[3]);
+			ECM_IP_ADDR_TO_NIN6_ADDR(remote_ip.sin6.sin6_addr, addr);
+			DEBUG_TRACE("%px: VXLAN: rip:%pI6h\n", feci, &remote_ip.sin6.sin6_addr.s6_addr32);
 		}
 	} else {
 		uint8_t mac_addr[ETH_ALEN] = {0};
-		union vxlan_addr rip = {0};
 
 		DEBUG_TRACE("%px: VXLAN: It is an inner rule", feci);
 		ecm_db_connection_node_address_get(feci->ci, dir, mac_addr);
-		if (vxlan_find_remote_ip(priv, mac_addr, priv->cfg.vni, &rip) < 0) {
+		if (vxlan_find_remote_ip(priv, mac_addr, priv->cfg.vni, &remote_ip) < 0) {
 			DEBUG_WARN("%px: VXLAN: failed to get the remote IP from kernel", feci);
-			dev_put(dev);
-			return -1;
-		}
-
-		if (ip_type == AF_INET) {
-			remote_ip[0] = rip.sin.sin_addr.s_addr;
-			DEBUG_TRACE("%px: VXLAN: rip:%pI4h", feci, remote_ip);
-		} else {
-			memcpy(remote_ip, &rip.sin6.sin6_addr, sizeof(struct in6_addr));
-			DEBUG_TRACE("%px: VXLAN: rip:%pI6h", feci, &remote_ip[0]);
+			goto vxlan_fail;
 		}
 	}
 
-	*vp_status = nss_ppe_vxlanmgr_get_ifindex_and_vp_status(dev, remote_ip, ip_type, &if_index);
+	*vp_status = nss_ppe_vxlanmgr_get_ifindex_and_vp_status(dev, &remote_ip, vni, &if_index);
+	DEBUG_TRACE("%px: VXLAN: vni: %X netdev:%s if_index:%d vp_status:%u\n", feci, vni, dev->name, if_index, *vp_status);
 
-	DEBUG_TRACE("%px: VXLAN: netdev:%s if_index:%d vp_status:%u\n", feci,dev->name, if_index, *vp_status);
-
+vxlan_fail:
 	dev_put(dev);
-
 	return if_index;
 }
 #endif
