@@ -1358,7 +1358,7 @@ process_next_iface_return:
 		/*
 		 * Fill the qdisc rule in flow direction
 		 */
-		err = ecm_ppe_common_qdisc_rule_set(to_ifaces, to_ifaces_first, (uint32_t)pr->return_qos_tag,
+		err = ecm_ppe_common_qdisc_rule_set(to_ifaces, to_ifaces_first, (uint32_t)pr->flow_qos_tag,
 				true, &pd6rc->qdisc_rule);
 
 		/*
@@ -1373,7 +1373,7 @@ process_next_iface_return:
 		/*
 		 * Fill the qdisc rule in return direction
 		 */
-		err = ecm_ppe_common_qdisc_rule_set(from_ifaces, from_ifaces_first, (uint32_t)pr->flow_qos_tag,
+		err = ecm_ppe_common_qdisc_rule_set(from_ifaces, from_ifaces_first, (uint32_t)pr->return_qos_tag,
 				false, &pd6rc->qdisc_rule);
 
 		/*
