@@ -54,6 +54,10 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
+#ifdef ECM_INTERFACE_DSA_ENABLE
+#include <linux/dsa/8021q.h>
+#include <net/dsa.h>
+#endif
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 #include <net/vxlan.h>
 #endif
@@ -561,6 +565,48 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #endif
 			break;
 
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			nircm->vlan_primary_rule.ingress_vlan_tag = dsa_vlan_value;
+			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_VLAN_VALID;
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 */
+			ether_addr_copy((uint8_t *)from_nss_iface_address, dsa_info.address);
+			if (is_valid_ether_addr(from_nss_iface_address)) {
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, from_nss_iface_address);
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in flow dir\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -844,6 +890,49 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, to_nss_iface_address);
 #else
 			rule_invalid = true;
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			nircm->vlan_primary_rule.egress_vlan_tag = vlan_value;
+			nircm->valid_flags |= NSS_IPV6_RULE_CREATE_VLAN_VALID;
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 */
+			ether_addr_copy((uint8_t *)to_nss_iface_address, dsa_info.address);
+			if (is_valid_ether_addr(to_nss_iface_address)) {
+				DEBUG_TRACE("%px: VLAN use mac: %pM\n", feci, to_nss_iface_address);
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_nss_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= NSS_IPV6_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= NSS_IPV6_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in return dir\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
 #endif
 			break;
 

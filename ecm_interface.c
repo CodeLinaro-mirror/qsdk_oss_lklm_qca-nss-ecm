@@ -80,6 +80,10 @@
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
+#ifdef ECM_INTERFACE_DSA_ENABLE
+#include <linux/dsa/8021q.h>
+#include <net/dsa.h>
+#endif
 #ifdef ECM_INTERFACE_PPP_ENABLE
 #include <linux/if_pppox.h>
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
@@ -336,6 +340,23 @@ static inline struct net_device *ecm_interface_vlan_real_dev(struct net_device *
 {
 	return vlan_dev_next_dev(vlan_dev);
 }
+
+#ifdef ECM_INTERFACE_DSA_ENABLE
+/*
+ * ecm_interface_dsa_real_dev()
+ *	Get real dev for DSA interface
+ */
+static inline struct net_device *ecm_interface_dsa_real_dev(struct net_device *dsa_dev)
+{
+	struct dsa_port *dp = NULL;
+
+	dp = dsa_port_from_netdev(dsa_dev);
+	if (!dp)
+		return NULL;
+
+	return dsa_port_to_master(dp);
+}
+#endif
 
 /*
  * ecm_interface_dev_find_by_local_addr_ipv4()
@@ -2229,6 +2250,59 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	return nii;
 }
 
+#ifdef ECM_INTERFACE_DSA_ENABLE
+/*
+ * ecm_interface_dsa_interface_establish()
+ * 	Returns a reference to a iface of the DSA type, possibly creating one if necessary.
+ * Returns NULL on failure or a reference to interface.
+ */
+static struct ecm_db_iface_instance *ecm_interface_dsa_interface_establish(struct ecm_db_interface_info_dsa *type_info,
+					char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+{
+	struct ecm_db_iface_instance *nii;
+	struct ecm_db_iface_instance *ii;
+
+	DEBUG_INFO("Establish DSA iface: %s with address: %pM, MTU: %d, if num: %d, accel engine if id: %d\n",
+			dev_name, type_info->address, mtu, dev_interface_num, ae_interface_num);
+
+	/*
+	 * Locate the iface
+	 */
+	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address, type_info->vlan_tag, type_info->vlan_tpid);
+	if (ii) {
+		DEBUG_TRACE("%px: iface DSA established\n", ii);
+		return ii;
+	}
+
+	/*
+	 * No iface - create one
+	 */
+	nii = ecm_db_iface_alloc();
+	if (!nii) {
+		DEBUG_WARN("Failed to establish DSA iface\n");
+		return NULL;
+	}
+
+	/*
+	 * Add iface into the database, atomically to avoid races creating the same thing
+	 */
+	spin_lock_bh(&ecm_interface_lock);
+	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address, type_info->vlan_tag, type_info->vlan_tpid);
+	if (ii) {
+		spin_unlock_bh(&ecm_interface_lock);
+		ecm_db_iface_deref(nii);
+		return ii;
+	}
+
+	ecm_db_iface_add_dsa(nii, type_info->address, type_info->vlan_tag, type_info->vlan_tpid, dev_name,
+			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	DEBUG_TRACE("%px: DSA iface established\n", nii);
+	return nii;
+}
+#endif
+
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 /*
  * ecm_interface_pppoe_interface_establish()
@@ -3274,6 +3348,9 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 	int32_t interface_type __attribute__((unused));
 	union {
 		struct ecm_db_interface_info_ethernet ethernet;		/* type == ECM_DB_IFACE_TYPE_ETHERNET */
+#ifdef ECM_INTERFACE_DSA_ENABLE
+		struct ecm_db_interface_info_dsa dsa;			/* type == ECM_DB_IFACE_TYPE_DSA */
+#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		struct ecm_db_interface_info_vlan vlan;			/* type == ECM_DB_IFACE_TYPE_VLAN */
 #endif
@@ -3374,7 +3451,6 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		/*
 		 * Ethernet - but what sub type?
 		 */
-
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 		/*
 		 * VLAN?
@@ -3547,6 +3623,55 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 				DEBUG_TRACE("%px: L2TPv3 interface is not ready yet. Interface type: %d\n", feci, interface_type);
 				return NULL;
 			}
+		}
+#endif
+
+#ifdef ECM_INTERFACE_DSA_ENABLE
+		/*
+		 * DSA?
+		 */
+		if (dsa_slave_dev_check(dev)) {
+			struct dsa_port *dsa_slave_port = NULL;
+			struct dsa_port *dsa_port_from_dev = NULL;
+			struct net_device *master_dev = NULL;
+			uint16_t vid = 0;
+
+			/*
+			 * Get VLAN info from DSA
+			 */
+			dsa_slave_port = dsa_port_from_netdev(dev);
+			if (dsa_slave_port == NULL) {
+				DEBUG_WARN("%px: DSA Port not found\n", feci);
+				return NULL;
+			}
+
+			vid = dsa_tag_8021q_standalone_vid(dsa_slave_port);
+			if (!vid) {
+				DEBUG_WARN("%px: DSA Port VLAN not found\n", feci);
+				return NULL;
+			}
+
+			/*
+			 * Copy the VLAN info
+			 */
+			ether_addr_copy(type_info.dsa.address, dev->dev_addr);
+			type_info.dsa.vlan_tag = vid;
+			type_info.dsa.vlan_tpid = ETH_P_8021Q;
+			DEBUG_TRACE("%px: Net device: %px is VLAN, mac: %pM, vlan_id: %x vlan_tpid: %x\n",
+					feci, dev, type_info.dsa.address, type_info.dsa.vlan_tag, type_info.dsa.vlan_tpid);
+
+			/*
+			 * MTU check for master and slave interface
+			 */
+			dsa_port_from_dev = dsa_port_from_netdev(dev);
+			master_dev = dsa_port_from_dev->cpu_dp->master;
+			dev_mtu = dev->mtu > master_dev->mtu ? master_dev->mtu : dev->mtu;
+
+			/*
+			 * Establish this type of interface
+			 */
+			ii = ecm_interface_dsa_interface_establish(&type_info.dsa, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+			goto identifier_update;
 		}
 #endif
 
@@ -4353,6 +4478,18 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 
 					dev_hold(next_dev);
 					DEBUG_TRACE("Net device: %px is LAG, slave dev: %px (%s)\n", dest_dev, next_dev, next_dev->name);
+					break;
+				}
+#endif
+
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				if (dsa_slave_dev_check(dest_dev)) {
+					next_dev = ecm_interface_dsa_real_dev(dest_dev);
+					dev_hold(next_dev);
+
+					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface, slave dev: %px (%s)\n",
+							feci, dest_dev, dest_dev->name, next_dev, next_dev->name);
+
 					break;
 				}
 #endif
@@ -5812,6 +5949,17 @@ lag_success:
 				}
 #endif
 
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				if (dsa_slave_dev_check(dest_dev)) {
+					next_dev = ecm_interface_dsa_real_dev(dest_dev);
+					dev_hold(next_dev);
+
+					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface, slave dev: %px (%s)\n",
+							feci, dest_dev, dest_dev->name, next_dev, next_dev->name);
+
+					break;
+				}
+#endif
 				/*
 				 * ETHERNET!
 				 * Just plain ethernet it seems.
@@ -7123,6 +7271,29 @@ skip_bridge_refresh:
 			stats.tx_bytes = tx_bytes;
 			DEBUG_INFO("vlan call to update status:rx pkt:%u tx pkt:%u", rx_packets, tx_packets);
 			__vlan_dev_update_accel_stats(dev, &stats);
+			dev_put(dev);
+			continue;
+#endif
+
+#ifdef ECM_INTERFACE_DSA_ENABLE
+		case ECM_DB_IFACE_TYPE_DSA:
+			DEBUG_INFO("DSA\n");
+			/*
+			 * Update DSA device with stats from SFE AE only when
+			 * SFE's l2_feature_support is enabled.
+			 */
+			if (ci->feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+				if (!(stats_bitmap & BIT(ECM_DB_IFACE_TYPE_DSA))) {
+					dev_put(dev);
+					continue;
+				}
+			}
+			stats.rx_packets = rx_packets;
+			stats.rx_bytes = rx_bytes;
+			stats.tx_packets = tx_packets;
+			stats.tx_bytes = tx_bytes;
+			DEBUG_INFO("DSA call to update status:rx pkt:%u tx pkt:%u", rx_packets, tx_packets);
+			__dsa_dev_update_accel_stats(dev, &stats);
 			dev_put(dev);
 			continue;
 #endif

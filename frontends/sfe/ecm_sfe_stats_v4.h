@@ -36,6 +36,10 @@ enum ecm_sfe_stats_v4_exception_multicast_events {
 	/* Number of IPv4 packets ignored in from interface multicast flow as multiple PPPOE not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_PPPOE_FLOW_INVALID,
 	/* Number of IPv4 packets ignored in from interface multicast flow as PPPOE not enabled */
+	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in from interface multicast flow as dsa interface is not supported */
+	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_QINQ_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in from interface multicast flow as dsa Q-in-Q interface is not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_TO_INTERFACES,
 	/* Number of IPv4 packets ignored in multicast flow as no interface in to interface list */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_BRIDGE_CASCADE,
@@ -58,6 +62,10 @@ enum ecm_sfe_stats_v4_exception_multicast_events {
 	/* Number of IPv4 packets ignored in to interface multicast flow as multi vlan not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_VLAN_NOT_ENABLED,
 	/* Number of IPv4 packets ignored in to interface multicast flow as vlan not enabled */
+	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in to interface multicast flow as dsa interface is not supported */
+	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_QINQ_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in to interface multicast flow as dsa Q-in-Q interface is not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_REGEN_OCCURRED,
 	/* Number of IPv4 packets ignored in multicast flow as connection regen occured */
 	ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TX_FAILED,
@@ -102,6 +110,10 @@ enum ecm_sfe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in from interface ported flow as lag not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_VXLAN_NOT_ENABLED,
 	/* Number of IPv4 packets ignored in from interface ported flow as vxlan not enabled */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_QINQ_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in from interface ported flow as Q-in-Q on dsa interface is not supported */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in from interface ported flow as dsa interface is not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_BRIDGE_CASCADE,
 	/* Number of IPv4 packets ignored in to interface ported flow as bridge cascade not possible */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_CASCADE,
@@ -128,6 +140,10 @@ enum ecm_sfe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in to interface ported flow as lag not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED,
 	/* Number of IPv4 packets ignored in to interface ported flow as vxlan not enabled */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_QINQ_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in to interface ported flow as Q-in-Q on dsa interface is not supported */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in to interface ported flow as dsa interface is not supported */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_MHT_PORT_FAIL,
 	/*  Number of IPv4 packets ignored in ported flow as mht feature is enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_REGEN_OCCURRED,

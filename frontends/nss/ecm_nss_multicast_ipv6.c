@@ -625,6 +625,45 @@ static int ecm_nss_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 				break;
+
+			case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				struct ecm_db_interface_info_dsa dsa_info;
+				uint32_t dsa_vlan_value = 0;
+
+				DEBUG_TRACE("%px: DSA\n", feci);
+
+				/*
+				 * Can only support one vlan.
+				 */
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+					rule_invalid = true;
+					DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+					break;
+				}
+
+				ecm_db_iface_dsa_info_get(ii, &dsa_info);
+				dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+				/*
+				 * Ready to write the DSA VLAN rule
+				 */
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ii_type]] = dsa_vlan_value;
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+				if (is_valid_ether_addr(dsa_info.address)) {
+					ether_addr_copy((uint8_t *)to_nss_iface_address, dsa_info.address);
+					DEBUG_TRACE("%px: DSA VLAN use mac: %pM\n", feci, to_nss_iface_address);
+				}
+
+				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+				DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in flow dir\n", feci, dsa_vlan_value);
+#else
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+#endif
+			break;
+
 			default:
 				DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 			}
@@ -975,6 +1014,30 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 			rule_invalid = true;
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_vlan vlan_info;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+
+				/*
+				 * Can only support one vlan.
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN Q-in-Q - unsupported\n", feci);
+				break;
+			}
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			create->ingress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]] = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			create->valid_flags |= NSS_IPV6_MC_RULE_CREATE_FLAG_INGRESS_VLAN_VALID;
+			DEBUG_TRACE("%px: DSA vlan tag: %x\n", feci, create->ingress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]]);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA - unsupported\n", feci);
+#endif
 			break;
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
@@ -1145,6 +1208,41 @@ static void ecm_nss_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 				break;
+
+			case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				struct ecm_db_interface_info_dsa dsa_info;
+
+				DEBUG_TRACE("%px: DSA\n", feci);
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+					/*
+					 * Can only support one vlan.
+					 */
+					rule_invalid = true;
+					DEBUG_TRACE("%px: DSA/VLAN Q-in-Q - unsupported\n", feci);
+					break;
+				}
+
+				ecm_db_iface_dsa_info_get(ii, &dsa_info);
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]] = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+				/*
+				 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+				 */
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
+					memcpy(to_nss_iface_address, dsa_info.address, ETH_ALEN);
+					interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+					DEBUG_TRACE("%px: DSA use mac: %pM\n", feci, to_nss_iface_address);
+				}
+				create->if_rule[valid_vif_idx].valid_flags |= NSS_IPV6_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+				DEBUG_TRACE("%px: DSA vlan tag: %x\n", feci, create->if_rule[vif].egress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]]);
+#else
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA - unsupported\n", feci);
+#endif
+				break;
+
 			default:
 				DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 			}
