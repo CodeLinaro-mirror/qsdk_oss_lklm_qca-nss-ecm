@@ -754,18 +754,20 @@ void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
 	if (dscpcte) {
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			dscpcte->flow_priority = skb->priority;
+			dscpcte->flow_int_pri = skb->int_pri;
 			dscpcte->flow_mark = skb->mark;
 			dscpcte->flow_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->flow_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP | NF_CT_DSCPREMARK_EXT_MARK;
-			DEBUG_TRACE("%px: sender: %d flow priority: %d flow dscp: %d flow_mark: %d flow_set_flags: 0x%x\n",
-				    ct, sender, dscpcte->flow_priority, dscpcte->flow_dscp, dscpcte->flow_mark, dscpcte->flow_set_flags);
+			DEBUG_TRACE("%px: sender: %d flow priority: %d flow int_pri %d flow dscp: %d flow_mark: %d flow_set_flags: 0x%x\n",
+				    ct, sender, dscpcte->flow_priority, dscpcte->flow_int_pri, dscpcte->flow_dscp, dscpcte->flow_mark, dscpcte->flow_set_flags);
 		} else {
 			dscpcte->reply_priority =  skb->priority;
+			dscpcte->reply_int_pri = skb->int_pri;
 			dscpcte->reply_mark =  skb->mark;
 			dscpcte->reply_dscp = iph->ds >> XT_DSCP_SHIFT;
 			dscpcte->return_set_flags = NF_CT_DSCPREMARK_EXT_PRIO | NF_CT_DSCPREMARK_EXT_DSCP | NF_CT_DSCPREMARK_EXT_MARK;
-			DEBUG_TRACE("%px: sender: %d reply priority: %d reply dscp: %d reply_mark: %d return_set_flags: 0x%x\n",
-				    ct, sender, dscpcte->reply_priority, dscpcte->reply_dscp, dscpcte->reply_mark, dscpcte->return_set_flags);
+			DEBUG_TRACE("%px: sender: %d reply priority: %d reply int_pri %d reply dscp: %d reply_mark: %d return_set_flags: 0x%x\n",
+				    ct, sender, dscpcte->reply_priority, dscpcte->reply_int_pri, dscpcte->reply_dscp, dscpcte->reply_mark, dscpcte->return_set_flags);
 		}
 	}
 	spin_unlock_bh(&ct->lock);

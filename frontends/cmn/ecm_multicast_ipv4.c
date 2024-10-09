@@ -1378,6 +1378,8 @@ process_packet:
 	prevalent_pr.drop = false;
 	prevalent_pr.flow_qos_tag = skb->priority;
 	prevalent_pr.return_qos_tag = skb->priority;
+	prevalent_pr.flow_int_pri = skb->int_pri;
+	prevalent_pr.return_int_pri = skb->int_pri;
 	prevalent_pr.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	prevalent_pr.timer_group = ci_orig_timer_group = ecm_db_connection_timer_group_get(ci);
 	prevalent_pr.process_actions = 0;
@@ -1390,9 +1392,9 @@ process_packet:
 		DEBUG_TRACE("%px: process: %px, type: %d\n", ci, aci, aci->type_get(aci));
 		aci->process(aci, sender, iph, skb, &aci_pr);
 		DEBUG_TRACE("%px: aci_pr: process actions: %x, became relevant: %u, relevance: %d, drop: %d, "
-				"flow_qos_tag: %u, return_qos_tag: %u, accel_mode: %x, timer_group: %d\n",
+				"flow_qos_tag: %u, return_qos_tag: %u, accel_mode: %x, timer_group: %d, flow_int_pri: %u, return_int_pri: %u\n",
 				ci, aci_pr.process_actions, aci_pr.became_relevant, aci_pr.relevance, aci_pr.drop,
-				aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.accel_mode, aci_pr.timer_group);
+				aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.accel_mode, aci_pr.timer_group, aci_pr.flow_int_pri, aci_pr.return_int_pri);
 
 		if (aci_pr.relevance == ECM_CLASSIFIER_RELEVANCE_NO) {
 			ecm_classifier_type_t aci_type;
@@ -1462,10 +1464,14 @@ process_packet:
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
-			DEBUG_TRACE("%px: aci: %px, type: %d, flow qos tag: %u, return qos tag: %u\n",
-					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag);
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow qos tag: %u, return qos tag: %u, flow_int_pri: %u, return_int_pri: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.flow_int_pri, aci_pr.return_int_pri);
 			prevalent_pr.flow_qos_tag = aci_pr.flow_qos_tag;
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
+			if (prevalent_pr.flow_int_pri == 0)
+				prevalent_pr.flow_int_pri = aci_pr.flow_int_pri;
+			if (prevalent_pr.return_int_pri == 0)
+				prevalent_pr.return_int_pri = aci_pr.return_int_pri;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 

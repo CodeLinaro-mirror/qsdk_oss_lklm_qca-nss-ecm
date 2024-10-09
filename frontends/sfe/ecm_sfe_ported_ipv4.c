@@ -1331,6 +1331,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		nircm->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		nircm->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(to_sfe_iface_id, &is_ppeq)
@@ -1680,6 +1682,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"flow_pppoe_remote_mac: %pM\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"flow_int_pri: %x (%u)\n"
+			"return_int_pri: %x (%u)\n"
 			"flow_window_scale: %u\n"
 			"flow_max_window: %u\n"
 			"flow_end: %u\n"
@@ -1722,6 +1726,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->pppoe_rule.flow_pppoe_remote_mac,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
+			nircm->qos_rule.flow_int_pri, nircm->qos_rule.flow_int_pri,
+			nircm->qos_rule.return_int_pri, nircm->qos_rule.return_int_pri,
 			nircm->tcp_rule.flow_window_scale,
 			nircm->tcp_rule.flow_max_window,
 			nircm->tcp_rule.flow_end,

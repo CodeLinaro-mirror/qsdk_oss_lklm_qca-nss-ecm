@@ -1029,15 +1029,18 @@ process_next_iface_return:
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		int32_t to_ppe_qos_intf = ecm_db_iface_interface_identifier_get(to_ifaces[to_ifaces_first]);
 		int32_t from_ppe_qos_intf = ecm_db_iface_interface_identifier_get(from_ifaces[from_ifaces_first]);
-
+#endif
+		pd4rc->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		pd4rc->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
+		pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(to_ppe_qos_intf, &is_ppeq) && is_ppeq) {
 			pd4rc->qos_rule.flow_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, to_ppe_qos_intf), pr->flow_qos_tag);
-			pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
 		}
 
 		if (ecm_front_end_common_intf_qdisc_check(from_ppe_qos_intf, &is_ppeq) && is_ppeq) {
 			pd4rc->qos_rule.return_int_pri = ppe_drv_qos_int_pri_get(dev_get_by_index(&init_net, from_ppe_qos_intf), pr->return_qos_tag);
-			pd4rc->qos_rule.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
 		}
 #endif
 
@@ -1377,6 +1380,8 @@ process_next_iface_return:
 			"valid_flags: %x\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"flow_int_pri: %x (%u)\n"
+			"return_int_pri: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
 			"flow_sawf mark: %x\n"
@@ -1400,6 +1405,8 @@ process_next_iface_return:
 			pd4rc->valid_flags,
 			pd4rc->qos_rule.flow_qos_tag, pd4rc->qos_rule.flow_qos_tag,
 			pd4rc->qos_rule.return_qos_tag, pd4rc->qos_rule.return_qos_tag,
+			pd4rc->qos_rule.flow_int_pri, pd4rc->qos_rule.flow_int_pri,
+			pd4rc->qos_rule.return_int_pri, pd4rc->qos_rule.return_int_pri,
 			pd4rc->dscp_rule.flow_dscp,
 			pd4rc->dscp_rule.return_dscp,
 			pd4rc->sawf_rule.flow_mark,
