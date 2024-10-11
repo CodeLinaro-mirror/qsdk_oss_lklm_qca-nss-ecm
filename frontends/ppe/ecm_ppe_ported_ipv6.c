@@ -593,7 +593,14 @@ process_next_iface_flow:
 				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_VXLANMGR_VP_CREATION_IN_PROGRESS);
 				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-				ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+
+				/*
+				 * Clear is_defunct flag if pending decelerate was done with the defunct process.
+				 */
+				if (ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL)) {
+					feci->is_defunct = false;
+				}
+
 				kfree(pd6rc);
 				return;
 			}
@@ -932,7 +939,14 @@ process_next_iface_return:
 				/* Retry with the subsequent packets */
 				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
-				ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
+
+				/*
+				 * Clear is_defunct flag if pending decelerate was done with the defunct process.
+				 */
+				if (ecm_ppe_ipv6_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL)) {
+					feci->is_defunct = false;
+				}
+
 				ecm_ppe_stats_v6_inc(ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_VXLANMGR_VP_CREATION_IN_PROGRESS);
 				kfree(pd6rc);
 				return;

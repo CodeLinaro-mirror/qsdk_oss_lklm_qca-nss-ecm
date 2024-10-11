@@ -148,6 +148,9 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	struct vxlan_dev *vxlan_tun = NULL;
+#endif
 
 	if (protocol == IPPROTO_TCP) {
 		if (likely(ct)) {
@@ -344,9 +347,19 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 		}
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
-		if ((netif_is_vxlan(in_dev) || netif_is_vxlan(out_dev)) && is_routed) {
-			DEBUG_TRACE("VxLAN outer connection, make src and dest idents same.\n");
-			src_port = dest_port;
+		if (netif_is_vxlan(in_dev)) {
+			vxlan_tun = netdev_priv(in_dev);
+		} else if (netif_is_vxlan(out_dev)) {
+			vxlan_tun = netdev_priv(out_dev);
+		}
+
+		/*
+		 * Override the source port for VxLAN/VxLAN-GPE outer connection.
+		 * Inner and outer flow for VxLAN-GPE (in L3 mode) is routed, hence we cannot use that to determine outer flow.
+		 */
+		if (vxlan_tun && !ecm_interface_vxlan_type_get(skb, vxlan_tun)) {
+			DEBUG_TRACE("%px: VxLAN outer connection, make src and dest idents same\n", vxlan_tun);
+			src_port = src_port_nat = dest_port;
 		}
 #endif
 		if (ct && nfct_help(ct) && (dest_port == TFTP_PORT)) {
