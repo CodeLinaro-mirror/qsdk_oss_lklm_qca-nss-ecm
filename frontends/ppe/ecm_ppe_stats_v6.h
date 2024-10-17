@@ -179,6 +179,8 @@ enum ecm_ppe_stats_v6_exception_non_ported_events {
     /* Number of IPv6 packets ignored in non-ported flow as the ppe_drv_v6_create() failed */
     ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED,
     /* Number of IPv6 packets ignored in non-ported flow as bridge vlan filtering not supported in PPE */
+    ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED,
+    /* Number of IPv6 packets ignored in non-ported flow as tunipip6 FMR flow offload not supported in PPE */
     ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_MAX
 };
 #endif

@@ -104,6 +104,8 @@ enum ecm_ppe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in ported flow as the ppe_drv_v4_create() failed */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED,
 	/* Number of IPv4 packets ignored in ported flow as bridge vlan filtering not supported in PPE */
+	ECM_PPE_STATS_V4_EXCEPTION_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED,
+	/* Number of IPv4 packets ignored in ported flow as TUNIPIP6 FMR flow offload not supported in PPE */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_MAX
 };
 
