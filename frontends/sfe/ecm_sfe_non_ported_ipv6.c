@@ -351,6 +351,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_L2TPV3_ENABLE)
 	struct net_device *dev;
 #endif
+	int proto = ecm_db_connection_protocol_get(feci->ci);
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -567,7 +568,8 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_L2TPV3_ENABLE)
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
-				if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) || (dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3)) {
+				if (((dev->priv_flags_ext & IFF_EXT_GRE_V6_TAP) && proto == IPPROTO_GRE)
+						|| ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && proto == IPPROTO_L2TP)) {
 					int db_iface_type;
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
@@ -591,12 +593,23 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
-			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
-			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
-			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, &(nircm->conn_rule.flow_mtu))) {
-				rule_invalid = true;
-				ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED, ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETUN_IFACE_MTU_UNKNOWN);
-				DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", feci);
+			/*
+			 * Check if the packet protocol type is GRE to confirm its a gre outer rule.
+			 * This avoids setting mtu to non ported passthrough inner rule which would fail
+			 * as source and destination IP addresses would not be local.
+			 *
+			 * NOTE: This check would fail for gre tunnel packet passthrough over gre tunnel
+			 * which is not claimed to be supported. Need to be looked at further when this
+			 * case needs to be supported
+			 */
+			if (proto == IPPROTO_GRE) {
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+				if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, &(nircm->conn_rule.flow_mtu))) {
+					rule_invalid = true;
+					ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED, ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETUN_IFACE_MTU_UNKNOWN);
+					DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", feci);
+				}
 			}
 #endif
 			break;
@@ -1108,7 +1121,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Set protocol
 	 */
-	nircm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	nircm->tuple.protocol = proto;
 
 	/*
 	 * The flow_ip is where the connection established from

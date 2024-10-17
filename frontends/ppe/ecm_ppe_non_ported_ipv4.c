@@ -212,6 +212,7 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 	bool is_ppeq = false;
 #endif
+	int proto = ecm_db_connection_protocol_get(feci->ci);
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -461,7 +462,16 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 #ifdef ECM_INTERFACE_GRE_TAP_ENABLE
 			dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 			if (dev) {
-				if (dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) {
+				/*
+				 * Check if the packet protocol type is GRE to confirm its a gre outer rule.
+				 * This avoids setting mtu to non ported passthrough inner rule which would fail
+				 * as source and destination IP addresses would not be local.
+				 *
+				 * NOTE: This check would fail for gre tunnel packet passthrough over gre tunnel
+				 * which is not claimed to be supported. Need to be looked at further when this
+				 * case needs to be supported
+				 */
+				if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && proto == IPPROTO_GRE) {
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
 					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TAP, &(pd4rc->conn_rule.flow_mtu))) {
@@ -484,7 +494,6 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 
 #ifdef ECM_INTERFACE_GRE_TUN_ENABLE
 		case ECM_DB_IFACE_TYPE_GRE_TUN:
-
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
 			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_GRE_TUN, &(pd4rc->conn_rule.flow_mtu))) {
@@ -984,7 +993,7 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	/*
 	 * Set protocol
 	 */
-	pd4rc->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	pd4rc->tuple.protocol = proto;
 
 	/*
 	 * The flow_ip is where the connection established from
