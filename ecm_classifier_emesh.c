@@ -438,6 +438,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		sawf_flow_info.rule_id = 0;
 		sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 		sawf_flow_info.is_mc_flow = false;
+		if (msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)
+			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 
 		msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 	}
@@ -450,6 +452,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		sawf_flow_info.rule_id = 0;
 		sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 		sawf_flow_info.is_mc_flow = false;
+		if (msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)
+			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 
 		msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
 	}
