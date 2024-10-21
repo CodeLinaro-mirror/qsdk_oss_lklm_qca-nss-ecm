@@ -321,15 +321,41 @@ static void ecm_sfe_ported_ipv4_connection_callback(void *app_data, struct sfe_i
 				 * set fse_configure flag in feci.
 				 * Retake the lock here which was released for
 				 * invoking the callback.
+				 *
+				 * TODO: There is a potential race condition here,
+				 * because of feci lock release before adding FSE
+				 * rule. After making connection into MODE_ACCEL,
+				 * till the time FSE is added, destroy might come
+				 * (via defunct or accel ceased cases) which make one
+				 * stale entry in FSE. To avoid this, check if connection
+				 * is in decel mode or not. If it is MODE_DECEL, delete FSE
+				 * entry. This is a WAR as FSE SFE path does not have
+				 * any robust error handling and have to redesign it in future.
 				 */
 				spin_lock_bh(&feci->lock);
-				if (status)
-					feci->fse_configure = true;
+				if (status) {
+					if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+						feci->fse_configure = true;
+					} else {
+						spin_unlock_bh(&feci->lock);
+
+						/*
+						 * Invoke the FSE rule delete callback.
+						 */
+						rcu_read_lock_bh();
+						fse_ops = rcu_dereference(ecm_fe_fse_cb);
+						if (fse_ops)
+							fse_ops->destroy_fse_rule(&fse_info);
+
+						rcu_read_unlock_bh();
+						goto release;
+					}
+				}
 			}
 		}
 		spin_unlock_bh(&feci->lock);
+release:
 #endif
-
 		/*
 		 * Release the connection.
 		 */
@@ -629,6 +655,38 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #endif
 			break;
 
+		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Internal\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade OVS internal ports
+				 */
+				rule_invalid = true;
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_INTERNAL_CASCADE);
+				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
+				break;
+			}
+
+			/*
+			 * If there is an OVS internal interface in the hierarchy,
+			 * we have to use the bottom interface by default.
+			 */
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+
+			ecm_db_iface_ovs_internal_address_get(ii, from_sfe_iface_address);
+			if (is_valid_ether_addr(from_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, from_sfe_iface_address);
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 			DEBUG_TRACE("%px: Ethernet\n", feci);
 			if (interface_type_counts[ii_type] != 0) {
@@ -832,6 +890,14 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			if (!vxlan_info.if_type) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
+
+			/*
+			 * Set VxLAN-GPE flag in return direction for inner flow coming from VXLAN-GPE device
+			 */
+			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VXLAN_GPE;
+				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
+			}
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_VXLAN_NOT_ENABLED);
@@ -941,6 +1007,38 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
 			}
 			DEBUG_TRACE("%px: OVS Bridge - mac: %pM\n", feci, to_sfe_iface_address);
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_OVS_INTERNAL:
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+			DEBUG_TRACE("%px: OVS Internal\n", feci);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * Cannot cascade OVS internal ports
+				 */
+				rule_invalid = true;
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_INTERNAL_CASCADE);
+				DEBUG_TRACE("%px: OVS Internal - ignore additional\n", feci);
+				break;
+			}
+
+			/*
+			 * If there is an OVS internal interface in the hierarchy,
+			 * we have to use the bottom interface by default.
+			 */
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+
+			ecm_db_iface_ovs_internal_address_get(ii, to_sfe_iface_address);
+			if (is_valid_ether_addr(to_sfe_iface_address)) {
+				ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+				nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+				nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+			}
+			DEBUG_TRACE("%px: OVS Internal - mac: %pM\n", feci, to_sfe_iface_address);
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
@@ -1147,6 +1245,26 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #endif
 			break;
 
+		case ECM_DB_IFACE_TYPE_VXLAN:
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+			struct ecm_db_interface_info_vxlan vxlan_info;
+
+			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
+
+			/*
+			 * Set VxLAN-GPE flag for inner flow going TO VXLAN-GPE device
+			 */
+			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VXLAN_GPE;
+				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
+			}
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED);
+			DEBUG_TRACE("%px: VXLAN - unsupported\n", feci);
+#endif
+			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
@@ -1213,6 +1331,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		nircm->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		nircm->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
 
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(to_sfe_iface_id, &is_ppeq)
@@ -1562,6 +1682,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			"flow_pppoe_remote_mac: %pM\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"flow_int_pri: %x (%u)\n"
+			"return_int_pri: %x (%u)\n"
 			"flow_window_scale: %u\n"
 			"flow_max_window: %u\n"
 			"flow_end: %u\n"
@@ -1604,6 +1726,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			nircm->pppoe_rule.flow_pppoe_remote_mac,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
+			nircm->qos_rule.flow_int_pri, nircm->qos_rule.flow_int_pri,
+			nircm->qos_rule.return_int_pri, nircm->qos_rule.return_int_pri,
 			nircm->tcp_rule.flow_window_scale,
 			nircm->tcp_rule.flow_max_window,
 			nircm->tcp_rule.flow_end,

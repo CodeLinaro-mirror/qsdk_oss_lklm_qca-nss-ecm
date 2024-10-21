@@ -154,6 +154,8 @@ struct ecm_classifier_process_response {
 	bool drop;					/* Drop packet at hand */
 	uint32_t flow_qos_tag;				/* QoS tag to use for the packet */
 	uint32_t return_qos_tag;			/* QoS tag to use for the packet */
+	uint8_t flow_int_pri;				/* int_pri tag to use for the packet*/
+	uint8_t return_int_pri;				/* int_pri tag to use for the packet*/
 #if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE || ECM_CLASSIFIER_WIFI_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	uint16_t igs_flow_qos_tag;			/* Ingress QoS tag to use for the packet */
@@ -365,6 +367,13 @@ static inline int ecm_classifier_process_response_state_get(struct ecm_state_fil
 		if ((result = ecm_state_write(sfi, "return_qos_tag", "%u", pr->return_qos_tag))) {
 			return result;
 		}
+		if ((result = ecm_state_write(sfi, "flow_int_pri", "%u", pr->flow_int_pri))) {
+			return result;
+		}
+		if ((result = ecm_state_write(sfi, "return_int_pri", "%u", pr->return_int_pri))) {
+			return result;
+		}
+
 	}
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 #ifdef ECM_CLASSIFIER_DSCP_IGS

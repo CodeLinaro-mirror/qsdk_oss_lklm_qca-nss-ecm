@@ -1057,10 +1057,14 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	/*
 	 * Set up the flow and return qos tags
+         * TODO: Non-ported handling needs further analysis for
+         * populating int_pri to sfe files.
 	 */
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		nircm->qos_rule.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		nircm->qos_rule.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		nircm->qos_rule.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		nircm->qos_rule.return_int_pri = (uint8_t)pr->return_int_pri;
 		nircm->valid_flags |= SFE_RULE_CREATE_QOS_VALID;
 	}
 
@@ -1196,6 +1200,8 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"return_pppoe_remote_mac: %pM\n"
 			"flow_qos_tag: %x (%u)\n"
 			"return_qos_tag: %x (%u)\n"
+			"flow_int_pri: %x (%u)\n"
+			"return_int_pri: %x (%u)\n"
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
 			"flow_mark: %x\n"
@@ -1225,6 +1231,8 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->pppoe_rule.return_pppoe_remote_mac,
 			nircm->qos_rule.flow_qos_tag, nircm->qos_rule.flow_qos_tag,
 			nircm->qos_rule.return_qos_tag, nircm->qos_rule.return_qos_tag,
+			nircm->qos_rule.flow_int_pri, nircm->qos_rule.flow_int_pri,
+			nircm->qos_rule.return_int_pri, nircm->qos_rule.return_int_pri,
 			nircm->dscp_rule.flow_dscp,
 			nircm->dscp_rule.return_dscp,
 			nircm->mark_rule.flow_mark,

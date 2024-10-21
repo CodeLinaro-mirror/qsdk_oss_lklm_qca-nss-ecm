@@ -1809,6 +1809,7 @@ void ecm_db_iface_vxlan_info_get(struct ecm_db_iface_instance *ii, struct ecm_db
 	spin_lock_bh(&ecm_db_lock);
 	vxlan_info->vni = ii->type_info.vxlan.vni;
 	vxlan_info->if_type = ii->type_info.vxlan.if_type;
+	vxlan_info->extension = ii->type_info.vxlan.extension;
 	spin_unlock_bh(&ecm_db_lock);
 }
 
@@ -3748,7 +3749,7 @@ EXPORT_SYMBOL(ecm_db_iface_add_ovpn);
  * ecm_db_iface_add_vxlan()
  *	Add a iface instance into the database
  */
-void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii, uint32_t vni, uint32_t if_type,
+void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii, uint32_t vni, uint32_t if_type, uint8_t extension,
 					char *name, int32_t mtu, int32_t interface_identifier,
 					int32_t ae_interface_identifier,
 					ecm_db_iface_final_callback_t final, void *arg)
@@ -3785,6 +3786,7 @@ void ecm_db_iface_add_vxlan(struct ecm_db_iface_instance *ii, uint32_t vni, uint
 	type_info = &ii->type_info.vxlan;
 	type_info->vni = vni;
 	type_info->if_type = if_type;
+	type_info->extension = extension;
 
 	/*
 	 * Compute hash chain for insertion

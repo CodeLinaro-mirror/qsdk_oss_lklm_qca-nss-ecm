@@ -80,6 +80,8 @@ enum ecm_sfe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in from interface ported flow as bridge cascade not possible */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_CASCADE,
 	/* Number of IPv4 packets ignored in from interface ported flow as ovs bridge cascade not possible */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_INTERNAL_CASCADE,
+	/* Number of IPv4 packets ignored in from interface ported flow as ovs internal port cascade not possible */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED,
 	/* Number of IPv4 packets ignored in from interface ported flow as ovs bridge not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED,
@@ -104,6 +106,8 @@ enum ecm_sfe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in to interface ported flow as bridge cascade not possible */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_CASCADE,
 	/* Number of IPv4 packets ignored in to interface ported flow as ovs bridge cascade not possible */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_INTERNAL_CASCADE,
+	/* Number of IPv4 packets ignored in to interface ported flow as ovs internal port cascade not possible */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED,
 	/* Number of IPv4 packets ignored in to interface ported flow as ovs bridge not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED,
@@ -122,6 +126,8 @@ enum ecm_sfe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in to interface ported flow as ipsec not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_LAG_NOT_ENABLED,
 	/* Number of IPv4 packets ignored in to interface ported flow as lag not enabled */
+	ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_VXLAN_NOT_ENABLED,
+	/* Number of IPv4 packets ignored in to interface ported flow as vxlan not enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_MHT_PORT_FAIL,
 	/*  Number of IPv4 packets ignored in ported flow as mht feature is enabled */
 	ECM_SFE_STATS_V4_EXCEPTION_PORTED_REGEN_OCCURRED,

@@ -504,7 +504,7 @@ ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/front
 
 ifeq ($(ECM_FRONT_END_PPE_ENABLE), y)
 	ccflags-y += -I$(obj)/frontends/ppe
-ifeq ($(SoC),$(filter $(SoC), ipq53xx_32 ipq53xx))
+ifeq ($(SoC),$(filter $(SoC), ipq53xx_32 ipq53xx ipq54xx_32 ipq54xx))
 # #############################################################################
 # Define ECM_PPE_SOURCE_INTERFACE_CHECK_ENABLE=y in order
 # to enable support for source interface check in PPE.

@@ -148,6 +148,9 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	struct vxlan_dev *vxlan_tun = NULL;
+#endif
 
 	if (protocol == IPPROTO_TCP) {
 		if (likely(ct)) {
@@ -344,9 +347,19 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 		}
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
-		if ((netif_is_vxlan(in_dev) || netif_is_vxlan(out_dev)) && is_routed) {
-			DEBUG_TRACE("VxLAN outer connection, make src and dest idents same.\n");
-			src_port = dest_port;
+		if (netif_is_vxlan(in_dev)) {
+			vxlan_tun = netdev_priv(in_dev);
+		} else if (netif_is_vxlan(out_dev)) {
+			vxlan_tun = netdev_priv(out_dev);
+		}
+
+		/*
+		 * Override the source port for VxLAN/VxLAN-GPE outer connection.
+		 * Inner and outer flow for VxLAN-GPE (in L3 mode) is routed, hence we cannot use that to determine outer flow.
+		 */
+		if (vxlan_tun && !ecm_interface_vxlan_type_get(skb, vxlan_tun)) {
+			DEBUG_TRACE("%px: VxLAN outer connection, make src and dest idents same\n", vxlan_tun);
+			src_port = src_port_nat = dest_port;
 		}
 #endif
 		if (ct && nfct_help(ct) && (dest_port == TFTP_PORT)) {
@@ -997,6 +1010,8 @@ done:
 	prevalent_pr.drop = false;
 	prevalent_pr.flow_qos_tag = skb->priority;
 	prevalent_pr.return_qos_tag = skb->priority;
+	prevalent_pr.flow_int_pri = skb->int_pri;
+	prevalent_pr.return_int_pri = skb->int_pri;
 	prevalent_pr.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	prevalent_pr.timer_group = ci_orig_timer_group = ecm_db_connection_timer_group_get(ci);
 
@@ -1009,9 +1024,9 @@ done:
 		DEBUG_TRACE("%px: process: %px, type: %d\n", ci, aci, aci->type_get(aci));
 		aci->process(aci, sender, iph, skb, &aci_pr);
 		DEBUG_TRACE("%px: aci_pr: process actions: %x, became relevant: %u, relevance: %d, drop: %d, "
-				"flow_qos_tag: %u, return_qos_tag: %u, accel_mode: %x, timer_group: %d\n",
+				"flow_qos_tag: %u, return_qos_tag: %u, accel_mode: %x, timer_group: %d, flow_int_pri: %u, return_int_pri: %u\n",
 				ci, aci_pr.process_actions, aci_pr.became_relevant, aci_pr.relevance, aci_pr.drop,
-				aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.accel_mode, aci_pr.timer_group);
+				aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.accel_mode, aci_pr.timer_group, aci_pr.flow_int_pri, aci_pr.return_int_pri);
 
 		if (aci_pr.relevance == ECM_CLASSIFIER_RELEVANCE_NO) {
 			ecm_classifier_type_t aci_type;
@@ -1111,10 +1126,14 @@ done:
 		 * Qos tag (the last classifier i.e. the highest priority one) will 'win'
 		 */
 		if (aci_pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
-			DEBUG_TRACE("%px: aci: %px, type: %d, flow qos tag: %u, return qos tag: %u\n",
-					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag);
+			DEBUG_TRACE("%px: aci: %px, type: %d, flow qos tag: %u, return qos tag: %u, flow_int_pri: %u, return_int_pri: %u\n",
+					ci, aci, aci->type_get(aci), aci_pr.flow_qos_tag, aci_pr.return_qos_tag, aci_pr.flow_int_pri, aci_pr.return_int_pri);
 			prevalent_pr.flow_qos_tag = aci_pr.flow_qos_tag;
 			prevalent_pr.return_qos_tag = aci_pr.return_qos_tag;
+			if (prevalent_pr.flow_int_pri == 0)
+				prevalent_pr.flow_int_pri = aci_pr.flow_int_pri;
+			if (prevalent_pr.return_int_pri == 0)
+				prevalent_pr.return_int_pri = aci_pr.return_int_pri;
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 
