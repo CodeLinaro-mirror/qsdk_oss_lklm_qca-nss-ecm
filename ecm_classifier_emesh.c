@@ -254,8 +254,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	ecm_tracker_sender_type_t sender;
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
-	uint32_t msduq_forward;
-	uint32_t msduq_reverse;
+	uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint32_t msduq_forward_prev;
 	uint32_t msduq_reverse_prev;
 	uint32_t flow_svid_prev;
