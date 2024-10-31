@@ -211,11 +211,13 @@ static void ecm_classifier_dscp_fill_info(struct ecm_classifier_dscp_instance *c
 {
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		cdscpi->process_response.flow_qos_tag = skb->priority;
+		cdscpi->process_response.flow_int_pri = skb->int_pri;
 		cdscpi->process_response.flow_mark = skb->mark;
 		cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 		cdscpi->packet_seen[ECM_CONN_DIR_FLOW] = true;
 	} else {
 		cdscpi->process_response.return_qos_tag = skb->priority;
+		cdscpi->process_response.return_int_pri = skb->int_pri;
 		cdscpi->process_response.return_mark = skb->mark;
 		cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 		cdscpi->packet_seen[ECM_CONN_DIR_RETURN] = true;
@@ -402,6 +404,8 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 				((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
 				cdscpi->process_response.flow_qos_tag = dscpcte->flow_priority;
 				cdscpi->process_response.return_qos_tag = dscpcte->reply_priority;
+				cdscpi->process_response.flow_int_pri = dscpcte->flow_int_pri;
+				cdscpi->process_response.return_int_pri = dscpcte->reply_int_pri;
 				cdscpi->process_response.flow_mark = dscpcte->flow_mark;
 				cdscpi->process_response.return_mark = dscpcte->reply_mark;
 				cdscpi->process_response.flow_dscp = dscpcte->flow_dscp;
@@ -409,6 +413,8 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			} else {
 				cdscpi->process_response.flow_qos_tag = dscpcte->reply_priority;
 				cdscpi->process_response.return_qos_tag = dscpcte->flow_priority;
+				cdscpi->process_response.flow_int_pri = dscpcte->reply_int_pri;
+				cdscpi->process_response.return_int_pri = dscpcte->flow_int_pri;
 				cdscpi->process_response.flow_mark = dscpcte->reply_mark;
 				cdscpi->process_response.return_mark = dscpcte->flow_mark;
 				cdscpi->process_response.flow_dscp = dscpcte->reply_dscp;
@@ -496,6 +502,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 		 */
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			cdscpi->process_response.flow_qos_tag = skb->priority;
+			cdscpi->process_response.flow_int_pri = skb->int_pri;
 			cdscpi->process_response.flow_mark = skb->mark;
 			cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
@@ -504,6 +511,10 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			 * QoS and DSCP values are also set by the subsequent packets before we push
 			 * the rule to NSS. So, let's update them, if they are not set.
 			 */
+			if (cdscpi->process_response.return_int_pri == 0) {
+				cdscpi->process_response.return_int_pri = skb->int_pri;
+			}
+
 			if (cdscpi->process_response.return_qos_tag == 0) {
 				cdscpi->process_response.return_qos_tag = skb->priority;
 			}
@@ -518,6 +529,7 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 
 		} else {
 			cdscpi->process_response.return_qos_tag = skb->priority;
+			cdscpi->process_response.return_int_pri = skb->int_pri;
 			cdscpi->process_response.return_mark = skb->mark;
 			cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
@@ -526,6 +538,11 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			 * QoS and DSCP values are also set by the subsequent packets before we push
 			 * the rule to NSS. So, let's update them, if they are not set.
 			 */
+
+			if (cdscpi->process_response.flow_int_pri == 0) {
+				cdscpi->process_response.flow_int_pri = skb->int_pri;
+			}
+
 			if (cdscpi->process_response.flow_qos_tag == 0) {
 				cdscpi->process_response.flow_qos_tag = skb->priority;
 			}
