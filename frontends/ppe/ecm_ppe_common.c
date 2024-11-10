@@ -131,7 +131,7 @@ int ecm_ppe_ported_get_vxlan_gpe_ppe_dev_index(struct ecm_front_end_connection_i
 
 	ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
 	vni = vxlan_info.vni;
-	if (!vxlan_info.if_type) {
+	if (vxlan_info.if_type == ECM_DB_IFACE_VXLAN_OUTER) {
 		ip_addr_t addr = {0};
 
 		DEBUG_TRACE("%px: VXLAN-GPE: It is an outer rule\n", feci);
@@ -193,7 +193,7 @@ int ecm_ppe_ported_get_vxlan_ppe_dev_index(struct ecm_front_end_connection_insta
 	remote_ip.sa.sa_family = (src_ip->sa.sa_family == AF_INET) ? AF_INET : AF_INET6;
 
 	ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
-	if (!vxlan_info.if_type) {
+	if (vxlan_info.if_type == ECM_DB_IFACE_VXLAN_OUTER) {
 		ip_addr_t addr = {0};
 
 		DEBUG_TRACE("%px: VXLAN: It is an outer rule", feci);
