@@ -905,7 +905,7 @@ uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_ins
  * ecm_front_end_ppe_fse_enable_limit_handler()
  *	Sysctl to enable/disable FSE programming through PPE.
  */
-int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -940,7 +940,7 @@ int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void 
  * ecm_front_end_db_conn_limit_handler()
  *	Database connection limit sysctl node handler.
  */
-int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_value;
@@ -975,7 +975,7 @@ int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void _
  * ecm_front_end_denied_ports_read()
  *	Reads the denied ports from the denied ports array and prints.
  */
-static void ecm_front_end_denied_ports_read(void __user *buffer, size_t *lenp, loff_t *ppos, struct hlist_head *denied_ports)
+static void ecm_front_end_denied_ports_read(void *buffer, size_t *lenp, loff_t *ppos, struct hlist_head *denied_ports)
 {
 	char *read_buf;
 	int i, len;
@@ -1011,7 +1011,7 @@ static void ecm_front_end_denied_ports_read(void __user *buffer, size_t *lenp, l
 	len = scnprintf(read_buf + bytes, 4, "\n");
 	bytes += len;
 
-	bytes = simple_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
 	*lenp = bytes;
 	kfree(read_buf);
 }
@@ -1038,7 +1038,7 @@ static inline bool ecm_front_end_is_port_in_denied_list(int port, struct hlist_h
  * ecm_front_end_denied_ports_handler()
  *	Proc handler function for denied ports read/write operation.
  */
-static int ecm_front_end_denied_ports_handler(int write, void __user *buffer, size_t *lenp, loff_t *ppos, struct hlist_head *denied_ports, bool is_udp)
+static int ecm_front_end_denied_ports_handler(int write, void *buffer, size_t *lenp, loff_t *ppos, struct hlist_head *denied_ports, bool is_udp)
 {
 
 	char *buf;
@@ -1063,10 +1063,9 @@ static int ecm_front_end_denied_ports_handler(int write, void __user *buffer, si
 		count = ECM_FRONT_END_DENIED_PORTS_HTABLE_SIZE * 8 * sizeof(char);
 	}
 
-	if (copy_from_user(buf, buffer, count)) {
-		kfree(pfree);
-		return -EFAULT;
-	}
+	memcpy(buf, buffer, count);
+	*lenp = count;
+	*ppos += count;
 
 	token = strsep(&buf, " ");
 	if (strlen(token) != 3) {
@@ -1160,7 +1159,7 @@ static int ecm_front_end_denied_ports_handler(int write, void __user *buffer, si
  * ecm_front_end_udp_denied_ports_handler()
  *	Proc handler function for UDP denied ports read/write operation.
  */
-static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1180,7 +1179,7 @@ static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int wri
  * ecm_front_end_tcp_denied_ports_handler()
  *	Proc handler function for TCP denied ports read/write operation.
  */
-static int ecm_front_end_tcp_denied_ports_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_tcp_denied_ports_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
