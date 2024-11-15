@@ -383,12 +383,14 @@ precedence_alloc:
 			goto feci_alloc_done;
 		}
 
+#if defined(ECM_FRONT_END_NSS_ENABLE) || defined(ECM_FRONT_END_SFE_ENABLE) || defined(ECM_FRONT_END_PPE_ENABLE)
 feci_alloc_check:
 		if (!feci) {
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_NON_PORTED, ECM_STATS_V4_EXCEPTION_NON_PORTED_FRONTEND_ALLOC_FAIL);
 			DEBUG_WARN("Failed to allocate front end\n");
 			return NF_ACCEPT;
 		}
+#endif
 
 feci_alloc_done:
 		if (!ecm_front_end_ipv4_interface_construct_set_and_hold(skb, sender, ecm_dir, is_routed,

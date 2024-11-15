@@ -1380,7 +1380,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	}
 #endif
 
-#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE || ECM_CLASSIFIER_WIFI_ENABLE
+#if defined(ECM_CLASSIFIER_DSCP_ENABLE) || defined(ECM_CLASSIFIER_EMESH_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 	/*
 	 * DSCP information?
 	 */

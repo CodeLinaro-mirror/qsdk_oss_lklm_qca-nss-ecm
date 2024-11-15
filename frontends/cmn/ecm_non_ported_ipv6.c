@@ -382,12 +382,14 @@ precedence_alloc:
 			goto feci_alloc_done;
 		}
 
+#if defined(ECM_FRONT_END_NSS_ENABLE) || defined(ECM_FRONT_END_SFE_ENABLE) || defined(ECM_FRONT_END_PPE_ENABLE)
 feci_alloc_check:
 		if (!feci) {
 			DEBUG_WARN("Failed to allocate front end\n");
 			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_NON_PORTED, ECM_STATS_V6_EXCEPTION_NON_PORTED_FRONTEND_ALLOC_FAIL);
 			return NF_ACCEPT;
 		}
+#endif
 
 feci_alloc_done:
 		/*

@@ -436,7 +436,9 @@ bool ecm_front_end_check_udp_denied_ports(uint16_t src_port, uint16_t dest_port)
 bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
 bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num);
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num);
+#endif
 #ifdef ECM_FRONT_END_FSE_ENABLE
 bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info);
 #endif /* ECM_FRONT_END_FSE_ENABLE */

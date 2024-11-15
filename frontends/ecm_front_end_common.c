@@ -1815,6 +1815,7 @@ bool ecm_front_end_common_check_if_vap(int32_t interface_num)
 	return true;
 }
 
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 /*
  * ecm_front_end_common_check_dl_vp_qdisc
  *	Returns true if the interface is part of DL VP qdisc
@@ -1837,6 +1838,7 @@ bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num)
 
 	return false;
 }
+#endif
 
 /*
  * ecm_front_end_common_intf_qdisc_check()
