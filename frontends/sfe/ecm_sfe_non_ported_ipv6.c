@@ -572,7 +572,7 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 					int db_iface_type;
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
 					ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
-					db_iface_type = (dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) ? ECM_DB_IFACE_TYPE_GRE_TAP : ECM_DB_IFACE_TYPE_L2TPV3;
+					db_iface_type = (dev->priv_flags_ext & IFF_EXT_GRE_V6_TAP) ? ECM_DB_IFACE_TYPE_GRE_TAP : ECM_DB_IFACE_TYPE_L2TPV3;
 					if (!ecm_interface_tunnel_mtu_update(saddr, daddr, db_iface_type, &(nircm->conn_rule.flow_mtu))) {
 						rule_invalid = true;
 						ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED, ECM_SFE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETAP_OR_L2TPV3_IFACE_MTU_UNKNOWN);

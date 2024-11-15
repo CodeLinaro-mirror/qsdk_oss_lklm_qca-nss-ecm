@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2015, 2018, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2022, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -154,4 +154,7 @@ bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *fe
 				    struct ecm_db_iface_instance *from_sfe_iface,
 				    struct ecm_db_iface_instance *to_sfe_iface,
 				    u32 *valid_flags, struct sfe_mark_rule *mark_rule);
+#endif
+#ifdef ECM_FRONT_END_PPE_ENABLE
+int ecm_sfe_common_get_vp_from_iface_id(int32_t iface_id);
 #endif

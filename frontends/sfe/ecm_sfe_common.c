@@ -45,7 +45,9 @@
 #ifdef ECM_MHT_ENABLE
 #include "ppe_drv.h"
 #endif
-
+#ifdef ECM_FRONT_END_PPE_ENABLE
+#include<ppe_tun.h>
+#endif
 
 /*
  * Callback object to support SFE frontend interaction with external code
@@ -1020,5 +1022,32 @@ bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *fe
 
 	dev_put(dev);
 	return true;
+}
+#endif
+
+#ifdef ECM_FRONT_END_PPE_ENABLE
+/*
+ * ecm_sfe_common_get_vp_from_iface_id()
+ *	Looks up for a tunnel VP in PPE.
+ */
+int ecm_sfe_common_get_vp_from_iface_id(int32_t iface_id)
+{
+	int vp = -1;
+	struct net_device *dev = NULL;
+
+	dev = dev_get_by_index(&init_net, iface_id);
+	if (!dev) {
+		goto done;
+	}
+
+#ifdef ECM_INTERFACE_GRE_TAP_ENABLE
+	if (dev->priv_flags_ext & (IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP)) {
+		vp = ppe_tun_hybrid_ol_ctx_get(dev);
+	}
+#endif
+	dev_put(dev);
+
+done:
+	return vp;
 }
 #endif
