@@ -892,10 +892,15 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
-			 * Set VxLAN-GPE flag in return direction for inner flow coming from VXLAN-GPE device
+			 * Set VxLAN-GPE flag in return direction for inner flow coming from VXLAN-GPE device.
+			 * As per draft rfc vxlan-gpe packet should not be fragmented, set flag to skip this.
 			 */
-			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
-				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VXLAN_GPE;
+			if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+				if (vxlan_info.if_type) {
+					nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VXLAN_GPE;
+				}
+
+				nircm->valid_flags |= SFE_RULE_CREATE_SKIP_FRAG_OFFLOAD_VALID;
 				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
 			}
 #else
@@ -1252,10 +1257,12 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			ecm_db_iface_vxlan_info_get(ii, &vxlan_info);
 
 			/*
-			 * Set VxLAN-GPE flag for inner flow going TO VXLAN-GPE device
+			 * Set VxLAN-GPE flag for inner flow going TO VXLAN-GPE device.
+			 * As per draft rfc vxlan-gpe packet should not be fragmented, set flag to skip this.
 			 */
 			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VXLAN_GPE;
+				nircm->valid_flags |= SFE_RULE_CREATE_SKIP_FRAG_OFFLOAD_VALID;
 				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);
 			}
 #else
