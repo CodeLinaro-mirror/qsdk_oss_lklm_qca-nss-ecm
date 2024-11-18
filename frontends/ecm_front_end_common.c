@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -548,6 +548,34 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	if ((result = ecm_state_write(sfi, "ae_selection_done", "%s", ae_selection_done))) {
 		return result;
 	}
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	uint16_t ppe_fail_reason = (0x7FFF & atomic64_read(&feci->ppe_accel_fail_reason));
+	bool ppe_ae_failure = atomic64_read(&feci->ppe_accel_fail_reason) >> ECM_FRONT_END_FAIL_REASON_SHIFT;
+	if (ppe_ae_failure) {
+		if ((result = ecm_state_write(sfi, "ppe_fail_reason", "%s %u", " AE", ppe_fail_reason))) {
+			return result;
+		}
+	} else if (ppe_fail_reason) {
+		if ((result = ecm_state_write(sfi, "ppe_fail_reason", "%s %u", " ECM", ppe_fail_reason))) {
+			return result;
+		}
+	}
+#endif
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	uint16_t sfe_fail_reason = (0x7FFF & atomic64_read(&feci->sfe_accel_fail_reason));
+	bool sfe_ae_failure = atomic64_read(&feci->sfe_accel_fail_reason) >> ECM_FRONT_END_FAIL_REASON_SHIFT;
+	if (sfe_ae_failure) {
+		if ((result = ecm_state_write(sfi, "sfe_fail_reason", "%s %u", " AE", sfe_fail_reason))) {
+			return result;
+		}
+	} else if (sfe_fail_reason) {
+                if ((result = ecm_state_write(sfi, "sfe_fail_reason", "%s %u", " ECM", sfe_fail_reason))) {
+			return result;
+		}
+	}
+#endif
+
 	return ecm_state_prefix_remove(sfi);
 }
 #endif

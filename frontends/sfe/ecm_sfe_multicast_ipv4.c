@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -99,7 +99,6 @@
 #include "ecm_front_end_common.h"
 #include "ecm_front_end_ipv4.h"
 #include "ecm_sfe_stats_v4.h"
-
 static int ecm_sfe_multicast_ipv4_accelerated_count = 0;
 						/* Array of Number of Multicast UDP connections currently offloaded */
 /*
@@ -1073,7 +1072,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 * Can this connection be accelerated at all?
 	 */
 	if (!ecm_sfe_ipv4_accel_pending_set(feci)) {
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_ACCEL_NOT_PERMITTED);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_ACCEL_NOT_PERMITTED);
 		DEBUG_TRACE("%px: Acceleration denied: %px\n", feci, feci->ci);
 		return;
 	}
@@ -1087,7 +1086,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	nim = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
 		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_MEM);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_MEM);
 		return;
 	}
 
@@ -1113,7 +1112,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 */
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_FROM_INTERFACES);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_FROM_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
 		kfree(nim);
 		return;
@@ -1122,7 +1121,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	from_sfe_iface = from_ifaces[from_ifaces_first];
 	from_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(from_sfe_iface);
 	if (from_sfe_iface_id < 0) {
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_INVALID_BOTTOM_IFACE);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_INVALID_BOTTOM_IFACE);
                 DEBUG_TRACE("%px: from_sfe_iface_id: %d\n", feci, from_sfe_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		kfree(nim);
@@ -1222,7 +1221,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			DEBUG_TRACE("%px: Macvlan - mac: %pM\n", feci, from_sfe_iface_address);
 #else
 			rule_invalid = true;
-			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_MACVLAN_NOT_ENABLED);
+			ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_MACVLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: MACVLAN - unsupported\n", feci);
 #endif
 			break;
@@ -1234,7 +1233,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				 * Can only support two vlans
 				 */
 				rule_invalid = true;
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_ONLY_TWO_VLANS_SUPPORTED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_ONLY_TWO_VLANS_SUPPORTED);
 				DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 				break;
 			}
@@ -1286,7 +1285,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 #else
 			rule_invalid = true;
-			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_VLAN_NOT_ENABLED);
+			ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_VLAN_NOT_ENABLED);
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
@@ -1304,7 +1303,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				 */
 				rule_invalid = true;
 				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
 				break;
 			}
 			ecm_db_iface_dsa_info_get(ii, &dsa_info);
@@ -1344,7 +1343,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 #else
 			rule_invalid = true;
-			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_UNSUPPORTED);
+			ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_UNSUPPORTED);
 			DEBUG_TRACE("%px: DSA - unsupported\n", feci);
 #endif
 			break;
@@ -1355,7 +1354,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			 * More than one PPPoE in the list is not valid!
 			 */
 			if (interface_type_counts[ii_type] != 0) {
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
 				DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 				rule_invalid = true;
 				break;
@@ -1396,7 +1395,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 #else
 			rule_invalid = true;
-			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_PPPOE_FLOW_INVALID);
+			ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_PPPOE_FLOW_INVALID);
 #endif
 			break;
 
@@ -1410,7 +1409,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 	ret = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(feci->ci, &to_ifaces, &to_ifaces_first);
 	if (!ret) {
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_TO_INTERFACES);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_TO_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no multicast interfaces in to_interfaces list!\n", feci);
 		kfree(nim);
 		return;
@@ -1485,7 +1484,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 					 * Cannot cascade bridges
 					 */
 					rule_invalid = true;
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_BRIDGE_CASCADE);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_BRIDGE_CASCADE);
 					DEBUG_TRACE("%px: Bridge - ignore additional\n", feci);
 					break;
 				}
@@ -1522,7 +1521,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
 				if (to_sfe_iface_id < 0) {
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
 					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
 					kfree(nim);
@@ -1542,14 +1541,14 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 					 * Ignore additional mac addresses, these are usually as a result of address propagation
 					 * from bridges down to ports etc.
 					 */
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_ADDITIONAL_IGNORE);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_ADDITIONAL_IGNORE);
 					DEBUG_TRACE("%px: LAG - ignore additional\n", feci);
 					rule_invalid = true;
 					break;
 				}
 				dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
 				if (!dev) {
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_PRESENT);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_PRESENT);
 					DEBUG_TRACE("%px: LAG device is not present\n", feci);
 					rule_invalid = true;
 					break;
@@ -1560,7 +1559,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				 * Destination interface is MLO bond device itself.
 				 */
 				if (!bond_is_mlo_device(dev)) {
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_MLO);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_MLO);
 					DEBUG_TRACE("%px: LAG device is not MLO device: %s\n", feci, dev->name);
 					dev_put(dev);
 					rule_invalid = true;
@@ -1574,7 +1573,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
 				if (to_sfe_iface_id < 0) {
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
 					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					dev_put(dev);
 					rule_invalid = true;
@@ -1583,7 +1582,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				DEBUG_TRACE("%px: LAG - mac: %pM, mtu %d\n", feci, to_sfe_iface_address, to_mtu);
 				dev_put(dev);
 #else
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_ENABLED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_LAG_NOT_ENABLED);
 				DEBUG_TRACE("%px: LAG not supported\n", feci);
 				rule_invalid = true;
 #endif
@@ -1595,7 +1594,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				 * More than one PPPoE in the list is not valid!
 				 */
 				if (interface_type_counts[ii_type] != 0) {
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED);
 					DEBUG_TRACE("%px: PPPoE - additional unsupported\n", feci);
 					rule_invalid = true;
 					break;
@@ -1633,7 +1632,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_PPPOE_VALID;
 #else
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_PPPOE_FLOW_INVALID);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_PPPOE_FLOW_INVALID);
 				DEBUG_TRACE("%px: PPPoE - unsupported\n", feci);
 				rule_invalid = true;
 #endif
@@ -1646,7 +1645,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 					 * Can only support two vlans
 					 */
 					rule_invalid = true;
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_ONLY_TWO_VLANS_SUPPORTED);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_ONLY_TWO_VLANS_SUPPORTED);
 					DEBUG_TRACE("%px: VLAN - additional unsupported\n", feci);
 					break;
 				}
@@ -1689,7 +1688,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
 #else
 				rule_invalid = true;
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_VLAN_NOT_ENABLED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_VLAN_NOT_ENABLED);
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 				break;
@@ -1706,7 +1705,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 					 */
 					rule_invalid = true;
 					DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
-					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_QINQ_UNSUPPORTED);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_QINQ_UNSUPPORTED);
 					break;
 				}
 				ecm_db_iface_dsa_info_get(ii, &dsa_info);
@@ -1740,7 +1739,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
 #else
 				rule_invalid = true;
-				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_UNSUPPORTED);
+				ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_UNSUPPORTED);
 				DEBUG_TRACE("%px: DSA - unsupported\n", feci);
 #endif
 				break;
@@ -2038,7 +2037,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 * after this check passes, the connection will be decelerated and refreshed very quickly.
 	 */
 	if (regen_occurrances != ecm_db_connection_regeneration_occurrances_get(feci->ci)) {
-		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_REGEN_OCCURRED);
+		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_REGEN_OCCURRED);
 		DEBUG_INFO("%px: connection:%px regen occurred - aborting accel rule.\n", feci, feci->ci);
 		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		kfree(nim);
@@ -2081,6 +2080,9 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 		return;
 	}
 
+	ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TX_FAILED);
+	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+
 	/*
 	 * Release that ref!
 	 */
@@ -2105,8 +2107,6 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	spin_unlock_bh(&ecm_sfe_ipv4_lock);
 
 	spin_unlock_bh(&feci->lock);
-
-	ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TX_FAILED);
 
 	kfree(nim);
 

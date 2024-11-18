@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -311,6 +311,12 @@ struct ecm_front_end_connection_instance {
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
 	bool destroy_fail_handle_pending;			/* Set while handling the connection destroy failure */
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	atomic64_t ppe_accel_fail_reason;			/* PPE accel fail reason */
+#endif
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	atomic64_t sfe_accel_fail_reason;			/* SFE accel fail reason */
+#endif
 #ifdef ECM_FRONT_END_FSE_ENABLE
 	bool fse_configure;					/* Flag to indicate if the connection is configured in Wi-Fi FSE block */
 #endif

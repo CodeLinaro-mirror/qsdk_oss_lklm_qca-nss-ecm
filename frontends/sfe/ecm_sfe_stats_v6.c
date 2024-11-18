@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -24,6 +24,11 @@
 
 #define DEBUG_LEVEL ECM_SFE_STATS_DEBUG_LEVEL
 #include "ecm_types.h"
+#include "ecm_db_types.h"
+#include "ecm_state.h"
+#include "ecm_tracker.h"
+#include "ecm_classifier.h"
+#include "ecm_front_end_types.h"
 #include "ecm_sfe_stats_v6.h"
 
 struct ecm_sfe_stats_v6 sfe_v6_stats;
@@ -135,7 +140,7 @@ static const char *ecm_sfe_stats_v6_exception_non_ported_name_str[] = {
 };
 #endif
 
-void ecm_sfe_stats_v6_inc(ecm_sfe_stats_v6_exception_type_t stat_type, int stat_idx)
+void ecm_sfe_stats_v6_inc(struct ecm_front_end_connection_instance *feci, ecm_sfe_stats_v6_exception_type_t stat_type, int stat_idx)
 {
 	switch (stat_type) {
 	case ECM_SFE_STATS_V6_EXCEPTION_MULTICAST:
@@ -153,6 +158,12 @@ void ecm_sfe_stats_v6_inc(ecm_sfe_stats_v6_exception_type_t stat_type, int stat_
 		DEBUG_TRACE("SFE Fallback Event type unknown.\n");
 		break;
 	}
+
+	/*
+	 * In ECM exceptions 0 means ACCEL_NOT_PERMITTED, it may overwrite the actual AE failure
+	 */
+	if (stat_idx)
+		atomic64_set(&feci->sfe_accel_fail_reason, stat_idx);
 }
 
 static int ecm_sfe_stats_v6_exception_show(struct seq_file *m, void __attribute__((unused))*ptr)

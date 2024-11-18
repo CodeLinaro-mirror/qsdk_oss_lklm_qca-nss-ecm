@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -238,7 +238,7 @@ struct ecm_sfe_stats_v6 {
 #endif
 };
 
-void ecm_sfe_stats_v6_inc(ecm_sfe_stats_v6_exception_type_t stat_type, int stat_idx);
+void ecm_sfe_stats_v6_inc(struct ecm_front_end_connection_instance *feci, ecm_sfe_stats_v6_exception_type_t stat_type, int stat_idx);
 int ecm_sfe_stats_v6_debugfs_init(struct dentry *dentry);
 
 #endif
