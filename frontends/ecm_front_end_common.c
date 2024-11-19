@@ -1234,7 +1234,7 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
  * ecm_front_end_common_sysctl_register()
  *	Function to register sysctl node during front end init
  */
-void ecm_front_end_common_sysctl_register()
+void ecm_front_end_common_sysctl_register(void)
 {
 	/*
 	 * Register sysctl table.
@@ -1251,7 +1251,7 @@ void ecm_front_end_common_sysctl_register()
  * ecm_front_end_common_sysctl_unregister()
  *	Function to unregister sysctl node during front end exit
  */
-void ecm_front_end_common_sysctl_unregister()
+void ecm_front_end_common_sysctl_unregister(void)
 {
 	/*
 	 * Unregister sysctl table.

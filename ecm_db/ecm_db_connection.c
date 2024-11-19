@@ -1247,7 +1247,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!ci->flags & ECM_DB_CONNECTION_FLAGS_INSERTED) {
+	if ((!ci->flags) & ECM_DB_CONNECTION_FLAGS_INSERTED) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
