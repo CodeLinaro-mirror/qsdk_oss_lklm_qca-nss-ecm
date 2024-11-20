@@ -163,8 +163,8 @@ static inline void ecm_front_end_flow_and_return_directions_get(struct nf_conn *
 	ip_addr_t ct_src_ip;
 
 	if (ip_version == 4) {
-		uint32_t flow_ip_32;
-		uint32_t ct_src_ip_32;
+		uint32_t flow_ip_32 = 0;
+		uint32_t ct_src_ip_32 = 0;
 		ECM_NIN4_ADDR_TO_IP_ADDR(ct_src_ip, ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip);
 
 		/*
