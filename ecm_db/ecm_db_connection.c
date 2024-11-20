@@ -553,7 +553,9 @@ EXPORT_SYMBOL(ecm_db_connection_data_totals_update);
  */
 void ecm_db_connection_data_totals_update_dropped(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets)
 {
+#ifdef ECM_DB_ADVANCED_STATS_ENABLE
 	int32_t i;
+#endif
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
 
