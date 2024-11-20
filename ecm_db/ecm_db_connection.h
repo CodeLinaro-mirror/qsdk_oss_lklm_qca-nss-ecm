@@ -231,6 +231,13 @@ struct ecm_db_connection_instance {
 								/* The indexes of the first interfaces in the destinaiton interface list */
 	struct ecm_db_multicast_tuple_instance *ti; 		/* Multicast Connection instance */
 	bool to_mcast_interfaces_set;				/* Flag to indicate if the destination interface list is currently empty or not */
+
+	/*
+	 * If mcuc is turned on for this connection,
+	 * this address is the host's mac address,
+	 * otherwise, it is the multicast destination mac address.
+	 */
+	uint8_t mcuc_addr[ETH_ALEN];
 #endif
 
 #ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE

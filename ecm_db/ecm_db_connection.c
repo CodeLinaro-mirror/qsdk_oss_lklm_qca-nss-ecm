@@ -3746,6 +3746,12 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 	ni = ci->node[ECM_DB_OBJ_DIR_TO_NAT];
 	snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ni->address);
 
+#ifdef ECM_MULTICAST_ENABLE
+	if (!is_zero_ether_addr(ci->mcuc_addr)) {
+		snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ci->mcuc_addr);
+	}
+#endif
+
 	ni = ci->node[ECM_DB_OBJ_DIR_FROM_NAT];
 	snprintf(snode_address_nat, sizeof(snode_address_nat), "%pM", ni->address);
 

@@ -847,7 +847,10 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	/*
 	 * Destination Node(MAC) address. This address will be same for all to side intefaces
 	 */
-	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
+	ecm_db_connection_mcuc_address_get(feci->ci, dest_mac);
+	if (is_zero_ether_addr(dest_mac)) {
+		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
+	}
 	memcpy(create->dest_mac, dest_mac, ETH_ALEN);
 
 	/*
@@ -1735,7 +1738,11 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	}
 #endif
 
-	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
+	ecm_db_connection_mcuc_address_get(feci->ci, dest_mac);
+	if (is_zero_ether_addr(dest_mac)) {
+		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_mac);
+	}
+
 	memcpy(create->dest_mac, dest_mac, ETH_ALEN);
 
 	/*
@@ -2328,6 +2335,7 @@ static void ecm_sfe_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 	int i, ret;
 	uint32_t mc_dst_dev[ECM_DB_MULTICAST_IF_MAX];
 	int32_t if_num;
+	uint8_t dest_mac_addr[ETH_ALEN] = {0};
 	uint32_t mc_flags = 0;
 	bool if_update;
 	bool is_routed;
@@ -2368,7 +2376,8 @@ static void ecm_sfe_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num > 0   An interface has either left or joined the group. Process the leave/join interface request.
 		 */
 		memset(mc_dst_dev, 0, sizeof(mc_dst_dev));
-		if_num = mc_bridge_ipv4_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = mc_bridge_ipv4_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX,
+				mc_dst_dev, dest_mac_addr);
 		if (if_num < 0) {
 			/*
 			 * This may a valid case when all the interfaces have left a multicast group.
@@ -2522,6 +2531,12 @@ process_packet:
 		}
 
 		DEBUG_TRACE("BRIDGE UPDATE callback ===> leave_cnt %d, join_cnt %d\n", mc_update.if_leave_cnt, mc_update.if_join_cnt);
+
+		/*
+		 * Because MCUC, the to mac address could be changed to the host
+		 * address.
+		 */
+		ecm_db_connection_mcuc_address_update(ci, dest_mac_addr);
 
 		/*
 		 * Do we have any new interfaces that have joined?

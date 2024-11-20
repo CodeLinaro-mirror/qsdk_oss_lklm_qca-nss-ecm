@@ -4667,16 +4667,19 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			struct net_device *mc_br_slave_dev = NULL;
 			uint32_t mc_max_dst = ECM_DB_MULTICAST_IF_MAX;
 			uint32_t mc_dst_if_index[ECM_DB_MULTICAST_IF_MAX];
+			uint8_t mac_addr[ETH_ALEN] = {0};
 
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
-				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
+				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])),
+						htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index, mac_addr);
 			} else {
 #ifdef ECM_IPV6_ENABLE
 				struct in6_addr origin6;
 				struct in6_addr group6;
 				ECM_IP_ADDR_TO_NIN6_ADDR(origin6, packet_src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
-				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst, mc_dst_if_index);
+				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst,
+						mc_dst_if_index, mac_addr);
 #else
 				DEBUG_WARN("IPv6 support not enabled\n");
 				if_num = -1;
@@ -4741,6 +4744,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			}
 
 			valid_if += br_if;
+			ecm_db_connection_mcuc_address_update(feci->ci, mac_addr);
 		} else {
 
 			DEBUG_ASSERT(valid_if < ECM_DB_MULTICAST_IF_MAX, "Bad array index size %d\n", valid_if);

@@ -524,6 +524,7 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 							struct nf_conntrack_tuple *orig_tuple, struct nf_conntrack_tuple *reply_tuple)
 {
 	int vif, if_cnt;
+	uint8_t mcuc_addr[ETH_ALEN] = {0};
 	uint32_t dst_dev[ECM_DB_MULTICAST_IF_MAX];
 	struct udphdr *udp_hdr;
 	struct udphdr udp_hdr_buff;
@@ -631,7 +632,8 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 		 * This is a routed flow, hence look for a valid MFC rule
 		 */
 		if (if_cnt <= 0) {
-			DEBUG_WARN("Not found a valid vif count %d\n", if_cnt);
+			DEBUG_WARN("Not found a valid vif if count %d %pI4 -> %pI4\n",
+				if_cnt, &orig_tuple->src.u3.ip, &orig_tuple->dst.u3.ip);
 			return NF_ACCEPT;
 		}
 	}
@@ -666,7 +668,8 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
-			if_cnt_bridge = mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			if_cnt_bridge = mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX,
+					dst_dev_bridge, mcuc_addr);
 			if (if_cnt_bridge <= 0) {
 				DEBUG_WARN("No bridge ports have joined multicast group\n");
 				goto process_packet;
@@ -696,13 +699,14 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 	 */
 	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
 	if (!out_dev_master) {
-		DEBUG_WARN("Expected a master\n");
+		DEBUG_WARN("%s is not master device\n", out_dev ? out_dev->name : NULL);
 		goto done;
 	}
 
-	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
+	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev, mcuc_addr);
 	if (if_cnt <= 0) {
-		DEBUG_WARN("Not found a valid MCS if count %d\n", if_cnt);
+		DEBUG_WARN("Not found a valid MCS if count %d %pI4 -> %pI4\n",
+				if_cnt, &orig_tuple->src.u3.ip, &orig_tuple->dst.u3.ip);
 		goto done;
 	}
 
@@ -714,7 +718,9 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 	 */
 	if_cnt = ecm_interface_multicast_check_for_src_ifindex(dst_dev, if_cnt, in_dev->ifindex);
 	if (if_cnt <= 0) {
-		DEBUG_WARN("Not found a valid MCS if count %d\n", if_cnt);
+		DEBUG_WARN("Not found a valid MCS after filter if count %d %pI4 -> %pI4\n",
+				if_cnt, &orig_tuple->src.u3.ip, &orig_tuple->dst.u3.ip);
+
 		goto done;
 	}
 
@@ -986,7 +992,7 @@ process_packet:
 			goto done;
 		}
 
-		DEBUG_TRACE("%px: Create destination node\n", nci);
+		DEBUG_TRACE("%px: Create destination node mac address:%pM\n", nci, dest_mac_addr);
 		ecm_db_multicast_copy_if_heirarchy(to_list_temp, to_list);
 		ni[ECM_DB_OBJ_DIR_TO] = ecm_multicast_ipv4_node_establish_and_ref(feci, out_dev, ip_dest_addr, to_list_temp, *to_list_first, dest_mac_addr, skb);
 
@@ -1294,6 +1300,14 @@ process_packet:
 				goto done;
 			}
 		}
+	}
+
+	/*
+	 * If checked from snooper, mcuc_addr either multicast mac address or
+	 * a host mac address.
+	 */
+	if (!is_zero_ether_addr(mcuc_addr)) {
+		ecm_db_connection_mcuc_address_update(ci, mcuc_addr);
 	}
 
 	/*
