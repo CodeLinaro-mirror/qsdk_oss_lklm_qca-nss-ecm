@@ -174,6 +174,7 @@ static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency pro
 static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
 static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
 static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
+static uint32_t ecm_classifier_emesh_udp_clf_enabled;	/* UDP classification enable flag */
 
 /*
  * Management thread control
@@ -201,6 +202,73 @@ static int ecm_classifier_emesh_sawf_count = 0;			/* Tracks number of instances 
  * Callback structure to support Mesh latency param config in WLAN driver
  */
 static struct ecm_classifier_emesh_sawf_callbacks ecm_emesh;
+
+/*
+ * ecm_classifier_emesh_sawf_ref()
+ *	Ref
+ */
+static void ecm_classifier_emesh_sawf_ref(struct ecm_classifier_instance *ci)
+{
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
+
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	cemi->refs++;
+	DEBUG_TRACE("%px: cemi ref %d\n", cemi, cemi->refs);
+	DEBUG_ASSERT(cemi->refs > 0, "%px: ref wrap\n", cemi);
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+}
+
+/*
+ * ecm_classifier_emesh_sawf_deref()
+ *	Deref
+ */
+static int ecm_classifier_emesh_sawf_deref(struct ecm_classifier_instance *ci)
+{
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
+
+	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	cemi->refs--;
+	DEBUG_ASSERT(cemi->refs >= 0, "%px: refs wrapped\n", cemi);
+	DEBUG_TRACE("%px: EMESH classifier deref %d\n", cemi, cemi->refs);
+	if (cemi->refs) {
+		int refs = cemi->refs;
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		return refs;
+	}
+
+	/*
+	 * Object to be destroyed
+	 */
+	ecm_classifier_emesh_sawf_count--;
+	DEBUG_ASSERT(ecm_classifier_emesh_sawf_count >= 0, "%px: ecm_classifier_emesh_sawf_count wrap\n", cemi);
+
+	/*
+	 * UnLink the instance from our list
+	 */
+	if (cemi->next) {
+		cemi->next->prev = cemi->prev;
+	}
+
+	if (cemi->prev) {
+		cemi->prev->next = cemi->next;
+	} else {
+		DEBUG_ASSERT(ecm_classifier_emesh_sawf_instances == cemi, "%px: list bad %px\n", cemi, ecm_classifier_emesh_sawf_instances);
+		ecm_classifier_emesh_sawf_instances = cemi->next;
+	}
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+
+	/*
+	 * Final
+	 */
+	DEBUG_INFO("%px: Final EMESH classifier instance\n", cemi);
+	kfree(cemi);
+
+	return 0;
+}
 
 /*
  * ecm_classifier_sawf_fill_rm_sync_msg()
@@ -272,6 +340,7 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		cemi->flow_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->flow_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
+		cemi->type = ECM_CLASSIFIER_SAWF;
 	} else {
 		msg->flow_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
@@ -285,6 +354,7 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		cemi->return_rule_classifier_type = SP_RULE_TYPE_SAWF_IFLI;
 		cemi->return_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
+		cemi->type = ECM_CLASSIFIER_SAWF;
 	} else {
 		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
@@ -627,15 +697,33 @@ done:
 	/*
 	 * Sync sawf connection with RM
 	 *	Since it is possible a connection may be wired on this node, but wireless on another, it is necessary to call this sync regardless of MSDUQ
+	 *	Donot send RM sync in case UDP classification config is enabled
 	 */
 	DEBUG_TRACE("svid_f %u, svid_fp %u, svid_r %u, svid_rp %u\n", msg->flow_service_class_id, flow_svid_prev, msg->return_service_class_id, return_svid_prev);
-	if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && flow_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) ||
-		(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && return_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)) {
-		ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_UPDATED, sender, &rm_msg);
-	} else {
-		ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_PRIORITIZED, sender, &rm_msg);
+	if (!ecm_classifier_emesh_udp_clf_enabled) {
+		if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && flow_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) ||
+			(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && return_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)) {
+			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_UPDATED, sender, &rm_msg);
+		} else {
+			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_PRIORITIZED, sender, &rm_msg);
+		}
+		sp_mapdb_rm_sync(&rm_msg);
 	}
-	sp_mapdb_rm_sync(&rm_msg);
+
+	if (ecm_classifier_emesh_udp_clf_enabled) {
+		spin_lock_bh(&feci->lock);
+		if ((feci->accel_engine == ECM_FRONT_END_ENGINE_PPE) && (selected_front_end != ECM_FRONT_END_TYPE_PPE)) {
+			feci->next_accel_engine = ECM_FRONT_END_ENGINE_SFE;
+			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+			spin_unlock_bh(&feci->lock);
+
+			DEBUG_TRACE("Decelerate connection to SFE");
+			feci->decelerate(feci);
+			goto processing_done;
+		}
+
+		spin_unlock_bh(&feci->lock);
+	}
 
 	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
 		switch(r->inner.ae_type) {
@@ -658,6 +746,7 @@ done:
 			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
 	}
 
+processing_done:
 	if (src_dev) {
 		dev_put(src_dev);
 	}
@@ -673,6 +762,138 @@ end:
 
 	return;
 }
+
+/*
+ * ecm_classifier_emesh_sawf_get_connection_info
+ *	Function used by FLS to get ipv4/ipv6 connection info
+ */
+bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp)
+{
+	struct ecm_db_connection_instance *ci;
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	struct nf_conntrack_tuple orig_tuple;
+	struct nf_conntrack_tuple reply_tuple;
+	struct ecm_classifier_emesh_sawf_instance *cemi;
+	ip_addr_t match_addr = {0}, src_addr = {0}, dst_addr = {0};
+	ecm_tracker_sender_type_t sender;
+
+	/*
+	 * Check if UDP classification is enabled
+	 */
+	if (!ecm_classifier_emesh_udp_clf_enabled) {
+		DEBUG_TRACE("%px: udp classification config not enabled\n", ct);
+		return 0;
+	}
+
+	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+
+	switch (orig_tuple.src.l3num) {
+	case NFPROTO_IPV4:
+		ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
+		if (!ci) {
+			DEBUG_TRACE("%px: ipv4 connection not found\n", ct);
+			return 0;
+		}
+
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_addr, orig_tuple.src.u3.ip);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dst_addr, reply_tuple.src.u3.ip);
+		break;
+
+	case NFPROTO_IPV6:
+		ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
+		if (!ci) {
+			DEBUG_TRACE("%px: ipv6 conection not found\n", ct);
+			return 0;
+		}
+
+		ECM_NIN6_ADDR_TO_IP_ADDR(src_addr, orig_tuple.src.u3.in6);
+		ECM_NIN6_ADDR_TO_IP_ADDR(dst_addr, reply_tuple.src.u3.in6);
+		break;
+
+	default:
+		DEBUG_TRACE("%px: connection not ipv4 or ipv6\n", ct);
+		return 0;
+	}
+
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+
+	if (ECM_IP_ADDR_MATCH(match_addr, src_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else if (ECM_IP_ADDR_MATCH(match_addr, dst_addr)) {
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	} else {
+		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		return 0;
+	}
+
+	/*
+	 * Not applicable for non wlan flows.
+	 */
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+
+	if (!src_dev || !dest_dev) {
+		DEBUG_TRACE("%px: Not able to find the dev information, connection info not relevant!\n", ci);
+		dev_put(src_dev);
+		dev_put(dest_dev);
+		ecm_db_connection_deref(ci);
+		return 0;
+	}
+
+	if (!src_dev->ieee80211_ptr && !dest_dev->ieee80211_ptr) {
+		DEBUG_TRACE("%px: Non WLAN flow, connection info is not relevant!\n", ci);
+		dev_put(src_dev);
+		dev_put(dest_dev);
+		ecm_db_connection_deref(ci);
+		return 0;
+	}
+
+	dev_put(src_dev);
+	dev_put(dest_dev);
+
+	/*
+	 * Check if emesh classifier is assigned.
+	 */
+	cemi = (struct ecm_classifier_emesh_sawf_instance *)ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+	if (!cemi) {
+		DEBUG_TRACE("%px: emesh classifier is not assigned. %u\n", ci, ci->serial);
+		ecm_db_connection_deref(ci);
+		return 0;
+	}
+
+	/*
+	 * UDP CLF is using RULE TYPE as IFLI and is given lowest prority among classifiers, So return if already a classifier is used
+	 */
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if ((cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->flow_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI) ||
+			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI)) {
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
+		ecm_classifier_emesh_sawf_deref((struct ecm_classifier_instance *)cemi);
+		ecm_db_connection_deref(ci);
+		return 0;
+	}
+
+	/*
+	 * Save the dscp values and fill the flow and return
+	 * input parameters accordingly.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		*orig_dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+		*ret_dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+	} else {
+		*orig_dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+		*ret_dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+	}
+
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+	ecm_classifier_emesh_sawf_deref((struct ecm_classifier_instance *)cemi);
+	ecm_db_connection_deref(ci);
+
+	return 1;
+}
+EXPORT_SYMBOL(ecm_classifier_emesh_sawf_get_connection_info);
 
 /*
  * ecm_classifier_emesh_sawf_get_iface_names_ipv4
@@ -780,73 +1001,6 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char 
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_get_iface_names_ipv6);
 
 /*
- * ecm_classifier_emesh_sawf_ref()
- *	Ref
- */
-static void ecm_classifier_emesh_sawf_ref(struct ecm_classifier_instance *ci)
-{
-	struct ecm_classifier_emesh_sawf_instance *cemi;
-	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
-
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
-	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	cemi->refs++;
-	DEBUG_TRACE("%px: cemi ref %d\n", cemi, cemi->refs);
-	DEBUG_ASSERT(cemi->refs > 0, "%px: ref wrap\n", cemi);
-	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-}
-
-/*
- * ecm_classifier_emesh_sawf_deref()
- *	Deref
- */
-static int ecm_classifier_emesh_sawf_deref(struct ecm_classifier_instance *ci)
-{
-	struct ecm_classifier_emesh_sawf_instance *cemi;
-	cemi = (struct ecm_classifier_emesh_sawf_instance *)ci;
-
-	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
-	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-	cemi->refs--;
-	DEBUG_ASSERT(cemi->refs >= 0, "%px: refs wrapped\n", cemi);
-	DEBUG_TRACE("%px: EMESH classifier deref %d\n", cemi, cemi->refs);
-	if (cemi->refs) {
-		int refs = cemi->refs;
-		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-		return refs;
-	}
-
-	/*
-	 * Object to be destroyed
-	 */
-	ecm_classifier_emesh_sawf_count--;
-	DEBUG_ASSERT(ecm_classifier_emesh_sawf_count >= 0, "%px: ecm_classifier_emesh_sawf_count wrap\n", cemi);
-
-	/*
-	 * UnLink the instance from our list
-	 */
-	if (cemi->next) {
-		cemi->next->prev = cemi->prev;
-	}
-
-	if (cemi->prev) {
-		cemi->prev->next = cemi->next;
-	} else {
-		DEBUG_ASSERT(ecm_classifier_emesh_sawf_instances == cemi, "%px: list bad %px\n", cemi, ecm_classifier_emesh_sawf_instances);
-		ecm_classifier_emesh_sawf_instances = cemi->next;
-	}
-	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-
-	/*
-	 * Final
-	 */
-	DEBUG_INFO("%px: Final EMESH classifier instance\n", cemi);
-	kfree(cemi);
-
-	return 0;
-}
-
-/*
  * ecm_classifier_emesh_sawf_is_bidi_packet_seen()
  *	Return true if both direction packets are seen.
  */
@@ -887,6 +1041,7 @@ static void ecm_classifier_emesh_sawf_fill_dscp_info(uint16_t dscp, struct ecm_c
 		return_input_params->dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
 	}
 }
+
 /*
  * ecm_classifier_emesh_sawf_fill_pcp()
  *	Save the PCP value in the classifier instance.
@@ -3658,6 +3813,13 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		return -1;
 	}
 
+	if (!ecm_debugfs_create_u32("udp_classification_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_emesh_udp_clf_enabled)) {
+		DEBUG_ERROR("Failed to create ecm emesh classifier udp classification config enabled file in debugfs\n");
+		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+		return -1;
+	}
+
 	/*
 	 * Register for service prioritization notification update.
 	 */
@@ -3822,7 +3984,7 @@ ecm_classifier_emesh_sdwf_deprio_status_t ecm_classifier_emesh_sdwf_check_and_de
 
 release_ref:
 	ecm_front_end_connection_deref(feci);
-	cemi->base.deref((struct ecm_classifier_instance *)cemi);
+	ecm_classifier_emesh_sawf_deref((struct ecm_classifier_instance *)cemi);
 	return status;
 }
 

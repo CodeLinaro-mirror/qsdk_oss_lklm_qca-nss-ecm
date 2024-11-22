@@ -370,6 +370,14 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv4(struct nf_conn *ct, char 
 uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char *from_buff, char *to_buff);
 
 /**
+ * Gets dscp used by fls for sdwf + mesh setups for ipv4/ipv6 connections
+ *
+ * @return
+ * The status of fetching the connection info (1 in case of success, 0 in case of failure).
+ */
+bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp);
+
+/**
  * @}
  */
 
