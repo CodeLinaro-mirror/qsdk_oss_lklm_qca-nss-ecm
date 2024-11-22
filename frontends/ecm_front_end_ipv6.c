@@ -166,7 +166,8 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	ip_addr_t to_nat_mac_lookup;
 	bool gateway = false;
 	bool dst_dev_override = false;
-	struct in6_addr nat_dev_saddr, nat_dev_daddr;
+	struct in6_addr nat_dev_saddr = {0};
+	struct in6_addr nat_dev_daddr = {0};
 	ip_addr_t ip_nat_dev_saddr;
 
 	/*
