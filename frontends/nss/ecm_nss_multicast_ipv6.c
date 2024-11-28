@@ -1802,6 +1802,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 	bool mc_update;
 	bool is_routed;
 	struct net_device *l2_br_dev, *l3_br_dev;
+	uint8_t dest_mac_addr[ETH_ALEN] = {0};
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(group6, dest_ip);
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
@@ -1842,7 +1843,8 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num == 0  All slaves have left the group. Deacel the flow.
 		 * 	if_num > 0   An interface leave/Join the group. Process the leave/join interface request.
 		 */
-		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX,
+				mc_dst_dev, dest_mac_addr);
 		if (if_num < 0) {
 			/*
 			 * This may a valid case when all the interface has left a multicast group.

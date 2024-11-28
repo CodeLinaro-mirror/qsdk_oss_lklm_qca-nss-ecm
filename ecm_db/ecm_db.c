@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -275,7 +277,7 @@ static int ecm_db_ipv6_route_table_update_event(struct notifier_block *nb,
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
 		struct in6_addr prefix_addr;
-		struct in6_addr ecm_in6;
+		struct in6_addr ecm_in6 = {0};
 		ip_addr_t ecm_addr;
 		struct ecm_db_iface_instance *interfaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 		int32_t if_first;

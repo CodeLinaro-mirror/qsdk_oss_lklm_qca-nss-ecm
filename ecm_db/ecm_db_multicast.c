@@ -1082,6 +1082,35 @@ int ecm_db_multicast_to_interfaces_xml_state_get(struct ecm_db_connection_instan
 	return ret;
 }
 
+/*
+ * ecm_db_connection_mcuc_address_get()
+ *	Return address of the mcuc used when sending packets to the specified side.
+ */
+void ecm_db_connection_mcuc_address_get(struct ecm_db_connection_instance *ci, uint8_t *mac_addr)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+	ether_addr_copy(mac_addr, ci->mcuc_addr);
+}
+
+/*
+ * ecm_db_connection_mcuc_address_update()
+ *	Update the node of address.
+ * return value:
+ *	1: replace with new mac
+ *	0: not changed.
+ */
+bool ecm_db_connection_mcuc_address_update(struct ecm_db_connection_instance *ci, uint8_t *mac_addr)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+	if (!ether_addr_equal(mac_addr, ci->mcuc_addr)) {
+		spin_lock_bh(&ecm_db_lock);
+		ether_addr_copy(ci->mcuc_addr, mac_addr);
+		spin_unlock_bh(&ecm_db_lock);
+		return 1;
+	}
+	return 0;
+}
+
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 /*

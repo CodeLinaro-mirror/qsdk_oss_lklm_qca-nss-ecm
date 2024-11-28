@@ -586,12 +586,14 @@ precedence_alloc:
 			goto feci_alloc_done;
 		}
 
+#if defined(ECM_FRONT_END_NSS_ENABLE) || defined(ECM_FRONT_END_SFE_ENABLE) || defined(ECM_FRONT_END_PPE_ENABLE)
 feci_alloc_check:
 		if (!feci) {
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_FRONTEND_ALLOC_FAIL);
 			DEBUG_WARN("Failed to allocate front end\n");
 			return NF_ACCEPT;
 		}
+#endif
 
 feci_alloc_done:
 		if (ae_result != ECM_AE_CLASSIFIER_RESULT_DONT_CARE) {
@@ -1147,7 +1149,7 @@ done:
 		}
 #endif
 
-#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE || ECM_CLASSIFIER_WIFI_ENABLE
+#if defined(ECM_CLASSIFIER_DSCP_ENABLE) || defined(ECM_CLASSIFIER_EMESH_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 		/*
 		 * Ingress QoS tag

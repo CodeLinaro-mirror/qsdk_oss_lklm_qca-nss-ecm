@@ -156,7 +156,7 @@ struct ecm_classifier_process_response {
 	uint32_t return_qos_tag;			/* QoS tag to use for the packet */
 	uint8_t flow_int_pri;				/* int_pri tag to use for the packet*/
 	uint8_t return_int_pri;				/* int_pri tag to use for the packet*/
-#if defined ECM_CLASSIFIER_DSCP_ENABLE || defined ECM_CLASSIFIER_EMESH_ENABLE || ECM_CLASSIFIER_WIFI_ENABLE
+#if defined(ECM_CLASSIFIER_DSCP_ENABLE) || defined(ECM_CLASSIFIER_EMESH_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 #ifdef ECM_CLASSIFIER_DSCP_IGS
 	uint16_t igs_flow_qos_tag;			/* Ingress QoS tag to use for the packet */
 	uint16_t igs_return_qos_tag;			/* Ingress QoS tag to use for the return packet */
