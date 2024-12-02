@@ -135,6 +135,8 @@ enum ecm_ppe_stats_v6_exception_non_ported_events {
     /* Number of IPv6 packets ignored in from interface non-ported flow as ovs bridge not enabled */
     ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETAP_IFACE_MTU_UNKNOWN,
     /* Number of IPv6 packets ignored in from interface non-ported flow GRE tap interface mtu not available */
+    ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETUN_IFACE_MTU_UNKNOWN,
+    /* Number of IPv4 packets ignored in from interface non-ported flow GRE tun interface mtu not available */
     ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_MORE_THAN_ONE_PPPOE_UNSUPPORTED,
     /* Number of IPv6 packets ignored in from interface non-ported flow as multiple PPPOE not supported */
     ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_PPPOE_FLOW_INVALID,

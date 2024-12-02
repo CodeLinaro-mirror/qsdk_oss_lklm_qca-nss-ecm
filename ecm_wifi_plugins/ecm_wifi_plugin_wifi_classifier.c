@@ -30,20 +30,21 @@
 static inline uint32_t ecm_wifi_plugin_get_wifi_metadata(struct ecm_classifier_wifi_metadata *wifi_metadata)
 {
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	struct ath_dp_accel_cfg metadata = {0};
+	struct ath_dp_metadata_param ath_dp_mdata = {0};
 #else
 	struct qca_wifi_metadata_info metadata = {0};
-	uint32_t skb_mark = 0;
 #endif
-
+	uint32_t skb_mark = 0;
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	metadata.in_dest_dev = wifi_metadata->wifi_mdata.dest_dev;
-	metadata.in_dest_mac = wifi_metadata->wifi_mdata.dest_mac;
-	metadata.out_ppe_ds_node_id = ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE;
-	ath_dp_accel_cfg_fetch_ds_node_id(&metadata);
-	wifi_metadata->wifi_mdata.out_ppe_ds_node_id = metadata.out_ppe_ds_node_id;
+	ath_dp_mdata.mlo_param.in_dest_dev = wifi_metadata->wifi_mdata.dest_dev;
+	ath_dp_mdata.mlo_param.in_dest_mac = wifi_metadata->wifi_mdata.dest_mac;
+	ath_dp_mdata.mlo_param.out_ppe_ds_node_id = ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE;
 
-	return 0;
+	ath_dp_mdata.is_mlo_param_valid = (wifi_metadata->valid_params_flag & ECM_CLASSIFIER_WIFI_MLO_PARAM_VALID);
+	ath_dp_mdata.is_sawf_param_valid = 0;
+
+	skb_mark = ath_get_metadata_info(&ath_dp_mdata);
+	wifi_metadata->wifi_mdata.out_ppe_ds_node_id = ath_dp_mdata.mlo_param.out_ppe_ds_node_id;
 #else
 	metadata.is_mlo_param_valid = (wifi_metadata->valid_params_flag & ECM_CLASSIFIER_WIFI_MLO_PARAM_VALID);
 	metadata.is_sawf_param_valid = 0;
@@ -52,9 +53,8 @@ static inline uint32_t ecm_wifi_plugin_get_wifi_metadata(struct ecm_classifier_w
 	metadata.mlo_param.out_ppe_ds_node_id = ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE;
 	skb_mark = qca_wifi_get_metadata_info(&metadata);
 	wifi_metadata->wifi_mdata.out_ppe_ds_node_id = metadata.mlo_param.out_ppe_ds_node_id;
-
-	return skb_mark;
 #endif
+	return skb_mark;
 }
 
 /*
