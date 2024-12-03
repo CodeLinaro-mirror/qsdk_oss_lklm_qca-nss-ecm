@@ -469,7 +469,9 @@ static inline enum ecm_front_end_type ecm_front_end_type_select(void)
 	}
 
 	if ((front_end_selection == ECM_FRONT_END_TYPE_SFE_PPE) &&
-	    (of_machine_is_compatible("qcom,ipq9574") || of_machine_is_compatible("qcom,ipq5332"))) {
+	    (of_machine_is_compatible("qcom,ipq9574")
+	     || of_machine_is_compatible("qcom,ipq5332")
+	     || of_machine_is_compatible("qcom,ipq5424"))) {
 		return ECM_FRONT_END_TYPE_SFE_PPE;
 	}
 #endif
