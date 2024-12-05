@@ -7737,10 +7737,10 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 	case NETDEV_UNREGISTER:
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 		/*
-		 * 'ppe_vxlan_tun' is the name of the dummy or the child netdevice.
+		 * 'ppe_vxlantun' is the name of the dummy or the child netdevice.
 		 * pdev is the Linux netdevice or parent netdevice.
 		 */
-		if (unlikely(!strncmp(dev->name, "ppe_vxlan_tun", 13))) {
+		if (unlikely(!strncmp(dev->name, "ppe_vxlantun", 12))) {
 			int ifindex;
 			struct net_device *pdev;
 
@@ -7754,6 +7754,7 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 			ecm_interface_dev_defunct_connections(pdev);
 			DEBUG_INFO("Net device:%px, NETDEV_UNREGISTER dev: %s pdev: %s\n", dev, dev->name, pdev->name);
 			dev_put(pdev);
+			break;
 		}
 #endif
 		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER \n", dev);
