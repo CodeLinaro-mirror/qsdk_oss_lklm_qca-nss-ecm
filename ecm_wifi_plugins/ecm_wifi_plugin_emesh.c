@@ -201,9 +201,15 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	 * For upstream driver we can call the query only for the SVID valid case.
 	 */
 	if (!(sawf_flow_info->valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
+		ecm_wifi_plugin_warning("Invalid query to ATH get_msduq\n");
 		return ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
 
+	ecm_wifi_plugin_info("ATH SAWF params rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
+			ath_dp_mdata.sawf_param.sawf_rule_type,
+			ath_dp_mdata.sawf_param.pcp, ath_dp_mdata.sawf_param.dscp, ath_dp_mdata.sawf_param.service_id,
+			ath_dp_mdata.sawf_param.rule_id, ath_dp_mdata.sawf_param.valid_flag, ath_dp_mdata.sawf_param.mcast_flag,
+			ath_dp_mdata.sawf_param.netdev->name, ath_dp_mdata.sawf_param.peer_mac);
 	return ath_get_metadata_info(&ath_dp_mdata);
 #else
 	metadata.sawf_param.sawf_rule_type = sawf_flow_info->sawf_rule_type;
@@ -212,6 +218,11 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	metadata.sawf_param.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
 	metadata.sawf_param.mcast_flag = sawf_flow_info->is_mc_flow;
 
+	ecm_wifi_plugin_info("Prop SAWF params rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
+			metadata.sawf_param.sawf_rule_type,
+			metadata.sawf_param.pcp, metadata.sawf_param.dscp, metadata.sawf_param.service_id,
+			metadata.sawf_param.rule_id, metadata.sawf_param.valid_flag, metadata.sawf_param.mcast_flag,
+			metadata.sawf_param.netdev->name, metadata.sawf_param.peer_mac);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	return qca_wifi_get_metadata_info(&metadata);
 #else
