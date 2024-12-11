@@ -65,6 +65,10 @@
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
+#ifdef ECM_INTERFACE_DSA_ENABLE
+#include <linux/dsa/8021q.h>
+#include <net/dsa.h>
+#endif
 
 /*
  * Debug output levels
@@ -565,7 +569,6 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 			uint32_t vlan_value = 0;
 			struct net_device *vlan_out_dev = NULL;
 #endif
-
 			ii_single = ecm_db_multicast_if_instance_get_at_index(ii_temp, list_index);
 			ifaces = (struct ecm_db_iface_instance **)ii_single;
 			ii = *ifaces;
@@ -731,6 +734,58 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 				break;
+
+			case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				struct ecm_db_interface_info_dsa dsa_info;
+				uint32_t dsa_vlan_value = 0;
+
+				DEBUG_TRACE("%px: DSA\n", feci);
+
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+					/*
+					 * Can only support one vlan.
+					 */
+					rule_invalid = true;
+					DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+					break;
+				}
+
+				ecm_db_iface_dsa_info_get(ii, &dsa_info);
+				dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+				/*
+				 * Ready to write the DSA VLAN rule
+				 */
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]] = dsa_vlan_value;
+				create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+				if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_DSA);
+					if (is_valid_ether_addr(dsa_info.address)) {
+						ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac, dsa_info.address);
+						create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+						create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+					}
+				}
+
+				/*
+				 * If we have not yet got an ethernet mac then take this one
+				 * (very unlikely as mac should have been propagated to the slave (outer) device)
+				 */
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
+					interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+					DEBUG_TRACE("%px: DSA use mac: %pM\n", feci, dsa_info.address);
+				}
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+				DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in flow dir\n", feci, dsa_vlan_value);
+#else
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+#endif
+				break;
+
 			default:
 				DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 			}
@@ -1235,6 +1290,65 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				/*
+				 * Can only support one vlan.
+				 */
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
+				break;
+			}
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * Primary or secondary (QinQ) VLAN?
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] == 0) {
+				create->vlan_primary_rule.ingress_vlan_tag = vlan_value;
+			} else {
+				create->vlan_secondary_rule.ingress_vlan_tag = vlan_value;
+			}
+			create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				create->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_DSA);
+
+				if (is_valid_ether_addr(dsa_info.address)) {
+					ether_addr_copy((uint8_t *)create->src_mac_rule.flow_src_mac, dsa_info.address);
+					create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one
+			 * (very unlikely as mac should have been propagated to the slave (outer) device)
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
+				interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+				DEBUG_TRACE("%px: DSA use mac: %pM\n", feci, dsa_info.address);
+			}
+			DEBUG_TRACE("%px: DSA vlan tag: %x\n", feci, dsa_vlan_value);
+
+#else
+			rule_invalid = true;
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_DSA_UNSUPPORTED);
+			DEBUG_TRACE("%px: DSA - unsupported\n", feci);
+#endif
+			break;
+
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
@@ -1285,6 +1399,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_PPPOE_FLOW_INVALID);
 #endif
 			break;
+
 		default:
 			DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 		}
@@ -1578,6 +1693,58 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				DEBUG_TRACE("%px: VLAN - unsupported\n", feci);
 #endif
 				break;
+
+			case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+				struct ecm_db_interface_info_dsa dsa_info;
+				uint32_t dsa_vlan_value = 0;
+
+				DEBUG_TRACE("%px: DSA\n", feci);
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+					/*
+					 * Can only support one vlan.
+					 */
+					rule_invalid = true;
+					DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_QINQ_UNSUPPORTED);
+					break;
+				}
+				ecm_db_iface_dsa_info_get(ii, &dsa_info);
+				dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+				/*
+				 * Primary or secondary (QinQ) VLAN?
+				 */
+				create->if_rule[valid_vif_idx].egress_vlan_tag[interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]] = dsa_vlan_value;
+				create->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+				interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+				if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+					create->if_rule[valid_vif_idx].rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+					feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_DSA);
+					if (is_valid_ether_addr(dsa_info.address)) {
+						ether_addr_copy((uint8_t *)create->src_mac_rule.return_src_mac, dsa_info.address);
+						create->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_RETURN_VALID;
+						create->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+					}
+				}
+				/*
+				 * If we have not yet got an ethernet mac then take this one
+				 * (very unlikely as mac should have been propagated to the slave (outer) device)
+				 */
+				if (interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET] == 0) {
+					interface_type_counts[ECM_DB_IFACE_TYPE_ETHERNET]++;
+					DEBUG_TRACE("%px: DSA use mac: %pM\n", feci, dsa_info.address);
+				}
+				DEBUG_TRACE("%px: DSA vlan tag: %x\n", feci, dsa_vlan_value);
+				create->if_rule[valid_vif_idx].valid_flags |= SFE_MC_RULE_CREATE_IF_FLAG_VLAN_VALID;
+#else
+				rule_invalid = true;
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_UNSUPPORTED);
+				DEBUG_TRACE("%px: DSA - unsupported\n", feci);
+#endif
+				break;
+
 			default:
 				DEBUG_TRACE("%px: Ignoring: %d (%s)\n", feci, ii_type, ii_name);
 			}

@@ -239,6 +239,11 @@ ECM_INTERFACE_VLAN_ENABLE=y
 ccflags-$(ECM_INTERFACE_VLAN_ENABLE) += -DECM_INTERFACE_VLAN_ENABLE
 
 # #############################################################################
+# Define ECM_INTERFACE_DSA_ENABLE=y in order to enable support for DSA Accel
+# #############################################################################
+ccflags-$(ECM_INTERFACE_DSA_ENABLE) += -DECM_INTERFACE_DSA_ENABLE
+
+# #############################################################################
 # Define ECM_INTERFACE_MACVLAN_ENABLE=y in order to enable support for MACVLAN
 # #############################################################################
 ccflags-$(ECM_INTERFACE_MACVLAN_ENABLE) += -DECM_INTERFACE_MACVLAN_ENABLE

@@ -53,6 +53,10 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
+#ifdef ECM_INTERFACE_DSA_ENABLE
+#include <linux/dsa/8021q.h>
+#include <net/dsa.h>
+#endif
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 #include <net/vxlan.h>
 #endif
@@ -328,8 +332,8 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
 		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
 
-		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s), type: %d (%s)\n",
-				feci, list_index, ii, ii->name, ii_type, ii_name);
+		DEBUG_TRACE("%px: list_index: %d, ii: %px(%s), type: %d (%s) ae_iface_id(%d)\n",
+				feci, list_index, ii, ii->name, ii_type, ii_name, ae_iface_id);
 
 		if (ecm_front_end_common_intf_ingress_qdisc_check(iface_id)) {
 			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_INGRESS_QDISC_UNSUPPORTED);
@@ -415,6 +419,53 @@ process_next_iface_flow:
 			rule_invalid = true;
 			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED);
 			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+			int32_t port_id;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				from_iface_id = iface_id;
+			}
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			pd4rc->vlan_rule.primary_vlan.ingress_vlan_tag = dsa_vlan_value;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			ecm_db_iface_dsa_address_get(ii, from_ppe_iface_address);
+			ether_addr_copy((uint8_t *)from_ppe_iface_address, vlan_info.address);
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_UNSUPPORTED);
 #endif
 			break;
 
@@ -806,6 +857,53 @@ process_next_iface_return:
 			rule_invalid = true;
 			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
 			DEBUG_TRACE("%px: OVS Bridge - not supported\n", feci);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+			int32_t port_id;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_QINQ_UNSUPPORTED);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * In case of vlan as VP port we need to specify port
+			 * corresponding to vlan port and not the ultimate physical port.
+			 */
+			port_id = ecm_ppe_common_get_port_id_by_netdev_id(iface_id);
+			if ((port_id != PPE_DRV_PORT_ID_INVALID) && ppe_vp_get_netdev_by_port_num(port_id)) {
+				to_iface_id = iface_id;
+			}
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			pd4rc->vlan_rule.primary_vlan.egress_vlan_tag = dsa_vlan_value;
+			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_VLAN;
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			ecm_db_iface_dsa_address_get(ii, to_ppe_iface_address);
+			ether_addr_copy((uint8_t *)to_ppe_iface_address, dsa_info.address);
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+			ecm_ppe_stats_v4_inc(ECM_PPE_STATS_V4_EXCEPTION_PORTED, ECM_PPE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_UNSUPPORTED);
 #endif
 			break;
 

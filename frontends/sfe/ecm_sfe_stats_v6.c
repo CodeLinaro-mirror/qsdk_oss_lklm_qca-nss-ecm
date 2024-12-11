@@ -38,6 +38,8 @@ static const char *ecm_sfe_stats_v6_exception_multicast_name_str[] = {
 	"v6_exception_multicast_from_iface_vlan_not_enabled",
 	"v6_exception_multicast_from_iface_more_than_one_pppoe_unsupported",
 	"v6_exception_multicast_from_iface_pppoe_flow_invalid",
+	"v6_exception_multicast_from_iface_dsa_unsupported",
+	"v6_exception_multicast_from_iface_dsa_qinq_unsupported",
 	"v6_exception_multicast_no_to_interfaces",
 	"v6_exception_multicast_to_iface_bridge_cascade",
 	"v6_exception_multicast_to_iface_invalid_iface_id",
@@ -49,6 +51,8 @@ static const char *ecm_sfe_stats_v6_exception_multicast_name_str[] = {
 	"v6_exception_multicast_to_iface_pppoe_flow_invalid",
 	"v6_exception_multicast_to_iface_only_two_vlans_supported",
 	"v6_exception_multicast_to_iface_vlan_not_enabled",
+	"v6_exception_multicast_to_iface_dsa_unsupported",
+	"v6_exception_multicast_to_iface_dsa_qinq_unsupported",
 	"v6_exception_multicast_regen_occurred",
 	"v6_exception_multicast_tx_failed"
 };
@@ -73,6 +77,8 @@ static const char *ecm_sfe_stats_v6_exception_ported_name_str[] = {
 	"v6_exception_ported_from_iface_lag_not_enabled",
 	"v6_exception_ported_from_iface_vxlan_not_enabled",
 	"v6_exception_ported_from_iface_tun6rd_not_enabled",
+	"v6_exception_ported_from_iface_dsa_qinq_unsupported",
+	"v6_exception_ported_from_iface_dsa_unsupported",
 	"v6_exception_ported_to_iface_bridge_cascade",
 	"v6_exception_ported_to_iface_ovs_bridge_cascade",
 	"v6_exception_ported_to_iface_ovs_internal_cascade",
@@ -87,6 +93,8 @@ static const char *ecm_sfe_stats_v6_exception_ported_name_str[] = {
 	"v6_exception_ported_to_iface_lag_not_enabled",
 	"v6_exception_ported_to_iface_vxlan_not_enabled",
 	"v6_exception_ported_to_iface_tun6rd_not_enabled",
+	"v6_exception_ported_to_iface_dsa_qinq_unsupported",
+	"v6_exception_ported_to_iface_dsa_unsupported",
 	"v6_exception_ported_mht_port_failed",
 	"v6_exception_ported_regen_occurred",
 	"v6_exception_ported_tx_failed"

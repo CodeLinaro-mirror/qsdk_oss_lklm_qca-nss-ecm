@@ -60,6 +60,10 @@ enum ecm_ppe_stats_v6_exception_ported_events {
     /* Number of IPv6 packets ignored in from interface ported flow as first interface is unknown */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_INVALID_TOP_IFACE,
     /* Number of IPv6 packets ignored in from interface ported flow as top interfaces are unknown */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_DSA_QINQ_UNSUPPORTED,
+    /* Number of IPv6 packets ignored in from DSA interface with Q-in-Q is not supported */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_DSA_UNSUPPORTED,
+    /* Number of IPv6 packets ignored in from DSA interface is not supported */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INGRESS_QDISC_UNSUPPORTED,
     /* Number of IPv6 packets ignored in to interface ported flow as ingress qdisc not supported */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_QDISC_UNSUPPORTED,
@@ -92,6 +96,10 @@ enum ecm_ppe_stats_v6_exception_ported_events {
     /* Number of IPv6 packets ignored in to interface ported flow as first interface is unknown */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_INVALID_TOP_IFACE,
     /* Number of IPv6 packets ignored in to interface ported flow as top interfaces are unknown */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_DSA_QINQ_UNSUPPORTED,
+    /* Number of IPv6 packets ignored in to DSA interface with Q-in-Q is not supported */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_DSA_UNSUPPORTED,
+    /* Number of IPv6 packets ignored in to DSA interface is not supported */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_PPE_OFFLOAD_DISABLED,
     /* Number of IPv6 packets ignored in ported flow as ppe offload is disabled */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_REGEN_OCCURRED,

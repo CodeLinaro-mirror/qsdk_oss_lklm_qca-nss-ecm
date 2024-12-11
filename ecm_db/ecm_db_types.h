@@ -284,6 +284,7 @@ enum ecm_db_iface_types {
 	ECM_DB_IFACE_TYPE_MACVLAN,			/* Interface is a MACVLAN interface */
 	ECM_DB_IFACE_TYPE_L2TPV3,			/* Interface is a L2TPV3 over ethernet interface */
 	ECM_DB_IFACE_TYPE_OVS_INTERNAL,			/* Interface is a OpenvSwitch bridge internal interface */
+	ECM_DB_IFACE_TYPE_DSA,				/* Interface is a DSA interface */
 	ECM_DB_IFACE_TYPE_COUNT,			/* Number of interface types */
 };
 typedef enum ecm_db_iface_types ecm_db_iface_type_t;
@@ -294,6 +295,14 @@ typedef enum ecm_db_iface_types ecm_db_iface_type_t;
 struct ecm_db_interface_info_ethernet {			/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
 };
+
+#ifdef ECM_INTERFACE_DSA_ENABLE
+struct ecm_db_interface_info_dsa {			/* type == ECM_DB_IFACE_TYPE_DSA */
+	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
+	uint16_t vlan_tpid;				/* VLAN tag protocol id */
+	uint16_t vlan_tag;				/* VLAN tag of this interface */
+};
+#endif
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 enum ecm_db_interface_vxlan_extension {

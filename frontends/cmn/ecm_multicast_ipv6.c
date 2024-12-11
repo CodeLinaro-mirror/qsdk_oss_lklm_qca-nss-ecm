@@ -375,6 +375,15 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 			DEBUG_TRACE("VLAN interface unsupported\n");
 			return NULL;
 #endif
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			/*
+			 * DSA handled same along with bridge etc.
+			 */
+#else
+			DEBUG_TRACE("DSA interface unsupported\n");
+			return NULL;
+#endif
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:
 		case ECM_DB_IFACE_TYPE_BRIDGE:

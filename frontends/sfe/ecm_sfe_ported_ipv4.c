@@ -54,6 +54,10 @@
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #include <linux/netfilter/nf_conntrack_tftp.h>
+#ifdef ECM_INTERFACE_DSA_ENABLE
+#include <linux/dsa/8021q.h>
+#include <net/dsa.h>
+#endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
 #include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
@@ -511,11 +515,11 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	to_sfe_iface = to_ifaces[to_ifaces_first];
 	from_sfe_iface_id = ecm_db_iface_interface_identifier_get(from_sfe_iface);
 	to_sfe_iface_id = ecm_db_iface_interface_identifier_get(to_sfe_iface);
-	if ((from_sfe_iface_id < 0) || (to_sfe_iface_id < 0)) {
+	if (from_sfe_iface_id < 0 || to_sfe_iface_id < 0) {
 		ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_INVALID_BOTTOM_IFACE);
-		DEBUG_TRACE("%px: from_sfe_iface_id: %d, to_sfe_iface_id: %d\n", feci, from_sfe_iface_id, to_sfe_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+		DEBUG_TRACE("%px: from_sfe_iface_id: %d, to_sfe_iface_id: %d\n", feci, from_sfe_iface_id, to_sfe_iface_id);
 		goto ported_accel_bad_rule;
 	}
 
@@ -684,6 +688,57 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			nircm->vlan_primary_rule.ingress_vlan_tag = dsa_vlan_value;
+			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 */
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_DSA);
+
+				ether_addr_copy((uint8_t *)from_sfe_iface_address, dsa_info.address);
+				if (is_valid_ether_addr(from_sfe_iface_address)) {
+					DEBUG_TRACE("%px: DSA Port use mac: %pM\n", feci, from_sfe_iface_address);
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in flow dir\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_FROM_IFACE_DSA_UNSUPPORTED);
 #endif
 			break;
 
@@ -945,7 +1000,6 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_out_dev = NULL;
 #endif
-
 		ii = to_ifaces[list_index];
 		ii_type = ecm_db_iface_type_get(ii);
 		ii_name = ecm_db_interface_type_to_string(ii_type);
@@ -1047,6 +1101,56 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 #else
 			rule_invalid = true;
 			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_OVS_BRIDGE_UNSUPPORTED);
+#endif
+			break;
+
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			struct ecm_db_interface_info_dsa dsa_info;
+			uint32_t dsa_vlan_value = 0;
+
+			DEBUG_TRACE("%px: DSA\n", feci);
+
+			/*
+			 * Can only support one vlan.
+			 */
+			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
+				rule_invalid = true;
+				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
+				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_QINQ_UNSUPPORTED);
+				break;
+			}
+
+			ecm_db_iface_dsa_info_get(ii, &dsa_info);
+			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
+			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
+
+			/*
+			 * Ready to write the DSA VLAN rule
+			 */
+			nircm->vlan_primary_rule.egress_vlan_tag = dsa_vlan_value;
+			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
+
+			/*
+			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
+			 */
+			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_DSA);
+
+				ether_addr_copy((uint8_t *)to_sfe_iface_address, dsa_info.address);
+				if (is_valid_ether_addr(to_sfe_iface_address)) {
+					DEBUG_TRACE("%px: DSA Port use mac: %pM\n", feci, to_sfe_iface_address);
+					ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
+					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
+					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
+				}
+			}
+			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in return dir\n", feci, dsa_vlan_value);
+#else
+			rule_invalid = true;
+			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
+			ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_TO_IFACE_DSA_UNSUPPORTED);
 #endif
 			break;
 
