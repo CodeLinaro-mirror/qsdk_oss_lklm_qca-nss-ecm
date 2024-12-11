@@ -2323,7 +2323,7 @@ static struct ecm_db_iface_instance *ecm_interface_pppoe_interface_establish(str
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_pppoe(type_info->pppoe_session_id, type_info->remote_mac);
+	ii = ecm_db_iface_find_and_ref_pppoe(type_info->pppoe_session_id, type_info->remote_mac, dev_interface_num);
 	if (ii) {
 		DEBUG_TRACE("%px: iface established\n", ii);
 		return ii;
@@ -2342,7 +2342,7 @@ static struct ecm_db_iface_instance *ecm_interface_pppoe_interface_establish(str
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_pppoe(type_info->pppoe_session_id, type_info->remote_mac);
+	ii = ecm_db_iface_find_and_ref_pppoe(type_info->pppoe_session_id, type_info->remote_mac, dev_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);

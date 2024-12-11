@@ -249,7 +249,7 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_ovs_internal(uint8_t *ad
 struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_unknown(uint32_t os_specific_ident);
 
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_session_id, uint8_t *remote_mac);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_session_id, uint8_t *remote_mac, int32_t if_num);
 void ecm_db_iface_add_pppoe(struct ecm_db_iface_instance *ii,
 			    uint16_t pppoe_session_id, uint8_t *remote_mac, char *name,
 			    int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,

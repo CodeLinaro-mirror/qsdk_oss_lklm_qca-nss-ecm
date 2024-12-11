@@ -2163,7 +2163,7 @@ EXPORT_SYMBOL(ecm_db_iface_pppoe_session_info_get);
  * ecm_db_iface_find_and_ref_pppoe()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_session_id, uint8_t *remote_mac)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_session_id, uint8_t *remote_mac, int32_t if_num)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -2183,6 +2183,7 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_pppoe(uint16_t pppoe_ses
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_PPPOE)
 				|| (ii->type_info.pppoe.pppoe_session_id != pppoe_session_id)
+				|| (ii->interface_identifier != if_num)
 				|| memcmp(ii->type_info.pppoe.remote_mac, remote_mac, ETH_ALEN)) {
 			ii = ii->hash_next;
 			continue;
