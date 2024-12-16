@@ -574,7 +574,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 */
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
 	ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
-	if (dest_dev) {
+	if (dest_dev && msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		sawf_flow_info.netdev = dest_dev;
 		sawf_flow_info.peer_mac = dmac;
 		sawf_flow_info.service_id = msg->flow_service_class_id;
@@ -582,13 +582,13 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		sawf_flow_info.rule_id = 0;
 		sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 		sawf_flow_info.is_mc_flow = false;
-		if (msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)
-			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
-
+		sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
+	} else {
+		msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
 	}
 
-	if (src_dev) {
+	if (src_dev && msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) {
 		sawf_flow_info.netdev = src_dev;
 		sawf_flow_info.peer_mac = smac;
 		sawf_flow_info.service_id = msg->return_service_class_id;
@@ -596,10 +596,10 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		sawf_flow_info.rule_id = 0;
 		sawf_flow_info.sawf_rule_type = SP_RULE_TYPE_SAWF;
 		sawf_flow_info.is_mc_flow = false;
-		if (msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)
-			sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
-
+		sawf_flow_info.valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID;
 		msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
+	} else {
+		msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
 	}
 
 	DEBUG_TRACE("%px: ci=%px %u sender=%d src_dev=%s smac=%pM dest_dev=%s dmac=%pM "
