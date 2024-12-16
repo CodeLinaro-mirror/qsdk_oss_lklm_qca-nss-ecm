@@ -231,8 +231,10 @@ EXPORT_SYMBOL(ecm_db_node_get_and_ref_next);
  */
 int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 {
+#ifdef ECM_DB_XREF_ENABLE
 #if (DEBUG_LEVEL >= 1)
 	int dir;
+#endif
 #endif
 	DEBUG_CHECK_MAGIC(ni, ECM_DB_NODE_INSTANCE_MAGIC, "%px: magic failed\n", ni);
 
@@ -258,7 +260,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!ni->flags & ECM_DB_NODE_FLAGS_INSERTED) {
+	if ((!ni->flags) & ECM_DB_NODE_FLAGS_INSERTED) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;

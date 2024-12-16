@@ -358,7 +358,7 @@ static struct net_device *ecm_interface_dev_find_by_local_addr_ipv4(ip_addr_t ad
  */
 static struct net_device *ecm_interface_dev_find_by_local_addr_ipv6(ip_addr_t addr)
 {
-	struct in6_addr addr6;
+	struct in6_addr addr6 = {0};
 	struct net_device *dev;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(addr6, addr);
@@ -453,7 +453,7 @@ EXPORT_SYMBOL(ecm_interface_dev_find_by_addr);
  */
 static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr)
 {
-	struct in6_addr daddr;
+	struct in6_addr daddr = {0};
 	struct ecm_interface_route ecm_rt;
 	struct neighbour *neigh;
 	struct rt6_info *rt;
@@ -816,7 +816,7 @@ EXPORT_SYMBOL(ecm_interface_mac_addr_get);
  */
 static bool ecm_interface_mac_addr_get_ipv6_no_route(struct net_device *dev, ip_addr_t addr, uint8_t *mac_addr)
 {
-	struct in6_addr daddr;
+	struct in6_addr daddr = {0};
 	struct neighbour *neigh;
 	struct net_device *local_dev;
 
@@ -1440,7 +1440,8 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_int
  */
 static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt)
 {
-	struct in6_addr naddr, nsaddr;
+	struct in6_addr naddr = {0};
+	struct in6_addr nsaddr = {0};
 	struct in6_addr *pnsaddr = NULL;
 
 	ECM_IP_ADDR_TO_NIN6_ADDR(naddr, daddr);
@@ -1507,7 +1508,8 @@ EXPORT_SYMBOL(ecm_interface_route_release);
  */
 void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t addr)
 {
-	struct in6_addr dst_addr, src_addr;
+	struct in6_addr dst_addr = {0};
+	struct in6_addr src_addr;
 	struct in6_addr mc_dst_addr;
 	struct rt6_info *rt6i;
 	struct neighbour *neigh;
@@ -1633,7 +1635,7 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
 struct neighbour *ecm_interface_ipv6_neigh_get(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, ip_addr_t addr)
 {
 	struct neighbour *neigh;
-	struct in6_addr ipv6_addr;
+	struct in6_addr ipv6_addr = {0};
 	int32_t ifaces_first, iface_idx;
 	struct net_device *netdev;
 	struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -4667,16 +4669,19 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			struct net_device *mc_br_slave_dev = NULL;
 			uint32_t mc_max_dst = ECM_DB_MULTICAST_IF_MAX;
 			uint32_t mc_dst_if_index[ECM_DB_MULTICAST_IF_MAX];
+			uint8_t mac_addr[ETH_ALEN] = {0};
 
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
-				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
+				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])),
+						htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index, mac_addr);
 			} else {
 #ifdef ECM_IPV6_ENABLE
 				struct in6_addr origin6;
 				struct in6_addr group6;
 				ECM_IP_ADDR_TO_NIN6_ADDR(origin6, packet_src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
-				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst, mc_dst_if_index);
+				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst,
+						mc_dst_if_index, mac_addr);
 #else
 				DEBUG_WARN("IPv6 support not enabled\n");
 				if_num = -1;
@@ -4741,6 +4746,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			}
 
 			valid_if += br_if;
+			ecm_db_connection_mcuc_address_update(feci->ci, mac_addr);
 		} else {
 
 			DEBUG_ASSERT(valid_if < ECM_DB_MULTICAST_IF_MAX, "Bad array index size %d\n", valid_if);

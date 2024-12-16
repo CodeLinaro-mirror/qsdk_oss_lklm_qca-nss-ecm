@@ -553,7 +553,9 @@ EXPORT_SYMBOL(ecm_db_connection_data_totals_update);
  */
 void ecm_db_connection_data_totals_update_dropped(struct ecm_db_connection_instance *ci, bool is_from, uint64_t size, uint64_t packets)
 {
+#ifdef ECM_DB_ADVANCED_STATS_ENABLE
 	int32_t i;
+#endif
 
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
 
@@ -1247,7 +1249,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!ci->flags & ECM_DB_CONNECTION_FLAGS_INSERTED) {
+	if ((!ci->flags) & ECM_DB_CONNECTION_FLAGS_INSERTED) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -3745,6 +3747,12 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 
 	ni = ci->node[ECM_DB_OBJ_DIR_TO_NAT];
 	snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ni->address);
+
+#ifdef ECM_MULTICAST_ENABLE
+	if (!is_zero_ether_addr(ci->mcuc_addr)) {
+		snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ci->mcuc_addr);
+	}
+#endif
 
 	ni = ci->node[ECM_DB_OBJ_DIR_FROM_NAT];
 	snprintf(snode_address_nat, sizeof(snode_address_nat), "%pM", ni->address);

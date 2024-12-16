@@ -89,6 +89,7 @@ static const char *ecm_ppe_stats_v6_exception_non_ported_name_str[] = {
 	"v6_exception_non_ported_from_iface_ovs_bridge_cascade",
 	"v6_exception_non_ported_from_iface_ovs_bridge_unsupported",
 	"v6_exception_non_ported_from_iface_gretap_iface_mtu_unknown",
+	"v6_exception_non_ported_from_iface_gretun_iface_mtu_unknown",
 	"v6_exception_non_ported_from_iface_more_than_one_pppoe_unsupported",
 	"v6_exception_non_ported_from_iface_pppoe_flow_invalid",
 	"v6_exception_non_ported_from_iface_only_two_vlans_supported",

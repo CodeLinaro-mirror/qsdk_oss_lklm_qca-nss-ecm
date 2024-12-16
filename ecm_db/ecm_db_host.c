@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2018, 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -253,7 +255,7 @@ int ecm_db_host_deref(struct ecm_db_host_instance *hi)
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!hi->flags & ECM_DB_HOST_FLAGS_INSERTED) {
+	if ((!hi->flags) & ECM_DB_HOST_FLAGS_INSERTED) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;

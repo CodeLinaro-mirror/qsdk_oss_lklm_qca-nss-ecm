@@ -1065,7 +1065,7 @@ int ecm_db_iface_deref(struct ecm_db_iface_instance *ii)
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!ii->flags & ECM_DB_IFACE_FLAGS_INSERTED) {
+	if ((!ii->flags) & ECM_DB_IFACE_FLAGS_INSERTED) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -1556,7 +1556,7 @@ static void _ecm_db_iface_identifier_hash_table_remove_entry(struct ecm_db_iface
 	/*
 	 * Remove from database if inserted
 	 */
-	if (!ii->flags & ECM_DB_IFACE_FLAGS_INSERTED) {
+	if ((!ii->flags) & ECM_DB_IFACE_FLAGS_INSERTED) {
 		return;
 	}
 

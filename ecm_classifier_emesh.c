@@ -203,6 +203,57 @@ static int ecm_classifier_emesh_sawf_count = 0;			/* Tracks number of instances 
 static struct ecm_classifier_emesh_sawf_callbacks ecm_emesh;
 
 /*
+ * ecm_classifier_sawf_fill_rm_sync_msg()
+ *	fills fields of rm msg
+ */
+static void ecm_classifier_sawf_fill_rm_sync_msg(struct ecm_classifier_emesh_sawf_instance *cemi, struct ecm_db_connection_instance *ci,
+							int sync_type, ecm_tracker_sender_type_t sender, struct sp_rm_sync_msg *rm_msg)
+{
+	ip_addr_t sip;
+	ip_addr_t dip;
+	int src_dir, dst_dir;
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		src_dir = ECM_DB_OBJ_DIR_FROM;
+		dst_dir = ECM_DB_OBJ_DIR_TO;
+	} else {
+		src_dir = ECM_DB_OBJ_DIR_TO;
+		dst_dir = ECM_DB_OBJ_DIR_FROM;
+	}
+
+	ecm_db_connection_address_get(ci, src_dir, sip);
+	ecm_db_connection_address_get(ci, dst_dir, dip);
+
+	if (ci->ip_version == 4) {
+		ECM_IP_ADDR_TO_NIN4_ADDR(rm_msg->src_ip[0], sip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(rm_msg->dst_ip[0], dip);
+
+		ecm_db_connection_node_address_get(ci, src_dir, rm_msg->src_mac);
+		ecm_db_connection_node_address_get(ci, dst_dir, rm_msg->dst_mac);
+
+		DEBUG_INFO("RM MSG src_ip:%pI4 dst_ip:%pI4", rm_msg->src_ip, rm_msg->dst_ip);
+	} else {
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(rm_msg->src_ip, sip);
+		ECM_IP_ADDR_TO_NET_IPV6_ADDR(rm_msg->dst_ip, dip);
+
+		ecm_db_connection_node_address_get(ci, src_dir, rm_msg->src_mac);
+		ecm_db_connection_node_address_get(ci, dst_dir, rm_msg->dst_mac);
+
+		DEBUG_INFO("RM MSG src_ip:%pI6 dst_ip:%pI6", rm_msg->src_ip, rm_msg->dst_ip);
+	}
+
+	rm_msg->src_port = ecm_db_connection_port_get(ci, src_dir);
+	rm_msg->dst_port = ecm_db_connection_port_get(ci, dst_dir);
+	rm_msg->protocol = ci->protocol;
+	rm_msg->ip_version = ci->ip_version;
+	rm_msg->flow_sid = cemi->process_response.flow_service_class;
+	rm_msg->return_sid = cemi->process_response.return_service_class;
+	rm_msg->sync_type = sync_type;
+
+	DEBUG_INFO("src_port: %u dst_port: %u protocol: %u ip_version: %u src_mac %pM dst_mac %pM flow_sid %u return_sid %u sync_type %d\n", ntohs(rm_msg->src_port), ntohs(rm_msg->dst_port), rm_msg->protocol, rm_msg->ip_version, rm_msg->src_mac, rm_msg->dst_mac, rm_msg->flow_sid, rm_msg->return_sid, rm_msg->sync_type);
+}
+
+/*
  * ecm_classifier_emesh_sawf_mark_set()
  */
 static void ecm_classifier_emesh_sawf_mark_set(
@@ -271,6 +322,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 #endif
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct sp_rm_sync_msg rm_msg = {0};
 
 	/*
 	 * Check if MSDUQ callback is registered.
@@ -362,6 +414,28 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	return_valid_flag_prev = cemi->return_valid_flag;
 	flow_svid_prev = cemi->process_response.flow_service_class;
 	return_svid_prev = cemi->process_response.return_service_class;
+
+	/*
+	 * If msduq has never been filled, set the value to invalid msduq to simplify logic
+	 */
+	if (!msduq_forward_prev) {
+		msduq_forward_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
+	if (!msduq_reverse_prev) {
+		msduq_reverse_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
+	/*
+	 * If the svid has never been filled set the value to invalid to simplify logic
+	 */
+	if (!flow_svid_prev) {
+		flow_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+	}
+
+	if (!return_svid_prev) {
+		return_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+	}
 
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
@@ -464,17 +538,17 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 			msg->flow_service_class_id, msg->return_service_class_id,
 			msduq_forward, msduq_reverse);
 
-	if (msduq_forward == ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ &&
-	    msduq_reverse == ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
-		DEBUG_WARN("%px: ci=%px invalid MSDUQs\n", r, ci);
-		goto done;
-	}
-
 	/*
 	 * Set msg's flow/return marks to sawf_meta created from service ids and msduqs
 	 */
 	ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
 			msduq_forward, msduq_reverse, msg, cemi, r->key, r->id);
+
+	if (msduq_forward == ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ &&
+	    msduq_reverse == ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+		DEBUG_WARN("%px: ci=%px invalid MSDUQs\n", r, ci);
+		goto done;
+	}
 
 	/*
 	 * Update frontend's mark rule
@@ -496,8 +570,8 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		/*
 		 * Fill default values for sync message
 		 */
-		sawf_sync_params.fwd_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
-		sawf_sync_params.rev_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ;
+		sawf_sync_params.fwd_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+		sawf_sync_params.rev_mark_metadata = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		sawf_sync_params.src_dev = src_dev;
 		sawf_sync_params.dest_dev = dest_dev;
 		ether_addr_copy(sawf_sync_params.src_mac, smac);
@@ -521,7 +595,9 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		/*
 		 * If the flow was previously mapped to a non default msduq, send a SUB message to WLAN Driver
 		 */
-		if (msduq_forward_prev || msduq_reverse_prev) {
+		DEBUG_TRACE("msduq_f=0x%x, msduq_fp=0x%x, msduq_r=0x%x, msduq_rp=0x%x\n", msduq_forward, msduq_forward_prev, msduq_reverse, msduq_reverse_prev);
+		if ((msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && msduq_forward_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) ||
+			(msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && msduq_reverse_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ)) {
 			sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW;
 			DEBUG_TRACE("%px: SUB SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
 				cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
@@ -548,6 +624,19 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	 * All done
 	 */
 done:
+	/*
+	 * Sync sawf connection with RM
+	 *	Since it is possible a connection may be wired on this node, but wireless on another, it is necessary to call this sync regardless of MSDUQ
+	 */
+	DEBUG_TRACE("svid_f %u, svid_fp %u, svid_r %u, svid_rp %u\n", msg->flow_service_class_id, flow_svid_prev, msg->return_service_class_id, return_svid_prev);
+	if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && flow_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) ||
+		(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && return_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)) {
+		ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_UPDATED, sender, &rm_msg);
+	} else {
+		ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_PRIORITIZED, sender, &rm_msg);
+	}
+	sp_mapdb_rm_sync(&rm_msg);
+
 	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
 		switch(r->inner.ae_type) {
 		case SP_RULE_AE_TYPE_PPE:
@@ -2257,6 +2346,7 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 	struct sp_rule_del_params del_params = {0};
+	struct sp_rm_sync_msg rm_msg = {0};
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed", cemi);
 
@@ -2282,11 +2372,15 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 		if (cemi->flow_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_FROM);
 			sp_mapdb_ifli_rule_flush(&del_params);
+			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_DEPRIORITIZED, ECM_TRACKER_SENDER_TYPE_SRC, &rm_msg);
+			sp_mapdb_rm_sync(&rm_msg);
 		}
 
 		if (cemi->return_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_TO);
 			sp_mapdb_ifli_rule_flush(&del_params);
+			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_DEPRIORITIZED, ECM_TRACKER_SENDER_TYPE_DEST, &rm_msg);
+			sp_mapdb_rm_sync(&rm_msg);
 		}
 	}
 

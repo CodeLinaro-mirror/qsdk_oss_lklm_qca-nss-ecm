@@ -523,6 +523,7 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 	__be16 *layer4hdr = NULL;
 	struct net_device *out_dev_master = NULL;
 	struct net_device *l3_br_dev = NULL;
+	uint8_t mcuc_addr[ETH_ALEN] = {0};
 	ip_addr_t from_nat_mac_lookup;
 
 	if (protocol != IPPROTO_UDP) {
@@ -640,7 +641,8 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
-			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6,
+					ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge, mcuc_addr);
 			if (mc_if_cnt_bridge <= 0) {
 				DEBUG_WARN("%px: No bridge ports have joined multicast group\n", ci);
 				goto process_packet;
@@ -670,7 +672,8 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 	 */
 	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
 	DEBUG_ASSERT(out_dev_master, "Expected a master\n");
-	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
+	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6,
+			ECM_DB_MULTICAST_IF_MAX, mc_dest_if, mcuc_addr);
 	if (mc_if_cnt <= 0) {
 		DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
 		goto done;
@@ -842,6 +845,7 @@ process_packet:
 			DEBUG_WARN("Failed to allocate tuple instance\n");
 			goto done;
 		}
+
 		/*
 		 * Create Destination MAC address using IP multicast destination address
 		 */
@@ -1258,6 +1262,14 @@ process_packet:
 				goto done;
 			}
 		}
+	}
+
+	/*
+	 * If checked from snooper, mcuc_addr either multicast mac address or
+	 * a host mac adress.
+	 */
+	if (!is_zero_ether_addr(mcuc_addr)) {
+		ecm_db_connection_mcuc_address_update(ci, mcuc_addr);
 	}
 
 	/*
