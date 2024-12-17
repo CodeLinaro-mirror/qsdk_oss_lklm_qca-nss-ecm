@@ -381,8 +381,18 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 			 * DSA handled same along with bridge etc.
 			 */
 #else
-			DEBUG_TRACE("DSA interface unsupported\n");
-			return NULL;
+			/*
+			 * Additional check is required for cases where DSA interface is not enabled.
+			 * and VLAN case fall through happens. In that scenario, it's important to
+			 * cross-check if we are correctly returning.
+			 */
+			if (type == ECM_DB_IFACE_TYPE_DSA) {
+				DEBUG_TRACE("DSA interface unsupported\n");
+				return NULL;
+			}
+#if __has_attribute(__fallthrough__)
+			__attribute__((__fallthrough__));
+#endif
 #endif
 		case ECM_DB_IFACE_TYPE_ETHERNET:
 		case ECM_DB_IFACE_TYPE_LAG:

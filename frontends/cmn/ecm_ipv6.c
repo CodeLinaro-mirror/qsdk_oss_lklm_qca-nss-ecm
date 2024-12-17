@@ -481,6 +481,25 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 			DEBUG_TRACE("%px: VLAN interface unsupported\n", feci);
 			return NULL;
 #endif
+		case ECM_DB_IFACE_TYPE_DSA:
+#ifdef ECM_INTERFACE_DSA_ENABLE
+			/*
+			 * DSA handled same along with ethernet, lag, bridge etc.
+			 */
+#else
+			/*
+			 * Additional check is required for cases where DSA interface is not enabled.
+			 * and VLAN case fall through happens. In that scenario, it's important to
+			 * cross-check if we are correctly returning.
+			 */
+			if (type == ECM_DB_IFACE_TYPE_DSA) {
+				DEBUG_TRACE("DSA interface unsupported\n");
+				return NULL;
+			}
+#if __has_attribute(__fallthrough__)
+			__attribute__((__fallthrough__));
+#endif
+#endif
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_XFRM_ENABLE
 			if (dst_xfrm(skb_dst(skb))) {
