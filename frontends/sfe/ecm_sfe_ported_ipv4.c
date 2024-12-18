@@ -942,7 +942,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * For VxLAN device, 4-tuple connection rule is added only for outer flow,
 			 * where source port is set to zero.
 			 */
-			if (!vxlan_info.if_type) {
+			if (vxlan_info.if_type == ECM_DB_IFACE_VXLAN_OUTER) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
 
@@ -951,7 +951,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * As per draft rfc vxlan-gpe packet should not be fragmented, set flag to skip this.
 			 */
 			if (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
-				if (vxlan_info.if_type) {
+				if (vxlan_info.if_type == ECM_DB_IFACE_VXLAN_INNER) {
 					nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VXLAN_GPE;
 				}
 
@@ -1364,7 +1364,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * Set VxLAN-GPE flag for inner flow going TO VXLAN-GPE device.
 			 * As per draft rfc vxlan-gpe packet should not be fragmented, set flag to skip this.
 			 */
-			if (vxlan_info.if_type && vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE) {
+			if ((vxlan_info.if_type == ECM_DB_IFACE_VXLAN_INNER) && (vxlan_info.extension == ECM_DB_IFACE_VXLAN_EXTENSION_GPE)) {
 				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VXLAN_GPE;
 				nircm->valid_flags |= SFE_RULE_CREATE_SKIP_FRAG_OFFLOAD_VALID;
 				DEBUG_TRACE("%px: VXLAN-GPE\n", feci);

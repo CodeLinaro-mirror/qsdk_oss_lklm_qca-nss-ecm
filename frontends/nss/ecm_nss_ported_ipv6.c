@@ -770,7 +770,7 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * Override the flow MTU to MAX, to avoid fragmentation for flows coming in from WAN.
 			 * Note: These rules are always expected to be pushed only in tunnel to WAN direction.
 			 */
-			if (!vxlan_info.if_type) {
+			if (vxlan_info.if_type == ECM_DB_IFACE_VXLAN_OUTER) {
 				nircm->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
 				nircm->rule_flags |= NSS_IPV6_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}

@@ -357,7 +357,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 		 * Override the source port for VxLAN/VxLAN-GPE outer connection.
 		 * Inner and outer flow for VxLAN-GPE (in L3 mode) is routed, hence we cannot use that to determine outer flow.
 		 */
-		if (vxlan_tun && !ecm_interface_vxlan_type_get(skb, vxlan_tun)) {
+		if (vxlan_tun && (ecm_interface_vxlan_type_get(skb, vxlan_tun) == ECM_DB_IFACE_VXLAN_OUTER)) {
 			DEBUG_TRACE("%px: VxLAN outer connection, make src and dest idents same\n", vxlan_tun);
 			src_port = src_port_nat = dest_port;
 		}

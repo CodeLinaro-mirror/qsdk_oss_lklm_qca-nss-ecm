@@ -1205,7 +1205,7 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 			dev_put(local_dev);
 			dev_put(lower_dev);
 			DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
-			return 0;
+			return ECM_DB_IFACE_VXLAN_OUTER;
 		}
 
 		if (local_dev) {
@@ -1214,7 +1214,7 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 
 		dev_put(lower_dev);
 		DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-		return 1;
+		return ECM_DB_IFACE_VXLAN_INNER;
 	}
 
 	/*
@@ -1226,7 +1226,7 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		 */
 		if (skb_tunnel_info(skb)) {
 			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-			return 1;
+			return ECM_DB_IFACE_VXLAN_INNER;
 		}
 
 		/*
@@ -1237,11 +1237,11 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		if (local_dev) {
 			DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
 			dev_put(local_dev);
-			return 0;
+			return ECM_DB_IFACE_VXLAN_OUTER;
 		}
 
 		DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-		return 1;
+		return ECM_DB_IFACE_VXLAN_INNER;
 	}
 
 	/*
@@ -1271,7 +1271,7 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		 */
 		if (ntohs(skb->protocol) != ETH_P_IP) {
 			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-			return 1;
+			return ECM_DB_IFACE_VXLAN_INNER;
 		}
 	} else {
 		if (!ipv6_addr_any(&src_ip->sin6.sin6_addr)) {
@@ -1293,17 +1293,17 @@ uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxl
 		 */
 		if (ntohs(skb->protocol) != ETH_P_IPV6) {
 			DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-			return 1;
+			return ECM_DB_IFACE_VXLAN_INNER;
 		}
 	}
 
 	if (ECM_IP_ADDR_MATCH(vx_addr, packet_addr)) {
 		DEBUG_TRACE("%px: VxLAN outer interface type.\n", skb);
-		return 0;
+		return ECM_DB_IFACE_VXLAN_OUTER;
 	}
 
 	DEBUG_TRACE("%px: VxLAN inner interface type.\n", skb);
-	return 1;
+	return ECM_DB_IFACE_VXLAN_INNER;
 }
 
 /*
@@ -2973,7 +2973,7 @@ static struct ecm_db_iface_instance *ecm_interface_vxlan_interface_establish(str
 		/*
 		 * For VxLAN-GPE get the VNI from skb for outer flow and using route lookup for inner flow.
 		 */
-		if (!if_type) {
+		if (if_type == ECM_DB_IFACE_VXLAN_OUTER) {
 			vni = vxlan_hdr(skb)->vx_vni;
 		} else {
 			vni = ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(dev, skb, NULL);
