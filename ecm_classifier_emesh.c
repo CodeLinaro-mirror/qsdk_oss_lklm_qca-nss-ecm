@@ -175,6 +175,7 @@ static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
 static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
 static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
 static uint32_t ecm_classifier_emesh_udp_clf_enabled;	/* UDP classification enable flag */
+static uint32_t ecm_classifier_3link_mlo_enabled = 1;		/* 3link MLO mode */
 
 /*
  * Management thread control
@@ -1872,6 +1873,12 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 				goto sawf_emesh_classifier_out;
 			}
+
+			/*
+			 * Check if 3 link mlo feature is enabled.
+			 */
+			if (!ecm_classifier_3link_mlo_enabled)
+				goto check_emesh_classifier;
 
 			/*
 			 * We then use sawf_meta stored in the dscp extension if sawf_meta is valid.
@@ -3819,6 +3826,13 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
+
+	if (!ecm_debugfs_create_u32("3link_mlo_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+                                (u32 *)&ecm_classifier_3link_mlo_enabled)) {
+                DEBUG_ERROR("Failed to create 3 link MLO enabled file in debugfs\n");
+                debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+                return -1;
+        }
 
 	/*
 	 * Register for service prioritization notification update.
