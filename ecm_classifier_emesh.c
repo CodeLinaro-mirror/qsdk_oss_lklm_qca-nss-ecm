@@ -825,6 +825,7 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	} else {
 		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		ecm_db_connection_deref(ci);
 		return 0;
 	}
 
@@ -928,6 +929,7 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv4(struct nf_conn *ct, char 
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	} else {
 		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		ecm_db_connection_deref(ci);
 		return 0;
 	}
 
@@ -981,6 +983,7 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char 
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	} else {
 		DEBUG_TRACE("%px: unable to match conntrack entry with ECM Tuples\n", ct);
+		ecm_db_connection_deref(ci);
 		return 0;
 	}
 	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
