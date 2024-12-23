@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -425,6 +425,7 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	uint8_t dest_mac[ETH_ALEN];
 	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
 	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
+	bool is_bridge;
 
 	DEBUG_INFO("%px: Accel conn: %px\n", feci, feci->ci);
 
@@ -482,11 +483,16 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 	 */
 	create->valid_flags |= SFE_RULE_CREATE_CONN_VALID;
 
+	is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
+	if (is_bridge) {
+		create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
+	}
+
 	/*
 	 * Check which side of the connection can support L2 acceleration.
 	 * The check is done only for the routed flows and if the L2 feature is enabled.
 	 */
-	if (sfe_is_l2_feature_enabled() && ecm_db_connection_is_routed_get(feci->ci)) {
+	if (sfe_is_l2_feature_enabled() && !is_bridge) {
 		rcu_read_lock();
 		l2_accel_check = rcu_dereference(ecm_sfe_cb.l2_accel_check);
 		if (l2_accel_check) {
@@ -807,7 +813,6 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 		 * Is this a valid interface?
 		 */
 		if (to_sfe_iface_id != -1) {
-			bool is_bridge;
 			create->if_rule[valid_vif_idx].if_num = to_sfe_iface_id;
 			create->if_rule[valid_vif_idx].if_mtu = to_mtu;
 			if (rp->if_join_idx[vif]) {
@@ -841,8 +846,6 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_LEAVE;
 			}
 
-			is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
-
 			/*
 			 * Do not set the ROUTED flag for pure bridged interfaces
 			 */
@@ -850,7 +853,6 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_sfe_iface_address);
 				memcpy(create->if_rule[valid_vif_idx].if_mac, from_sfe_iface_address, ETH_ALEN);
 				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
-				create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
 			} else {
 				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
 				memcpy(create->if_rule[valid_vif_idx].if_mac, to_sfe_iface_address, ETH_ALEN);
@@ -1059,6 +1061,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	ecm_front_end_acceleration_mode_t result_mode;
 	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
 	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
+	bool is_bridge;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -1134,11 +1137,16 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 */
 	create->valid_flags |= SFE_RULE_CREATE_CONN_VALID;
 
+	is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
+	if (is_bridge) {
+		create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
+	}
+
 	/*
 	 * Check which side of the connection can support L2 acceleration.
 	 * The check is done only for the routed flows and if the L2 feature is enabled.
 	 */
-	if (sfe_is_l2_feature_enabled() && ecm_db_connection_is_routed_get(feci->ci)) {
+	if (sfe_is_l2_feature_enabled() && !is_bridge) {
 		rcu_read_lock();
 		l2_accel_check = rcu_dereference(ecm_sfe_cb.l2_accel_check);
 		if (l2_accel_check) {
@@ -1769,7 +1777,6 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 		 */
 		if (to_sfe_iface_id != -1) {
 			uint32_t xlate_src_ip, src_ip;
-			bool is_bridge;
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM_NAT, addr);
 			ECM_IP_ADDR_TO_NIN4_ADDR(xlate_src_ip, addr);
 			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, addr);
@@ -1790,7 +1797,6 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_JOIN;
 			create->if_rule[valid_vif_idx].if_num = to_sfe_iface_id;
 			create->if_rule[valid_vif_idx].if_mtu = to_mtu;
-			is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
 
 			/*
 			 * Identify if the destination interface blongs to pure bridge or routed flow.
@@ -1799,7 +1805,6 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)from_sfe_iface_address);
 				memcpy(create->if_rule[valid_vif_idx].if_mac, from_sfe_iface_address, ETH_ALEN);
 				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_BRIDGE_FLOW;
-				create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
 			} else {
 				memcpy(create->if_rule[valid_vif_idx].if_mac, to_sfe_iface_address, ETH_ALEN);
 				create->if_rule[valid_vif_idx].rule_flags |= SFE_MC_RULE_CREATE_IF_FLAG_ROUTED_FLOW;
@@ -2688,7 +2693,7 @@ process_packet:
 		spin_lock_bh(&ecm_sfe_ipv4_lock);
 		if_update = ecm_interface_multicast_find_updates_to_iface_list(ci, &mc_update, mc_flags, true, mc_dst_dev, if_num, brdev);
 		spin_unlock_bh(&ecm_sfe_ipv4_lock);
-		if (!if_update) {
+		if (!if_update && ether_addr_equal(dest_mac_addr, ci->mcuc_addr)) {
 			/*
 			 * No updates to this multicast flow. Move on to the next
 			 * flow for the same group
