@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -50,6 +50,9 @@
 #include <net/genetlink.h>
 #include <linux/nl80211.h>
 #include <net/gre.h>
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+#include <linux/jhash.h>
+#endif
 #ifdef ECM_INTERFACE_BOND_ENABLE
 #include <net/bonding.h>
 #endif
@@ -150,6 +153,29 @@
  * Peer authorization event coming from WLAN driver.
  */
 #define ECM_INTERFACE_WIFI_EVENT_NODE_AUTH	30
+
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+/*
+ * Hash table for skip accel based on interaface name
+ * We are supporting 32 interfaces.
+ */
+#define ECM_INTERFACE_ACCEL_DENIED_HASH_BITS 5
+#define ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE (1 << ECM_INTERFACE_ACCEL_DENIED_HASH_BITS)
+
+/*
+ * Denied acceleration interface hash tables
+ */
+static DEFINE_HASHTABLE(ecm_interface_accel_denied_list, ECM_INTERFACE_ACCEL_DENIED_HASH_BITS);
+static atomic_t ecm_interface_accel_denied_list_count;
+
+/*
+ * Hash node in the denied interface hash list
+ */
+struct ecm_interface_denied_node {
+	struct hlist_node hnode;
+	char name[IFNAMSIZ];
+};
+#endif
 
 /*
  * Wi-Fi event node authorized information structure.
@@ -331,6 +357,36 @@ struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev)
 	return master;
 }
 EXPORT_SYMBOL(ecm_interface_get_and_hold_dev_master);
+
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+/*
+ * ecm_interface_lookup_in_denied_list()
+ * 	Checks if the device name is in the accel_denied_list
+ * 	Return true if interface is in the list.
+ */
+static inline bool ecm_interface_lookup_in_denied_list(char *dev_name)
+{
+	struct hlist_node *pnode, *temp;
+	uint32_t hash;
+
+	if (!atomic_read(&ecm_interface_accel_denied_list_count)) {
+		DEBUG_TRACE("No interface in the denied list\n");
+		return false;
+	}
+
+	hash = (uint32_t)jhash(dev_name, strlen(dev_name), ecm_db_jhash_rnd) % ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE;
+
+	hlist_for_each_safe(pnode, temp, &ecm_interface_accel_denied_list[hash]) {
+		struct ecm_interface_denied_node *p = hlist_entry(pnode, struct ecm_interface_denied_node, hnode);
+
+		if (!strcmp(p->name, dev_name)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+#endif
 
 /*
  * ecm_interface_vlan_real_dev()
@@ -5569,6 +5625,20 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 			goto done;
 		}
 
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+		/*
+		 * Skip acceleration based on device name
+		 * We have the hierachy creation and we skip accel after
+		 * it is added in the ci to avoid hierachy creation for each packet.
+		 */
+		if (ecm_interface_lookup_in_denied_list(dest_dev->name)) {
+			DEBUG_INFO("%px: Acceleration is disable for interface: %s\n", feci, dest_dev->name);
+			spin_lock_bh(&feci->lock);
+			feci->can_accel = false;
+			spin_unlock_bh(&feci->lock);
+		}
+#endif
+
 		/*
 		 * Get the ecm db interface instance for the device at hand
 		 */
@@ -6526,6 +6596,29 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	while (current_interface_index > 0) {
 		struct ecm_db_iface_instance *ii;
 		struct net_device *next_dev;
+
+		/*
+		 * Check interface status before establishing interface
+		 */
+		if (!(dest_dev->flags & IFF_UP)) {
+			DEBUG_WARN("%px: dest interface(%s) is not up\n", feci, dest_dev->name);
+			break;
+		}
+
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+		/*
+		 * Skip acceleration based on device name
+		 * We have the heirachy creation and we skip accel after
+		 * it is added in the ci to avoid hierachy creation for each packet.
+		 */
+		if (ecm_interface_lookup_in_denied_list(dest_dev->name)) {
+			DEBUG_INFO("%px: Acceleration is disable for interface: %s\n", feci, dest_dev->name);
+			spin_lock_bh(&feci->lock);
+			feci->can_accel = false;
+			spin_unlock_bh(&feci->lock);
+		}
+#endif
+
 		/*
 		 * Get the ecm db interface instance for the device at hand
 		 */
@@ -9188,6 +9281,224 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 	return ret;
 }
 
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+/*
+ * ecm_interface_accel_denied_read()
+ * 	Reads the denied interface name from the denied hash list and prints
+ */
+static int ecm_interface_accel_denied_read(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct hlist_node *pnode;
+	size_t bytes = 0;
+	char *read_buf;
+	int i, len;
+
+	if (!atomic_read(&ecm_interface_accel_denied_list_count)) {
+		DEBUG_ERROR("no interface present in denied list\n");
+		return -EINVAL;
+	}
+
+	read_buf = kzalloc(ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE * 16 *sizeof(char), GFP_KERNEL);
+	if (!read_buf) {
+		DEBUG_ERROR("Failed to allocate buffer for interface array \n");
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE; i++) {
+		hlist_for_each(pnode, &ecm_interface_accel_denied_list[i]) {
+			struct ecm_interface_denied_node *p = hlist_entry(pnode, struct ecm_interface_denied_node, hnode);
+
+			if (!p) {
+				DEBUG_ERROR("No entry on the given hash\n");
+				continue;
+			}
+
+			len = scnprintf(read_buf + bytes, 16, "%s ", p->name);
+			if (!len) {
+				DEBUG_ERROR("Failed to format device name = %s\n", p->name);
+				kfree(read_buf);
+				return -EINVAL;
+			}
+			bytes += len;
+		}
+	}
+
+	len = scnprintf(read_buf + bytes, 4, "\n");
+	bytes += len;
+	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	*lenp = bytes;
+
+	kfree(read_buf);
+	return 0;
+}
+
+/*
+ * ecm_interface_accel_denied_handler()
+ * 	Proc handler function for denied devices read/write operation.
+ */
+static int ecm_interface_accel_denied_handler(int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf, *pfree, *token;
+	int count;
+
+	if (!write) {
+		return ecm_interface_accel_denied_read(buffer, lenp, ppos);
+	}
+
+	/*
+	 * Allocate buffer to hold up to 16 interfaces
+	 * Assuming each interfaces have 16 bytes each
+	 */
+	buf = kzalloc((ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE * 8) * sizeof(char), GFP_KERNEL);
+	if (!buf) {
+		DEBUG_ERROR("Failed to allocate buffer for write operation\n");
+		return -ENOMEM;
+	}
+
+	pfree = buf;
+	count = *lenp;
+
+	if (count > (ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE * 8 * sizeof(char))) {
+		DEBUG_ERROR("maximum length supported is 256\n");
+		kfree(pfree);
+		return -EINVAL;
+	}
+
+	memcpy(buf, buffer, count);
+	*lenp = count;
+	*ppos += count;
+
+	token = strsep(&buf, " ");
+	if (strlen(token) != 3) {
+		DEBUG_ERROR("cmd: echo \"add/del eth1 eth2\" > /proc/sys/net/ecm/interface_denied_list\n");
+		kfree(pfree);
+		return -EINVAL;
+	}
+
+	if (!strncmp(token, "add", 3)) {
+		while ((token = strsep(&buf, " ")) != NULL) {
+			struct ecm_interface_denied_node *p;
+			struct net_device *dev_to_defunct;
+			char *newline;
+			uint32_t hash;
+			int token_len;
+
+			p = kzalloc(sizeof(struct ecm_interface_denied_node), GFP_KERNEL);
+			if (!p) {
+				DEBUG_ERROR("unable to allocate the memory for interface %s\n", token);
+				kfree(pfree);
+				return -ENOMEM;
+			}
+
+			/*
+			 * Strip newline characters from the token
+			 * Required for last string in the list.
+			 */
+			newline = strchr(token, '\n');
+			if (newline) {
+				*newline = '\0';
+			}
+
+			/*
+			 * Copy only the size of parse string and make it null terminate
+			 */
+			token_len = strlen(token);
+			memcpy(p->name, token, token_len);
+			p->name[token_len] = '\0';
+
+			/*
+			 * Check if the interface name already present.
+			 */
+			if (ecm_interface_lookup_in_denied_list(p->name)) {
+				DEBUG_ERROR("interface already been added\n");
+				kfree(p);
+				continue;
+			}
+
+			dev_to_defunct = dev_get_by_name(&init_net, p->name);
+			if (!dev_to_defunct) {
+				DEBUG_ERROR("interface %s couldn't be found\n", p->name);
+				kfree(p);
+				break;
+			}
+
+			hash = (uint32_t)jhash(p->name, token_len, ecm_db_jhash_rnd) % ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE;
+			INIT_HLIST_NODE(&p->hnode);
+			hlist_add_head(&p->hnode, &ecm_interface_accel_denied_list[hash]);
+
+			/*
+			 * Defunct the rules if ci is created before echo
+			 */
+			ecm_interface_dev_defunct_connections(dev_to_defunct);
+			atomic_inc(&ecm_interface_accel_denied_list_count);
+			dev_put(dev_to_defunct);
+		}
+	} else if (!strncmp(token, "del", 3)) {
+		while ((token = strsep(&buf, " ")) != NULL) {
+			struct hlist_node *pnode, *temp;
+			struct net_device *dev_to_defunct;
+			char *newline;
+			uint32_t hash;
+
+			newline = strchr(token, '\n');
+			if (newline) {
+				*newline = '\0';
+			}
+
+			hash = (uint32_t)jhash(token, strlen(token), ecm_db_jhash_rnd) % ECM_INTERFACE_ACCEL_DENIED_DEVICE_HTABLE_SIZE;
+
+			hlist_for_each_safe(pnode, temp, &ecm_interface_accel_denied_list[hash]) {
+				struct ecm_interface_denied_node *p = hlist_entry(pnode, struct ecm_interface_denied_node, hnode);
+				if (!strcmp(p->name, token)) {
+					dev_to_defunct = dev_get_by_name(&init_net, token);
+					if (!dev_to_defunct) {
+						DEBUG_ERROR("interface %s couldn't be found\n", token);
+						break;
+					}
+
+					hlist_del(&p->hnode);
+					kfree(p);
+
+					/*
+					 * Defunct the rule to create new ci
+					 */
+					ecm_interface_dev_defunct_connections(dev_to_defunct);
+					atomic_dec(&ecm_interface_accel_denied_list_count);
+					dev_put(dev_to_defunct);
+					break;
+				}
+			}
+		}
+	} else {
+		DEBUG_ERROR("Use command: echo \"add/del eth1 eth2 eth3\" > /proc/sys/net/ecm/interface_denied_list\n");
+	}
+
+	kfree(pfree);
+	return count;
+}
+
+/*
+ * ecm_interface_accel_denied_list_handler()
+ * 	Proc handler function for denied interface read/write operation
+ */
+static int ecm_interface_accel_denied_list_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * 	Add interface to the list:
+	 * 	echo "add eth1 eth2 eth3" > /proc/sys/net/ecm/interface_denied_list
+	 *
+	 * 	Delete ports using :
+	 * 	echo "del eth3" > /proc/sys/net/ecm/interface_denied_list
+	 *
+	 * 	Dump the list:
+	 * 	cat /proc/sys/ecm/net/interface_denied_list
+	 *
+	 */
+	return ecm_interface_accel_denied_handler(write, buffer, lenp, ppos);
+}
+#endif
+
 static struct ctl_table ecm_interface_table[] = {
 	{
 		.procname		= "src_interface_check",
@@ -9203,6 +9514,15 @@ static struct ctl_table ecm_interface_table[] = {
 		.maxlen			= sizeof(int),
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_igs_enabled_handler,
+	},
+#endif
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+	{
+		.procname		= "interface_denied_list",
+		.data			= &ecm_interface_accel_denied_list,
+		.maxlen			= sizeof(char) * 16 * 16,
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_accel_denied_list_handler,
 	},
 #endif
 	{ }
