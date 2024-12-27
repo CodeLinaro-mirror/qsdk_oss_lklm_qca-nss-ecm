@@ -92,12 +92,16 @@ static inline void ecm_wifi_plugin_emesh_sawf_conn_sync(struct ecm_classifer_eme
 	sawf_params.fw_service_id = sawf_sync_params->fwd_service_id;
 	sawf_params.rv_service_id = sawf_sync_params->rev_service_id;
 	sawf_params.start_or_stop = sawf_sync_params->add_or_sub;
+	sawf_params.fw_mark_metadata = sawf_sync_params->fwd_mark_metadata;
+	sawf_params.rv_mark_metadata = sawf_sync_params->rev_mark_metadata;
+
+	ecm_wifi_plugin_info("Sync SAWF params:  dst_mac: %pM, src_mac: %pM, fw_service_id: %u, rv_service_id: %u\n, start_or_stop: %u, fw_mark_metadata: %u, rv_mark_metadata: %u\n",
+			     sawf_params.dst_mac, sawf_params.src_mac, sawf_params.fw_service_id, sawf_params.rv_service_id,
+			     sawf_params.start_or_stop, sawf_params.fw_mark_metadata, sawf_params.rv_mark_metadata);
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	ath_sawf_uplink(&sawf_params);
 #else
-	sawf_params.fw_mark_metadata = sawf_sync_params->fwd_mark_metadata;
-	sawf_params.rv_mark_metadata = sawf_sync_params->rev_mark_metadata;
 	qca_sawf_connection_sync(&sawf_params);
 #endif
 }
@@ -166,6 +170,27 @@ static inline void ecm_wifi_plugin_emesh_deprio_response(struct ecm_classifier_e
 			sawf_deprio_response, resp_params.netdev, resp_params.mac_addr, resp_params.service_id, resp_params.success_count, resp_params.mark_metadata);
 	return qca_sawf_flow_deprioritize_response(&resp_params);
 }
+#else
+/*
+ * ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid()
+ *	Convert the ECM SAWF valid flags to Wi-Fi driver valid flags.
+ */
+static inline uint32_t ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(uint32_t valid_flag)
+{
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID) {
+		return ATH_SAWF_SVID_VALID;
+	}
+
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_DSCP_VALID) {
+		return ATH_SAWF_DSCP_VALID;
+	}
+
+	if (valid_flag & ECM_CLASSIFIER_EMESH_SAWF_VLAN_PCP_VALID) {
+		return ATH_SAWF_PCP_VALID;
+	}
+
+	return 0;
+}
 #endif
 
 /*
@@ -175,54 +200,32 @@ static inline void ecm_wifi_plugin_emesh_deprio_response(struct ecm_classifier_e
 static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_classifier_emesh_sawf_flow_info *sawf_flow_info)
 {
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	struct ath_dp_metadata_param ath_dp_mdata = {0};
+	struct ath_dp_metadata_param metadata = {0};
 #else
 	struct qca_wifi_metadata_info metadata = {0};
 #endif
 
-#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	ath_dp_mdata.is_sawf_param_valid = 1;
-	ath_dp_mdata.sawf_param.netdev = sawf_flow_info->netdev;
-	ath_dp_mdata.sawf_param.peer_mac = sawf_flow_info->peer_mac;
-	ath_dp_mdata.sawf_param.service_id = sawf_flow_info->service_id;
-	ath_dp_mdata.sawf_param.dscp = sawf_flow_info->dscp;
-	ath_dp_mdata.sawf_param.rule_id = sawf_flow_info->rule_id;
-#else
 	metadata.is_sawf_param_valid = 1;
 	metadata.sawf_param.netdev = sawf_flow_info->netdev;
 	metadata.sawf_param.peer_mac = sawf_flow_info->peer_mac;
 	metadata.sawf_param.service_id = sawf_flow_info->service_id;
 	metadata.sawf_param.dscp = sawf_flow_info->dscp;
 	metadata.sawf_param.rule_id = sawf_flow_info->rule_id;
-#endif
-
-#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
-	/*
-	 * For upstream driver we can call the query only for the SVID valid case.
-	 */
-	if (!(sawf_flow_info->valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
-		ecm_wifi_plugin_warning("Invalid query to ATH get_msduq\n");
-		return ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-	}
-
-	ecm_wifi_plugin_info("ATH SAWF params rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
-			ath_dp_mdata.sawf_param.sawf_rule_type,
-			ath_dp_mdata.sawf_param.pcp, ath_dp_mdata.sawf_param.dscp, ath_dp_mdata.sawf_param.service_id,
-			ath_dp_mdata.sawf_param.rule_id, ath_dp_mdata.sawf_param.valid_flag, ath_dp_mdata.sawf_param.mcast_flag,
-			ath_dp_mdata.sawf_param.netdev->name, ath_dp_mdata.sawf_param.peer_mac);
-	return ath_get_metadata_info(&ath_dp_mdata);
-#else
 	metadata.sawf_param.sawf_rule_type = sawf_flow_info->sawf_rule_type;
 	metadata.sawf_param.pcp = sawf_flow_info->vlan_pcp;
 	metadata.sawf_param.dscp = sawf_flow_info->dscp;
 	metadata.sawf_param.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
 	metadata.sawf_param.mcast_flag = sawf_flow_info->is_mc_flow;
 
-	ecm_wifi_plugin_info("Prop SAWF params rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
-			metadata.sawf_param.sawf_rule_type,
-			metadata.sawf_param.pcp, metadata.sawf_param.dscp, metadata.sawf_param.service_id,
-			metadata.sawf_param.rule_id, metadata.sawf_param.valid_flag, metadata.sawf_param.mcast_flag,
-			metadata.sawf_param.netdev->name, metadata.sawf_param.peer_mac);
+	ecm_wifi_plugin_info("Mark SAWF params: rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
+			     metadata.sawf_param.sawf_rule_type,
+			     metadata.sawf_param.pcp, metadata.sawf_param.dscp, metadata.sawf_param.service_id,
+			     metadata.sawf_param.rule_id, metadata.sawf_param.valid_flag, metadata.sawf_param.mcast_flag,
+			     metadata.sawf_param.netdev->name, metadata.sawf_param.peer_mac);
+
+#ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
+	return ath_get_metadata_info(&metadata);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
 	return qca_wifi_get_metadata_info(&metadata);
 #else
