@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -77,6 +77,8 @@ struct ecm_classifier_fse_info {
 	uint32_t rv_svc_info;			/**< Reverse SAWF info. */
 	struct net_device *src_dev;		/**< Source dev. */
 	struct net_device *dest_dev;		/**< Destination dev. */
+	uint8_t flow_dscp;			/**< DSCP value for flow direction. */
+	uint8_t return_dscp;			/**< DSCP value for return direction. */
 };
 
 /**

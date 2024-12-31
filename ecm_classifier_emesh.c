@@ -1,7 +1,7 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -2328,10 +2328,13 @@ void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *a
 	/*
 	 * Return if the connection does not have emesh SAWF classifier.
 	 */
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	if (cemi->type != ECM_CLASSIFIER_SAWF) {
 		DEBUG_WARN("%px: No emesh SAWF classifier present\n", cemi);
+		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		return;
 	}
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	ci = ecm_db_connection_serial_find_and_ref(cemi->ci_serial);
 	if (!ci) {
@@ -2368,11 +2371,13 @@ void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *a
 	fse_info.fw_svc_info = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
 	fse_info.rv_svc_info = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SVID;
 
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	if (cemi->flow_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)
 		fse_info.fw_svc_info = cemi->process_response.flow_service_class;
 
 	if (cemi->return_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)
 		fse_info.rv_svc_info = cemi->process_response.return_service_class;
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &fse_info.src_dev, &fse_info.dest_dev);
 
@@ -2386,6 +2391,21 @@ void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *a
 		DEBUG_WARN("Wrong IP protocol: %d\n", fse_info.ip_version);
 		goto end;
 	}
+
+	/*
+	 * Update fse_info DSCP with DSCP remark value if its coming from userspace
+	 * else update fse_info DSCP with DSCP value present in IP packet header.
+	 */
+
+	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
+	if (cemi->process_response.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
+		fse_info.flow_dscp = cemi->process_response.flow_dscp;
+		fse_info.return_dscp = cemi->process_response.return_dscp;
+	 } else {
+		fse_info.flow_dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+		fse_info.return_dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+	 }
+	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
 	 * Program the FSE rule into driver.
