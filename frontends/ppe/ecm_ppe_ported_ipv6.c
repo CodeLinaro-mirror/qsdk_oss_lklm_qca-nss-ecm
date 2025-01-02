@@ -1715,6 +1715,7 @@ process_next_iface_return:
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 		aci = ecm_db_connection_assigned_classifier_find_and_ref(feci->ci, ECM_CLASSIFIER_TYPE_EMESH);
 		if (aci) {
+			ecrc.skb = skb;
 			DEBUG_TRACE("%px: sync from: %px, type: %d\n", feci, aci, aci->type_get(aci));
 			aci->sync_from_v6(aci, &ecrc);
 			aci->deref(aci);
