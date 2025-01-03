@@ -1,7 +1,7 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -486,28 +486,6 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	flow_svid_prev = cemi->process_response.flow_service_class;
 	return_svid_prev = cemi->process_response.return_service_class;
 
-	/*
-	 * If msduq has never been filled, set the value to invalid msduq to simplify logic
-	 */
-	if (!msduq_forward_prev) {
-		msduq_forward_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-	}
-
-	if (!msduq_reverse_prev) {
-		msduq_reverse_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
-	}
-
-	/*
-	 * If the svid has never been filled set the value to invalid to simplify logic
-	 */
-	if (!flow_svid_prev) {
-		flow_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
-	}
-
-	if (!return_svid_prev) {
-		return_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
-	}
-
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
@@ -627,12 +605,34 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	update_rule = true;
 
 	/*
+	 * If msduq has never been filled, or if this stc mark set call pertains to the opposite direction, set the value to invalid msduq to simplify logic
+	 */
+	if (!msduq_forward_prev || sender == ECM_TRACKER_SENDER_TYPE_DEST) {
+		msduq_forward_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
+	if (!msduq_reverse_prev || sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		msduq_reverse_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+	}
+
+	/*
+	 * If the svid has never been filled, or if this stc mark set call pertains to the opposite direction, set the value to invalid to simplify logic
+	 */
+	if (!flow_svid_prev || sender == ECM_TRACKER_SENDER_TYPE_DEST) {
+		flow_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+	}
+
+	if (!return_svid_prev || sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		return_svid_prev = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+	}
+
+	/*
 	 * Shares sync messages with WLAN driver regarding msduq usage
 	 */
 	if (ecm_emesh.sawf_conn_sync && (msduq_forward || msduq_reverse)) {
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-		if (msduq_forward == msduq_forward_prev &&
-			msduq_reverse == msduq_reverse_prev){
+		if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && msduq_forward == msduq_forward_prev) ||
+			(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && msduq_reverse == msduq_reverse_prev)){
 			DEBUG_TRACE("%px: ci=%px not calling WLAN sync due to no difference in MSDUQ\n", r, ci);
 			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 			goto done;
