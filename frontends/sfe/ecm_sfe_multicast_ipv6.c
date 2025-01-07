@@ -1148,6 +1148,8 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	is_bridge = !ecm_db_connection_is_routed_get(feci->ci);
 	if (is_bridge) {
 		create->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
+		create->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK;
+		create->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_SRC_INTERFACE_CHECK_NO_FLUSH;
 	}
 
 	/*
