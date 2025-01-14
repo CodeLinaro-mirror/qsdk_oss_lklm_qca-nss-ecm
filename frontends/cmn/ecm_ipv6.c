@@ -123,11 +123,12 @@ bool ecm_ipv6_terminate_pending = false;		/* True when the user has signalled we
 
 /*
  * ecm_ipv6_dev_has_ipaddr()
- *	Returns true if dev has an IPv6 address
+ *	Returns true if dev has an IPv6 address with greater scope than link-local
  */
 bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
 {
 	struct inet6_dev *ip6_inetdev;
+	struct inet6_ifaddr *ip6_ifaddr;
 
 	ip6_inetdev = __in6_dev_get(dev);
 	if (!ip6_inetdev) {
@@ -141,9 +142,28 @@ bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
 		DEBUG_TRACE("%px: dev->ip6_ptr->addr_list is empty for %s\n", dev, dev->name);
 		return false;
 	}
+
+	/*
+	 * Each device address list is sorted in order of scope -
+	 * global before linklocal.
+	 */
+	list_for_each_entry(ip6_ifaddr, &ip6_inetdev->addr_list, if_list) {
+		if (ipv6_addr_src_scope(&ip6_ifaddr->addr) > IPV6_ADDR_SCOPE_LINKLOCAL) {
+			/*
+			 * This address has greater scope than link-local
+			 */
+			read_unlock_bh(&ip6_inetdev->lock);
+
+			DEBUG_TRACE("%px: interface %s has IPv6 address %pI6 with > linklocal scope\n",
+					dev, dev->name, &ip6_ifaddr->addr);
+			return true;
+		}
+		break;
+	}
 	read_unlock_bh(&ip6_inetdev->lock);
 
-	return true;
+	DEBUG_TRACE("%px: interface %s has no IPv6 global scope address\n", dev, dev->name);
+	return false;
 }
 
 /*
