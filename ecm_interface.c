@@ -9099,9 +9099,14 @@ int ecm_interface_wifi_event_stop(void)
 	DEBUG_INFO("kill ecm_interface_wifi_event thread\n");
 
 	send_sig(SIGKILL, __ewn.thread, 1);
-	err = kthread_stop(__ewn.thread);
-	__ewn.thread = NULL;
+	 if(__ewn.sock != NULL) {
+		DEBUG_INFO("Stopping kthread.\n");
+		err = kthread_stop(__ewn.thread);
+		__ewn.thread = NULL;
+		DEBUG_INFO("Stopped kthread.\n");
+	}
 
+	DEBUG_INFO("killing ecm_interface_wifi_event thread succeeded.\n");
 	return err;
 }
 
