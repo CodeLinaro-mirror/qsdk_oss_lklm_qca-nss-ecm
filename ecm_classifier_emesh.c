@@ -1721,6 +1721,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	bool is_sawf_relevant = false;
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	bool is_mc_flow = false;
+	bool emesh_spm_priority_update = false;
+
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
 
@@ -2092,6 +2094,7 @@ check_emesh_classifier:
 			 * This is for UDP traffic with accel delay packets disabled.
 			 */
 			ecm_classifier_emesh_sawf_check_cake_qdisc(src_dev, &cake_return_handle);
+			emesh_spm_priority_update = true;
 		}
 
 		/*
@@ -2279,7 +2282,13 @@ done:
 
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 
-	cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+	/*
+	 * Set QoS tag action only if SPM priority update is needed or SAWF rule is valid
+	 */
+	if (emesh_spm_priority_update || flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
+			|| return_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+	}
 
 	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
 			((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
