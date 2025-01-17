@@ -1,0 +1,33 @@
+load(":define_modules.bzl", "define_modules")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
+
+define_modules("sdxkova", "debug")
+define_modules("sdxkova", "perf")
+
+package(
+    default_visibility = [
+        "//visibility:public",
+    ],
+)
+
+ddk_headers(
+    name = "ecm_headers",
+    hdrs = glob([
+        "*.h",
+        "frontends/include/*.h",
+        "frontends/cmn/*.h",
+        "frontends/sfe/*.h",
+        "ecm_db/*.h",
+        "exports/*.h",
+    ]),
+    includes = [
+        ".",
+        "frontends/include",
+        "frontends/cmn",
+        "frontends/nss",
+        "frontends/ppe",
+        "frontends/sfe",
+        "ecm_db",
+        "exports",
+    ],
+)
