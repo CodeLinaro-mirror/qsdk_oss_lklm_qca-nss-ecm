@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2016, 2019-2021, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -39,6 +39,7 @@
 #endif
 
 #define ECM_FRONT_END_SYSCTL_PATH "/net/ecm"
+#define ECM_FRONT_END_FAIL_REASON_SHIFT 15
 
 /*
  * Flag to limit the number of DB connections at any point to the maximum number
@@ -73,6 +74,13 @@ extern unsigned int ecm_sfe_fse_enable;
  */
 #ifdef ECM_MHT_ENABLE
 extern unsigned int ecm_sfe_mht_enable;
+#endif
+
+#if defined(ECM_FRONT_END_PPE_ENABLE) || defined(ECM_FRONT_END_SFE_ENABLE)
+static inline uint16_t ecm_front_end_set_ae_failure_reason(uint16_t failure_reason)
+{
+        return (1 << ECM_FRONT_END_FAIL_REASON_SHIFT | failure_reason);
+}
 #endif
 
 /*
