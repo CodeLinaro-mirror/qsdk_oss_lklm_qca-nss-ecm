@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -305,6 +305,10 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 	struct ecm_classifier_default_internal_instance *cdii = (struct ecm_classifier_default_internal_instance *)aci;
 	struct nf_conn *ct;
 	enum ip_conntrack_info ctinfo;
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+	struct ecm_db_connection_instance *ci;
+	struct ecm_front_end_connection_instance *feci;
+#endif
 
 	DEBUG_CHECK_MAGIC(cdii, ECM_CLASSIFIER_DEFAULT_INTERNAL_INSTANCE_MAGIC, "%px: invalid state magic\n", cdii);
 
@@ -358,6 +362,30 @@ static void ecm_classifier_default_process(struct ecm_classifier_instance *aci, 
 		return;
 	}
 	spin_unlock_bh(&ecm_classifier_default_lock);
+
+#ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
+	/*
+	 * Get connection
+	 * We are checking here to avoid heirarchy creation for each skb.
+	 */
+	ci = ecm_db_connection_serial_find_and_ref(cdii->ci_serial);
+	if (!ci) {
+		DEBUG_TRACE("%px: No ci found for %u\n", cdii, cdii->ci_serial);
+		return;
+	}
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	if (!feci->can_accel) {
+		DEBUG_TRACE("%px: accel is denied for %px\n", cdii, ci);
+		ecm_front_end_connection_deref(feci);
+		ecm_db_connection_deref(ci);
+		spin_lock_bh(&ecm_classifier_default_lock);
+		goto accel_no;
+	}
+
+	ecm_front_end_connection_deref(feci);
+	ecm_db_connection_deref(ci);
+#endif
 
 	/*
 	 * Handle non-TCP case

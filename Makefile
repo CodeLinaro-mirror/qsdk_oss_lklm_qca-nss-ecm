@@ -253,6 +253,11 @@ ccflags-$(ECM_INTERFACE_MACVLAN_ENABLE) += -DECM_INTERFACE_MACVLAN_ENABLE
 # #############################################################################
 ccflags-$(ECM_INTERFACE_IPSEC_ENABLE) += -DECM_INTERFACE_IPSEC_ENABLE
 
+# #############################################################################
+# Define ECM_INTERFACE_SKIP_ACCEL_ENABLE=y in order to support for disable acceleration
+# #############################################################################
+ccflags-$(ECM_INTERFACE_SKIP_ACCEL_ENABLE) += -DECM_INTERFACE_SKIP_ACCEL_ENABLE
+
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
 ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx \
 	     ipq50xx_64 ipq95xx_32 ipq95xx ipq53xx_32 ipq53xx ipq54xx_32 ipq54xx))
