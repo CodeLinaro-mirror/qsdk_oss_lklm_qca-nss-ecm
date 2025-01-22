@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -375,7 +375,8 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char 
  * @return
  * The status of fetching the connection info (1 in case of success, 0 in case of failure).
  */
-bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp);
+bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp,
+				bool *is_src_wiphy, bool *is_dst_wiphy);
 
 /**
  * @}

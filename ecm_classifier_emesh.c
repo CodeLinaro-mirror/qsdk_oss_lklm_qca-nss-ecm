@@ -768,7 +768,7 @@ end:
  * ecm_classifier_emesh_sawf_get_connection_info
  *	Function used by FLS to get ipv4/ipv6 connection info
  */
-bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp)
+bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t *orig_dscp, uint32_t *ret_dscp, bool *is_src_wiphy, bool *is_dst_wiphy)
 {
 	struct ecm_db_connection_instance *ci;
 	struct net_device *src_dev = NULL;
@@ -851,8 +851,6 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 		return 0;
 	}
 
-	dev_put(src_dev);
-	dev_put(dest_dev);
 
 	/*
 	 * Check if emesh classifier is assigned.
@@ -860,6 +858,8 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
 	if (!cemi) {
 		DEBUG_TRACE("%px: emesh classifier is not assigned. %u\n", ci, ci->serial);
+		dev_put(src_dev);
+		dev_put(dest_dev);
 		ecm_db_connection_deref(ci);
 		return 0;
 	}
@@ -872,6 +872,8 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI)) {
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
+		dev_put(src_dev);
+		dev_put(dest_dev);
 		ecm_classifier_emesh_sawf_deref((struct ecm_classifier_instance *)cemi);
 		ecm_db_connection_deref(ci);
 		return 0;
@@ -884,12 +886,20 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		*orig_dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
 		*ret_dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
+		*is_src_wiphy = src_dev->ieee80211_ptr ? true : false;
+		*is_dst_wiphy = dest_dev->ieee80211_ptr ? true : false;
 	} else {
 		*orig_dscp = cemi->dscp[ECM_CONN_DIR_RETURN];
 		*ret_dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
+		*is_src_wiphy = dest_dev->ieee80211_ptr ? true : false;
+		*is_dst_wiphy = src_dev->ieee80211_ptr ? true : false;
 	}
 
 	spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
+
+	dev_put(src_dev);
+	dev_put(dest_dev);
+
 	ecm_classifier_emesh_sawf_deref((struct ecm_classifier_instance *)cemi);
 	ecm_db_connection_deref(ci);
 
