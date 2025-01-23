@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -68,6 +68,8 @@ static inline bool ecm_wifi_plugin_emesh_sawf_update_fse_flow(struct ecm_classif
 	fse_wlan_info.dest_mac = fse_info->dest_mac;
 	fse_wlan_info.fw_svc_id = fse_info->fw_svc_info;
 	fse_wlan_info.rv_svc_id = fse_info->rv_svc_info;
+	fse_wlan_info.flow_dscp = fse_info->flow_dscp;
+	fse_wlan_info.return_dscp = fse_info->return_dscp;
 
 	return qca_fse_add_rule(&fse_wlan_info);
 }

@@ -77,6 +77,8 @@ struct ecm_classifier_fse_info {
 	uint32_t rv_svc_info;			/**< Reverse SAWF info. */
 	struct net_device *src_dev;		/**< Source dev. */
 	struct net_device *dest_dev;		/**< Destination dev. */
+	uint8_t flow_dscp;			/**< DSCP value for flow direction. */
+	uint8_t return_dscp;			/**< DSCP value for return direction. */
 };
 
 /**
