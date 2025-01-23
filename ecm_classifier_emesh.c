@@ -92,6 +92,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW              1
 #define ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW              2
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
+#define ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(sawf_meta)   ((sawf_meta >> 20) & 0x4)
 
 /*
  * EMESH classifier type.
@@ -1672,7 +1673,7 @@ static void ecm_classifier_emesh_sawf_query_msduq(struct ecm_classifier_instance
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 	if (dir_fw) {
 		cemi->wlan_hdl_done_flow = true;
-		if (metadata != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+		if (metadata != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(metadata)) {
 			cemi->process_response.flow_sawf_metadata = metadata;
 			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 			cemi->flow_valid_flag |= sawf_flow_info.valid_flag;
@@ -1680,7 +1681,7 @@ static void ecm_classifier_emesh_sawf_query_msduq(struct ecm_classifier_instance
 		cemi->flow_rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	} else {
 		cemi->wlan_hdl_done_return = true;
-		if (metadata != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
+		if (metadata != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(metadata)) {
 			cemi->process_response.return_sawf_metadata = metadata;
 			cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
 			cemi->return_valid_flag |= sawf_flow_info.valid_flag;
