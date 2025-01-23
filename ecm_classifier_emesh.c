@@ -629,7 +629,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	/*
 	 * Shares sync messages with WLAN driver regarding msduq usage
 	 */
-	if (ecm_emesh.sawf_conn_sync && (msduq_forward || msduq_reverse)) {
+	if (ecm_emesh.sawf_conn_sync) {
 		spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 		if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && msduq_forward == msduq_forward_prev) ||
 			(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && msduq_reverse == msduq_reverse_prev)){
@@ -667,28 +667,37 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 		 * If the flow was previously mapped to a non default msduq, send a SUB message to WLAN Driver
 		 */
 		DEBUG_TRACE("msduq_f=0x%x, msduq_fp=0x%x, msduq_r=0x%x, msduq_rp=0x%x\n", msduq_forward, msduq_forward_prev, msduq_reverse, msduq_reverse_prev);
-		if ((msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && msduq_forward_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) ||
-			(msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ && msduq_reverse_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ)) {
+		if (msduq_forward_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ || msduq_reverse_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ) {
 			sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_SUB_FLOW;
 			DEBUG_TRACE("%px: SUB SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
 				cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
 				sawf_sync_params.fwd_mark_metadata, sawf_sync_params.rev_mark_metadata);
-
 			ecm_emesh.sawf_conn_sync(&sawf_sync_params);
+
+			/*
+			 * Set flags for ECM frontends for cases where we may revert to default queue
+			 * This is handled by SAWF mark set for default case
+			 */
+			msg->flags |= sender == ECM_TRACKER_SENDER_TYPE_SRC ? ECM_FRONT_END_PRIO_UPDATE_FLOW : ECM_FRONT_END_PRIO_UPDATE_RETURN;
+			msg->flags |= ECM_FRONT_END_DEPRIO;
 		}
 
-		/*
-		 * If either of the new MSDUQs recieved from WLAN driver are not default, send ADD message
-		 */
-		sawf_sync_params.fwd_service_id = msg->flow_service_class_id;
-		sawf_sync_params.rev_service_id = msg->return_service_class_id;
-		sawf_sync_params.fwd_mark_metadata = msduq_forward;
-		sawf_sync_params.rev_mark_metadata = msduq_reverse;
-		sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW;
-		DEBUG_TRACE("%px: ADD SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
-			cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
-			sawf_sync_params.fwd_mark_metadata, sawf_sync_params.rev_mark_metadata);
-		ecm_emesh.sawf_conn_sync(&sawf_sync_params);
+		if (msduq_forward != ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ || msduq_reverse != ECM_CLASSIFIER_EMESH_SAWF_DEFAULT_MSDUQ) {
+			/*
+			 * If either of the new MSDUQs recieved from WLAN driver are not default, send ADD message
+			 */
+			sawf_sync_params.fwd_service_id = msg->flow_service_class_id;
+			sawf_sync_params.rev_service_id = msg->return_service_class_id;
+			sawf_sync_params.fwd_mark_metadata = msduq_forward;
+			sawf_sync_params.rev_mark_metadata = msduq_reverse;
+			sawf_sync_params.add_or_sub = ECM_CLASSIFIER_EMESH_SAWF_ADD_FLOW;
+			DEBUG_TRACE("%px: ADD SAWF conn  forward service id: %x reverse service id: %x fwd_mark_metadata: %x rev_mark_metadata: %x\n",
+				cemi, sawf_sync_params.fwd_service_id, sawf_sync_params.rev_service_id,
+				sawf_sync_params.fwd_mark_metadata, sawf_sync_params.rev_mark_metadata);
+			ecm_emesh.sawf_conn_sync(&sawf_sync_params);
+
+			msg->flags &= ~ECM_FRONT_END_DEPRIO;
+		}
 	}
 
 	/*

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -703,6 +703,10 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		mark.protocol = msg->protocol;
 		mark.src_port = msg->flow_src_port;
 		mark.dest_port = msg->flow_dest_port;
+		if (msg->flags & ECM_FRONT_END_DEPRIO) {
+			mark.flags |= SFE_SAWF_MARK_DEPRIO;
+		}
+
 		if (msg->ip_version == 4) {
 			mark.src_ip[0] = msg->flow_src_ip[0];
 			mark.dest_ip[0] = msg->flow_dest_ip[0];
