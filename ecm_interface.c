@@ -108,6 +108,7 @@
 #ifdef ECM_INTERFACE_MACVLAN_ENABLE
 #include <linux/if_macvlan.h>
 #endif
+#include <linux/hex.h>
 
 /*
  * Debug output levels
@@ -176,6 +177,11 @@ struct ecm_interface_denied_node {
 	char name[IFNAMSIZ];
 };
 #endif
+
+/*
+ * List to store MAC of clients that are marked as defunct
+ */
+static uint8_t ecm_interface_defunct_mac[ETH_ALEN];
 
 /*
  * Wi-Fi event node authorized information structure.
@@ -9499,6 +9505,111 @@ static int ecm_interface_accel_denied_list_handler(struct ctl_table *ctl, int wr
 }
 #endif
 
+/*
+ * ecm_interface_defunct_by_mac_address_read()
+ * 	Read function for defunct the ecm rules by mac address
+ */
+static int ecm_interface_defunct_by_mac_address_read(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	size_t bytes = 0;
+	char *read_buf;
+	int len;
+
+	read_buf = kzalloc(ECM_MAC_ADDR_STR_BUFF_SIZE * sizeof(char), GFP_KERNEL);
+	if (!read_buf) {
+		DEBUG_ERROR("Failed to allocate buffer for MAC address\n");
+		return -ENOMEM;
+	}
+
+	len = scnprintf(read_buf, ECM_MAC_ADDR_STR_BUFF_SIZE, "%pM", ecm_interface_defunct_mac);
+	if (!len) {
+		DEBUG_ERROR("Failed to format MAC address\n");
+		kfree(read_buf);
+		return -EINVAL;
+	}
+
+	bytes += len;
+	len = scnprintf(read_buf + bytes, 4, "\n");
+	bytes += len;
+	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	*lenp = bytes;
+	kfree(read_buf);
+
+	return 0;
+}
+
+/*
+ * ecm_interface_defunct_by_mac_address()
+ * 	write function for defunct the ecm rules by mac address
+ */
+static int ecm_interface_defunct_by_mac_address(int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	if (!write) {
+		return ecm_interface_defunct_by_mac_address_read(buffer, lenp, ppos);
+	}
+
+	buf = kzalloc(ECM_MAC_ADDR_STR_BUFF_SIZE * sizeof(char), GFP_KERNEL);
+	if (!buf) {
+		DEBUG_ERROR("failed to allocate a buffer\n");
+		return -ENOMEM;
+	}
+
+	count = *lenp;
+	if (count > (ECM_MAC_ADDR_STR_BUFF_SIZE * sizeof(char))) {
+		DEBUG_ERROR("maximum length supported is 18\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	memcpy(buf, buffer, count);
+	*lenp = count;
+	*ppos += count;
+	buf[count-1] = '\0';
+
+	/*
+	 * Converting MAC addr given in char to integers
+	 */
+	if (!mac_pton(buf, ecm_interface_defunct_mac)) {
+		DEBUG_ERROR("cannot parse mac address\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	/*
+	 * Check for valid ether address
+	 */
+	if (!is_valid_ether_addr(ecm_interface_defunct_mac)) {
+		DEBUG_ERROR("Mac address %pM is not valid\n", ecm_interface_defunct_mac);
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	/*
+	 * defunct the ecm rules corresponding to parse MAC
+	 */
+	ecm_interface_node_connections_defunct(ecm_interface_defunct_mac, ECM_DB_IP_VERSION_IGNORE);
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_interface_defunct_by_mac_addr_handler()
+ * 	Proc handler function for defunct the ecm rules by mac address
+ */
+static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * To mark a MAC address as defunct:
+	 * echo "00:03:7F:DE:5C:78" > /proc/sys/net/ecm/defunct_by_mac
+	 *
+	 * Only one MAC address can be processed per defunct_by_mac
+	 */
+	return ecm_interface_defunct_by_mac_address(write, buffer, lenp, ppos);
+}
+
 static struct ctl_table ecm_interface_table[] = {
 	{
 		.procname		= "src_interface_check",
@@ -9525,6 +9636,13 @@ static struct ctl_table ecm_interface_table[] = {
 		.proc_handler		= &ecm_interface_accel_denied_list_handler,
 	},
 #endif
+	{
+		.procname		= "defunct_by_mac",
+		.data			= &ecm_interface_defunct_mac,
+		.maxlen			= sizeof(ecm_interface_defunct_mac),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_defunct_by_mac_address_handler,
+	},
 	{ }
 };
 
