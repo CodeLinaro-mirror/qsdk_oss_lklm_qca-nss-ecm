@@ -229,6 +229,12 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
  */
 int ecm_interface_src_check;
 
+/*
+ * Source interface check no flush flag.
+ * 	If this is enabled, the flows with a mismatch of source interface will not be flushed.
+ */
+int ecm_interface_src_check_no_flush;
+
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
  * IGS enabled flag.
@@ -9292,6 +9298,30 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
 	return ret;
 }
 
+/*
+ * ecm_interface_src_check_no_flush_handler()
+ *	Source interface check no flush sysctl node handler.
+ */
+static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	/*
+	 * TODO: Add a front end feature check for this flag.
+	 * Currently only SFE supports this feature.
+	 */
+	DEBUG_TRACE("Source interface check no flush value = %d\n", ecm_interface_src_check_no_flush);
+	return ret;
+}
+
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
 /*
  * ecm_interface_accel_denied_read()
@@ -9622,6 +9652,13 @@ static struct ctl_table ecm_interface_table[] = {
 		.maxlen			= sizeof(int),
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_src_check_handler,
+	},
+	{
+		.procname		= "src_interface_check_no_flush",
+		.data			= &ecm_interface_src_check_no_flush,
+		.maxlen			= sizeof(int),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_src_check_no_flush_handler,
 	},
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 	{
