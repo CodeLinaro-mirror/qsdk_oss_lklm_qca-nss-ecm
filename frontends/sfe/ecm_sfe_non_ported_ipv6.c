@@ -55,7 +55,6 @@
 #include <net/netfilter/ipv6/nf_conntrack_ipv6.h>
 #include <net/netfilter/ipv6/nf_defrag_ipv6.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-#include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
 

@@ -62,7 +62,6 @@
 #endif
 #include <linux/netfilter/nf_conntrack_tftp.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-#include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
 

@@ -55,7 +55,6 @@
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-#include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
 

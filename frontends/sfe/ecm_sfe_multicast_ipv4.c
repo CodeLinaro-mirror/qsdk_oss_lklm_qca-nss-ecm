@@ -62,7 +62,6 @@
 #include <net/bonding.h>
 #endif
 #ifdef ECM_INTERFACE_VLAN_ENABLE
-#include <linux/../../net/8021q/vlan.h>
 #include <linux/if_vlan.h>
 #endif
 #ifdef ECM_INTERFACE_DSA_ENABLE
