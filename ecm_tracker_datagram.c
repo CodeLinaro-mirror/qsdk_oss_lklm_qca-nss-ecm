@@ -1,6 +1,7 @@
 /*
  **************************************************************************
- * Copyright (c) 2014-2015, 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, 2020 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -221,7 +222,6 @@ static void ecm_tracker_datagram_discard_all(struct ecm_tracker_datagram_interna
 	ecm_tracker_datagram_datagram_discard(dtii, ECM_TRACKER_SENDER_TYPE_SRC, src_count);
 	ecm_tracker_datagram_datagram_discard(dtii, ECM_TRACKER_SENDER_TYPE_DEST, dest_count);
 }
-EXPORT_SYMBOL(ecm_tracker_datagram_discard_all);
 
 /*
  * ecm_tracker_datagram_discard_all_callback()
@@ -395,7 +395,6 @@ static int32_t ecm_tracker_datagram_datagram_size_get(struct ecm_tracker_datagra
 	spin_unlock_bh(&dtii->lock);
 	return size;
 }
-EXPORT_SYMBOL(ecm_tracker_datagram_datagram_size_get);
 
 /*
  * ecm_tracker_datagram_datagram_size_get_callback()
@@ -449,7 +448,6 @@ static int ecm_tracker_datagram_datagram_read(struct ecm_tracker_datagram_instan
 
 	return res;
 }
-EXPORT_SYMBOL(ecm_tracker_datagram_datagram_read);
 
 /*
  * ecm_tracker_datagram_datagram_read_callback()
@@ -542,7 +540,6 @@ static bool ecm_tracker_datagram_datagram_add(struct ecm_tracker_datagram_instan
 	spin_unlock_bh(&dtii->lock);
 	return true;
 }
-EXPORT_SYMBOL(ecm_tracker_datagram_datagram_add);
 
 /*
  * _ecm_tracker_datagram_datagram_add_callback()
