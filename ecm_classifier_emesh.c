@@ -728,24 +728,31 @@ done:
 	}
 
 	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
-		switch(r->inner.ae_type) {
-		case SP_RULE_AE_TYPE_PPE:
-		case SP_RULE_AE_TYPE_PPE_DS:
-		case SP_RULE_AE_TYPE_PPE_VP:
-			spin_lock_bh(&feci->lock);
-			feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
-			feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
-			spin_unlock_bh(&feci->lock);
-			feci->decelerate(feci);
-			break;
-		default:
-			if (update_rule) {
-				feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+		spin_lock_bh(&feci->lock);
+		if (feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
+			switch(r->inner.ae_type) {
+			case SP_RULE_AE_TYPE_PPE:
+			case SP_RULE_AE_TYPE_PPE_DS:
+			case SP_RULE_AE_TYPE_PPE_VP:
+				feci->next_accel_engine = ECM_FRONT_END_ENGINE_PPE;
+				feci->fe_info.front_end_flags |= ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE;
+				spin_unlock_bh(&feci->lock);
+				feci->decelerate(feci);
+				goto processing_done;
+			default:
+				break;
 			}
-			break;
 		}
-	} else if (update_rule) {
-			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+
+		spin_unlock_bh(&feci->lock);
+	}
+
+	/*
+	 * This function should only be called in cases where AE switch doesn't occur, as SDWF
+	 * prioritization is handled by sp_mapdb_rule_apply_sawf call in the process function
+	 */
+	if (update_rule) {
+		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
 	}
 
 processing_done:
