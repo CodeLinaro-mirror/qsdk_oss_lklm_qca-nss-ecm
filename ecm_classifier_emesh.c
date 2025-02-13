@@ -2034,8 +2034,11 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * successful rule lookup. Also if SAWF has updated the priority value, CAKE priority classification
 		 * should take over the dscp classification (if enabled), so we check if CAKE is enabled on
 		 * the interface or not and put the cake handle in skb->priority.
+		 * STC and UDP Priorotization (SP_RULE_TYPE_SAWF_IFLI) donot set priority.
+		 * Note: Needs be revisit if priority is set by STC and UDP Prioritization.
 		 */
-		if (flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+		if ((flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP)
+			&& flow_output_params.sawf_rule_type != SP_RULE_TYPE_SAWF_IFLI) {
 			skb->priority = flow_output_params.priority;
 			ecm_classifier_emesh_sawf_check_cake_qdisc(dest_dev, &cake_flow_handle);
 			/*
@@ -2300,10 +2303,16 @@ done:
 	spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 
 	/*
-	 * Set QoS tag action only if SPM priority update is needed or SAWF rule is valid
+	 * Set QoS tag action only if SPM priority update is needed
+	 * or SAWF rule is valid. STC and UDP Prioritization (SP_RULE_TYPE_SAWF_IFLI)
+	 * do not set QoS related information
+	 * Note: Needs be revisit if Qos info is set by STC and UDP Prioritization.
 	 */
-	if (emesh_spm_priority_update || flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
-			|| return_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
+	if (emesh_spm_priority_update
+		|| (flow_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
+		&& flow_output_params.sawf_rule_type != SP_RULE_TYPE_SAWF_IFLI)
+		|| (return_output_params.rule_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
+		&& return_output_params.sawf_rule_type != SP_RULE_TYPE_SAWF_IFLI)) {
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	}
 
