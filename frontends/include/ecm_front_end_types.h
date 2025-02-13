@@ -33,10 +33,11 @@
 #define ECM_FRONT_END_INVALID_VLAN_PCP 0xFF
 
 /*
- * FLOW DEPRIO flag
+ * FLOW PRIO/DEPRIO flag
  */
 #define ECM_FRONT_END_PRIO_UPDATE_FLOW 0x1
 #define ECM_FRONT_END_PRIO_UPDATE_RETURN 0x2
+#define ECM_FRONT_END_DEPRIO 0x4
 
 /*
  * Bridge device macros
