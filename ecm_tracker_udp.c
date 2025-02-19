@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2015, 2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -73,6 +75,8 @@
  * Useful constants
  */
 #define ECM_TRACKER_UDP_HEADER_SIZE 8		/* UDP header is always 8 bytes RFC 768 Page 1 */
+#define ECM_TRACKER_UDP_RTP_HEADER_SIZE 12	/* RTP static header is 12 */
+#define ECM_TRACKER_UDP_RTP_VERSION 2		/* RTP version */
 
 #ifdef ECM_TRACKER_DPI_SUPPORT_ENABLE
 /*
@@ -160,6 +164,32 @@ struct udphdr *ecm_tracker_udp_check_header_and_read(struct sk_buff *skb, struct
 	return skb_header_pointer(skb, header->offset, sizeof(*port_buffer), port_buffer);
 }
 EXPORT_SYMBOL(ecm_tracker_udp_check_header_and_read);
+
+/*
+ * ecm_tracker_udp_check_is_rtp()
+ *	Check if this is RTP packet
+ */
+bool ecm_tracker_udp_check_is_rtp(struct sk_buff *skb, struct udphdr *udp_hdr)
+{
+	uint8_t *payload = (void *)udp_hdr + sizeof(*udp_hdr);
+	int payload_size = ntohs(udp_hdr->len) - sizeof(*udp_hdr);
+	int version;
+
+	if (!payload_size) {
+		DEBUG_TRACE("Skb: %px, bad UDP payload size, udp_hdr len %d payload size %d\n",
+				skb, ntohs(udp_hdr->len), payload_size);
+		return false;
+	}
+
+	version = *payload >> 6;
+	if (version != ECM_TRACKER_UDP_RTP_VERSION) {
+		DEBUG_TRACE("Skb: %px, RTP version %d\n", skb, version);
+		return false;
+	}
+
+	DEBUG_TRACE("Skb: %px, RTP version %d\n", skb, version);
+	return true;
+}
 
 #ifdef ECM_TRACKER_DPI_SUPPORT_ENABLE
 /*
