@@ -137,6 +137,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 	int src_port_nat;
 	int dest_port;
 	int dest_port_nat;
+	bool is_rtp = false;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci = NULL;
 	ip_addr_t match_addr;
@@ -282,6 +283,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		}
 
 		layer4hdr = (__be16 *)udp_hdr;
+		is_rtp = ecm_tracker_udp_check_is_rtp(skb, udp_hdr);
 
 		/*
 		 * Now extract information, if we have conntrack then use that (which would already be in the tuples)
@@ -784,6 +786,10 @@ feci_alloc_done:
 		ecm_db_front_end_instance_ref_and_set(nci, feci);
 
 		ecm_db_connection_l2_encap_proto_set(nci, l2_encap_proto);
+
+		if (protocol == IPPROTO_UDP) {
+			ecm_db_connection_rtp_set(nci, is_rtp);
+		}
 
 		/*
 		 * Now add the connection into the database.
