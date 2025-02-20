@@ -47,6 +47,7 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
+#include "ecm_tracker_udp.h"
 #include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
 #include "ecm_db.h"
@@ -175,7 +176,6 @@ static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency pro
 static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
 static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
 static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
-static uint32_t ecm_classifier_emesh_udp_clf_enabled;	/* UDP classification enable flag */
 static uint32_t ecm_classifier_3link_mlo_enabled = 1;		/* 3link MLO mode */
 
 /*
@@ -711,7 +711,7 @@ done:
 	 *	Donot send RM sync in case UDP classification config is enabled
 	 */
 	DEBUG_TRACE("svid_f %u, svid_fp %u, svid_r %u, svid_rp %u\n", msg->flow_service_class_id, flow_svid_prev, msg->return_service_class_id, return_svid_prev);
-	if (!ecm_classifier_emesh_udp_clf_enabled) {
+	if (!ecm_tracker_udp_clf_enabled) {
 		if ((msg->flow_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && flow_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS) ||
 			(msg->return_service_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS && return_svid_prev != ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS)) {
 			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_UPDATED, sender, &rm_msg);
@@ -721,7 +721,7 @@ done:
 		sp_mapdb_rm_sync(&rm_msg);
 	}
 
-	if (ecm_classifier_emesh_udp_clf_enabled) {
+	if (ecm_tracker_udp_clf_enabled) {
 		spin_lock_bh(&feci->lock);
 		if ((feci->accel_engine == ECM_FRONT_END_ENGINE_PPE) && (selected_front_end != ECM_FRONT_END_TYPE_PPE)) {
 			feci->next_accel_engine = ECM_FRONT_END_ENGINE_SFE;
@@ -734,6 +734,7 @@ done:
 		}
 
 		spin_unlock_bh(&feci->lock);
+		goto update_rule;
 	}
 
 	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
@@ -756,6 +757,7 @@ done:
 		spin_unlock_bh(&feci->lock);
 	}
 
+update_rule:
 	/*
 	 * This function should only be called in cases where AE switch doesn't occur, as SDWF
 	 * prioritization is handled by sp_mapdb_rule_apply_sawf call in the process function
@@ -799,7 +801,7 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 	/*
 	 * Check if UDP classification is enabled
 	 */
-	if (!ecm_classifier_emesh_udp_clf_enabled) {
+	if (!ecm_tracker_udp_clf_enabled) {
 		DEBUG_TRACE("%px: udp classification config not enabled\n", ct);
 		return 0;
 	}
@@ -3863,13 +3865,6 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				NULL, &ecm_classifier_sawf_emesh_udp_ipsec_port_fops)) {
 		DEBUG_ERROR("Failed to create ecm sawf udp ipsec port file in debugfs for adding port number\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
-	}
-
-	if (!ecm_debugfs_create_u32("udp_classification_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				(u32 *)&ecm_classifier_emesh_udp_clf_enabled)) {
-		DEBUG_ERROR("Failed to create ecm emesh classifier udp classification config enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 		return -1;
 	}
