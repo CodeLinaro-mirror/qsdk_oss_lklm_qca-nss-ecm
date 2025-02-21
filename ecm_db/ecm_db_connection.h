@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -161,6 +161,7 @@ struct ecm_db_connection_instance {
 	bool timer_no_touch;					/* RO: Do no update timer when this flag is set */
 	uint16_t l2_encap_proto;				/* L2 encap protocol of the flow of this connection */
 	uint32_t mark;						/* The result value of mark classifier on this connection */
+	bool is_rtp;						/* RTP is present in UDP if this flag is set */
 
 	/*
 	 * Connection endpoint mapping
@@ -490,6 +491,9 @@ void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t 
 
 void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
 uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_rtp_set(struct ecm_db_connection_instance *ci, bool is_rtp);
+bool ecm_db_connection_is_rtp(struct ecm_db_connection_instance *ci);
+
 void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
 uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
