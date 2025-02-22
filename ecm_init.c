@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -43,6 +43,7 @@
 #include "ecm_db_types.h"
 #include "ecm_state.h"
 #include "ecm_tracker.h"
+#include "ecm_tracker_udp.h"
 #include "ecm_classifier.h"
 #include "ecm_front_end_types.h"
 #include "ecm_db.h"
@@ -267,6 +268,7 @@ static int __init ecm_init(void)
 #endif
 
 	ecm_front_end_common_sysctl_register();
+	ecm_tracker_udp_sysctl_register();
 	printk(KERN_INFO "ECM init complete\n");
 	return 0;
 
@@ -427,6 +429,7 @@ static void __exit ecm_exit(void)
 		debugfs_remove_recursive(ecm_dentry);
 	}
 
+	ecm_tracker_udp_sysctl_unregister();
 	ecm_front_end_common_sysctl_unregister();
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	if (ecm_front_end_ppe_fse_enable) {
