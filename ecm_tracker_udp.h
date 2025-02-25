@@ -37,10 +37,14 @@ struct ecm_tracker_udp_instance {
 #endif
 };
 
+extern unsigned int ecm_tracker_udp_clf_enabled;
 
 struct udphdr *ecm_tracker_udp_check_header_and_read(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, struct udphdr *port_buffer);
 bool ecm_tracker_udp_check_is_rtp(struct sk_buff *skb, struct udphdr *udp_hdr);
 
 void ecm_tracker_udp_init(struct ecm_tracker_udp_instance *uti, int32_t data_limit, int src_port, int dest_port);
 struct ecm_tracker_udp_instance *ecm_tracker_udp_alloc(void);
+
+void ecm_tracker_udp_sysctl_register(void);
+void ecm_tracker_udp_sysctl_unregister(void);
 

@@ -72,11 +72,32 @@
 #define ECM_TRACKER_UDP_SKB_CB_MAGIC 0xAAAB
 
 /*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_tracker_udp_ctl_tbl_hdr;
+
+/*
  * Useful constants
  */
-#define ECM_TRACKER_UDP_HEADER_SIZE 8		/* UDP header is always 8 bytes RFC 768 Page 1 */
-#define ECM_TRACKER_UDP_RTP_HEADER_SIZE 12	/* RTP static header is 12 */
-#define ECM_TRACKER_UDP_RTP_VERSION 2		/* RTP version */
+#define ECM_TRACKER_UDP_HEADER_SIZE 8			/* UDP header is always 8 bytes RFC 768 Page 1 */
+#define ECM_TRACKER_UDP_RTP_HEADER_SIZE 12		/* RTP static header is 12 */
+#define ECM_TRACKER_UDP_RTP_VERSION 2			/* RTP version */
+#define ECM_TRACKER_UDP_RTP_CSRC_COUNT_MAX 4		/* RTP Max CSRC count */
+
+#define ECM_TRACKER_UDP_RTP_VERSION_BITS_SHIFT 6	/* RTP version shift */
+#define ECM_TRACKER_UDP_RTP_CSRC_COUNT_MASK 0x0F	/* CCRC count mask */
+#define ECM_TRACKER_UDP_RTP_PAYLOAD_TYPE_MASK 0x7F	/* Payload type mask */
+
+#define ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE 64	/* Size of buffer to read payload type list */
+#define ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MIN 0			/* MIN RTP payload types */
+#define ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MAX 128		/* MAX RTP payload types */
+
+/*
+ * Supported payload types list
+ */
+static bool ecm_tracker_udp_rtp_payload_types[ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MAX];
+
+uint32_t ecm_tracker_udp_clf_enabled;	/* UDP classification enable flag */
 
 #ifdef ECM_TRACKER_DPI_SUPPORT_ENABLE
 /*
@@ -166,14 +187,44 @@ struct udphdr *ecm_tracker_udp_check_header_and_read(struct sk_buff *skb, struct
 EXPORT_SYMBOL(ecm_tracker_udp_check_header_and_read);
 
 /*
+ * ecm_tracker_is_payload_type_in_supported_list()
+ *	Checks if given payload type is in the supported payload type list.
+ */
+static bool ecm_tracker_is_payload_type_in_supported_list(int payload_type)
+{
+	return (ecm_tracker_udp_rtp_payload_types[payload_type]);
+}
+
+/*
  * ecm_tracker_udp_check_is_rtp()
  *	Check if this is RTP packet
+ *
+ * 0                   1                   2                   3
+ *    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *   |V=2|P|X|  CC   |M|     PT      |       sequence number         |
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *   |                           timestamp                           |
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *   |           synchronization source (SSRC) identifier            |
+ *   +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+ *   |            contributing source (CSRC) identifiers             |
+ *   |                             ....                              |
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 bool ecm_tracker_udp_check_is_rtp(struct sk_buff *skb, struct udphdr *udp_hdr)
 {
 	uint8_t *payload = (void *)udp_hdr + sizeof(*udp_hdr);
 	int payload_size = ntohs(udp_hdr->len) - sizeof(*udp_hdr);
-	int version;
+	int version, cc, pt;
+
+	/*
+	 * RTP detection is not done if UDP classification is not enabled
+	 */
+	if (!ecm_tracker_udp_clf_enabled) {
+		DEBUG_TRACE("Skb: %px, UDP classification is not enabled\n", skb);
+		return false;
+	}
 
 	if (!payload_size) {
 		DEBUG_TRACE("Skb: %px, bad UDP payload size, udp_hdr len %d payload size %d\n",
@@ -181,13 +232,35 @@ bool ecm_tracker_udp_check_is_rtp(struct sk_buff *skb, struct udphdr *udp_hdr)
 		return false;
 	}
 
-	version = *payload >> 6;
+	/*
+	 * Version should be 2
+	 */
+	version = *payload >> ECM_TRACKER_UDP_RTP_VERSION_BITS_SHIFT;
 	if (version != ECM_TRACKER_UDP_RTP_VERSION) {
 		DEBUG_TRACE("Skb: %px, RTP version %d\n", skb, version);
 		return false;
 	}
 
-	DEBUG_TRACE("Skb: %px, RTP version %d\n", skb, version);
+	/*
+	 * CSRC count should be <= 4
+	 */
+	cc = *payload & ECM_TRACKER_UDP_RTP_CSRC_COUNT_MASK;
+	if (cc > ECM_TRACKER_UDP_RTP_CSRC_COUNT_MAX) {
+		DEBUG_TRACE("Skb: %px, RTP CSRC count %d\n", skb, cc);
+		return false;
+	}
+
+	/*
+	 * Check for only supported static payload types
+	 */
+	payload++;
+	pt = *payload & ECM_TRACKER_UDP_RTP_PAYLOAD_TYPE_MASK;
+	if (!ecm_tracker_is_payload_type_in_supported_list(pt)) {
+		DEBUG_TRACE("Skb: %px, RTP payload type %d\n", skb, pt);
+		return false;
+	}
+
+	DEBUG_TRACE("Skb: %px, RTP version %d CSRC count %d payload type %d\n", skb, version, cc, pt);
 	return true;
 }
 
@@ -931,6 +1004,225 @@ static int ecm_tracker_udp_state_text_get_callback(struct ecm_tracker_instance *
 #endif
 
 /*
+ * ecm_tracker_payload_types_read()
+ *	Reads the payload types from the payload types array and prints.
+ */
+static void ecm_tracker_payload_types_read(void *buffer, size_t *lenp, loff_t *ppos, bool *payload_types)
+{
+	char *read_buf;
+	int i, len;
+	size_t bytes = 0;
+
+	/*
+	 * (64 * 8) bytes for the buffer size is sufficient to write
+	 * the array including the spaces and new line characters.
+	 */
+	read_buf = kzalloc(ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE * 8 * sizeof(char), GFP_KERNEL);
+	if (!read_buf) {
+		DEBUG_ERROR("Failed to alloc buffer to print payload types array\n");
+		return;
+	}
+
+	for (i = 0; i < ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MAX; i++) {
+		if(ecm_tracker_udp_rtp_payload_types[i]) {
+			len = scnprintf(read_buf + bytes, 8, "%d ", i);
+			if (!len) {
+				DEBUG_ERROR("failed to read from buffer %d\n", i);
+				kfree(read_buf);
+				return;
+			}
+			bytes += len;
+		}
+	}
+
+	/*
+	 * Add new line character at the end.
+	 */
+	len = scnprintf(read_buf + bytes, 4, "\n");
+	bytes += len;
+
+	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	*lenp = bytes;
+	kfree(read_buf);
+}
+
+/*
+ * ecm_tracker_rtp_payload_types_handler()
+ *	Proc handler function for RTP payload types read/write operation.
+ */
+static int ecm_tracker_rtp_payload_types_handler(int write, void *buffer, size_t *lenp, loff_t *ppos, bool *payload_types)
+{
+
+	char *buf;
+	char *pfree;
+	char *token;
+	int count, payload_type;
+	long int val;
+
+	if (!write) {
+		ecm_tracker_payload_types_read(buffer, lenp, ppos, payload_types);
+		return 0;
+	}
+
+	buf = kzalloc((ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE * 8) * sizeof(char), GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	pfree = buf;
+	count = *lenp;
+	if (count > (ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE * 8 * sizeof(char))) {
+		count = ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE * 8 * sizeof(char);
+	}
+
+	memcpy(buf, buffer, count);
+	*lenp = count;
+	*ppos += count;
+
+	token = strsep(&buf, " ");
+	if (strlen(token) != 3) {
+		DEBUG_ERROR("cmd should be add or del\n");
+		kfree(pfree);
+		return -EINVAL;
+	}
+
+	if (!strncmp(token, "add", 3)) {
+		while (buf) {
+			token = strsep(&buf, " ");
+			if (!token) {
+				DEBUG_ERROR("token is empty\n");
+				kfree(pfree);
+				return -EINVAL;
+			}
+
+			if (kstrtol(token, 10, &val)) {
+				DEBUG_ERROR("%s is not a number\n", token);
+				kfree(pfree);
+				return -EINVAL;
+			}
+
+			if (sscanf(token, "%d", &payload_type)) {
+				if (payload_type < ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MIN
+					|| payload_type >= ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MAX) {
+					DEBUG_ERROR("payload type %d is not between (0-127)\n", payload_type);
+					kfree(pfree);
+					return -EINVAL;
+				}
+
+				if (ecm_tracker_is_payload_type_in_supported_list(payload_type)) {
+					DEBUG_WARN("payload type: %d is already in the list\n", payload_type);
+					continue;
+				}
+
+				ecm_tracker_udp_rtp_payload_types[payload_type] = true;
+			}
+		}
+	} else if (!strncmp(token, "del", 3)) {
+		while (buf) {
+			token = strsep(&buf, " ");
+			if (!token) {
+				DEBUG_ERROR("token is empty\n");
+				kfree(pfree);
+				return -EINVAL;
+			}
+
+			if (kstrtol(token, 10, &val)) {
+				DEBUG_ERROR("%s is not a number\n", token);
+				kfree(pfree);
+				return -EINVAL;
+			}
+
+			if (sscanf(token, "%d", &payload_type)) {
+				if (payload_type < ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MIN
+					|| payload_type >= ECM_TRACKER_UDP_RTP_PAYLOAD_TYPES_MAX) {
+					DEBUG_ERROR("payload type %d is not between (0-127)\n", payload_type);
+					kfree(pfree);
+					return -EINVAL;
+				}
+
+				if (!ecm_tracker_is_payload_type_in_supported_list(payload_type)) {
+					DEBUG_WARN("payload type: %d is not in the list\n", payload_type);
+					continue;
+				}
+
+				ecm_tracker_udp_rtp_payload_types[payload_type] = false;
+			}
+		}
+	} else {
+		DEBUG_ERROR("invalid command: %s\n", token);
+	}
+
+	kfree(pfree);
+	return count;
+}
+
+/*
+ * ecm_tracker_udp_rtp_payload_types_handler()
+ *	Proc handler function for RTP payload types read/write operation.
+ */
+static int ecm_tracker_udp_rtp_payload_types_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *	Add payload types to the list:
+	 *	echo add 14 18 32 > /proc/sys/net/ecm/udp_rtp_payload_types
+	 *
+	 *	Delete payload types from the list:
+	 *	echo del 14 > /proc/sys/net/ecm/udp_rtp_payload_types
+	 *
+	 *	Dump the list to the console:
+	 *	cat /proc/sys/net/ecm/udp_rtp_payload_types
+	 */
+	return ecm_tracker_rtp_payload_types_handler(write, buffer, lenp, ppos, ecm_tracker_udp_rtp_payload_types);
+}
+
+/*
+ * ecm_tracker_udp_clf_enabled_handler()
+ *	Sysctl to enable/disable UDP classifier flag.
+ */
+int ecm_tracker_udp_clf_enabled_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if ((ecm_tracker_udp_clf_enabled != 0) &&
+		(ecm_tracker_udp_clf_enabled != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_tracker_udp_sysctl_tbl[] = {
+	{
+		.procname	= "udp_classification_enabled",
+		.data		= &ecm_tracker_udp_clf_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_tracker_udp_clf_enabled_handler,
+	},
+	{
+		.procname	= "udp_rtp_payload_types",
+		.data		= &ecm_tracker_udp_rtp_payload_types,
+		.maxlen		= sizeof(int) * ECM_FRONT_END_UDP_RTP_PAYLOAD_TYPES_BUFFER_SIZE,
+		.mode		= 0644,
+		.proc_handler	= &ecm_tracker_udp_rtp_payload_types_handler,
+	},
+	{}
+};
+
+/*
  * ecm_tracker_udp_init()
  *	Initialise the two host addresses that define the two directions we track data for
  */
@@ -1009,3 +1301,23 @@ struct ecm_tracker_udp_instance *ecm_tracker_udp_alloc(void)
 	return (struct ecm_tracker_udp_instance *)utii;
 }
 EXPORT_SYMBOL(ecm_tracker_udp_alloc);
+
+/*
+ * ecm_tracker_udp_sysctl_register()
+ *	Function to register sysctl node during ecm init
+ */
+void ecm_tracker_udp_sysctl_register(void)
+{
+	ecm_tracker_udp_ctl_tbl_hdr = register_sysctl("net/ecm", ecm_tracker_udp_sysctl_tbl);
+}
+
+/*
+ * ecm_tracker_udp_sysctl_unregister()
+ *	Function to unregister sysctl node during ecm exit
+ */
+void ecm_tracker_udp_sysctl_unregister(void)
+{
+	if (ecm_tracker_udp_ctl_tbl_hdr) {
+		unregister_sysctl_table(ecm_tracker_udp_ctl_tbl_hdr);
+	}
+}
