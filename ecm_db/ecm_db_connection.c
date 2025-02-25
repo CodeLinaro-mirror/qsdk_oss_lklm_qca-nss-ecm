@@ -225,6 +225,35 @@ uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance 
 }
 
 /*
+ * ecm_db_connection_rtp_set()
+ *	Sets true RTP is present
+ */
+void ecm_db_connection_rtp_set(struct ecm_db_connection_instance *ci, bool is_rtp)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->is_rtp = is_rtp;
+	spin_unlock_bh(&ecm_db_lock);
+}
+
+/*
+ * ecm_db_connection_is_rtp()
+ *	Gets the RTP present flag.
+ */
+bool ecm_db_connection_is_rtp(struct ecm_db_connection_instance *ci)
+{
+	bool is_rtp;
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	is_rtp = ci->is_rtp;
+	spin_unlock_bh(&ecm_db_lock);
+
+	return is_rtp;
+}
+
+/*
  * ecm_db_connection_mark_set()
  *	Sets the mark value of the connection.
  */
@@ -3671,6 +3700,7 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 	int ip_version;
 	int protocol;
 	bool is_routed;
+	bool is_rtp;
 	uint32_t regen_success;
 	uint32_t regen_fail;
 	uint16_t regen_required;
@@ -3761,6 +3791,7 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 	ip_version = ci->ip_version;
 	protocol = ci->protocol;
 	is_routed = ci->is_routed;
+	is_rtp = ci->is_rtp;
 	time_added = ci->time_added;
 	serial = ci->serial;
 	ecm_db_connection_data_stats_get(ci, &from_data_total, &to_data_total,
@@ -3846,6 +3877,12 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 
 	if ((result = ecm_state_write(sfi, "is_routed", "%d", is_routed))) {
 		return result;
+	}
+
+	if (protocol == IPPROTO_UDP) {
+		if ((result = ecm_state_write(sfi, "is_rtp", "%d", is_rtp))) {
+			return result;
+		}
 	}
 
 	if ((result = ecm_state_write(sfi, "expires", "%ld", expires_in))) {

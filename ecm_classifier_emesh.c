@@ -835,6 +835,15 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 		return 0;
 	}
 
+	/*
+	 * Applicable only for RTP flows.
+	 */
+	if (!ecm_db_connection_is_rtp(ci)) {
+		DEBUG_TRACE("%px: flow is not RTP\n", ci);
+		ecm_db_connection_deref(ci);
+		return 0;
+	}
+
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
 
 	if (ECM_IP_ADDR_MATCH(match_addr, src_addr)) {
@@ -867,7 +876,6 @@ bool ecm_classifier_emesh_sawf_get_connection_info(struct nf_conn *ct, uint32_t 
 		ecm_db_connection_deref(ci);
 		return 0;
 	}
-
 
 	/*
 	 * Check if emesh classifier is assigned.

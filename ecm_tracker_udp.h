@@ -1,6 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2015, The Linux Foundation.  All rights reserved.
+ * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
  * above copyright notice and this permission notice appear in all copies.
@@ -37,6 +39,7 @@ struct ecm_tracker_udp_instance {
 
 
 struct udphdr *ecm_tracker_udp_check_header_and_read(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, struct udphdr *port_buffer);
+bool ecm_tracker_udp_check_is_rtp(struct sk_buff *skb, struct udphdr *udp_hdr);
 
 void ecm_tracker_udp_init(struct ecm_tracker_udp_instance *uti, int32_t data_limit, int src_port, int dest_port);
 struct ecm_tracker_udp_instance *ecm_tracker_udp_alloc(void);
