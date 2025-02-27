@@ -1964,10 +1964,10 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		return;
 	}
 
-	kfree(nim);
-
 	ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_TX_FAILED);
-	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(nim->cm.error));
+
+	kfree(nim);
 
 	/*
 	 * Release that ref!
