@@ -48,6 +48,7 @@
 #include <linux/socket.h>
 #include <linux/wireless.h>
 #include <net/genetlink.h>
+#include <net/netevent.h>
 #include <linux/nl80211.h>
 #include <net/gre.h>
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
@@ -10173,6 +10174,36 @@ static struct notifier_block ecm_interface_ovs_notifier __read_mostly = {
 #endif
 
 /*
+ * ecm_interface_netevent_callback()
+ *	Netevent notifier callback to inform us about the netevents like
+ *	the change in neighbour state
+ */
+static int ecm_interface_netevent_callback(struct notifier_block *self, unsigned long event,
+					   void *ctx)
+{
+	struct neighbour *neigh = ctx;
+
+	if (event != NETEVENT_NEIGH_UPDATE) {
+		return NOTIFY_DONE;
+	}
+
+	if (neigh->nud_state & NUD_FAILED) {
+		DEBUG_TRACE("NUD_FAILED for mac=%pM nud_state : 0x%x", neigh->ha, neigh->nud_state);
+		ecm_interface_node_connections_defunct(neigh->ha,
+						       ECM_DB_IP_VERSION_IGNORE);
+	}
+	return NOTIFY_DONE;
+}
+
+/*
+ * struct notifier_block ecm_interface_netevent_notifier
+ *	Registration for netevents such as neighbour update
+ */
+static struct notifier_block ecm_interface_netevent_notifier = {
+	.notifier_call = ecm_interface_netevent_callback,
+};
+
+/*
  * ecm_interface_init()
  */
 int ecm_interface_init(void)
@@ -10191,6 +10222,15 @@ int ecm_interface_init(void)
 		unregister_sysctl_table(ecm_interface_ctl_table_header);
 		return result;
 	}
+
+	result = register_netevent_notifier(&ecm_interface_netevent_notifier);
+	if (result != 0) {
+		DEBUG_ERROR("Failed to register netevent notifier %d\n", result);
+		unregister_netdevice_notifier(&ecm_interface_netdev_notifier);
+		unregister_sysctl_table(ecm_interface_ctl_table_header);
+		return result;
+	}
+
 #if defined(ECM_DB_XREF_ENABLE) && defined(ECM_BAND_STEERING_ENABLE)
 	/*
 	 * If the bridge feature is supported in the selected frontend,
@@ -10223,6 +10263,8 @@ void ecm_interface_exit(void)
 	spin_lock_bh(&ecm_interface_lock);
 	ecm_interface_terminate_pending  = true;
 	spin_unlock_bh(&ecm_interface_lock);
+
+	unregister_netevent_notifier(&ecm_interface_netevent_notifier);
 
 	unregister_netdevice_notifier(&ecm_interface_netdev_notifier);
 #ifdef ECM_DB_XREF_ENABLE
