@@ -203,11 +203,10 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_by_interface_identifier(
 struct ecm_db_iface_instance *ecm_db_iface_ifidx_find_and_ref_ethernet(uint8_t *address, int32_t idx, int32_t ae_interface_num);
 
 #ifdef ECM_INTERFACE_DSA_ENABLE
-void ecm_db_iface_add_dsa(struct ecm_db_iface_instance *ii, uint8_t *address, uint16_t vlan_tag, uint16_t vlan_tpid,
-			char *name, int32_t mtu, int32_t interface_identifier, int32_t ae_interface_identifier,
+void ecm_db_iface_add_dsa(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
+			int32_t interface_identifier, int32_t ae_interface_identifier,
 			ecm_db_iface_final_callback_t final, void *arg);
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_dsa(int32_t interface_identifier, uint8_t *address,
-			uint16_t vlan_tag, uint16_t vlan_tpid);
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_dsa(int32_t interface_identifier, uint8_t *address);
 void ecm_db_iface_dsa_address_get(struct ecm_db_iface_instance *ii, uint8_t *address);
 void ecm_db_iface_dsa_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_interface_info_dsa *dsa_info);
 #endif

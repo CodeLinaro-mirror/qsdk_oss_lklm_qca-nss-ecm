@@ -704,47 +704,20 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_DSA:
 #ifdef ECM_INTERFACE_DSA_ENABLE
-			struct ecm_db_interface_info_dsa dsa_info;
-			uint32_t dsa_vlan_value = 0;
-
 			DEBUG_TRACE("%px: DSA\n", feci);
-
-			/*
-			 * Can only support one vlan.
-			 */
-			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
-				rule_invalid = true;
-				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
-				ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_DSA_QINQ_UNSUPPORTED);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * We can't have multiple DSA interface in the same heirarchy.
+				 */
+				DEBUG_TRACE("%px: DSA - ignore additional\n", feci);
 				break;
 			}
 
-			ecm_db_iface_dsa_info_get(ii, &dsa_info);
-			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
-
 			/*
-			 * Ready to write the DSA VLAN rule
+			 * Can only handle one MAC, the first outermost mac.
 			 */
-			nircm->vlan_primary_rule.ingress_vlan_tag = dsa_vlan_value;
-			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
-			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
-
-			/*
-			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
-			 */
-			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED)) {
-				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
-				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VLAN);
-
-				ether_addr_copy((uint8_t *)from_sfe_iface_address, dsa_info.address);
-				if (is_valid_ether_addr(from_sfe_iface_address)) {
-					DEBUG_TRACE("%px: DSA Port use mac: %pM\n", feci, from_sfe_iface_address);
-					ether_addr_copy((uint8_t *)nircm->src_mac_rule.flow_src_mac, from_sfe_iface_address);
-					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
-					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
-				}
-			}
-			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in flow dir\n", feci, dsa_vlan_value);
+			ecm_db_iface_dsa_address_get(ii, from_sfe_iface_address);
+			DEBUG_TRACE("%px: DSA - mac: %pM\n", feci, from_sfe_iface_address);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
@@ -1134,47 +1107,20 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		case ECM_DB_IFACE_TYPE_DSA:
 #ifdef ECM_INTERFACE_DSA_ENABLE
-			struct ecm_db_interface_info_dsa dsa_info;
-			uint32_t dsa_vlan_value = 0;
-
 			DEBUG_TRACE("%px: DSA\n", feci);
-
-			/*
-			 * Can only support one vlan.
-			 */
-			if (interface_type_counts[ECM_DB_IFACE_TYPE_VLAN] > 0) {
-				rule_invalid = true;
-				DEBUG_TRACE("%px: DSA/VLAN - Q-in-Q vlan unsupported\n", feci);
-				ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_DSA_QINQ_UNSUPPORTED);
+			if (interface_type_counts[ii_type] != 0) {
+				/*
+				 * We can't have multiple DSA interface in the same heirarchy.
+				 */
+				DEBUG_TRACE("%px: DSA - ignore additional\n", feci);
 				break;
 			}
 
-			ecm_db_iface_dsa_info_get(ii, &dsa_info);
-			dsa_vlan_value = ((dsa_info.vlan_tpid << 16) | dsa_info.vlan_tag);
-
 			/*
-			 * Ready to write the DSA VLAN rule
+			 * Can only handle one MAC, the first outermost mac.
 			 */
-			nircm->vlan_primary_rule.egress_vlan_tag = dsa_vlan_value;
-			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
-			interface_type_counts[ECM_DB_IFACE_TYPE_VLAN]++;
-
-			/*
-			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
-			 */
-			if (sfe_is_l2_feature_enabled() && (l2_accel_bits & ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED)) {
-				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
-				feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VLAN);
-
-				ether_addr_copy((uint8_t *)to_sfe_iface_address, dsa_info.address);
-				if (is_valid_ether_addr(to_sfe_iface_address)) {
-					DEBUG_TRACE("%px: DSA Port use mac: %pM\n", feci, to_sfe_iface_address);
-					ether_addr_copy((uint8_t *)nircm->src_mac_rule.return_src_mac, to_sfe_iface_address);
-					nircm->src_mac_rule.mac_valid_flags |= SFE_SRC_MAC_FLOW_VALID;
-					nircm->valid_flags |= SFE_RULE_CREATE_SRC_MAC_VALID;
-				}
-			}
-			DEBUG_TRACE("%px: DSA rule config found with vlan tag: 0x%x in return dir\n", feci, dsa_vlan_value);
+			ecm_db_iface_dsa_address_get(ii, to_sfe_iface_address);
+			DEBUG_TRACE("%px: DSA - mac: %pM\n", feci, to_sfe_iface_address);
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: DSA interface is not supported\n", feci);

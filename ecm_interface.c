@@ -409,23 +409,6 @@ static inline struct net_device *ecm_interface_vlan_real_dev(struct net_device *
 	return vlan_dev_next_dev(vlan_dev);
 }
 
-#ifdef ECM_INTERFACE_DSA_ENABLE
-/*
- * ecm_interface_dsa_real_dev()
- *	Get real dev for DSA interface
- */
-static inline struct net_device *ecm_interface_dsa_real_dev(struct net_device *dsa_dev)
-{
-	struct dsa_port *dp = NULL;
-
-	dp = dsa_port_from_netdev(dsa_dev);
-	if (!dp)
-		return NULL;
-
-	return dsa_port_to_master(dp);
-}
-#endif
-
 /*
  * ecm_interface_dev_find_by_local_addr_ipv4()
  *	Return a hold to the device for the given local IP address. Returns NULL on failure.
@@ -2338,7 +2321,7 @@ static struct ecm_db_iface_instance *ecm_interface_dsa_interface_establish(struc
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address, type_info->vlan_tag, type_info->vlan_tpid);
+	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address);
 	if (ii) {
 		DEBUG_TRACE("%px: iface DSA established\n", ii);
 		return ii;
@@ -2357,15 +2340,14 @@ static struct ecm_db_iface_instance *ecm_interface_dsa_interface_establish(struc
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address, type_info->vlan_tag, type_info->vlan_tpid);
+	ii = ecm_db_iface_find_and_ref_dsa(dev_interface_num, type_info->address);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
 		return ii;
 	}
 
-	ecm_db_iface_add_dsa(nii, type_info->address, type_info->vlan_tag, type_info->vlan_tpid, dev_name,
-			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	ecm_db_iface_add_dsa(nii, type_info->address, dev_name, mtu, dev_interface_num, ae_interface_num, NULL, nii);
 	spin_unlock_bh(&ecm_interface_lock);
 
 	DEBUG_TRACE("%px: DSA iface established\n", nii);
@@ -3703,34 +3685,14 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		 * DSA?
 		 */
 		if (dsa_slave_dev_check(dev)) {
-			struct dsa_port *dsa_slave_port = NULL;
 			struct dsa_port *dsa_port_from_dev = NULL;
 			struct net_device *master_dev = NULL;
-			uint16_t vid = 0;
 
 			/*
-			 * Get VLAN info from DSA
-			 */
-			dsa_slave_port = dsa_port_from_netdev(dev);
-			if (dsa_slave_port == NULL) {
-				DEBUG_WARN("%px: DSA Port not found\n", feci);
-				return NULL;
-			}
-
-			vid = dsa_tag_8021q_standalone_vid(dsa_slave_port);
-			if (!vid) {
-				DEBUG_WARN("%px: DSA Port VLAN not found\n", feci);
-				return NULL;
-			}
-
-			/*
-			 * Copy the VLAN info
+			 * Copy the mac address
 			 */
 			ether_addr_copy(type_info.dsa.address, dev->dev_addr);
-			type_info.dsa.vlan_tag = vid;
-			type_info.dsa.vlan_tpid = ETH_P_8021Q;
-			DEBUG_TRACE("%px: Net device: %px is VLAN, mac: %pM, vlan_id: %x vlan_tpid: %x\n",
-					feci, dev, type_info.dsa.address, type_info.dsa.vlan_tag, type_info.dsa.vlan_tpid);
+			DEBUG_TRACE("%px: Net device: %px is DSA with mac: %pM\n", feci, dev, type_info.dsa.address);
 
 			/*
 			 * MTU check for master and slave interface
@@ -4556,11 +4518,7 @@ static uint32_t ecm_interface_multicast_heirarchy_construct_single(struct ecm_fr
 
 #ifdef ECM_INTERFACE_DSA_ENABLE
 				if (dsa_slave_dev_check(dest_dev)) {
-					next_dev = ecm_interface_dsa_real_dev(dest_dev);
-					dev_hold(next_dev);
-
-					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface, slave dev: %px (%s)\n",
-							feci, dest_dev, dest_dev->name, next_dev, next_dev->name);
+					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface.\n", feci, dest_dev, dest_dev->name);
 
 					break;
 				}
@@ -6045,11 +6003,7 @@ lag_success:
 
 #ifdef ECM_INTERFACE_DSA_ENABLE
 				if (dsa_slave_dev_check(dest_dev)) {
-					next_dev = ecm_interface_dsa_real_dev(dest_dev);
-					dev_hold(next_dev);
-
-					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface, slave dev: %px (%s)\n",
-							feci, dest_dev, dest_dev->name, next_dev, next_dev->name);
+					DEBUG_TRACE("%px: Net device: %px (%s) is DSA Interface.\n", feci, dest_dev, dest_dev->name);
 
 					break;
 				}
