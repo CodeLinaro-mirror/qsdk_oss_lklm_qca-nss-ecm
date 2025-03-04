@@ -299,8 +299,7 @@ struct ecm_db_interface_info_ethernet {			/* type == ECM_DB_IFACE_TYPE_ETHERNET 
 #ifdef ECM_INTERFACE_DSA_ENABLE
 struct ecm_db_interface_info_dsa {			/* type == ECM_DB_IFACE_TYPE_DSA */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
-	uint16_t vlan_tpid;				/* VLAN tag protocol id */
-	uint16_t vlan_tag;				/* VLAN tag of this interface */
+	uint16_t dsa_proto;				/* DSA protocol */
 };
 #endif
 
