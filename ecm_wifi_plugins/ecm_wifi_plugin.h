@@ -42,6 +42,23 @@
 #include <ecm_classifier_wifi_public.h>
 #include <ecm_front_end_common_public.h>
 
+/*
+ * The ECM IP address is an array of 4 32 bit numbers.
+ * This is enough to record both an IPv6 address aswell as an IPv4 address.
+ * IPv4 addresses are stored encoded in an IPv6 as the usual ::FFFF:x:y/96
+ * We store IP addresses in host order format and NOT network order which is different to Linux network internals.
+ */
+typedef uint32_t ip_addr_t[4];
+
+#define ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE               40      /* This is the size of a string in the format of aaaa:bbbb:cccc:0000:1111:dddd:eeee:ffff */
+#define ECM_WIFI_PLUGIN_IP_ADDR_DOT_FMT_STR_BUFF_SIZE       16      /* This is the size of a string in the format of 192.168.100.200 */
+#define ECM_WIFI_PLUGIN_IP_ADDR_OCTAL_FMT "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x"
+#define ECM_WIFI_PLUGIN_IP_ADDR_DOT_FMT "%u.%u.%u.%u"
+
+#define ECM_WIFI_PLUGIN_IP_ADDR_TO_OCTAL(ipaddrt) ((uint8_t *)ipaddrt)[0], ((uint8_t *)ipaddrt)[1], ((uint8_t *)ipaddrt)[2], ((uint8_t *)ipaddrt)[3], ((uint8_t *)ipaddrt)[4], ((uint8_t *)ipaddrt)[5], ((uint8_t *)ipaddrt)[6], ((uint8_t *)ipaddrt)[7], ((uint8_t *)ipaddrt)[8], ((uint8_t *)ipaddrt)[9], ((uint8_t *)ipaddrt)[10], ((uint8_t *)ipaddrt)[11], ((uint8_t *)ipaddrt)[12], ((uint8_t *)ipaddrt)[13], ((uint8_t *)ipaddrt)[14], ((uint8_t *)ipaddrt)[15]
+
+#define ECM_WIFI_PLUGIN_IP_ADDR_TO_DOT(ipaddrt) ((uint8_t *)ipaddrt)[0], ((uint8_t *)ipaddrt)[1], ((uint8_t *)ipaddrt)[2], ((uint8_t *)ipaddrt)[3]
+
 #if defined(CONFIG_DYNAMIC_DEBUG)
 
 /*
@@ -83,6 +100,16 @@
 #endif
 
 #define ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE 0xFF
+
+static inline void ecm_wifi_plugin_ip_addr_to_string(char *str, ip_addr_t a, uint8_t version)
+{
+        if (version == 6) {
+                snprintf(str, ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE, ECM_WIFI_PLUGIN_IP_ADDR_OCTAL_FMT, ECM_WIFI_PLUGIN_IP_ADDR_TO_OCTAL(a));
+                return;
+        }
+
+        snprintf(str, ECM_WIFI_PLUGIN_IP_ADDR_DOT_FMT_STR_BUFF_SIZE, ECM_WIFI_PLUGIN_IP_ADDR_DOT_FMT, ECM_WIFI_PLUGIN_IP_ADDR_TO_DOT(a));
+}
 
 /*
  * ecm_wifi_plugin_emesh_register()

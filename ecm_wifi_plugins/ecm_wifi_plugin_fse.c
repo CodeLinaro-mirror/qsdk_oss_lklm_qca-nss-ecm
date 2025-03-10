@@ -65,10 +65,18 @@ bool ecm_wifi_plugin_fse_create_rule(struct ecm_front_end_fse_info *fse_info)
 #else
 	struct qca_fse_flow_info fse_wlan_info = {0};
 #endif
+	char sip_address[ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE];
+	char dip_address[ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE];
+
 	/*
 	 * Fill the wlan tuple info and call wlan callback.
 	 */
 	ecm_wifi_plugin_fill_fse_wlan_info(fse_info, &fse_wlan_info);
+
+	ecm_wifi_plugin_ip_addr_to_string(sip_address, fse_wlan_info.src_ip, fse_wlan_info.version);
+	ecm_wifi_plugin_ip_addr_to_string(dip_address, fse_wlan_info.dest_ip, fse_wlan_info.version);
+
+	ecm_wifi_plugin_trace("src_ip: %s dest_ip: %s src_port: %u dest_port: %u protocol: %u\n", sip_address, dip_address, fse_info->src_port, fse_info->dest_port, fse_info->protocol);
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	return ath_fse_add_rule(&fse_wlan_info);
@@ -88,10 +96,18 @@ bool ecm_wifi_plugin_fse_destroy_rule(struct ecm_front_end_fse_info *fse_info)
 #else
 	struct qca_fse_flow_info fse_wlan_info = {0};
 #endif
+	char sip_address[ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE];
+	char dip_address[ECM_WIFI_PLUGIN_IP_ADDR_STR_BUFF_SIZE];
+
 	/*
 	 * Fill the wlan tuple info and call wlan callback.
 	 */
 	ecm_wifi_plugin_fill_fse_wlan_info(fse_info, &fse_wlan_info);
+
+        ecm_wifi_plugin_ip_addr_to_string(sip_address, fse_wlan_info.src_ip, fse_wlan_info.version);
+        ecm_wifi_plugin_ip_addr_to_string(dip_address, fse_wlan_info.dest_ip, fse_wlan_info.version);
+
+	ecm_wifi_plugin_trace("src_ip: %s dest_ip: %s src_port: %u dest_port: %u protocol: %u\n", sip_address, dip_address, fse_info->src_port, fse_info->dest_port, fse_info->protocol);
 
 #ifdef ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE
 	return ath_fse_delete_rule(&fse_wlan_info);
