@@ -1145,7 +1145,7 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 		}
 
-#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+#if defined(ECM_CLASSIFIER_MSCS_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 		/*
 		 * HLOS TID override mode
 		 */

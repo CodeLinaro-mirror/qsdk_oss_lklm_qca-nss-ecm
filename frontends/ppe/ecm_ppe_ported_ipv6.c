@@ -1292,7 +1292,7 @@ process_next_iface_return:
 
 #endif
 
-#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+#if defined(ECM_CLASSIFIER_MSCS_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_HLOS_TID_VALID) {
 		/*
 		 * Set HLOS TID valid flag as true.

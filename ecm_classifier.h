@@ -126,7 +126,7 @@ typedef enum ecm_classifier_acceleration_modes ecm_classifier_acceleration_mode_
 #define ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_LEGACY_SCS_TAG	0x00040000	/* Mark the E-MESH SAWF legacy scs tag */
 #endif
 
-#ifdef ECM_CLASSIFIER_MSCS_ENABLE
+#if defined(ECM_CLASSIFIER_MSCS_ENABLE) || defined(ECM_CLASSIFIER_WIFI_ENABLE)
 #define ECM_CLASSIFIER_PROCESS_ACTION_HLOS_TID_VALID 0x00080000	/* Mark the HLOS TID tag */
 #endif
 

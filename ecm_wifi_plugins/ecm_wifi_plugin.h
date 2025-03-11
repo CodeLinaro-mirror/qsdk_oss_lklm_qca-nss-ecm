@@ -83,6 +83,7 @@
 #endif
 
 #define ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE 0xFF
+#define ECM_WIFI_PLUGIN_METADATA_INVALID_HLOS_TID 0
 
 /*
  * ecm_wifi_plugin_emesh_register()

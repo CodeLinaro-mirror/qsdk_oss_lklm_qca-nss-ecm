@@ -18,6 +18,7 @@
  */
 
 #define ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID		0xFF
+#define ECM_CLASSIFIER_WIFI_INVALID_HLOS_TID_OVERRIDE	0
 
 struct ecm_classifier_wifi_instance;
 
