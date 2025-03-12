@@ -134,7 +134,7 @@ int ecm_db_node_get_connections_count(struct ecm_db_node_instance *ni, ecm_db_ob
 void ecm_db_node_ovs_connections_masked_defunct(int ip_ver, uint8_t *src_mac, bool src_mac_check, ip_addr_t src_addr_mask,
 							uint16_t src_port_mask, uint8_t *dest_mac, bool dest_mac_check,
 							ip_addr_t dest_addr_mask, uint16_t dest_port_mask,
-							int proto_mask, ecm_db_obj_dir_t dir, bool is_routed);
+							int proto, ecm_db_obj_dir_t dir, bool is_routed);
 
 bool ecm_db_node_init(struct dentry *dentry);
 void ecm_db_node_exit(void);

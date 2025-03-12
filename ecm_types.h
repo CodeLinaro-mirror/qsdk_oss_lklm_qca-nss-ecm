@@ -87,7 +87,6 @@ typedef uint32_t ecm_ptr_t;
 	((addr[2] & mask[2]) == mask[2]) && ((addr[3] & mask[3]) == mask[3]))
 
 #define ECM_PORT_MASK_MATCH(port, mask)  ((port & mask) == mask)
-#define ECM_PROTO_MASK_MATCH(proto, mask)  ((proto & mask) == mask)
 
 #define ECM_MAC_ADDR_MATCH(a, b) \
 	((((uint16_t *)a)[0] == (((uint16_t *)b)[0])) && \

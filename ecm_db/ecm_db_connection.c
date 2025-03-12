@@ -1585,7 +1585,7 @@ EXPORT_SYMBOL(ecm_db_connection_defunct_all);
  */
 void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr_mask, uint16_t src_port_mask,
 					     ip_addr_t dest_addr_mask, uint16_t dest_port_mask,
-					     int proto_mask, bool is_routed, ecm_classifier_type_t ca_type)
+					     int proto, bool is_routed, ecm_classifier_type_t ca_type)
 {
 	struct ecm_db_connection_instance *ci;
 	int cnt = 0;
@@ -1601,7 +1601,7 @@ void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr_mask
 		ip_addr_t sip;
 		ip_addr_t dip;
 		uint16_t sport, dport;
-		int proto;
+		int ci_proto;
 
 		DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
 
@@ -1629,8 +1629,8 @@ void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr_mask
 		/*
 		 * Check protocol if specified
 		 */
-		proto = ecm_db_connection_protocol_get(ci);
-		if (!ECM_PROTO_MASK_MATCH(proto, proto_mask)) {
+		ci_proto = ecm_db_connection_protocol_get(ci);
+		if (ci_proto != proto) {
 			goto next_ci;
 		}
 
@@ -1718,11 +1718,11 @@ defunct_conn:
 		if (ECM_IP_ADDR_IS_V4(src_addr_mask)) {
 			DEBUG_TRACE("%px: Defunct CI masked 5 tuple match(%s) src=" ECM_IP_ADDR_DOT_FMT " sport=%d dest="
 					ECM_IP_ADDR_DOT_FMT ", dport=%d, proto=%d cnt=%d\n", ci, direction,
-					ECM_IP_ADDR_TO_DOT(sip), sport, ECM_IP_ADDR_TO_DOT(dip), dport, proto, cnt);
+					ECM_IP_ADDR_TO_DOT(sip), sport, ECM_IP_ADDR_TO_DOT(dip), dport, ci_proto, cnt);
 		} else {
 			DEBUG_TRACE("%px: Defunct CI masked 5 tuple match(%s) src=" ECM_IP_ADDR_OCTAL_FMT " sport=%d dest="
 					ECM_IP_ADDR_OCTAL_FMT ", dport=%d, proto=%d, cnt=%d\n", ci, direction,
-					ECM_IP_ADDR_TO_OCTAL(sip), sport, ECM_IP_ADDR_TO_OCTAL(dip), dport, proto, cnt);
+					ECM_IP_ADDR_TO_OCTAL(sip), sport, ECM_IP_ADDR_TO_OCTAL(dip), dport, ci_proto, cnt);
 		}
 
 		ecm_db_connection_make_defunct(ci);
@@ -1735,14 +1735,14 @@ next_ci:
 
 	if (ECM_IP_ADDR_IS_V4(src_addr_mask)) {
 		DEBUG_TRACE("%px: Defunct request by masked 5 tuple src_mask=" ECM_IP_ADDR_DOT_FMT " sport_mask=%d, dest_mask="
-				ECM_IP_ADDR_DOT_FMT " dport_mask=%d, proto_mask=%d, cnt=%d\n", ci,
+				ECM_IP_ADDR_DOT_FMT " dport_mask=%d, proto=%d, cnt=%d\n", ci,
 				ECM_IP_ADDR_TO_DOT(src_addr_mask), src_port_mask, ECM_IP_ADDR_TO_DOT(dest_addr_mask),
-				dest_port_mask, proto_mask, cnt);
+				dest_port_mask, proto, cnt);
 	} else {
 		DEBUG_TRACE("%px: Defunct request by masked 5 tuple src_mask=" ECM_IP_ADDR_OCTAL_FMT " sport_mask=%d dest_mask="
-				ECM_IP_ADDR_OCTAL_FMT " dport_mask=%d, proto_mask=%d cnt=%d\n", ci,
+				ECM_IP_ADDR_OCTAL_FMT " dport_mask=%d, proto=%d cnt=%d\n", ci,
 				ECM_IP_ADDR_TO_OCTAL(src_addr_mask), src_port_mask,
-				ECM_IP_ADDR_TO_OCTAL(dest_addr_mask), dest_port_mask, proto_mask, cnt);
+				ECM_IP_ADDR_TO_OCTAL(dest_addr_mask), dest_port_mask, proto, cnt);
 	}
 }
 
