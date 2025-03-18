@@ -544,7 +544,7 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
  * ecm_sfe_sysctl_tbl_init()
  * 	Register sysctl for SFE
  */
-int ecm_sfe_sysctl_tbl_init()
+int ecm_sfe_sysctl_tbl_init(void)
 {
 	ecm_sfe_ctl_tbl_hdr = register_sysctl(ECM_FRONT_END_SYSCTL_PATH, ecm_sfe_sysctl_tbl);
 	if (!ecm_sfe_ctl_tbl_hdr) {
@@ -559,7 +559,7 @@ int ecm_sfe_sysctl_tbl_init()
  * ecm_sfe_sysctl_tbl_exit()
  * 	Unregister sysctl for SFE
  */
-void ecm_sfe_sysctl_tbl_exit()
+void ecm_sfe_sysctl_tbl_exit(void)
 {
 	if (ecm_sfe_ctl_tbl_hdr) {
 		unregister_sysctl_table(ecm_sfe_ctl_tbl_hdr);
