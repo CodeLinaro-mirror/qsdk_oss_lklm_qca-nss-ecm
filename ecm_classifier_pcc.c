@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -877,8 +877,8 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	}
 #ifdef ECM_IPV6_ENABLE
 	if (ip_version == 6) {
-		struct in6_addr src_ip6;
-		struct in6_addr dest_ip6;
+		struct in6_addr src_ip6 = {0};
+		struct in6_addr dest_ip6 = {0};
 		ECM_IP_ADDR_TO_NIN6_ADDR(src_ip6, src_ip);
 		ECM_IP_ADDR_TO_NIN6_ADDR(dest_ip6, dst_ip);
 
