@@ -8045,7 +8045,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 				wifi_ev_au = (struct ecm_interface_wifi_event_node_authorized *)dbuf;
 
 				DEBUG_INFO("STA %pM is authorized \n", (uint8_t *)wifi_ev_au->mac_addr);
-				ecm_interface_node_connections_defunct_by_type((uint8_t *)wifi_ev_au->mac_addr, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
+                ecm_db_connection_defunct_all();
 
 				kfree(dbuf);
 			}
