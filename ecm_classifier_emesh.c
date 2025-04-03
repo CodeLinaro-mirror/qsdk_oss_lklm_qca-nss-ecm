@@ -2583,6 +2583,7 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 							 enum ecm_classifier_emesh_ul_params_sync_modes mode)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
+	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_classifer_emesh_sawf_sync_params sawf_sync_params = {0};
 	struct sp_rule_del_params del_params = {0};
@@ -2607,10 +2608,26 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 
 	if (mode == ECM_CLASSIFIER_EMESH_MODE_DECEL) {
 		/*
-		 * Call delete rule for IFLI classifier
+		 * Call delete rule for IFLI classifier only if DECEL is not AE switch for UDP prioritization
+		 * TODO: Validate if similar check is needed for STC/IFLI case
 	 	 */
+		if (ecm_tracker_udp_clf_enabled) {
+			feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+			spin_lock_bh(&feci->lock);
+			if ((feci->accel_engine == ECM_FRONT_END_ENGINE_PPE)
+				&& (feci->next_accel_engine == ECM_FRONT_END_ENGINE_SFE)
+				&& (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE)) {
+					spin_unlock_bh(&feci->lock);
+					DEBUG_TRACE("%px: SPM rule flush is not needed, this is AE switch case for UDP prioritization\n", cemi);
+					goto no_rule_flush;
+			}
+			spin_unlock_bh(&feci->lock);
+		}
+
 		if (cemi->flow_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_FROM);
+			DEBUG_TRACE("%px: SPM rule flush key:%d rule_id:%d\n", cemi, del_params.key, del_params.rule_id);
 			sp_mapdb_ifli_rule_flush(&del_params);
 			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_DEPRIORITIZED, ECM_TRACKER_SENDER_TYPE_SRC, &rm_msg);
 			sp_mapdb_rm_sync(&rm_msg);
@@ -2618,11 +2635,14 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 
 		if (cemi->return_rule_classifier_type == SP_RULE_TYPE_SAWF_IFLI) {
 			ecm_classifier_emesh_sawf_fill_del_params(ci, cemi, &del_params, ECM_DB_OBJ_DIR_TO);
+			DEBUG_TRACE("%px: SPM rule flush key:%d rule_id:%d\n", cemi, del_params.key, del_params.rule_id);
 			sp_mapdb_ifli_rule_flush(&del_params);
 			ecm_classifier_sawf_fill_rm_sync_msg(cemi, ci, SP_MAPDB_SYNC_DEPRIORITIZED, ECM_TRACKER_SENDER_TYPE_DEST, &rm_msg);
 			sp_mapdb_rm_sync(&rm_msg);
 		}
 	}
+
+no_rule_flush:
 
 #ifdef ECM_MULTICAST_ENABLE
 	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
