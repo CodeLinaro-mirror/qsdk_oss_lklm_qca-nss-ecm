@@ -1385,7 +1385,7 @@ process_next_iface_return:
 	 * for the destination node address in NAT'ed cases.
 	 */
 	ecm_dir = ecm_db_connection_direction_get(feci->ci);
-	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT)) {
+	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT)) {
 		ether_addr_copy(pd6rc->conn_rule.return_mac, dest_mac_xlate);
 	}
 

@@ -1071,7 +1071,7 @@ ecm_ipv6_retry_regen:
  */
 unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *in_dev,
 							uint8_t *src_node_addr, uint8_t *dest_node_addr,
-							bool can_accel, bool is_routed, bool is_l2_encap,
+							bool can_accel, bool is_routed, bool is_l2_encap, bool is_v6_hairpin_nat,
 							struct sk_buff *skb, uint16_t l2_encap_proto)
 {
 	struct ecm_tracker_ip_header ip_hdr;
@@ -1273,7 +1273,12 @@ vxlan_done:
 	 * Work out if this packet involves NAT or not.
 	 * If it does involve NAT then work out if this is an ingressing or egressing packet.
 	 */
-	if (ipv6_addr_cmp(&orig_tuple.src.u3.in6, &reply_tuple.dst.u3.in6)) {
+	if (is_v6_hairpin_nat) {
+		/*
+		 * Hairpin NAT
+		 */
+		ecm_dir = ECM_DB_DIRECTION_HAIRPIN_NAT;
+	} else if (ipv6_addr_cmp(&orig_tuple.src.u3.in6, &reply_tuple.dst.u3.in6)) {
 		/*
 		 * Egressing NAT
 		 */
@@ -1452,6 +1457,38 @@ vxlan_done:
 	 *
 	 *	dest_node_addr refers to node address of ip_dest_addr
 	 *	dest_node_addr_nat is set to dest_node_addr
+	 *
+	 * Example 7:
+	 * An 'original' direction packet to an Hairpin connection from one client of br-lan:4AAA::Z to the other client connecting to 4aaa::Y
+	 * via NAT'ing router mapping br-lan:6aaa::/64 looks like:
+	 *	orig_tuple->src == 4aaa::Z		This becomes ip_src_addr
+	 *	orig_tuple->dst == 6aaa::Y		This becomes ip_dest_addr_nat
+	 *	reply_tuple->src == 4aaa::Y		This becomes ip_dest_addr
+	 *	reply_tuple->dest == 6aaa::Z		This becomes ip_src_addr_nat
+	 *
+	 *	in_dev would be br-lan - i.e. the device of ip_src_addr
+	 *	out_dev would be br-lan - i.e. the device of ip_dest_addr
+	 *	in_dev_nat would be br-lan - i.e. out_dev, the device of ip_src_addr_nat
+	 *	out_dev_nat would be br-lan - i.e. out_dev, the device of ip_dest_addr_nat
+	 *
+	 *	From a node MAC address perspective we are at position X in the following topology:
+	 *	(4aaa::Z)LAN PC======ETH1___ETH2====X====LAN PC(4aaa::Y)
+	 *
+	 * Example 8:
+	 * A 'reply' direction packet to the Hairpin connection from one client for br-lan 4aaa::Y to the other client connecting to 4aaa::Z
+	 * via NAT'ing router mapping br-lan:6aaa::/64 looks like:
+	 *	orig_tuple->src == 4aaa::Z		This becomes ip_dest_addr
+	 *	orig_tuple->dst == 6aaa::Y		This becomes ip_src_addr_nat
+	 *	reply_tuple->src == 4aaa::Y		This becomes ip_src_addr
+	 *	reply_tuple->dest == 6aaa::Z		This becomes ip_dest_addr_nat
+	 *
+	 *	in_dev would be br-lan - i.e. the device of ip_src_addr
+	 *	out_dev would be br-lan - i.e. the device of ip_dest_addr
+	 *	in_dev_nat would be br-lan - i.e. out_dev, the device of ip_src_addr_nat
+	 *	out_dev_nat would be br-lan - i.e. out_dev, the device of ip_dest_addr_nat
+	 *
+	 *	From a Node address perspective we are at position X in the following topology:
+	 *	(4aaa::Z)LAN PC======ETH1___ETH2====X====LAN PC(4aaa::Y)
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		if (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) {
@@ -1499,6 +1536,19 @@ vxlan_done:
 
 			src_node_addr_nat = src_node_addr;
 			dest_node_addr_nat = dest_node_addr;
+		} else if (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT) {
+			/*
+			 * Example 7
+			 */
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_src_addr, orig_tuple.src.u3.in6);
+                        ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr_nat, orig_tuple.dst.u3.in6);
+                        ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, reply_tuple.src.u3.in6);
+                        ECM_NIN6_ADDR_TO_IP_ADDR(ip_src_addr_nat, reply_tuple.dst.u3.in6);
+
+			in_dev_nat = out_dev;
+			out_dev_nat = out_dev;
+			src_node_addr_nat = src_node_addr = NULL;
+			dest_node_addr_nat = dest_node_addr = NULL;
 		} else {
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}
@@ -1548,7 +1598,20 @@ vxlan_done:
 
 			src_node_addr_nat = src_node_addr;
 			dest_node_addr_nat = dest_node_addr;
-		} else {
+		} else if (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT) {
+			/*
+			 * Example 8
+			 */
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_src_addr_nat, orig_tuple.dst.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_src_addr, reply_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_dest_addr_nat, reply_tuple.dst.u3.in6);
+
+			in_dev_nat = out_dev;
+                        out_dev_nat = out_dev;
+			src_node_addr_nat = src_node_addr = NULL;
+			dest_node_addr_nat = dest_node_addr = NULL;
+                } else {
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}
 	}
@@ -1566,9 +1629,11 @@ vxlan_done:
 			protonum = IPPROTO_RAW;
 		}
 	}
-	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
+	DEBUG_TRACE("IP Packet src: " ECM_IP_ADDR_OCTAL_FMT "dst: " ECM_IP_ADDR_OCTAL_FMT "src_nat: " ECM_IP_ADDR_OCTAL_FMT "dst_nat " ECM_IP_ADDR_OCTAL_FMT " protocol: %u, sender: %d ecm_dir: %d\n",
 			ECM_IP_ADDR_TO_OCTAL(ip_src_addr),
 			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr),
+			ECM_IP_ADDR_TO_OCTAL(ip_src_addr_nat),
+			ECM_IP_ADDR_TO_OCTAL(ip_dest_addr_nat),
 			protonum, sender, ecm_dir);
 	/*
 	 * Non-unicast source or destination packets are ignored
@@ -1652,6 +1717,48 @@ static bool ecm_ipv6_is_bridge_pkt(struct net_device *in, struct net_device *out
 }
 
 /*
+ * ecm_ipv6_is_hairpin_nat()
+ *	Check if this is a hairpin NAT data connection.
+ */
+static bool ecm_ipv6_is_hairpin_nat(struct sk_buff *skb, struct net_device **in, struct net_device *out)
+{
+	struct nf_conntrack_tuple orig_tuple;
+	struct nf_conntrack_tuple reply_tuple;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct) {
+		DEBUG_TRACE("%px: no ct\n", skb);
+		return false;
+	}
+
+	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+
+	/*
+	 * For Hairpin NAT flows, the Linux nf-conntrack will contain both SNAT and DNAT tuple information.
+	 * (orig_tuple->src) --> (reply_tuple->dst) indicates Source IPv6 adddress NATTing
+	 * (orig_tuple->dst) --> (reply_tuple->src) indicates Destination IPv6 adddress NATTing.
+	 */
+	if (ipv6_addr_cmp(&orig_tuple.src.u3.in6, &reply_tuple.dst.u3.in6) &&
+		ipv6_addr_cmp(&orig_tuple.dst.u3.in6, &reply_tuple.src.u3.in6)) {
+
+		/*
+		 * For Hairpin NAT flows, in/out devices should be a bridge device.
+		 * Since (out) dev is a bridge, point (in) device to (out) device.
+		 */
+		dev_put(*in);
+		*in = out;
+		dev_hold(*in);
+
+		return true;
+	}
+
+	return false;
+}
+
+/*
  * ecm_ipv6_post_routing_hook()
  *	Called for IP packets that are going out to interfaces after IP routing stage.
  */
@@ -1661,7 +1768,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 {
 	struct net_device *out = nhs->out;
 	struct net_device *in;
-	bool can_accel = true;
+	bool can_accel = true, is_v6_hairpin_nat = false;
 	unsigned int result;
 
 	DEBUG_TRACE("%px: Routing: %s\n", out, out->name);
@@ -1745,13 +1852,17 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 	}
 
 	/*
-	 * Skip bridge flow packet
+	 * Skip bridge flow packet when it is not a hairpin NAT flow.
 	 */
 	if (ecm_ipv6_is_bridge_pkt(in, out)) {
-		DEBUG_TRACE("Bridge flow, ignoring: %px\n", skb);
-		dev_put(in);
-		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PACKET_WRONG_HOOK);
-		return NF_ACCEPT;
+		if (!ecm_ipv6_is_hairpin_nat(skb, &in, out)) {
+			DEBUG_TRACE("Bridge flow, ignoring: %px\n", skb);
+			dev_put(in);
+			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_BRIDGE_PACKET_WRONG_HOOK);
+			return NF_ACCEPT;
+		}
+
+		is_v6_hairpin_nat = true;
 	}
 
 #ifndef ECM_INTERFACE_OVS_BRIDGE_ENABLE
@@ -1766,7 +1877,7 @@ static unsigned int ecm_ipv6_post_routing_hook(void *priv,
 #endif
 
 	DEBUG_TRACE("Post routing process skb %px, out: %px, in: %px\n", skb, out, in);
-	result = ecm_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, skb, 0);
+	result = ecm_ipv6_ip_process((struct net_device *)out, in, NULL, NULL, can_accel, true, false, is_v6_hairpin_nat, skb, 0);
 	dev_put(in);
 	return result;
 }
@@ -1815,7 +1926,7 @@ static unsigned int ecm_ipv6_pppoe_bridge_process(struct net_device *out,
 
 	result = ecm_ipv6_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
-					 false, true, skb, ETH_P_PPP_SES);
+					 false, true, false, skb, ETH_P_PPP_SES);
 skip_ipv6_process:
 	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_PPP_SES);
@@ -1858,7 +1969,7 @@ static unsigned int ecm_ipv6_vlan_bridge_process(struct net_device *out,
 
 	result = ecm_ipv6_ip_process(out, in, skb_eth_hdr->h_source,
 					 skb_eth_hdr->h_dest, can_accel,
-					 false, true, skb, ETH_P_8021Q);
+					 false, true, false, skb, ETH_P_8021Q);
 skip_ipv6_vlan_process:
 	ecm_front_end_push_l2_encap_header(skb, encap_header_len);
 	skb->protocol = htons(ETH_P_8021Q);
@@ -2093,7 +2204,7 @@ static unsigned int ecm_ipv6_bridge_post_routing_hook(void *priv,
 		goto skip_ipv6_bridge_flow;
 	}
 	result = ecm_ipv6_ip_process((struct net_device *)out, in,
-							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, 0);
+							skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, false, skb, 0);
 skip_ipv6_bridge_flow:
 	dev_put(in);
 	dev_put(bridge);
@@ -2209,7 +2320,7 @@ unsigned int ecm_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device *out
 	}
 
 	ecm_ipv6_ip_process((struct net_device *)out, in,
-			skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, skb, ETH_P_IPV6);
+			skb_eth_hdr->h_source, skb_eth_hdr->h_dest, can_accel, false, false, false, skb, ETH_P_IPV6);
 	dev_put(in);
 
 	return 0;

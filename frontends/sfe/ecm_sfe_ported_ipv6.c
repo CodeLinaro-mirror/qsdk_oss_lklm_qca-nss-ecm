@@ -1642,7 +1642,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * for the destination node address in NAT'ed cases.
 	 */
 	ecm_dir = ecm_db_connection_direction_get(feci->ci);
-	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT)) {
+	if ((ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT)) {
 		memcpy(nircm->conn_rule.return_mac, dest_mac_xlate, ETH_ALEN);
 	}
 
