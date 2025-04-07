@@ -344,6 +344,11 @@ static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_i
 				if (status) {
 					if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
 						feci->fse_configure = true;
+						/*
+						 * Here netdev reference is taken to prevent netdevice getting released before fse rule is deleted.
+						 */
+						dev_hold(fse_info.src_dev);
+						dev_hold(fse_info.dest_dev);
 					} else {
 						spin_unlock_bh(&feci->lock);
 
@@ -2123,6 +2128,11 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
 			spin_lock_bh(&feci->lock);
 			if (status)
 				feci->fse_configure = false;
+			/*
+			 * Release dev reference which we hold after creating the FSE rule.
+			 */
+			dev_put(fse_info.src_dev);
+			dev_put(fse_info.dest_dev);
 		}
 	}
 	spin_unlock_bh(&feci->lock);
@@ -2408,6 +2418,11 @@ static void ecm_sfe_ported_ipv6_connection_accel_ceased(struct ecm_front_end_con
 			spin_lock_bh(&feci->lock);
 			if (status)
 				feci->fse_configure = false;
+			/*
+			 * Release dev reference which we hold after creating the FSE rule.
+			 */
+			dev_put(fse_info.src_dev);
+			dev_put(fse_info.dest_dev);
 		}
 	}
 	spin_unlock_bh(&feci->lock);

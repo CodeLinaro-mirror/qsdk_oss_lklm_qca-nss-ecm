@@ -365,7 +365,7 @@ ecm_db_iface_connections_get_and_ref_first(struct ecm_db_iface_instance *ii,
 struct ecm_db_iface_instance *ecm_db_iface_alloc(void);
 
 void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii,
-				uint8_t *address, char *name, int32_t mtu, int32_t interface_identifier,
+				uint8_t *address, struct net_device *dev, int32_t mtu,
 				int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg);
 
 void ecm_db_iface_add_bridge(struct ecm_db_iface_instance *ii,
