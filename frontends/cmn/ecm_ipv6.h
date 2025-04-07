@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -29,7 +29,7 @@ extern bool ecm_ipv6_terminate_pending;		/* True when the user has signalled we 
 
 extern unsigned int ecm_ipv6_ip_process(struct net_device *out_dev, struct net_device *in_dev,
 							uint8_t *src_node_addr, uint8_t *dest_node_addr,
-							bool can_accel, bool is_routed, bool is_l2_encap,
+							bool can_accel, bool is_routed, bool is_l2_encap, bool is_v6_hairpin_nat,
 							struct sk_buff *skb, uint16_t l2_encap_proto);
 extern void ecm_ipv6_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender,
 							struct net_device *out_dev, struct net_device *out_dev_nat, struct net_device *in_dev,

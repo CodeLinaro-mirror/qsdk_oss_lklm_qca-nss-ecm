@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2017, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -160,6 +160,7 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 	struct net_device *to_nat = NULL;
 	struct net_device *to_nat_other = NULL;
 	struct net_device *dst_dev = NULL;
+	struct net_device *master = NULL;
 	ip_addr_t from_mac_lookup;
 	ip_addr_t to_mac_lookup;
 	ip_addr_t from_nat_mac_lookup;
@@ -204,6 +205,23 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 		if (!rt_iif_dev) {
 			DEBUG_WARN("No rt_iif dev\n");
 			return false;
+		}
+
+		/*
+		 * For Hairpin NAT flows, (rt_iif_dev) will be a Bridged Port, and it's Master dev
+		 * will the bridge interface.
+		 * We need to use the master netdevice for heirarchy creation.
+		 */
+		if (rt_iif_dev->priv_flags & IFF_BRIDGE_PORT) {
+			rcu_read_lock();
+			master = netdev_master_upper_dev_get_rcu(rt_iif_dev);
+			rcu_read_unlock();
+
+			if (master) {
+				dev_put(rt_iif_dev);
+				rt_iif_dev = master;
+				dev_hold(rt_iif_dev);
+			}
 		}
 
 		dst_dev = dst->dev;
@@ -317,6 +335,17 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			to_nat_other = out_dev;
 			ECM_IP_ADDR_COPY(from_nat_mac_lookup, ip_src_addr_nat);
 			ECM_IP_ADDR_COPY(to_nat_mac_lookup, ip_dest_addr_nat);
+		} else if (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT) {
+			from_nat = out_dev;
+			from_nat_other = out_dev;
+			to_nat = out_dev;
+			to_nat_other = out_dev;
+
+			ECM_IP_ADDR_TO_NIN6_ADDR(nat_dev_daddr, ip_dest_addr);
+			ipv6_dev_get_saddr(dev_net(out_dev), out_dev, &nat_dev_daddr, 0, &nat_dev_saddr);
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_nat_dev_saddr, nat_dev_saddr);
+			ECM_IP_ADDR_COPY(from_nat_mac_lookup, ip_nat_dev_saddr);
+			ECM_IP_ADDR_COPY(to_nat_mac_lookup, ip_nat_dev_saddr);
 		} else {
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}
@@ -365,6 +394,17 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
 			to_nat_other = out_dev;
 			ECM_IP_ADDR_COPY(from_nat_mac_lookup, ip_src_addr_nat);
 			ECM_IP_ADDR_COPY(to_nat_mac_lookup, ip_dest_addr_nat);
+		} else if (ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT) {
+			from_nat = out_dev;
+			from_nat_other = out_dev;
+			to_nat = out_dev;
+			to_nat_other = out_dev;
+
+			ECM_IP_ADDR_TO_NIN6_ADDR(nat_dev_daddr, ip_dest_addr);
+			ipv6_dev_get_saddr(dev_net(out_dev), out_dev, &nat_dev_daddr, 0, &nat_dev_saddr);
+			ECM_NIN6_ADDR_TO_IP_ADDR(ip_nat_dev_saddr, nat_dev_saddr);
+			ECM_IP_ADDR_COPY(from_nat_mac_lookup, ip_nat_dev_saddr);
+			ECM_IP_ADDR_COPY(to_nat_mac_lookup, ip_nat_dev_saddr);
 		} else {
 			DEBUG_ASSERT(false, "Unhandled ecm_dir: %d\n", ecm_dir);
 		}

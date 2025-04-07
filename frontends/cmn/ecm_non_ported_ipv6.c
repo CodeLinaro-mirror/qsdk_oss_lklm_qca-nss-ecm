@@ -169,7 +169,7 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	/*
 	 * NAT acceleration is not supported for 3-tuple
 	 */
-	if (unlikely(ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || unlikely(ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT)) {
+	if (unlikely(ecm_dir == ECM_DB_DIRECTION_EGRESS_NAT) || unlikely(ecm_dir == ECM_DB_DIRECTION_INGRESS_NAT) || unlikely(ecm_dir == ECM_DB_DIRECTION_HAIRPIN_NAT)) {
 		DEBUG_TRACE("%px: Non-ported ipv6 NAT acceleration is not supported\n", skb);
 		ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_NON_PORTED, ECM_STATS_V6_EXCEPTION_NON_PORTED_NAT_ACCEL_NOT_SUPPORTED);
 		return NF_ACCEPT;
