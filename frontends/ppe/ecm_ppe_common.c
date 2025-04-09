@@ -468,28 +468,35 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 		int aci_index;
 		int assignment_count;
 		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+		bool sawf_flow_mark_update, sawf_return_mark_update = false;
 		ppe_drv_ret_t ppe_status;
+
+		sawf_flow_mark_update = ((PPE_DRV_SAWF_GET_TAG(msg->flow_mark) == PPE_DRV_SAWF_VALID_TAG) && PPE_DRV_SAWF_VALID_BIT(msg->flow_mark));
+		sawf_return_mark_update = ((PPE_DRV_SAWF_GET_TAG(msg->return_mark) == PPE_DRV_SAWF_VALID_TAG) && PPE_DRV_SAWF_VALID_BIT(msg->return_mark));
 
 		if (msg->ip_version == 4) {
 			struct ppe_drv_v4_sawf_mark_update mark = {0};
 
 			mark.sawf_rule.flow_mark = msg->flow_mark;
 			mark.sawf_rule.flow_service_class = msg->flow_service_class_id;
-			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
+
+			if (sawf_flow_mark_update || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW)) {
 				mark.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
 			}
 
 			mark.sawf_rule.return_mark = msg->return_mark;
 			mark.sawf_rule.return_service_class = msg->return_service_class_id;
-			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
+
+			if (sawf_return_mark_update || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN)) {
 				mark.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
 			}
 
 			mark.tuple.protocol = msg->protocol;
-			mark.tuple.flow_ident = msg->flow_src_port;
-			mark.tuple.return_ident = msg->flow_dest_port;
-			mark.tuple.flow_ip = msg->flow_src_ip[0];
-			mark.tuple.return_ip = msg->flow_dest_ip[0];
+			mark.tuple.flow_ident = ntohs(msg->flow_src_port);
+			mark.tuple.return_ident = ntohs(msg->flow_dest_port);
+
+			ECM_IP_ADDR_TO_NIN4_ADDR(mark.tuple.flow_ip, msg->flow_src_ip);
+			ECM_IP_ADDR_TO_NIN4_ADDR(mark.tuple.return_ip, msg->flow_dest_ip);
 
 			ppe_status = ppe_drv_v4_rule_sawf_mark_update(&mark);
 			if (ppe_status != PPE_DRV_RET_SUCCESS) {
@@ -498,31 +505,33 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			}
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
-					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
-					&mark.tuple.flow_ip, mark.tuple.flow_ident,
-					&mark.tuple.return_ip, mark.tuple.return_ident,
-					mark.tuple.protocol);
+				feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
+				&mark.tuple.flow_ip, mark.tuple.flow_ident,
+				&mark.tuple.return_ip, mark.tuple.return_ident,
+				mark.tuple.protocol);
 		} else {
 			struct ppe_drv_v6_sawf_mark_update mark = {0};
 
 			mark.sawf_rule.flow_mark = msg->flow_mark;
 			mark.sawf_rule.flow_service_class = msg->flow_service_class_id;
-			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
+
+			if (sawf_flow_mark_update || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW)) {
 				mark.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
 			}
 
 			mark.sawf_rule.return_mark = msg->return_mark;
 			mark.sawf_rule.return_service_class = msg->return_service_class_id;
-			if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
+
+			if (sawf_return_mark_update || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN)) {
 				mark.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
 			}
 
 			mark.tuple.protocol = msg->protocol;
-			mark.tuple.flow_ident = msg->flow_src_port;
-			mark.tuple.return_ident = msg->flow_dest_port;
+			mark.tuple.flow_ident = ntohs(msg->flow_src_port);
+			mark.tuple.return_ident = ntohs(msg->flow_dest_port);
 
-			ECM_IP_ADDR_COPY(mark.tuple.flow_ip, msg->flow_src_ip);
-			ECM_IP_ADDR_COPY(mark.tuple.return_ip, msg->flow_dest_ip);
+			ECM_IP_ADDR_TO_NET_IPV6_ADDR(mark.tuple.flow_ip, msg->flow_src_ip);
+			ECM_IP_ADDR_TO_NET_IPV6_ADDR(mark.tuple.return_ip, msg->flow_dest_ip);
 
 			ppe_status = ppe_drv_v6_rule_sawf_mark_update(&mark);
 			if (ppe_status != PPE_DRV_RET_SUCCESS) {
@@ -531,10 +540,10 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			}
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6:%u -> %pI6:%u protocol=%u\n",
-					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
-					mark.tuple.flow_ip, mark.tuple.flow_ident,
-					mark.tuple.return_ip, mark.tuple.return_ident,
-					mark.tuple.protocol);
+				feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
+				mark.tuple.flow_ip, mark.tuple.flow_ident,
+				mark.tuple.return_ip, mark.tuple.return_ident,
+				mark.tuple.protocol);
 		}
 
 		/*
