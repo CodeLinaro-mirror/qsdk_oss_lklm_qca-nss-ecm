@@ -739,6 +739,11 @@ done:
 
 	if (selected_front_end == ECM_FRONT_END_TYPE_SFE_PPE) {
 		spin_lock_bh(&feci->lock);
+		if (feci->fe_info.front_end_flags & (ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE_DONE |
+			ECM_FRONT_END_ENGINE_FLAG_SAWF_CHANGE_AE_TYPE)) {
+			spin_unlock_bh(&feci->lock);
+			goto update_rule;
+		}
 		if (feci->accel_engine == ECM_FRONT_END_ENGINE_SFE) {
 			switch(r->inner.ae_type) {
 			case SP_RULE_AE_TYPE_PPE:
