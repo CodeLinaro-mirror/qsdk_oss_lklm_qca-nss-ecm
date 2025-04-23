@@ -1,7 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -57,8 +58,17 @@
 enum ecm_front_end_type selected_front_end;
 
 int front_end_selection;
+int register_ip_post_routing = 1;
+int register_br_post_routing = 1;
+
 module_param(front_end_selection, int, 0);
 MODULE_PARM_DESC(front_end_selection, "Select front end for ECM");
+
+module_param(register_ip_post_routing, int, 0);
+MODULE_PARM_DESC(register_ip_post_routing, "Register for ECM to intercept packets on IP post routing hook");
+
+module_param(register_br_post_routing, int, 0);
+MODULE_PARM_DESC(register_br_post_routing, "Register for ECM to intercept packets on bridge post routing hook");
 
 struct dentry *ecm_dentry;	/* Dentry object for top level ecm debugfs directory */
 
@@ -130,7 +140,8 @@ static int __init ecm_init(void)
 
 	selected_front_end = ecm_front_end_type_select();
 
-	printk(KERN_INFO "ECM init: selected_front_end=%d\n", selected_front_end);
+	printk(KERN_INFO "ECM init: selected_front_end=%d, register_ip_post_routing=%d, register_br_post_routing=%d\n", selected_front_end,
+				register_ip_post_routing, register_br_post_routing);
 
 	if (selected_front_end == ECM_FRONT_END_TYPE_MAX) {
 		DEBUG_ERROR("Front-end couldn't be selected\n");
