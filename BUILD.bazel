@@ -19,6 +19,7 @@ ddk_headers(
         "frontends/sfe/*.h",
         "ecm_db/*.h",
         "exports/*.h",
+	"ecm_sdx/*.h",
     ]),
     includes = [
         ".",
