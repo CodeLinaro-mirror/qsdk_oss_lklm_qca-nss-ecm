@@ -434,11 +434,13 @@ static inline bool ecm_string_to_ip_addr(ip_addr_t addr, char *ip_str)
 {
 	struct in6_addr dbuf;
 	uint8_t *dptr = dbuf.s6_addr;
+	uint32_t ip;
 	if (in4_pton(ip_str, -1, dptr, '\0', NULL) > 0) {
 		/*
 		 * IPv4
 		 */
-		ECM_NIN4_ADDR_TO_IP_ADDR(addr, dbuf.s6_addr[0]);
+		memcpy(&ip, dbuf.s6_addr, 4);
+		ECM_NIN4_ADDR_TO_IP_ADDR(addr, ip);
 		return true;
 	}
 #ifdef ECM_IPV6_ENABLE
