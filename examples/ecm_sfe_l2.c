@@ -1,18 +1,7 @@
 /*
  **************************************************************************
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
-
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 #include <linux/module.h>
@@ -635,20 +624,7 @@ static const struct file_operations ecm_sfe_l2_policy_rule_fops = {
 static ssize_t ecm_sfe_l2_defunct_by_5tuple_write(struct file *f, const char *user_buf,
 					  size_t count, loff_t *offset)
 {
-	int ret = -EINVAL;
 	char *cmd_buf;
-	int field_count;
-	char *fields_ptr;
-	char *fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_MAX];
-	char *option, *value;
-	int ip_ver;
-	uint32_t sip_addr_v4;
-	uint32_t dip_addr_v4;
-	struct in6_addr sip_addr_v6;
-	struct in6_addr dip_addr_v6;
-	int sport, dport;
-	int protocol;
-	bool defunct_result;
 
 	/*
 	 * Command is formed as for IPv4 and IPv6 5-tuples as below respectively.
@@ -665,152 +641,14 @@ static ssize_t ecm_sfe_l2_defunct_by_5tuple_write(struct file *f, const char *us
 	}
 
 	count = simple_write_to_buffer(cmd_buf, count, offset, user_buf, count);
-
-	/*
-	 * Split the buffer into its fields
-	 */
-	field_count = 0;
-	fields_ptr = cmd_buf;
-	fields[field_count] = strsep(&fields_ptr, " ");
-	while (fields[field_count] != NULL) {
-		pr_info("Field %d: %s\n", field_count, fields[field_count]);
-		field_count++;
-		if (field_count == ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_MAX)
-			break;
-
-		fields[field_count] = strsep(&fields_ptr, " ");
-	}
-
-	if (field_count != ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_MAX) {
+	if (!ecm_sfe_common_defunct_5tuple_connection(cmd_buf)) {
+		pr_warn("Unable to defunct ecm rules based on given 5 tuple\n");
 		kfree(cmd_buf);
-		pr_err("Invalid field count %d\n", field_count);
 		return -EINVAL;
 	}
 
-	/*
-	 * IP version (ip_ver) field validation.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION], "=");
-	if (!option || strcmp(option, "ip_ver")) {
-		pr_err("invalid IP version option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION];
-	if (!sscanf(value, "%d", &ip_ver)) {
-		pr_err("Unable to read IP version value %s\n", value);
-		goto fail;
-	}
-	if (ip_ver != 4 && ip_ver != 6) {
-		pr_err("invalid IP version: %d\n", ip_ver);
-		goto fail;
-	}
-
-	/*
-	 * Source IP (sip) field validation.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_SIP], "=");
-	if (!option || strcmp(option, "sip")) {
-		pr_err("invalid source IP option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_SIP];
-
-	if (ip_ver == 4) {
-		if (!in4_pton(value, -1, (uint8_t *)&sip_addr_v4, -1, NULL)) {
-			pr_err("invalid source IP V4 value: %s\n", value);
-			goto fail;
-		}
-	} else {
-		if (!in6_pton(value, -1, (uint8_t *)sip_addr_v6.s6_addr, -1, NULL)) {
-			pr_err("invalid source IP V6 value: %s\n", value);
-			goto fail;
-		}
-	}
-
-	/*
-	 * Source port (sport) field validadtion.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_SPORT], "=");
-	if (!option || strcmp(option, "sport")) {
-		pr_err("invalid source port option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_SPORT];
-	if (!sscanf(value, "%d", &sport)) {
-		pr_err("Unable to read source port value %s\n", value);
-		goto fail;
-	}
-
-	/*
-	 * Destination IP (dip) field validation.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_DIP], "=");
-	if (!option || strcmp(option, "dip")) {
-		pr_err("invalid destination IP option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_DIP];
-
-	if (ip_ver == 4) {
-		if (!in4_pton(value, -1, (uint8_t *)&dip_addr_v4, -1, NULL)) {
-			pr_err("invalid destination IP V4 value: %s\n", value);
-			goto fail;
-		}
-	} else {
-		if (!in6_pton(value, -1, (uint8_t *)dip_addr_v6.s6_addr, -1, NULL)) {
-			pr_err("invalid destination IP V6 value: %s\n", value);
-			goto fail;
-		}
-	}
-
-	/*
-	 * Destination port (dport) field validadtion.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_DPORT], "=");
-	if (!option || strcmp(option, "dport")) {
-		pr_err("invalid destination port option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_DPORT];
-	if (!sscanf(value, "%d", &dport)) {
-		pr_err("Unable to read destination port value %s\n", value);
-		goto fail;
-	}
-
-	/*
-	 * Protocol field validadtion.
-	 */
-	option = strsep(&fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL], "=");
-	if (!option || strcmp(option, "protocol")) {
-		pr_err("invalid protocol option name: %s\n", option);
-		goto fail;
-	}
-	value = fields[ECM_SFE_L2_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL];
-	if (!sscanf(value, "%d", &protocol)) {
-		pr_err("Unable to read protocol value %s\n", value);
-		goto fail;
-	}
-
-	/*
-	 * Call 5-tuple defunct functions.
-	 */
-	if (ip_ver == 4) {
-		pr_debug("sip: %pI4 sport: %d dip: %pI4 dport: %d protocol: %d\n", &sip_addr_v4, sport, &dip_addr_v4, dport, protocol);
-		defunct_result = ecm_sfe_common_defunct_ipv4_connection(sip_addr_v4, htons(sport), dip_addr_v4, htons(dport), protocol);
-	} else {
-		pr_debug("sip: %pI6 sport: %d dip: %pI6 dport: %d protocol: %d\n", &sip_addr_v6, sport, &dip_addr_v6, dport, protocol);
-		defunct_result = ecm_sfe_common_defunct_ipv6_connection(&sip_addr_v6, htons(sport), &dip_addr_v6, htons(dport), protocol);
-	}
-
-	if (!defunct_result) {
-		pr_warn("No connection found with this 5-tuple\n");
-	}
-
-	ret = count;
-fail:
 	kfree(cmd_buf);
-
-	return ret;
+	return count;
 }
 
 /*

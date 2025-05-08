@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -95,6 +84,19 @@ bool ecm_db_connection_del_vlan_filter(struct ecm_db_connection_instance *ci);
 bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci, struct ecm_db_node_instance *ni[], struct sk_buff *skb,
 		ecm_db_obj_dir_t from_dir, ecm_db_obj_dir_t to_dir, bool is_routed);
 #endif
+
+/*
+ * Defunct by 5-tuple command option types.
+ */
+enum ecm_db_connection_defunct_by_5tuple_options {
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SIP,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SPORT,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DIP,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DPORT,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_MAX,
+};
 
 /*
  * Events triggering a connection defunct.
@@ -499,6 +501,7 @@ uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
 void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uint16_t src_port, ip_addr_t dest_addr,
 						uint16_t dest_port, int proto, bool is_routed, ecm_classifier_type_t ca_type);
+bool ecm_db_connection_defunct_5tuple_buffer(char *buf);
 
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);

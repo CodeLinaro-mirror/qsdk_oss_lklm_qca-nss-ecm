@@ -1,18 +1,7 @@
 /*
  **************************************************************************
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
-
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -60,37 +49,16 @@ struct ecm_sfe_common_callbacks {
 };
 
 /**
- * Defuncts an IPv4 5-tuple connection.
+ * Defuncts an IPv4/v6 5-tuple connection.
  *
- * @param	src_ip		The source IP address.
- * @param	src_port	The source port.
- * @param	dest_ip		The destination IP address.
- * @param	dest_port	The destination port.
- * @param	protocol	The protocol.
+ * @param	buf		Memory holding unparsed 5 tuple.
  *
  * @return
  * True if defuncted; false if not.
  */
-bool ecm_sfe_common_defunct_ipv4_connection(__be32 src_ip, int src_port,
-						__be32 dest_ip, int dest_port, int protocol);
+bool ecm_sfe_common_defunct_5tuple_connection(char *buf);
 
-/**
- * Defuncts an IPv6 5-tuple connection.
- *
- * @param	src_ip		The source IP address.
- * @param	src_port	The source port.
- * @param	dest_ip		The destination IP address.
- * @param	dest_port	The destination port.
- * @param	protocol	The protocol.
- *
- * @return
- * True if defuncted; false if not.
- */
-bool ecm_sfe_common_defunct_ipv6_connection(struct in6_addr *src_ip, int src_port,
-						struct in6_addr *dest_ip, int dest_port, int protocol);
-
-/**
- * Defuncts all the connections with this protocol type.
+ /** Defuncts all the connections with this protocol type.
  *
  * @param protocol Protocol type.
  *
