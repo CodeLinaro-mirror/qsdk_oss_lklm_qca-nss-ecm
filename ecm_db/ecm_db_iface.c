@@ -339,14 +339,10 @@ static int ecm_db_iface_dsa_state_get(struct ecm_db_iface_instance *ii, struct e
 {
 	int result;
 	uint8_t address[ETH_ALEN];
-	uint16_t vlan_tag;
-	uint16_t vlan_tpid;
 
 	DEBUG_CHECK_MAGIC(ii, ECM_DB_IFACE_INSTANCE_MAGIC, "%px: magic failed\n", ii);
 	spin_lock_bh(&ecm_db_lock);
 	memcpy(address, ii->type_info.dsa.address, ETH_ALEN);
-	vlan_tag = ii->type_info.dsa.vlan_tag;
-	vlan_tpid = ii->type_info.dsa.vlan_tpid;
 	spin_unlock_bh(&ecm_db_lock);
 
 	if ((result = ecm_state_prefix_add(sfi, "dsa"))) {
@@ -358,13 +354,6 @@ static int ecm_db_iface_dsa_state_get(struct ecm_db_iface_instance *ii, struct e
 	}
 
 	if ((result = ecm_state_write(sfi, "address", "%pM", address))) {
-		return result;
-	}
-
-	if ((result = ecm_state_write(sfi, "tag", "%x", vlan_tag))) {
-		return result;
-	}
-	if ((result = ecm_state_write(sfi, "tpid", "%x", vlan_tpid))) {
 		return result;
 	}
 
@@ -1764,8 +1753,6 @@ void ecm_db_iface_dsa_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_i
 	spin_lock_bh(&ecm_db_lock);
 	DEBUG_ASSERT(ii->type == ECM_DB_IFACE_TYPE_DSA, "%px: Bad type, expected DSA, actual: %d\n", ii, ii->type);
 	ether_addr_copy(dsa_info->address, ii->type_info.dsa.address);
-	dsa_info->vlan_tag = ii->type_info.dsa.vlan_tag;
-	dsa_info->vlan_tpid = ii->type_info.dsa.vlan_tpid;
 	spin_unlock_bh(&ecm_db_lock);
 }
 
@@ -1773,8 +1760,7 @@ void ecm_db_iface_dsa_info_get(struct ecm_db_iface_instance *ii, struct ecm_db_i
  * ecm_db_iface_find_and_ref_dsa()
  *	Lookup and return a iface reference if any
  */
-struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_dsa(int32_t interface_identifier,
-				uint8_t *address, uint16_t vlan_tag, uint16_t vlan_tpid)
+struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_dsa(int32_t interface_identifier, uint8_t *address)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_iface_instance *ii;
@@ -1794,8 +1780,6 @@ struct ecm_db_iface_instance *ecm_db_iface_find_and_ref_dsa(int32_t interface_id
 	while (ii) {
 		if ((ii->type != ECM_DB_IFACE_TYPE_DSA)
 				|| (ii->interface_identifier != interface_identifier)
-				|| (ii->type_info.dsa.vlan_tag != vlan_tag)
-				|| (ii->type_info.dsa.vlan_tpid != vlan_tpid)
 				|| memcmp(ii->type_info.dsa.address, address, ETH_ALEN)) {
 			ii = ii->hash_next;
 			continue;
@@ -2946,8 +2930,7 @@ EXPORT_SYMBOL(ecm_db_iface_add_ethernet);
  * ecm_db_iface_add_dsa()
  *	Add a DSA iface instance into the database
  */
-void ecm_db_iface_add_dsa(struct ecm_db_iface_instance *ii, uint8_t *address, uint16_t vlan_tag,
-					uint16_t vlan_tpid, char *name, int32_t mtu,
+void ecm_db_iface_add_dsa(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
 					int32_t interface_identifier, int32_t ae_interface_identifier,
 					ecm_db_iface_final_callback_t final, void *arg)
 {
@@ -2982,8 +2965,6 @@ void ecm_db_iface_add_dsa(struct ecm_db_iface_instance *ii, uint8_t *address, ui
 	 * Type specific info
 	 */
 	type_info = &ii->type_info.dsa;
-	type_info->vlan_tag = vlan_tag;
-	type_info->vlan_tpid = vlan_tpid;
 	memcpy(type_info->address, address, ETH_ALEN);
 
 	/*
