@@ -1756,6 +1756,41 @@ bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port)
 }
 
 /*
+ * ecm_front_end_is_port_in_default denied_list()
+ */
+static inline bool ecm_front_end_is_port_in_default_denied_list(int port)
+{
+	bool ret = false;
+
+	/*
+	 * Avoid the acceleration of DHCP flows
+	 */
+	switch (port) {
+	case 67:
+	case 68:
+		ret = true;
+		break;
+	default:
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_front_end_check_default_denied_ports()
+ *	Checks if any given port number is in the default acceleration denied list.
+ */
+bool ecm_front_end_check_default_denied_ports(int src_port, int dest_port)
+{
+
+	if (ecm_front_end_is_port_in_default_denied_list(src_port)) {
+		return true;
+	}
+
+	return ecm_front_end_is_port_in_default_denied_list(dest_port);
+}
+
+/*
  * ecm_front_end_common_intf_ingress_qdisc_check()
  *      Checks if ingress qdisc is configured on the given interface
  */

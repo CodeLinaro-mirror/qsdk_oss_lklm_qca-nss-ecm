@@ -433,6 +433,7 @@ bool ecm_front_end_connection_check_and_switch_to_next_ae(struct ecm_front_end_c
 void ecm_front_end_common_set_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 uint32_t ecm_front_end_common_get_stats_bitmap(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
 bool ecm_front_end_check_udp_denied_ports(uint16_t src_port, uint16_t dest_port);
+bool ecm_front_end_check_default_denied_ports(int src_port, int dest_port);
 bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
 bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num);
