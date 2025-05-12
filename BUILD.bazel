@@ -4,6 +4,9 @@ load("//build/kernel/kleaf:kernel.bzl", "ddk_headers")
 define_modules("sdxkova", "debug")
 define_modules("sdxkova", "perf")
 
+define_modules("sdxkova.cpe.wkk", "perf")
+define_modules("sdxkova.cpe.wkk", "debug")
+
 package(
     default_visibility = [
         "//visibility:public",
