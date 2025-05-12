@@ -256,7 +256,8 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		/*
 		 * Check if any of the ports are in the acceleration denied list.
 		 */
-		if (ecm_front_end_check_tcp_denied_ports(src_port, dest_port)) {
+		if (ecm_front_end_check_default_denied_ports(src_port, dest_port) ||
+		    ecm_front_end_check_tcp_denied_ports(src_port, dest_port)) {
 			DEBUG_TRACE("src/dest port is in the TCP denied port list\n");
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_TCP_DENIED_PORT);
 			return NF_ACCEPT;
@@ -367,7 +368,8 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 		/*
 		 * Check if any of the ports are in the acceleration denied list.
 		 */
-		if (ecm_front_end_check_udp_denied_ports(src_port, dest_port)) {
+		if (ecm_front_end_check_default_denied_ports(src_port, dest_port) ||
+		    ecm_front_end_check_udp_denied_ports(src_port, dest_port)) {
 			DEBUG_TRACE("src/dest port is in the UDP denied port list\n");
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_UDP_DENIED_PORT);
 			return NF_ACCEPT;
