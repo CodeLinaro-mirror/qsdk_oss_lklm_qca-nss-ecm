@@ -1200,6 +1200,25 @@ process_next_iface_return:
 		pd6rc->valid_flags &= (~PPE_DRV_V6_VALID_FLAG_SAWF);
 	}
 
+        /*
+         * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
+         * and send the update VLAN tag to PPE.
+         */
+        if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
+                if (pr->flow_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+                                pd6rc->vlan_rule.primary_vlan.egress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag &= ~VLAN_PRIO_MASK;
+                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
+                }
+
+                if (pr->return_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
+                                pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
+                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
+                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
+                }
+        }
+
+#endif
 #ifdef ECM_CLASSIFIER_WIFI_ENABLE
 	/*
 	 * WIFI information
@@ -1227,25 +1246,6 @@ process_next_iface_return:
 			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_WIFI_DS;
 		}
 	}
-#endif
-        /*
-         * VLAN pcp remark set in SAWF classifer, we modify the pcp value in VLAN tag
-         * and send the update VLAN tag to PPE.
-         */
-        if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK) {
-                if (pr->flow_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
-                                pd6rc->vlan_rule.primary_vlan.egress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag &= ~VLAN_PRIO_MASK;
-                        pd6rc->vlan_rule.primary_vlan.egress_vlan_tag |= pr->flow_vlan_pcp << VLAN_PRIO_SHIFT;
-                }
-
-                if (pr->return_vlan_pcp != ECM_FRONT_END_INVALID_VLAN_PCP &&
-                                pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag != ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED) {
-                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag &= ~VLAN_PRIO_MASK;
-                        pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag |= pr->return_vlan_pcp << VLAN_PRIO_SHIFT;
-                }
-        }
-
 #endif
 
 #ifdef ECM_CLASSIFIER_MSCS_ENABLE
