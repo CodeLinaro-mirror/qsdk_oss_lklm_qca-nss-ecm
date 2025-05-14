@@ -53,6 +53,10 @@ struct ecm_db_host_instance {
 	uint64_t to_data_routed;			/* Total of routed data sent to this host */
 	uint64_t from_packet_routed;			/* Total of routed packets sent by this host */
 	uint64_t to_packet_routed;			/* Total of routed packets sent to this host */
+	uint64_t rx_routed_bytes[ECM_DB_IFACE_TYPE_COUNT];		/* Total of routed bytes received by this host from per interface type */
+	uint64_t rx_routed_packets[ECM_DB_IFACE_TYPE_COUNT];		/* Total of routed packet received by this host from per interface type */
+	uint64_t tx_routed_bytes[ECM_DB_IFACE_TYPE_COUNT];		/* Total of routed bytes sent by this host through per interface type */
+	uint64_t tx_routed_packets[ECM_DB_IFACE_TYPE_COUNT];		/* Total of routed packets sent by this host through per interface type */
 #endif
 #endif
 

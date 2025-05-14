@@ -479,6 +479,13 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 		for (i = ci->interface_first[ECM_DB_OBJ_DIR_FROM]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 			ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->to_data_total += size;
 			ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->to_packet_total += packets;
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+			if (ci->is_routed) {
+				ecm_db_iface_type_t type = ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->type;
+				ci->mapping[ECM_DB_OBJ_DIR_TO]->host->rx_routed_bytes[type] += size;
+				ci->mapping[ECM_DB_OBJ_DIR_TO]->host->rx_routed_packets[type] += packets;
+			}
+#endif
 		}
 
 		/*
@@ -497,6 +504,13 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 		for (i = ci->interface_first[ECM_DB_OBJ_DIR_TO]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 			ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->from_data_total += size;
 			ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->from_packet_total += packets;
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+			if (ci->is_routed) {
+				ecm_db_iface_type_t type = ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->type;
+				ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->tx_routed_bytes[type] += size;
+				ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->tx_routed_packets[type] += packets;
+			}
+#endif
 		}
 
 #ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
@@ -534,6 +548,13 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 	for (i = ci->interface_first[ECM_DB_OBJ_DIR_TO]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 		ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->to_data_total += size;
 		ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->to_packet_total += packets;
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+		if (ci->is_routed) {
+			ecm_db_iface_type_t type = ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->type;
+			ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->rx_routed_bytes[type] += size;
+			ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->rx_routed_packets[type] += packets;
+		}
+#endif
 	}
 
 	/*
@@ -552,7 +573,15 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 	for (i = ci->interface_first[ECM_DB_OBJ_DIR_FROM]; i < ECM_DB_IFACE_HEIRARCHY_MAX; ++i) {
 		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_data_total += size;
 		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_packet_total += packets;
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+		if (ci->is_routed) {
+			ecm_db_iface_type_t type = ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->type;
+			ci->mapping[ECM_DB_OBJ_DIR_TO]->host->tx_routed_bytes[type] += size;
+			ci->mapping[ECM_DB_OBJ_DIR_TO]->host->tx_routed_packets[type] += packets;
+		}
+#endif
 	}
+
 #ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
 	/*
 	 * Update per client routed only stats
