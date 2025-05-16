@@ -45,14 +45,17 @@ static inline uint32_t ecm_wifi_plugin_get_wifi_metadata(struct ecm_classifier_w
 
 	skb_mark = ath_get_metadata_info(&ath_dp_mdata);
 	wifi_metadata->wifi_mdata.out_ppe_ds_node_id = ath_dp_mdata.mlo_param.out_ppe_ds_node_id;
+	wifi_metadata->wifi_mdata.hlos_tid_override = ECM_WIFI_PLUGIN_METADATA_INVALID_HLOS_TID;
 #else
 	metadata.is_mlo_param_valid = (wifi_metadata->valid_params_flag & ECM_CLASSIFIER_WIFI_MLO_PARAM_VALID);
 	metadata.is_sawf_param_valid = 0;
 	metadata.mlo_param.in_dest_dev = wifi_metadata->wifi_mdata.dest_dev;
 	metadata.mlo_param.in_dest_mac = wifi_metadata->wifi_mdata.dest_mac;
 	metadata.mlo_param.out_ppe_ds_node_id = ECM_WIFI_PLUGIN_METADATA_INVALID_DS_NODE;
+	metadata.mlo_param.hlos_tid_override = ECM_WIFI_PLUGIN_METADATA_INVALID_HLOS_TID;
 	skb_mark = qca_wifi_get_metadata_info(&metadata);
 	wifi_metadata->wifi_mdata.out_ppe_ds_node_id = metadata.mlo_param.out_ppe_ds_node_id;
+	wifi_metadata->wifi_mdata.hlos_tid_override = metadata.mlo_param.hlos_tid_override;
 #endif
 	return skb_mark;
 }

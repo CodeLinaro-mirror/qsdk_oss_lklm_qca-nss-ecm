@@ -68,6 +68,8 @@ struct ecm_classifier_wifi_instance {
 	struct ecm_classifier_wifi_instance *prev;		/* Prev classifier state instance (for accouting and reporting purposes) */
 
 	uint32_t ci_serial;					/* RO: Serial of the connection */
+	uint32_t pcp[ECM_CONN_DIR_MAX];				/* PCP values for the connections */
+	bool packet_seen[ECM_CONN_DIR_MAX];                     /* Per-direction packet seen flag */
 	struct ecm_classifier_process_response process_response;/* Last process response computed */
 
 	int refs;						/* Integer to trap we never go negative */
@@ -180,6 +182,22 @@ static void ecm_classifier_wifi_fill_metadata(struct ecm_classifier_wifi_instanc
 }
 
 /*
+ * ecm_classifier_wifi_fill_pcp()
+ *	Save the PCP value in the classifier instance.
+ */
+static void ecm_classifier_wifi_fill_pcp(struct ecm_classifier_wifi_instance *cwifii,
+		 ecm_tracker_sender_type_t sender, struct sk_buff *skb)
+{
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		cwifii->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
+		cwifii->packet_seen[ECM_CONN_DIR_FLOW] = true;
+	} else {
+		cwifii->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+		cwifii->packet_seen[ECM_CONN_DIR_RETURN] = true;
+	}
+}
+
+/*
  * ecm_classifier_wifi_process()
  *	Process new data for connection
  */
@@ -203,6 +221,11 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
 	struct ecm_classifier_wifi_metadata wifi_metadata_info = {0};
+	uint8_t flow_hlos_tid_override = ECM_CLASSIFIER_WIFI_INVALID_HLOS_TID_OVERRIDE;
+	uint8_t return_hlos_tid_override = ECM_CLASSIFIER_WIFI_INVALID_HLOS_TID_OVERRIDE;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conn *ct;
+	uint64_t slow_pkts = 0;
 
 	cwifii = (struct ecm_classifier_wifi_instance *)aci;
 	DEBUG_CHECK_MAGIC(cwifii, ECM_CLASSIFIER_WIFI_INSTANCE_MAGIC, "%px: magic failed\n", cwifii);
@@ -261,6 +284,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 	accel_mode = ecm_front_end_connection_accel_state_get(feci);
+	slow_pkts = ecm_front_end_get_slow_packet_count(feci);
 	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
@@ -302,6 +326,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 		wifi_flow_metadata = ecm_wifi.get_wifi_metadata(&wifi_metadata_info);
 		flow_ds_metadata = wifi_metadata_info.wifi_mdata.out_ppe_ds_node_id;
+		flow_hlos_tid_override = wifi_metadata_info.wifi_mdata.hlos_tid_override;
 	}
 
 	if (src_dev) {
@@ -311,6 +336,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 		wifi_return_metadata = ecm_wifi.get_wifi_metadata(&wifi_metadata_info);
 		return_ds_metadata = wifi_metadata_info.wifi_mdata.out_ppe_ds_node_id;
+		return_hlos_tid_override = wifi_metadata_info.wifi_mdata.hlos_tid_override;
 	}
 
 	/*
@@ -340,10 +366,63 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	cwifii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_ACCEL_MODE;
 	cwifii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 
-	DEBUG_TRACE("%px: flow mark: %x, return mark: %x, flow DS node id %d, return DS node id %d, sender %d\n",
+	if (flow_hlos_tid_override || return_hlos_tid_override) {
+
+		/*
+		 * Get the flow tag from skb priority only if hlos_tid_override is set.
+		 * These are used during certification cases where different dscp/tid values
+		 * are passed to the client.
+		 */
+		ct = nf_ct_get(skb, &ctinfo);
+		if (!ct) {
+			cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+			goto process_wifi_classifier_out;
+		}
+
+		if (ecm_classifier_accel_delay_pkts) {
+
+			/*
+			 * Store the PCP value in the classifier instance and
+			 * deny acceleration until specified number of slow packets are seen.
+			 */
+			ecm_classifier_wifi_fill_pcp(cwifii, sender, skb);
+
+			if ((ecm_classifier_accel_delay_pkts == 1) || (slow_pkts < ecm_classifier_accel_delay_pkts)) {
+				DEBUG_TRACE("%px: accel_delay_pkts: %d slow_pkts: %llu accel is not allowed yet\n",
+						cwifii, ecm_classifier_accel_delay_pkts, slow_pkts);
+				cwifii->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+				goto process_wifi_classifier_out;
+			}
+		}
+
+		/*
+		 * Store the skb priority in flow/return PCP value
+		 * of classifier instance if accel delay is not set.
+		 */
+		cwifii->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
+		cwifii->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+
+		DEBUG_TRACE("%px: Protocol: %d, Flow Priority: %d, Return priority: %d, sender: %d\n",
+				cwifii, protocol, cwifii->pcp[ECM_CONN_DIR_FLOW],
+				cwifii->pcp[ECM_CONN_DIR_RETURN], sender);
+
+		if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
+				((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
+			cwifii->process_response.flow_qos_tag = cwifii->pcp[ECM_CONN_DIR_FLOW];
+			cwifii->process_response.return_qos_tag = cwifii->pcp[ECM_CONN_DIR_RETURN];
+		} else {
+			cwifii->process_response.flow_qos_tag = cwifii->pcp[ECM_CONN_DIR_RETURN];
+			cwifii->process_response.return_qos_tag = cwifii->pcp[ECM_CONN_DIR_FLOW];
+		}
+
+		cwifii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_HLOS_TID_VALID;
+		cwifii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
+	}
+
+	DEBUG_TRACE("%px: flow mark: %x, return mark: %x, flow DS node id %d, return DS node id %d, sender %d flow_hlos_tid_override: %d, return_hlos_tid_override: %d skb->priority:%d\n",
 			cwifii, cwifii->process_response.flow_mark, cwifii->process_response.return_mark,
 			cwifii->process_response.flow_wifi_ds_node_id, cwifii->process_response.return_wifi_ds_node_id,
-			sender);
+			sender, flow_hlos_tid_override, return_hlos_tid_override, skb->priority);
 
 process_wifi_classifier_out:
 

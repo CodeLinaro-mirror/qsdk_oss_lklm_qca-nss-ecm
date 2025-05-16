@@ -38,6 +38,7 @@ struct ecm_classifier_wifi_metadata_info {
 	struct net_device *dest_dev;
 	uint8_t *dest_mac;
 	uint8_t out_ppe_ds_node_id;
+	uint8_t hlos_tid_override;
 };
 
 /**
