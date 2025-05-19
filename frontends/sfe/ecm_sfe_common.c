@@ -761,6 +761,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 				/*
 				 * Get connection information
 				 */
+				update_msg->flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 				update_msg->type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
 				update_msg->protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 				update_msg->src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
@@ -823,6 +824,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 				* Get connection information
 				*/
 				update_msg->type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
+				update_msg->flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 				update_msg->protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 				update_msg->src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
 				update_msg->dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
@@ -906,6 +908,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 					update_msg->flags |= SFE_UPDATE_RULE_SAWF_RETURN_VALID;
 				}
 
+				update_msg->flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 				update_msg->protocol = msg->protocol;
 				update_msg->src_port = msg->flow_src_port;
 				update_msg->dest_port = msg->flow_dest_port;
@@ -974,6 +977,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 					update_msg->flags |= SFE_UPDATE_RULE_SAWF_RETURN_VALID;
 				}
 
+				update_msg->flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 				update_msg->protocol = msg->protocol;
 				update_msg->src_port = msg->flow_src_port;
 				update_msg->dest_port = msg->flow_dest_port;

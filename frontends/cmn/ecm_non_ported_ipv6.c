@@ -194,7 +194,9 @@ unsigned int ecm_non_ported_ipv6_process(struct net_device *out_dev,
 	DEBUG_TRACE("Non-ported protocol src: " ECM_IP_ADDR_OCTAL_FMT ", dest: " ECM_IP_ADDR_OCTAL_FMT "\n",
 				ECM_IP_ADDR_TO_OCTAL(ip_src_addr), ECM_IP_ADDR_TO_OCTAL(ip_dest_addr));
 
-	ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
+	ci = ecm_db_connection_source_find_and_ref(ip_src_addr, ip_dest_addr,
+				protocol, src_port, dest_port, in_dev, out_dev);
+
 
 	/*
 	 * If there is no existing connection then create a new one.
@@ -494,7 +496,8 @@ feci_alloc_done:
 		 * To guard against this we now perform a mutex'd lookup of the connection + add once more - another cpu may have created it before us.
 		 */
 		spin_lock_bh(&ecm_ipv6_lock);
-		ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
+		ci = ecm_db_connection_source_find_and_ref(ip_src_addr, ip_dest_addr,
+				protocol, src_port, dest_port, in_dev, out_dev);
 		if (ci) {
 			/*
 			 * Another cpu created the same connection before us - use the one we just found

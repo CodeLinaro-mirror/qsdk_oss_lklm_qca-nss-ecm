@@ -284,16 +284,16 @@ static inline void ecm_ppe_ipv6_process_one_conn_sync_msg(struct ppe_drv_v6_conn
 	 */
 	DEBUG_INFO("%px: PPE Sync, lookup connection using\n" \
 			"Protocol: %d\n" \
-			"src_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n" \
-			"dest_addr: " ECM_IP_ADDR_OCTAL_FMT ":%d\n" \
-			"dest_addr_xlate: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
+			"src_addr: %pI6:%d\n" \
+			"dest_addr: %pI6:%d\n" \
+			"dest_addr_xlate: %pI6:%d\n",
 			sync,
 			(int)sync->protocol,
-			ECM_IP_ADDR_TO_OCTAL(flow_ip), (int)sync->flow_ident,
-			ECM_IP_ADDR_TO_OCTAL(return_ip), (int)sync->return_ident,
-			ECM_IP_ADDR_TO_OCTAL(return_ip_xlate), (int)sync->return_ident_xlate);
+			sync->flow_ip, (int)sync->flow_ident,
+			sync->return_ip, (int)sync->return_ident,
+			sync->return_ip_xlate, (int)sync->return_ident_xlate);
 
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident_xlate);
+	ci = ecm_db_connection_serial_find_and_ref(sync->flow_rule_id);
 	if (!ci) {
 		DEBUG_TRACE("%px: PPE Sync: no connection\n", sync);
 		return;

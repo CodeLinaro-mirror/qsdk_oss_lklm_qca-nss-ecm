@@ -101,7 +101,6 @@ extern int nf_ct_tcp_be_liberal;
 static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
 	struct sfe_ipv6_rule_create_msg *nircm = &nim->msg.rule_create;
-	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	ip_addr_t flow_ip;
@@ -113,16 +112,17 @@ static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_i
 	 * Is this a response to a create message?
 	 */
 	if (nim->cm.type != SFE_TX_CREATE_RULE_MSG) {
-		DEBUG_ERROR("%px: ported create callback with improper type: %d, serial: %u\n", nim, nim->cm.type, serial);
+		DEBUG_ERROR("%px: ported create callback with improper type: %d, serial: %u\n",
+				nim, nim->cm.type, nircm->tuple.flow_rule_id);
 		return;
 	}
 
 	/*
 	 * Look up ecm connection so that we can update the status.
 	 */
-	ci = ecm_db_connection_serial_find_and_ref(serial);
+	ci = ecm_db_connection_serial_find_and_ref(nircm->tuple.flow_rule_id);
 	if (!ci) {
-		DEBUG_TRACE("%px: create callback, connection not found, serial: %u\n", nim, serial);
+		DEBUG_TRACE("%px: create callback, connection not found, serial: %u\n", nim, nircm->tuple.flow_rule_id);
 		return;
 	}
 
@@ -150,7 +150,7 @@ static void ecm_sfe_ported_ipv6_connection_callback(void *app_data, struct sfe_i
 	/*
 	 * Dump some useful trace information.
 	 */
-	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n", feci, feci->ci, serial);
+	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n", feci, feci->ci, nircm->tuple.flow_rule_id);
 	DEBUG_TRACE("%px: rule_flags: %x, valid_flags: %x\n", feci, nircm->rule_flags, nircm->valid_flags);
 	DEBUG_TRACE("%px: flow_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(flow_ip), nircm->tuple.flow_ident);
 	DEBUG_TRACE("%px: return_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n", feci, ECM_IP_ADDR_TO_OCTAL(return_ip), nircm->tuple.return_ident);
@@ -428,6 +428,7 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 	ECM_IP_ADDR_TO_SFE_IPV6_ADDR(update_msg->dest_ip, addr);
 
 	update_msg->type = SFE_CONNECTION_MARK_TYPE_UNIDIR_MARK;
+	update_msg->flow_rule_id = ecm_db_connection_serial_get(ci);
 	update_msg->src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
 	update_msg->dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
 	update_msg->protocol = (int32_t) ecm_db_connection_protocol_get(ci);
@@ -576,6 +577,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	nircm = &nim->msg.rule_create;
 	nircm->valid_flags = 0;
 	nircm->rule_flags = 0;
+	nircm->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * If connection is for Tunnel Outer packet, then mark same in sfe create valid flag.
@@ -1890,6 +1892,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 	DEBUG_INFO("%px: Ported Accelerate connection %px\n"
 			"Protocol: %d\n"
+			"serial:%u\n"
 			"from_mtu: %u\n"
 			"to_mtu: %u\n"
 			"from_ip: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
@@ -1924,6 +1927,7 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			feci,
 			feci->ci,
 			nircm->tuple.protocol,
+			nircm->tuple.flow_rule_id,
 			nircm->conn_rule.flow_mtu,
 			nircm->conn_rule.return_mtu,
 			ECM_IP_ADDR_TO_OCTAL(src_ip), ntohs(nircm->tuple.flow_ident),
@@ -2111,7 +2115,6 @@ ported_accel_bad_rule:
 static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
 	struct sfe_ipv6_rule_destroy_msg *nirdm = &nim->msg.rule_destroy;
-	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	ip_addr_t flow_ip;
@@ -2128,9 +2131,9 @@ static void ecm_sfe_ported_ipv6_connection_destroy_callback(void *app_data, stru
 	/*
 	 * Look up ecm connection so that we can update the status.
 	 */
-	ci = ecm_db_connection_serial_find_and_ref(serial);
+	ci = ecm_db_connection_serial_find_and_ref(nirdm->tuple.flow_rule_id);
 	if (!ci) {
-		DEBUG_TRACE("%px: destroy callback, connection not found, serial: %u\n", nim, serial);
+		DEBUG_TRACE("%px: destroy callback, connection not found, serial: %u\n", nim, nirdm->tuple.flow_rule_id);
 		return;
 	}
 
@@ -2298,6 +2301,7 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate_msg_send(struct ecm_front_
 			(void *)(ecm_ptr_t)ecm_db_connection_serial_get(feci->ci));
 
 	nirdm = &nim->msg.rule_destroy;
+	nirdm->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
 
 	/*

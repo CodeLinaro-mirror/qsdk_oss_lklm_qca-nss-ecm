@@ -416,11 +416,21 @@ void ecm_db_connection_defunct_by_protocol(int protocol);
 void ecm_db_connection_defunct_ip_version(int ip_version);
 
 struct ecm_db_connection_instance *ecm_db_connection_serial_find_and_ref(uint32_t serial);
-struct ecm_db_connection_instance *ecm_db_connection_find_and_ref(ip_addr_t host1_addr,
+struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_hash_first(ip_addr_t host1_addr,
 								  ip_addr_t host2_addr,
 								  int protocol,
 								  int host1_port,
 								  int host2_port);
+
+struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_hash_next(struct ecm_db_connection_instance *ci);
+
+struct ecm_db_connection_instance *ecm_db_connection_source_find_and_ref(ip_addr_t host1_addr,
+								  ip_addr_t host2_addr,
+								  int protocol,
+								  int host1_port,
+								  int host2_port,
+								  struct net_device *in,
+								  struct net_device *out);
 
 struct ecm_db_node_instance *ecm_db_connection_node_get_and_ref(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
@@ -494,7 +504,9 @@ int ecm_db_protocol_get_first(void);
 #endif
 
 struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(struct nf_conn *ct);
+
 struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(struct nf_conn *ct);
+
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(struct ovsmgr_dp_flow *flow);
 #endif

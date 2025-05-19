@@ -202,8 +202,9 @@ int ecm_notifier_unregister_connection_notify(struct notifier_block *nb)
 EXPORT_SYMBOL(ecm_notifier_unregister_connection_notify);
 
 /*
- * ecm_notifier_connection_state_fetch()
+ * ecm_notifier_connection_state_get()
  * 	Returns the current state for given connection tuple.
+ * If multiple connections existing for the given tuple, return the first one.
  */
 enum ecm_notifier_connection_state ecm_notifier_connection_state_get(struct ecm_notifier_connection_tuple *conn)
 {
@@ -251,7 +252,7 @@ enum ecm_notifier_connection_state ecm_notifier_connection_state_get(struct ecm_
                 return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
         }
 
-	ci = ecm_db_connection_find_and_ref(host1_addr, host2_addr, protocol, host1_port, host2_port);
+	ci = ecm_db_connection_find_and_ref_hash_first(host1_addr, host2_addr, protocol, host1_port, host2_port);
 	if (!ci) {
 		DEBUG_TRACE("%px: database connection not found\n", conn);
 		return ECM_NOTIFIER_CONNECTION_STATE_INVALID;
@@ -268,6 +269,11 @@ enum ecm_notifier_connection_state ecm_notifier_connection_state_get(struct ecm_
 	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
+	/*
+	 * Currently, this API will return the first connection if more than one
+	 * connection match the 5-tuple.
+	 * TODO: add the source interface in the 5-tuple.
+	 */
 	switch (accel_state) {
 	case ECM_FRONT_END_ACCELERATION_MODE_ACCEL:
 		return ECM_NOTIFIER_CONNECTION_STATE_ACCEL;

@@ -205,8 +205,6 @@ static inline void ecm_ppe_ipv4_process_one_conn_sync_msg(struct ppe_drv_v4_conn
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
 	int assignment_count;
-	int flow_ident;
-	int return_ident_xlate;
 	struct ecm_classifier_rule_sync class_sync;
 	int flow_dir;
 	int return_dir;
@@ -230,10 +228,8 @@ static inline void ecm_ppe_ipv4_process_one_conn_sync_msg(struct ppe_drv_v4_conn
 	ECM_HIN4_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
 	ECM_HIN4_ADDR_TO_IP_ADDR(return_ip_xlate, sync->return_ip_xlate);
 	ECM_HIN4_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
-	flow_ident = (int)sync->flow_ident;
-	return_ident_xlate = (int)sync->return_ident_xlate;
 
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, flow_ident, return_ident_xlate);
+	ci = ecm_db_connection_serial_find_and_ref(sync->flow_rule_id);
 	if (!ci) {
 		DEBUG_TRACE("%px: PPE Sync: no connection\n", sync);
 		return;

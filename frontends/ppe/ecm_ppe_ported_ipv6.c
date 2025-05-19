@@ -208,6 +208,7 @@ bool ecm_ppe_ported_ipv6_unidir_rule_update(
 	 */
 	update_msg->rule_type = rule_type;
 
+	update_msg->tuple.flow_rule_id = ecm_db_connection_serial_get(ci);
 	update_msg->tuple.protocol = (int32_t)ci->protocol;
 	update_msg->tuple.flow_ident = flow_ident;
 	update_msg->tuple.return_ident = return_ident;
@@ -302,6 +303,7 @@ bool ecm_ppe_ported_ipv6_bidir_sawf_rule_update(
 		update_msg->info.unidir.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
 	}
 
+	update_msg->tuple.flow_rule_id = ecm_db_connection_serial_get(ci);
 	update_msg->tuple.protocol = msg->protocol;
 	update_msg->tuple.flow_ident = ntohs(msg->flow_src_port);
 	update_msg->tuple.return_ident = ntohs(msg->flow_dest_port);
@@ -430,6 +432,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	pd6rc->valid_flags = 0;
 	pd6rc->rule_flags = 0;
+	pd6rc->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Initialize VLAN tag information
@@ -2019,6 +2022,7 @@ static bool ecm_ppe_ported_ipv6_connection_decelerate_send(struct ecm_front_end_
 	spin_unlock_bh(&ecm_ppe_ipv6_lock);
 
 	pd6rd.tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	pd6rd.tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get addressing information

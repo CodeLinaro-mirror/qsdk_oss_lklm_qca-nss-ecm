@@ -455,7 +455,7 @@ static int ecm_classifier_nl_genl_msg_ACCEL(struct sk_buff *skb,
 		    ECM_IP_ADDR_TO_OCTAL(dst_ip),
 		    dst_port,
 		    tuple->proto);
-	ci = ecm_db_connection_find_and_ref(src_ip,
+	ci = ecm_db_connection_find_and_ref_hash_first(src_ip,
 					    dst_ip,
 					    proto,
 					    src_port,
@@ -464,32 +464,39 @@ static int ecm_classifier_nl_genl_msg_ACCEL(struct sk_buff *skb,
 		DEBUG_WARN("database connection not found\n");
 		return -ENOENT;
 	}
-	DEBUG_TRACE("Connection found: %px\n", ci);
 
-	/*
-	 * Get the NL classifier for this connection
-	 */
-	cnli = (struct ecm_classifier_nl_instance *)
-		ecm_db_connection_assigned_classifier_find_and_ref(ci,
-			ECM_CLASSIFIER_TYPE_NL);
-	if (!cnli) {
+	do {
+		struct ecm_db_connection_instance *nci;
+
+		DEBUG_TRACE("Connection found: %px\n", ci);
+
+		/*
+		 * Get the NL classifier for this connection
+		 */
+		cnli = (struct ecm_classifier_nl_instance *)
+			ecm_db_connection_assigned_classifier_find_and_ref(ci,
+				ECM_CLASSIFIER_TYPE_NL);
+		if (!cnli) {
+			ecm_db_connection_deref(ci);
+			return -EUNATCH;
+		}
+
+		/*
+		 * Allow acceleration of the connection.  This will be done as
+		 * packets are processed in the usual way.
+		 */
+		DEBUG_TRACE("Permit accel: %px\n", ci);
+		spin_lock_bh(&ecm_classifier_nl_lock);
+		cnli->process_response.accel_mode =
+			ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+		cnli->flags |= ECM_CLASSIFIER_NL_F_ACCEL;
+		spin_unlock_bh(&ecm_classifier_nl_lock);
+
+		cnli->base.deref((struct ecm_classifier_instance *)cnli);
+		nci = ecm_db_connection_find_and_ref_hash_next(ci);
 		ecm_db_connection_deref(ci);
-		return -EUNATCH;
-	}
-
-	/*
-	 * Allow acceleration of the connection.  This will be done as
-	 * packets are processed in the usual way.
-	 */
-	DEBUG_TRACE("Permit accel: %px\n", ci);
-	spin_lock_bh(&ecm_classifier_nl_lock);
-	cnli->process_response.accel_mode =
-		ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
-	cnli->flags |= ECM_CLASSIFIER_NL_F_ACCEL;
-	spin_unlock_bh(&ecm_classifier_nl_lock);
-
-	cnli->base.deref((struct ecm_classifier_instance *)cnli);
-	ecm_db_connection_deref(ci);
+		ci = nci;
+	} while (ci);
 
 	return 0;
 }
@@ -1227,7 +1234,7 @@ static ssize_t ecm_classifier_nl_set_command(struct file *file,
 	case 'f':
 		DEBUG_TRACE("Lookup connection " ECM_IP_ADDR_OCTAL_FMT ":%d <> " ECM_IP_ADDR_OCTAL_FMT ":%d protocol %d\n",
 				ECM_IP_ADDR_TO_OCTAL(src_ip), src_port, ECM_IP_ADDR_TO_OCTAL(dest_ip), dest_port, proto);
-		ci = ecm_db_connection_find_and_ref(src_ip, dest_ip, proto, src_port, dest_port);
+		ci = ecm_db_connection_find_and_ref_hash_first(src_ip, dest_ip, proto, src_port, dest_port);
 		break;
 	case 'S':
 	case 's':
@@ -1244,49 +1251,52 @@ static ssize_t ecm_classifier_nl_set_command(struct file *file,
 		return -ENOMEM;
 	}
 	DEBUG_TRACE("Connection found: %px\n", ci);
+	do {
+		struct ecm_db_connection_instance *nci;
+		/*
+		 * Get the NL classifier
+		 */
+		cnli = (struct ecm_classifier_nl_instance *)ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
+		if (!cnli) {
+			ecm_db_connection_deref(ci);
+			return -ENOMEM;
+		}
 
-	/*
-	 * Get the NL classifier
-	 */
-	cnli = (struct ecm_classifier_nl_instance *)ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
-	if (!cnli) {
+		/*
+		 * Now action the command
+		 */
+		switch (cmd) {
+		case 's':
+		case 'f':
+			/*
+			 * Decelerate the connection, NL is denying further accel until it says so.
+			 */
+			DEBUG_TRACE("Force decel: %px\n", ci);
+			spin_lock_bh(&ecm_classifier_nl_lock);
+			cnli->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
+			spin_unlock_bh(&ecm_classifier_nl_lock);
+			feci = ecm_db_connection_front_end_get_and_ref(ci);
+			feci->decelerate(feci);
+			ecm_front_end_connection_deref(feci);
+			break;
+		case 'S':
+		case 'F':
+			/*
+			 * Allow acceleration of the connection.  This will be done as packets are processed in the usual way.
+			 */
+			DEBUG_TRACE("Permit accel: %px\n", ci);
+			spin_lock_bh(&ecm_classifier_nl_lock);
+			cnli->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
+			cnli->flags |= ECM_CLASSIFIER_NL_F_ACCEL;
+			spin_unlock_bh(&ecm_classifier_nl_lock);
+			break;
+		}
+
+		cnli->base.deref((struct ecm_classifier_instance *)cnli);
+		nci = ecm_db_connection_find_and_ref_hash_next(ci);
 		ecm_db_connection_deref(ci);
-		return -ENOMEM;
-	}
-
-	/*
-	 * Now action the command
-	 */
-	switch (cmd) {
-	case 's':
-	case 'f':
-		/*
-		 * Decelerate the connection, NL is denying further accel until it says so.
-		 */
-		DEBUG_TRACE("Force decel: %px\n", ci);
-		spin_lock_bh(&ecm_classifier_nl_lock);
-		cnli->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_NO;
-		spin_unlock_bh(&ecm_classifier_nl_lock);
-		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		feci->decelerate(feci);
-		ecm_front_end_connection_deref(feci);
-		break;
-	case 'S':
-	case 'F':
-		/*
-		 * Allow acceleration of the connection.  This will be done as packets are processed in the usual way.
-		 */
-		DEBUG_TRACE("Permit accel: %px\n", ci);
-		spin_lock_bh(&ecm_classifier_nl_lock);
-		cnli->process_response.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
-		cnli->flags |= ECM_CLASSIFIER_NL_F_ACCEL;
-		spin_unlock_bh(&ecm_classifier_nl_lock);
-		break;
-	}
-
-	cnli->base.deref((struct ecm_classifier_instance *)cnli);
-	ecm_db_connection_deref(ci);
-
+		ci = nci;
+	} while (ci && (cmd == 'F' || cmd == 'f'));
 	return sz;
 }
 

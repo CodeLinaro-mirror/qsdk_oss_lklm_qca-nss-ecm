@@ -219,6 +219,7 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	pd6rc->valid_flags = 0;
 	pd6rc->rule_flags = 0;
+	pd6rc->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Initialize VLAN tag information
@@ -1471,6 +1472,7 @@ static bool ecm_ppe_non_ported_ipv6_connection_decelerate_send(struct ecm_front_
 	spin_unlock_bh(&ecm_ppe_ipv6_lock);
 
 	pd6rd.tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	pd6rd.tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get addressing information
