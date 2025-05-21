@@ -253,6 +253,7 @@ static void ecm_classifier_sawf_fill_rm_sync_msg(struct ecm_classifier_emesh_saw
 	DEBUG_INFO("src_port: %u dst_port: %u protocol: %u ip_version: %u src_mac %pM dst_mac %pM flow_sid %u return_sid %u sync_type %d\n", ntohs(rm_msg->src_port), ntohs(rm_msg->dst_port), rm_msg->protocol, rm_msg->ip_version, rm_msg->src_mac, rm_msg->dst_mac, rm_msg->flow_sid, rm_msg->return_sid, rm_msg->sync_type);
 }
 
+#ifndef ECM_PLATFORM_SDX
 /*
  * ecm_classifier_emesh_sawf_mark_set()
  */
@@ -289,10 +290,62 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
 }
+#endif
 
 /*
  * ecm_classfier_emesh_stc_mark_set()
  */
+#ifdef ECM_PLATFORM_SDX
+static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
+{
+       struct sp_rule_inner *in = &r->inner;
+       struct ecm_db_connection_instance *ci;
+       struct nf_conn *ct;
+       ip_addr_t src_ip, dest_ip;
+       bool ct_update = false;
+
+      if (in->ip_version_type == 4) {
+               ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, in->src_ipv4_addr);
+               ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv4_addr);
+       } else {
+               ECM_NET_IPV6_ADDR_TO_IP_ADDR(src_ip, in->src_ipv6_addr);
+               ECM_NET_IPV6_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv6_addr);
+       }
+
+       /*
+        * Find the ECM connection based on the IP addresses got from the rule.
+        */
+       ci = ecm_db_connection_find_and_ref(src_ip,
+                                           dest_ip,
+                                           in->protocol_number,
+                                           in->src_port,
+                                           in->dst_port);
+       if (unlikely(!ci)) {
+               DEBUG_WARN("%px: no ci\n", r);
+               return;
+       }
+
+       ct = ecm_classifier_get_and_ref_ct(ci);
+       if (ct)
+       {
+         ct_update = ecm_classifier_update_ct_mark(ct);
+         if (!ct_update)
+         {
+           DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", ci);
+         }
+         else
+         {
+           DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", ci);
+         }
+       }
+       else
+       {
+         DEBUG_TRACE("Failed to get ct for ci: %px.\n", ci);
+       }
+
+       ecm_db_connection_deref(ci);
+}
+#else
 static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 {
 	struct sp_rule_inner *in = &r->inner;
@@ -673,6 +726,7 @@ end:
 
 	return;
 }
+#endif
 
 /*
  * ecm_classifier_emesh_sawf_get_iface_names_ipv4
@@ -2304,7 +2358,7 @@ static void ecm_classifier_emesh_sawf_fill_del_params(struct ecm_db_connection_i
 							struct sp_rule_del_params *del_params, int dir)
 {
 	ip_addr_t sip, dip;
-	int src_dir, dst_dir;
+	int src_dir = 0, dst_dir = 0;
 
 	if (dir == ECM_DB_OBJ_DIR_FROM) {
 		src_dir = ECM_DB_OBJ_DIR_FROM;
@@ -3322,6 +3376,10 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 		ecm_classfier_emesh_stc_mark_set(r);
 		DEBUG_INFO("classifier type SP_RULE_TYPE_SAWF_IFLI\n");
 		return NOTIFY_DONE;
+	}
+
+	if (r->classifier_type == SP_RULE_TYPE_SAWF) {
+		ecm_classfier_emesh_stc_mark_set(r);
 	}
 
 	DEBUG_INFO("SP rule update notification received: event=%lu\n", event);

@@ -558,7 +558,20 @@ sync_conntrack:
 		 */
 		if (!test_bit(IPS_ASSURED_BIT, &ct->status) && acct) {
 			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
-
+#if 0
+                       /* SUNIL: Set IPS_HW_OFFLOAD_BIT */
+                       if (ct && !test_bit(IPS_HW_OFFLOAD_BIT, &ct->status)) {
+                               DEBUG_TRACE("%px: SUNIL: Pre-set UDP HW_OFFLOAD_BIT\n", ct);
+                               set_bit(IPS_HW_OFFLOAD_BIT, &ct->status);
+                               DEBUG_TRACE("%px: SUNIL: Post-set UDP HW_OFFLOAD_BIT\n", ct);
+                               ct->mark = 0x20;
+                               DEBUG_TRACE("%px: SUNIL: Post-set TCP mark\n", ct);
+                       }
+                       else
+                       {
+                               DEBUG_TRACE("%px: SUNIL: did NOT set UDP HW_OFFLOAD_BIT\n", ct);
+                       }
+#endif
 			if (reply_pkts != 0) {
 				struct nf_conntrack_l4proto *l4proto __maybe_unused;
 				unsigned int *timeouts;

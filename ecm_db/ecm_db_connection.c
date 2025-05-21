@@ -38,6 +38,7 @@
 #include <net/netfilter/nf_conntrack_core.h>
 #include <net/netfilter/ipv4/nf_conntrack_ipv4.h>
 #include <net/netfilter/ipv4/nf_defrag_ipv4.h>
+#include <net/netfilter/nf_conntrack_ecache.h>
 #ifdef ECM_BRIDGE_VLAN_FILTERING_ENABLE
 #include <linux/if_vlan.h>
 #include <linux/if_bridge.h>
@@ -5314,4 +5315,102 @@ void ecm_db_connection_exit(void)
 	if (ecm_db_connection_ctl_table_header) {
 		unregister_sysctl_table(ecm_db_connection_ctl_table_header);
 	}
+}
+
+/*
+ * ecm_classifier_get_and_ref_ct
+*/
+struct nf_conn *ecm_classifier_get_and_ref_ct(struct ecm_db_connection_instance *ci)
+{
+	int ip_version;
+	int proto;
+	int src_port;
+	int dst_port;
+	ip_addr_t src_ip;
+	ip_addr_t dst_ip;
+
+	DEBUG_ASSERT(ci != NULL, "ci was NULL for ct lookup");
+	ip_version = ecm_db_connection_ip_version_get(ci);
+	proto = ecm_db_connection_protocol_get(ci);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+	src_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dst_ip);
+	dst_port = (uint16_t)ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT);
+
+	return ecm_classifier_populate_tuple_and_get_ct(src_ip, dst_ip, src_port, dst_port, proto, ip_version);
+}
+
+/*
+ * ecm_classifier_populate_tuple_and_get_ct
+*/
+struct nf_conn *ecm_classifier_populate_tuple_and_get_ct(ip_addr_t src_ip, ip_addr_t dst_ip, int src_port, int dst_port, int proto, int ip_version)
+{
+	struct nf_conntrack_tuple tuple = {};
+	struct nf_conntrack_tuple_hash *h;
+	struct nf_conn *ct;
+
+	if (ip_version == 4) {
+		tuple.src.l3num = AF_INET;
+		ECM_IP_ADDR_TO_NIN4_ADDR(tuple.src.u3.ip, src_ip);
+		ECM_IP_ADDR_TO_NIN4_ADDR(tuple.dst.u3.ip, dst_ip);
+		goto ip_check_done;
+	}
+#ifdef ECM_IPV6_ENABLE
+	if (ip_version == 6) {
+		tuple.src.l3num = AF_INET6;
+		ECM_IP_ADDR_TO_NIN6_ADDR(tuple.src.u3.in6, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(tuple.dst.u3.in6, dst_ip);
+		goto ip_check_done;
+}
+#endif
+	return NULL;
+
+ip_check_done:
+	tuple.dst.protonum = proto;
+	tuple.src.u.all = htons(src_port);
+	tuple.dst.u.all = htons(dst_port);
+
+	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
+	if (!h) {
+		return NULL;
+	}
+
+	ct = nf_ct_tuplehash_to_ctrack(h);
+	if (!ct) {
+		return NULL;
+	}
+	return ct;
+}
+
+/*
+ * ecm_classifier_update_ct_mark
+*/
+bool ecm_classifier_update_ct_mark(struct nf_conn *ct)
+{
+	bool mark_update = false;
+
+	DEBUG_ASSERT(ct != NULL, "ct was NULL for update mark");
+
+	if (!ct) {
+			DEBUG_WARN("CT is NULL, cannot update mark\n");
+			return false;  // Don't call nf_ct_put() for NULL
+	}
+
+	DEBUG_TRACE("%px: Pre-set conntrack marking\n", ct);
+
+	// Check if 16th bit is set (0x10000 = bit 16)
+	if (ct->mark & 0x10000) {
+			// Set the 17th bit (0x20000 = bit 17)
+			ct->mark |= 0x20000;
+			nf_conntrack_event(IPCT_MARK, ct);
+			mark_update = true;
+			DEBUG_TRACE("%px: Conntrack mark updated successfully\n", ct);
+	} else {
+			DEBUG_TRACE("%px: Bit 16 not set, no mark update needed\n", ct);
+	}
+
+	// Release conntrack reference
+	nf_ct_put(ct);
+
+	return mark_update;
 }

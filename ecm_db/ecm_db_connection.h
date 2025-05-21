@@ -324,6 +324,68 @@ struct ecm_db_connection_instance {
 };
 
 /*
+ * Macro to call ecm_classifier_get_and_ref_ct() and ecm_classifier_update_ct_mark() and return NF_ACCEPT
+ * 
+ * This macro takes a connection instance as input parameter,
+ * calls the ecm_classifier_get_and_ref_ct() function to get the corresponding conntrack entry,
+ * then calls ecm_classifier_update_ct_mark() to update the conntrack mark (sets bit 17 if bit 16 is set),
+ * and returns the actual NF_ACCEPT value.
+ *
+ * Usage: Replace 'return NF_ACCEPT;' with 'ECM_UPDATE_CT_MARK_FROM_CI(ci);'
+ * where ci is the connection instance.
+ */
+#define ECM_UPDATE_CT_MARK_FROM_CI(connection_instance) \
+	do { \
+		struct nf_conn *ct = NULL; \
+		bool mark_update = false; \
+		\
+		if (connection_instance) { \
+			ct = ecm_classifier_get_and_ref_ct(connection_instance); \
+			if (ct) { \
+				mark_update = ecm_classifier_update_ct_mark(ct); \
+			} \
+		} \
+		\
+		if (!mark_update) { \
+			DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", connection_instance); \
+		} else { \
+			DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", connection_instance); \
+		} \
+		\
+		return NF_ACCEPT; \
+	} while(0)
+
+/*
+ * Macro to call ecm_classifier_populate_tuple_and_get_ct() and ecm_classifier_update_ct_mark() and return NF_ACCEPT
+ * 
+ * This macro takes 5-tuple parameters (source IP, destination IP, source port, destination port, protocol, IP version)
+ * as input parameters, calls the ecm_classifier_populate_tuple_and_get_ct() function to lookup the corresponding 
+ * conntrack entry using the 5-tuple information, then calls ecm_classifier_update_ct_mark() to update the conntrack 
+ * mark (sets bit 17 if bit 16 is set), and returns the actual NF_ACCEPT value.
+ *
+ * Usage: Replace 'return NF_ACCEPT;' with 'ECM_UPDATE_CT_MARK_FROM_TUPLE(src_ip, dst_ip, src_port, dst_port, proto, ip_ver);'
+ * where the parameters represent the 5-tuple flow information.
+ */
+#define ECM_UPDATE_CT_MARK_FROM_TUPLE(src_ip, dst_ip, src_port, dst_port, proto, ip_version) \
+	do { \
+		struct nf_conn *ct = NULL; \
+		bool mark_update = false; \
+		\
+		ct = ecm_classifier_populate_tuple_and_get_ct(src_ip, dst_ip, src_port, dst_port, proto, ip_version); \
+		if (ct) { \
+			mark_update = ecm_classifier_update_ct_mark(ct); \
+		} \
+		\
+		if (!mark_update) { \
+			DEBUG_TRACE("Update mark failed for tuple: proto=%d, src_port=%d, dst_port=%d.\n", proto, src_port, dst_port); \
+		} else { \
+			DEBUG_TRACE("Update mark SUCCESS for tuple: proto=%d, src_port=%d, dst_port=%d.\n", proto, src_port, dst_port); \
+		} \
+		\
+		return NF_ACCEPT; \
+	} while(0)
+
+/*
  * Connection flags
  */
 #define ECM_DB_CONNECTION_FLAGS_INSERTED 0x1			/* Connection is inserted into connection database tables */
@@ -500,3 +562,6 @@ void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uin
 bool ecm_db_connection_defunct_5tuple_buffer(char *buf);
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);
+struct nf_conn *ecm_classifier_get_and_ref_ct(struct ecm_db_connection_instance *ci);
+struct nf_conn *ecm_classifier_populate_tuple_and_get_ct(ip_addr_t src_ip, ip_addr_t dst_ip, int src_port, int dst_port, int proto, int ip_version);
+bool ecm_classifier_update_ct_mark(struct nf_conn *ct);
