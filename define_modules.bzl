@@ -160,6 +160,23 @@ def define_modules(target, variant):
     )
     mod_list.append("{}_ecm_ae_select".format(kernel_build_variant))
 
+    ddk_module(
+        name = "{}_ecm_sdx_pcc".format(kernel_build_variant),
+        out = "ecm_sdx_pcc.ko",
+        srcs = [
+            "examples/ecm_sdx_pcc.c",
+        ],
+        kernel_build = "//msm-kernel:{}-defconfig".format(kernel_build_variant),
+        copts = [
+        ],
+        deps = [
+            ":ecm_headers",
+            "//msm-kernel:all_headers",
+            "{}_ecm".format(kernel_build_variant),
+        ],
+    )
+    mod_list.append("{}_ecm_sdx_pcc".format(kernel_build_variant))
+
     copy_to_dist_dir(
         name = "{}-defconfig_qca_nss_ecm_dist".format(kernel_build_variant),
         data = mod_list,
