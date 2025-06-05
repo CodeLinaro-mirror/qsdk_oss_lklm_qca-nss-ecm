@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: ISC
  **************************************************************************
  */
+
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
@@ -526,6 +527,18 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 			ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->from_data_total += size;
 			ci->interfaces[ECM_DB_OBJ_DIR_TO][i]->from_packet_total += packets;
 		}
+
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+		/*
+		 * Update per client routed only stats
+		 */
+		if (ci->is_routed) {
+			ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->from_data_routed += size;
+			ci->mapping[ECM_DB_OBJ_DIR_TO]->host->to_data_routed += size;
+			ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->from_packet_routed += packets;
+			ci->mapping[ECM_DB_OBJ_DIR_TO]->host->to_packet_routed += packets;
+		}
+#endif
 #endif
 		spin_unlock_bh(&ecm_db_lock);
 		return;
@@ -569,6 +582,17 @@ void ecm_db_connection_data_totals_update(struct ecm_db_connection_instance *ci,
 		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_data_total += size;
 		ci->interfaces[ECM_DB_OBJ_DIR_FROM][i]->from_packet_total += packets;
 	}
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+	/*
+	 * Update per client routed only stats
+	 */
+	if (ci->is_routed) {
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->host->from_data_routed += size;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->to_data_routed += size;
+		ci->mapping[ECM_DB_OBJ_DIR_TO]->host->from_packet_routed += packets;
+		ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->to_packet_routed += packets;
+	}
+#endif
 #endif
 	spin_unlock_bh(&ecm_db_lock);
 }

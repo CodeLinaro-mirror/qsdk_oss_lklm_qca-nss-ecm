@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -108,6 +98,38 @@ char *ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_MAX] = {
  * Global listener instance for DB events.
  */
 static struct ecm_db_listener_instance *ecm_db_li;
+
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+/*
+ * ecm_db_per_client_routed_stats_state_write()
+ *	Write out per client routed stats state
+ */
+int ecm_db_per_client_routed_stats_state_write(struct ecm_state_file_instance *sfi,
+					       uint64_t from_data_routed, uint64_t to_data_routed,
+					       uint64_t from_packet_routed, uint64_t to_packet_routed)
+{
+	int result;
+
+	if ((result = ecm_state_prefix_add(sfi, "adv_stats"))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "from_data_routed", "%llu", from_data_routed))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "to_data_routed", "%llu", to_data_routed))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "from_packet_routed", "%llu", from_packet_routed))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "to_packet_routed", "%llu", to_packet_routed))) {
+		return result;
+	}
+
+	return ecm_state_prefix_remove(sfi);
+}
+#endif
 
 /*
  * ecm_db_adv_stats_state_write()

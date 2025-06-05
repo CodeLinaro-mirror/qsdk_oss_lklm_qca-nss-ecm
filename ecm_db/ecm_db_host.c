@@ -1,20 +1,11 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
+
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
@@ -167,6 +158,31 @@ struct ecm_db_host_instance *ecm_db_host_get_and_ref_next(struct ecm_db_host_ins
 EXPORT_SYMBOL(ecm_db_host_get_and_ref_next);
 
 #ifdef ECM_DB_ADVANCED_STATS_ENABLE
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+/*
+ * ecm_db_host_routed_stats_get()
+ *	Return routed stats for the instance
+ */
+void ecm_db_host_routed_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_data_routed, uint64_t *to_data_routed,
+				  uint64_t *from_packet_routed, uint64_t *to_packet_routed)
+{
+	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%px: magic failed", hi);
+	spin_lock_bh(&ecm_db_lock);
+	if (from_data_routed) {
+		*from_data_routed = hi->from_data_routed;
+	}
+	if (to_data_routed) {
+		*to_data_routed = hi->to_data_routed;
+	}
+	if (from_packet_routed) {
+		*from_packet_routed = hi->from_packet_routed;
+	}
+	if (to_packet_routed) {
+		*to_packet_routed = hi->to_packet_routed;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+}
+#endif
 /*
  * ecm_db_host_data_stats_get()
  *	Return data stats for the instance
@@ -204,7 +220,6 @@ void ecm_db_host_data_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_
 	}
 	spin_unlock_bh(&ecm_db_lock);
 }
-EXPORT_SYMBOL(ecm_db_host_data_stats_get);
 #endif
 
 /*
@@ -637,6 +652,12 @@ int ecm_db_host_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_hos
 	uint64_t to_data_total_dropped;
 	uint64_t from_packet_total_dropped;
 	uint64_t to_packet_total_dropped;
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+	uint64_t from_data_routed;
+	uint64_t to_data_routed;
+	uint64_t from_packet_routed;
+	uint64_t to_packet_routed;
+#endif
 #endif
 
 	DEBUG_TRACE("Prep host msg for %px\n", hi);
@@ -657,6 +678,10 @@ int ecm_db_host_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_hos
 			&from_packet_total, &to_packet_total,
 			&from_data_total_dropped, &to_data_total_dropped,
 			&from_packet_total_dropped, &to_packet_total_dropped);
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+	ecm_db_host_routed_stats_get(hi, &from_data_routed, &to_data_routed,
+				     &from_packet_routed, &to_packet_routed);
+#endif
 #endif
 
 	if ((result = ecm_state_prefix_add(sfi, "host"))) {
@@ -686,6 +711,12 @@ int ecm_db_host_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_hos
 			to_packet_total_dropped))) {
 		return result;
 	}
+#ifdef ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+	if ((result = ecm_db_per_client_routed_stats_state_write(sfi, from_data_routed, to_data_routed,
+								 from_packet_routed, to_packet_routed))) {
+		return result;
+	}
+#endif
 #endif
 
 	return ecm_state_prefix_remove(sfi);
