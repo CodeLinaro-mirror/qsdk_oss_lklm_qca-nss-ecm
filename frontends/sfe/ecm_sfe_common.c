@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  */
 
 #include <linux/version.h>
@@ -785,26 +774,14 @@ void ecm_sfe_common_tuple_set(struct ecm_front_end_connection_instance *feci,
 }
 
 /*
- * ecm_sfe_common_defunct_ipv4_connection()
- *	Defunct an IPv4 5-tuple connection.
+ * ecm_sfe_common_defunct_5tuple_connection()
+ *	Defunct an IPv4/v6 5-tuple connection.
  */
-bool ecm_sfe_common_defunct_ipv4_connection(__be32 src_ip, int src_port,
-					    __be32 dest_ip, int dest_port, int protocol)
+bool ecm_sfe_common_defunct_5tuple_connection(char *buf)
 {
-	return ecm_db_connection_decel_v4(src_ip, src_port, dest_ip, dest_port, protocol);
+	return ecm_db_connection_defunct_5tuple_buffer(buf);
 }
-EXPORT_SYMBOL(ecm_sfe_common_defunct_ipv4_connection);
-
-/*
- * ecm_sfe_common_defunct_ipv6_connection()
- *	Defunct an IPv6 5-tuple connection.
- */
-bool ecm_sfe_common_defunct_ipv6_connection(struct in6_addr *src_ip, int src_port,
-					    struct in6_addr *dest_ip, int dest_port, int protocol)
-{
-	return ecm_db_connection_decel_v6(src_ip, src_port, dest_ip, dest_port, protocol);
-}
-EXPORT_SYMBOL(ecm_sfe_common_defunct_ipv6_connection);
+EXPORT_SYMBOL(ecm_sfe_common_defunct_5tuple_connection);
 
 /*
  * ecm_sfe_common_defunct_by_protocol()
