@@ -535,6 +535,17 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
 	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	/*
+	 * Set the SPI rule for ESP passthrough connection.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_ESP_SPI_PASSTH) {
+		nircm->spi_rule.l_spi = ecm_db_connection_spi_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+		nircm->spi_rule.r_spi = ecm_db_connection_spi_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_ESP_PASSTHROUGH;
+	}
+#endif
+
 	/*
 	 * Set the port information. These ports can be overwritten by the PPTP protocol values,
 	 * if the flow belongs to a PPTP tunnel.

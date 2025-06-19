@@ -1443,11 +1443,22 @@ vxlan_done:
 	if (ip_hdr.protocol == IPPROTO_ESP) {
 		bool inner;
 		if (!ecm_front_end_is_xfrm_flow(skb, &ip_hdr, &inner)) {
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+			if (ecm_front_end_esp_spi_passthrough_enable) {
+				if (ecm_front_end_esp_passthrough_is_accel_allowed(ct, ctinfo, skb, &orig_tuple)) {
+					goto esp_passth_allowed;
+				}
+			}
+#endif
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH);
 			DEBUG_TRACE("%px: IPsec ESP passthrough is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
 	}
+
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+esp_passth_allowed:
+#endif
 
 	/*
 	 * Check for a multicast Destination address here.

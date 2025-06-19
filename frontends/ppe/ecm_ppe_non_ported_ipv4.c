@@ -984,6 +984,17 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	}
 #endif
 
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	/*
+	 * Set the SPI rule for ESP passthrough connection.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_ESP_SPI_PASSTH) {
+		pd4rc->spi_rule.l_spi = ecm_db_connection_spi_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+		pd4rc->spi_rule.r_spi = ecm_db_connection_spi_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_ESP_PASS_THROUGH_SPI;
+	}
+#endif
+
 	/*
 	 * Policer/ACL info
 	 */

@@ -448,6 +448,11 @@ ccflags-$(ECM_BRIDGE_VLAN_FILTERING_ENABLE) += -DECM_BRIDGE_VLAN_FILTERING_ENABL
 ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
 
 # #############################################################################
+# Define ECM_FRONT_END_ESP_SPI_PASSTHROUGH=y in order to enable ESP SPI based passthrough
+# #############################################################################
+ccflags-$(ECM_FRONT_END_ESP_SPI_PASSTHROUGH) += -DECM_FRONT_END_ESP_SPI_PASSTHROUGH
+
+# #############################################################################
 # Define ECM_256M_PROFILE=y in order to reduce hash slots for LM256 profile.
 # #############################################################################
 ccflags-$(ECM_256M_PROFILE) += -DECM_256M_PROFILE

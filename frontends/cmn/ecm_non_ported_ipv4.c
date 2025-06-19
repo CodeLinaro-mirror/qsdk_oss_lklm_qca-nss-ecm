@@ -147,6 +147,11 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 	struct ecm_classifier_process_response prevalent_pr;
 	bool pppoe_bridged = false;
 	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	uint32_t l_spi, r_spi = 0;
+	bool is_esp_passth = false;
+	enum ip_conntrack_info ctinfo;
+#endif
 
 	/*
 	 * Look up a connection.
@@ -156,6 +161,23 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 	src_port_nat = 0;
 	dest_port = 0;
 	dest_port_nat = 0;
+
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	nf_ct_get(skb, &ctinfo);
+	if (protocol == IPPROTO_ESP && ecm_front_end_esp_spi_passthrough_enable) {
+		/*
+		 * In case of terminating traffic, the esp ID will be 0 - so will be processed
+		 * normally without any special condition.
+		 */
+		src_port = ntohs(orig_tuple->dst.u.esp.id);
+		src_port_nat = ntohs(orig_tuple->dst.u.esp.id);
+		dest_port = ntohs(orig_tuple->dst.u.esp.id);
+		dest_port_nat = ntohs(orig_tuple->dst.u.esp.id);
+
+		if (orig_tuple->dst.u.esp.id != 0)
+			is_esp_passth = true;
+	}
+#endif
 
 	/*
 	 * 3-tuple acceleration for PPPoE bridged flow?
@@ -694,6 +716,32 @@ done:
 		DEBUG_TRACE("%px: sender is DEST relative to ci direction\n", ci);
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
+
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	if (is_esp_passth) {
+		/*
+		 * Since we are denying the acceleration unitl we see Bi-Di packets,
+		 * ECM might create a connection based on return direction of the
+		 * conntrack entry. So the SPI values to be fetched from conntrack shall
+		 * also be reversed in ECM.
+		 */
+		if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
+                                ((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
+			l_spi = ct->proto.esp.l_spi;
+			r_spi = ct->proto.esp.r_spi;
+                } else {
+			l_spi = ct->proto.esp.r_spi;
+			r_spi = ct->proto.esp.l_spi;
+                }
+
+		/*
+		 * Set the SPI values into the ECM connection.
+		 */
+		ecm_db_connection_spi_set(ci, ECM_DB_OBJ_DIR_FROM, l_spi);
+		ecm_db_connection_spi_set(ci, ECM_DB_OBJ_DIR_TO, r_spi);
+		ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_ESP_SPI_PASSTH);
+	}
+#endif
 
 	/*
 	 * Do we need to action generation change?

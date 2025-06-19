@@ -52,10 +52,24 @@ extern unsigned int ecm_front_end_ppe_fse_enable;
 #endif
 
 /*
+ * Flag to enable/disable ESP SPI based passthrough feature
+ */
+#ifdef ECM_FRONT_END_ESP_SPI_PASSTHROUGH
+extern unsigned int ecm_front_end_esp_spi_passthrough_enable;
+#endif
+
+/*
  * Flag to enable/disable Wi-Fi FSE block programming from ECM SFE frontend.
  */
 #ifdef ECM_FRONT_END_SFE_ENABLE
 extern unsigned int ecm_sfe_fse_enable;
+#endif
+
+/*
+ * Flag to enable/disable IPSec SPI based passthrough acceleration.
+ */
+#ifdef ECM_FRONT_END_ESP_SPI_PASSTHROUGH
+extern unsigned int ecm_front_end_esp_spi_passthrough_enable;
 #endif
 
 /*
@@ -412,6 +426,12 @@ extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct nf_conntrack_tuple *orig_tuple,
 						      struct nf_conntrack_tuple *reply_tuple,
 						      int ip_version, uint16_t offset);
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+extern bool ecm_front_end_esp_passthrough_is_accel_allowed(struct nf_conn *ct,
+								enum ip_conntrack_info ctinfo,
+								struct sk_buff *skb,
+								struct nf_conntrack_tuple *orig_tuple);
+#endif
 extern uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_instance *feci);
 #ifdef ECM_CLASSIFIER_DSCP_ENABLE
 void ecm_front_end_tcp_set_dscp_ext(struct nf_conn *ct,
