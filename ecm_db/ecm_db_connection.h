@@ -97,6 +97,19 @@ bool ecm_db_connection_add_vlan_filter(struct ecm_db_connection_instance *ci, st
 #endif
 
 /*
+ * Defunct by 5-tuple command option types.
+ */
+enum ecm_db_connection_defunct_by_5tuple_options {
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SIP,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SPORT,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DIP,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DPORT,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL,
+	ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_MAX,
+};
+
+/*
  * Events triggering a connection defunct.
  * This gives flexibillity to handle connection defunct process according to
  * the event that is triggering the defunct.
@@ -495,6 +508,7 @@ uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 
 void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uint16_t src_port, ip_addr_t dest_addr,
 						uint16_t dest_port, int proto, bool is_routed, ecm_classifier_type_t ca_type);
+bool ecm_db_connection_defunct_5tuple_buffer(char *buf);
 
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);
