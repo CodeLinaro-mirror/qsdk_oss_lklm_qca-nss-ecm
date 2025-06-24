@@ -64,6 +64,11 @@
 #include "ecm_interface.h"
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_DB_PATH "net/ecm/ecm_db"
+
+/*
  * Locking of the database - concurrency control
  */
 DEFINE_SPINLOCK(ecm_db_lock);					/* Protect the table from SMP access. */
@@ -130,6 +135,11 @@ int ecm_db_per_client_routed_stats_state_write(struct ecm_state_file_instance *s
 	return ecm_state_prefix_remove(sfi);
 }
 #endif
+
+/*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_db_ctl_table_header;
 
 /*
  * ecm_db_adv_stats_state_write()
@@ -451,15 +461,82 @@ static struct notifier_block ecm_db_ip6route_table_update_nb = {
 #endif
 
 /*
+ * ecm_db_defunct_all_handler()
+ * 	Proc handler to defunct ecm db
+ */
+static int ecm_db_defunct_all_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To defunct ecm rules from ecm db
+	 * echo 1 > /proc/sys/net/ecm/ecm_db/defunct_all
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_db/defunct_all
+	 */
+
+	char *buf;
+	int ret;
+	int num;
+	int len;
+
+	if (write) {
+		ecm_db_connection_defunct_all();
+		return *lenp;
+	}
+
+	buf = kzalloc(sizeof(int), GFP_KERNEL);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	spin_lock_bh(&ecm_db_lock);
+	num = _ecm_db_connection_count_get() + _ecm_db_mapping_count_get() + _ecm_db_host_count_get()
+		 + _ecm_db_node_count_get() + _ecm_db_iface_count_get();
+	spin_unlock_bh(&ecm_db_lock);
+
+	len = scnprintf(buf, PAGE_SIZE, "%d\n", num);
+	if (!len) {
+		DEBUG_ERROR("Failed to read buf\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	ret = memory_read_from_buffer(buffer, *lenp, ppos, buf, len);
+	*lenp = ret;
+	kfree(buf);
+	return 0;
+}
+
+static struct ctl_table ecm_db_ctl_table[] = {
+	{
+		.procname	= "defunct_all",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_db_defunct_all_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_db_init()
  */
 int ecm_db_init(struct dentry *dentry)
 {
 	DEBUG_INFO("ECM Module init\n");
 
+	ecm_db_ctl_table_header = register_sysctl(ECM_DB_PATH, ecm_db_ctl_table);
+	if (!ecm_db_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm db directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_db_dentry = debugfs_create_dir("ecm_db", dentry);
 	if (!ecm_db_dentry) {
 		DEBUG_ERROR("Failed to create ecm db directory in debugfs\n");
+		unregister_sysctl_table(ecm_db_ctl_table_header);
 		return -1;
 	}
 
@@ -538,6 +615,7 @@ init_cleanup_1:
 	ecm_db_connection_exit();
 init_cleanup:
 	debugfs_remove_recursive(ecm_db_dentry);
+	unregister_sysctl_table(ecm_db_ctl_table_header);
 	return -1;
 }
 EXPORT_SYMBOL(ecm_db_init);
@@ -585,6 +663,13 @@ void ecm_db_exit(void)
 	 */
 	if (ecm_db_dentry) {
 		debugfs_remove_recursive(ecm_db_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_db_ctl_table_header) {
+		unregister_sysctl_table(ecm_db_ctl_table_header);
 	}
 }
 EXPORT_SYMBOL(ecm_db_exit);

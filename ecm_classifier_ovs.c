@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -75,6 +65,11 @@
 #define ECM_CLASSIFIER_OVS_INSTANCE_MAGIC 0x2568
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_OVS_INSTANCE_PATH "net/ecm/ecm_classifier_ovs"
+
+/*
  * struct ecm_classifier_ovs_instance
  * 	State per connection for OVS classifier
  */
@@ -125,6 +120,8 @@ static int ecm_classifier_ovs_count = 0;			/* Tracks number of instances allocat
  * Callback object.
  */
 static struct ecm_classifier_ovs_callbacks ovs;
+
+static struct ctl_table_header *ecm_classifier_ovs_ctl_table_header; /* Sysctl table header */
 
 /*
  * ecm_classifier_ovs_ref()
@@ -2184,6 +2181,60 @@ done:
 #endif
 
 /*
+ * ecm_classifier_ovs_enable_handler()
+ * 	Proc handler to enable or disable OVS classifier
+ */
+static int ecm_classifier_ovs_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable OVS classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_ovs/enabled
+	 *
+	 * Disable OVS classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_ovs/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_ovs/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_ovs_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operations
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_ovs_enabled != 0) && (ecm_classifier_ovs_enabled != 1)) {
+		ecm_classifier_ovs_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input should be 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_ovs_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_ovs_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_ovs_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_ovs_instance_alloc()
  *	Allocate an instance of the ovs classifier
  */
@@ -2308,9 +2359,19 @@ int ecm_classifier_ovs_init(struct dentry *dentry)
 {
 	DEBUG_INFO("ovs classifier Module init\n");
 
+	/*
+	 * Register sysct table for OVS classifier
+	 */
+	ecm_classifier_ovs_ctl_table_header = register_sysctl(ECM_CLASSIFIER_OVS_INSTANCE_PATH, ecm_classifier_ovs_ctl_table);
+	if(!ecm_classifier_ovs_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm ovs directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_ovs_dentry = debugfs_create_dir("ecm_classifier_ovs", dentry);
 	if (!ecm_classifier_ovs_dentry) {
 		DEBUG_ERROR("Failed to create ecm ovs directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_ovs_ctl_table_header);
 		return -1;
 	}
 
@@ -2318,6 +2379,7 @@ int ecm_classifier_ovs_init(struct dentry *dentry)
 					(u32 *)&ecm_classifier_ovs_enabled)) {
 		DEBUG_ERROR("Failed to create ovs enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_ovs_dentry);
+		unregister_sysctl_table(ecm_classifier_ovs_ctl_table_header);
 		return -1;
 	}
 
@@ -2341,6 +2403,13 @@ void ecm_classifier_ovs_exit(void)
 	 */
 	if (ecm_classifier_ovs_dentry) {
 		debugfs_remove_recursive(ecm_classifier_ovs_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table
+	 */
+	if (ecm_classifier_ovs_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_ovs_ctl_table_header);
 	}
 
 }

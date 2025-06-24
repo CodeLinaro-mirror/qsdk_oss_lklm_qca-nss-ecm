@@ -1,16 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2018, 2020-2021, The Linux Foundation. All rights reserved.
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -68,6 +60,11 @@
 #define ECM_CLASSIFIER_MARK_INSTANCE_MAGIC 0x2567
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_MARK_INSTANCE_PATH "net/ecm/ecm_classifier_mark"
+
+/*
  * struct ecm_classifier_mark_instance
  * 	State per connection for MARK classifier
  */
@@ -114,6 +111,8 @@ static DEFINE_SPINLOCK(ecm_classifier_mark_lock);			/* Protect SMP access. */
 static struct ecm_classifier_mark_instance *ecm_classifier_mark_instances = NULL;
 								/* list of all active instances */
 static int ecm_classifier_mark_count = 0;			/* Tracks number of instances allocated */
+
+static struct ctl_table_header *ecm_classifier_mark_ctl_table_header; /* Sysctl table header */
 
 /*
  * Callbacks to the external modules.
@@ -627,6 +626,60 @@ static int ecm_classifier_mark_state_get(struct ecm_classifier_instance *ci, str
 #endif
 
 /*
+ * ecm_classifier_mark_enable_handler()
+ * 	Proc handler to enable or disable MARK classifier
+ */
+static int ecm_classifier_mark_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable Mark classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_mark/enabled
+	 *
+	 * Disable Mark classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_mark/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_mark/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_mark_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_mark_enabled != 0) && (ecm_classifier_mark_enabled != 1)) {
+		ecm_classifier_mark_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input should be 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_mark_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_mark_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_mark_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_mark_instance_alloc()
  *	Allocate an instance of the mark classifier
  */
@@ -747,9 +800,19 @@ int ecm_classifier_mark_init(struct dentry *dentry)
 {
 	DEBUG_INFO("Mark classifier Module init\n");
 
+	/*
+	 * Register sysctl table for mark classifier
+	 */
+	ecm_classifier_mark_ctl_table_header = register_sysctl(ECM_CLASSIFIER_MARK_INSTANCE_PATH, ecm_classifier_mark_ctl_table);
+	if (!ecm_classifier_mark_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm mark directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_mark_dentry = debugfs_create_dir("ecm_classifier_mark", dentry);
 	if (!ecm_classifier_mark_dentry) {
 		DEBUG_ERROR("Failed to create ecm mark directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_mark_ctl_table_header);
 		return -1;
 	}
 
@@ -757,6 +820,7 @@ int ecm_classifier_mark_init(struct dentry *dentry)
 					(u32 *)&ecm_classifier_mark_enabled)) {
 		DEBUG_ERROR("Failed to create mark enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_mark_dentry);
+		unregister_sysctl_table(ecm_classifier_mark_ctl_table_header);
 		return -1;
 	}
 
@@ -782,5 +846,11 @@ void ecm_classifier_mark_exit(void)
 		debugfs_remove_recursive(ecm_classifier_mark_dentry);
 	}
 
+	/*
+	 * Unregister syctl table header
+	 */
+	if (ecm_classifier_mark_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_mark_ctl_table_header);
+	}
 }
 EXPORT_SYMBOL(ecm_classifier_mark_exit);

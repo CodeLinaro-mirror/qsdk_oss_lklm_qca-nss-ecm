@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -79,6 +68,11 @@
 #define ECM_CLASSIFIER_DEFAULT_STATE_FILE_INSTANCE_MAGIC 0x3321
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_DEFAULT_PATH "net/ecm/ecm_classifier_default"
+
+/*
  * struct ecm_classifier_default_internal_instance
  * 	State to allow tracking of dynamic priority for a connection
  */
@@ -118,6 +112,11 @@ static int ecm_classifier_default_enabled = 1;		/* When disabled the qos algorit
  * Management thread control
  */
 static bool ecm_classifier_default_terminate_pending = false;	/* True when the user wants us to terminate */
+
+/*
+ * sysctl table header
+ */
+static struct ctl_table_header *ecm_classifier_default_ctl_table_header;
 
 /*
  * Character device stuff - used to communicate status back to user space
@@ -653,6 +652,177 @@ static int ecm_classifier_default_state_get(struct ecm_classifier_instance *ci, 
 #endif
 
 /*
+ * ecm_classifier_default_enable_handler()
+ * 	Default classifier enable/disable sysctl node handler
+ */
+static int ecm_classifier_default_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To enable/disable ECM default classifier
+	 *
+	 * Enable ECM default classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_default/enabled
+	 *
+	 * Disable ECM default classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_default/enabled
+	 *
+	 * Te read status
+	 * cat /proc/sys/net/ecm/ecm_classifier_default/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_default_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_default_enabled !=0) && (ecm_classifier_default_enabled != 1)) {
+		ecm_classifier_default_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_default_accel_mode_handler()
+ * 	Proc handler to change acceleration mode
+ */
+static int ecm_classifier_default_accel_mode_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To change mode in which a connection is accelerated
+	 *
+	 * Do not care if the connection is accelerated:
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_default/accel_mode
+	 *
+	 * Connection must not be accelerated
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_default/accel_mode
+	 *
+	 * Connection can be acclerated whenever possible
+	 * echo 2 > /proc/sys/net/ecm/ecm_classifier_default/accel_mode
+	 *
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_classifier_default/accel_mode
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_default_accel_mode;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	switch (ecm_classifier_default_accel_mode) {
+	case ECM_CLASSIFIER_ACCELERATION_MODE_DONT_CARE:
+	case ECM_CLASSIFIER_ACCELERATION_MODE_NO:
+	case ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL:
+		break;
+
+	default:
+		ecm_classifier_default_accel_mode = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1/2\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_accel_delay_pkts_handler()
+ * 	Proc handler to handle slow path packets allowed
+ * 	before acceleration
+ */
+static int ecm_classifier_accel_delay_pkts_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * Default slow path packet to be allowed before acceleration
+	 *
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_default/accel_delay_pkts
+	 * (Acceleration starts immediately)
+	 *
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_default/accel_delay_pkts
+	 * (Acceleration starts after both direction traffic is seen)
+	 *
+	 * echo 2 > /proc/sys/net/ecm/ecm_classifier_default/accel_delay_pkts
+	 * (Acceleration starts after N packets are seen in slow path)
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_default/accel_delay_pkts
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_accel_delay_pkts;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_classifier_accel_delay_pkts < 0) {
+		ecm_classifier_accel_delay_pkts = current_val;
+		DEBUG_ERROR("Invalid input, Valid inout should be positive\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_default_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_default_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_default_enable_handler,
+	},
+	{
+		.procname	= "accel_mode",
+		.data		= &ecm_classifier_default_accel_mode,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_default_accel_mode_handler,
+	},
+	{
+		.procname	= "accel_delay_pkts",
+		.data		= &ecm_classifier_accel_delay_pkts,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_accel_delay_pkts_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_default_instance_alloc()
  *	Allocate an instance of the default classifier
  */
@@ -782,34 +952,47 @@ int ecm_classifier_default_init(struct dentry *dentry)
 
 	DEBUG_ASSERT(ECM_CLASSIFIER_TYPE_DEFAULT == 0, "DO NOT CHANGE DEFAULT PRIORITY");
 
+	/*
+	 * Register sysctl table for default classifier
+	 */
+	ecm_classifier_default_ctl_table_header = register_sysctl(ECM_CLASSIFIER_DEFAULT_PATH, ecm_classifier_default_ctl_table);
+	if (!ecm_classifier_default_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm default classifier directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_default_dentry = debugfs_create_dir("ecm_classifier_default", dentry);
 	if (!ecm_classifier_default_dentry) {
 		DEBUG_ERROR("Failed to create ecm default classifier directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_default_ctl_table_header);
 		return -1;
 	}
 
 	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
 					(u32 *)&ecm_classifier_default_enabled)) {
 		DEBUG_ERROR("Failed to create ecm deafult classifier enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_default_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("accel_mode", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
 					(u32 *)&ecm_classifier_default_accel_mode)) {
 		DEBUG_ERROR("Failed to create ecm deafult classifier accel_mode file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_default_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("accel_delay_pkts", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
 					(u32 *)&ecm_classifier_accel_delay_pkts)) {
 		DEBUG_ERROR("Failed to create accel delay packet counts in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_default_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	return 0;
+
+init_cleanup:
+
+	debugfs_remove_recursive(ecm_classifier_default_dentry);
+	unregister_sysctl_table(ecm_classifier_default_ctl_table_header);
+	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_default_init);
 
@@ -828,6 +1011,13 @@ void ecm_classifier_default_exit(void)
 	 */
 	if (ecm_classifier_default_dentry) {
 		debugfs_remove_recursive(ecm_classifier_default_dentry);
+	}
+
+	/*
+	 * Unregister sysctl header
+	 */
+	if (ecm_classifier_default_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_default_ctl_table_header);
 	}
 }
 EXPORT_SYMBOL(ecm_classifier_default_exit);

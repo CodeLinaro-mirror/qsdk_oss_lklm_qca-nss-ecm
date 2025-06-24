@@ -85,6 +85,18 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(sawf_meta)   ((sawf_meta >> 20) & 0x4)
 
 /*
+ * Default value to Enable emesh classifier and SAWF mode
+ */
+#define ECM_CLASSIFIER_EMESH_SAWF_ENABLE 3
+
+/*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_EMESH_SAWF_PATH "net/ecm/ecm_classifier_emesh"
+
+static struct ctl_table_header *ecm_classifier_emesh_ctl_table_header; /* Sysctl table header */
+
+/*
  * EMESH classifier type.
  */
 enum ecm_classifier_emesh_sawf_types {
@@ -3898,6 +3910,273 @@ defunct_by_priority:
 }
 
 /*
+ * ecm_classifier_emesh_enable_handler()
+ * 	Proc handler to enable or disable emesh classifier
+ */
+static int ecm_classifier_emesh_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To enable/disable ECM emesh classifier
+	 * value 1 and 2 are not used to enable/disable
+	 * emesh classifier since test script uses by default
+	 * 3 to enable emesh.
+	 *
+	 * Enable emesh classifier
+	 * echo 3 > /proc/sys/net/ecm/ecm_classifier_emesh/enabled
+	 *
+	 * Disable emesh classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_emesh/enabled
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_emesh_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_emesh_enabled != 0) && (ecm_classifier_emesh_enabled != ECM_CLASSIFIER_EMESH_SAWF_ENABLE)) {
+		DEBUG_ERROR("Invalid input, Valid input 0 or 3\n");
+		ecm_classifier_emesh_enabled = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_emesh_latency_config_enable_handler()
+ * 	Proc handler to enable or disable mesh latency
+ */
+static int ecm_classifier_emesh_latency_config_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To Add/Update/Disable Mesh latency
+	 *
+	 * Enable SPM rule lookup
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_emesh/latency_config_enabled
+	 *
+	 * Enable latency update
+	 * echo 2 > /proc/sys/net/ecm/ecm_classifier_emesh/latency_config_enabled
+	 *
+	 * Enable both SPM and latency update
+	 * echo 3 > /proc/sys/net/ecm/ecm_classifier_emesh/latency_config_enabled
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/latency_config_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_emesh_latency_config_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_emesh_latency_config_enabled < 0) || (ecm_classifier_emesh_latency_config_enabled > 3)) {
+		DEBUG_ERROR("Invalid input, Valid input 0/1/2/3\n");
+		ecm_classifier_emesh_latency_config_enabled = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_sawf_enable_handler()
+ * 	Proc handler to enable or disable SAWF
+ */
+static int ecm_classifier_sawf_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To enable/disable SAWF mode
+	 * Values 1 and 2 are not used to enable SAWF mode.
+	 * Test script uses by default 3 to enable and 0 to disable.
+	 *
+	 * Enable SAWF mode
+	 * echo 3 > /proc/sys/net/ecm/ecm_classifier_emesh/sawf_enabled
+	 *
+	 * Disable SAWF mode
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_emesh/sawf_enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/sawf_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_sawf_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_sawf_enabled != 0) && (ecm_classifier_sawf_enabled != ECM_CLASSIFIER_EMESH_SAWF_ENABLE)) {
+		DEBUG_ERROR("Invalid input, Valid input 0 or 3\n");
+		ecm_classifier_sawf_enabled = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_sawf_cake_enable_handler()
+ * 	Proc handler to enable or disable CAKE Qdisc flag
+ */
+static int ecm_classifier_sawf_cake_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To enable/disable CAKE Qdisc for SAWF
+	 *
+	 * Enable CAKE Qdisc
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_emesh/cake_enabled
+	 *
+	 * Disable CAKE Qdisc
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_emesh/cake_enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/cake_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_sawf_cake_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operations
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_sawf_cake_enabled != 0) && (ecm_classifier_sawf_cake_enabled != 1)) {
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		ecm_classifier_sawf_cake_enabled = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_3link_mlo_enable_handler()
+ * 	Proc handler to enable or disable 3 link mlo
+ */
+static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 * To enable/disable 3 link MLO
+	 *
+	 * Enable 3 link MLO
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_emesh/3link_mlo_enabled
+	 *
+	 * Disable 3 link MLO
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_emesh/3link_mlo_enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/3link_mlo_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_3link_mlo_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_3link_mlo_enabled != 0) && (ecm_classifier_3link_mlo_enabled != 1)) {
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		ecm_classifier_3link_mlo_enabled = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_emesh_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_emesh_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_emesh_enable_handler,
+	},
+	{
+		.procname	= "latency_config_enabled",
+		.data		= &ecm_classifier_emesh_latency_config_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_emesh_latency_config_enable_handler,
+	},
+	{
+		.procname	= "sawf_enabled",
+		.data		= &ecm_classifier_sawf_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_sawf_enable_handler,
+	},
+	{
+		.procname	= "cake_enabled",
+		.data		= &ecm_classifier_sawf_cake_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_sawf_cake_enable_handler,
+	},
+	{
+		.procname	= "3link_mlo_enabled",
+		.data		= &ecm_classifier_3link_mlo_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_3link_mlo_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_emesh_latency_config_callback_register()
  */
 int ecm_classifier_emesh_latency_config_callback_register(struct ecm_classifier_emesh_sawf_callbacks *emesh_cb)
@@ -4086,52 +4365,56 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 {
 	DEBUG_INFO("SAWF EMESH classifier Module init\n");
 
+	/*
+	 * Register sysctl table for EMESH classifier
+	 */
+	ecm_classifier_emesh_ctl_table_header = register_sysctl(ECM_CLASSIFIER_EMESH_SAWF_PATH, ecm_classifier_emesh_ctl_table);
+	if (!ecm_classifier_emesh_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm emesh directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_emesh_sawf_dentry = debugfs_create_dir("ecm_classifier_emesh", dentry);
 	if (!ecm_classifier_emesh_sawf_dentry) {
 		DEBUG_ERROR("Failed to create ecm emesh directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_emesh_ctl_table_header);
 		return -1;
 	}
 
 	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_emesh_enabled)) {
 		DEBUG_ERROR("Failed to create ecm emesh classifier enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_emesh_latency_config_enabled)) {
 		DEBUG_ERROR("Failed to create ecm emesh classifier latency config enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("sawf_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_sawf_enabled)) {
 		DEBUG_ERROR("Failed to create ecm sawf classifier  enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_sawf_cake_enabled)) {
 		DEBUG_ERROR("Failed to create ecm sawf cake enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				NULL, &ecm_classifier_sawf_emesh_udp_ipsec_port_fops)) {
 		DEBUG_ERROR("Failed to create ecm sawf udp ipsec port file in debugfs for adding port number\n");
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!ecm_debugfs_create_u32("3link_mlo_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
                                 (u32 *)&ecm_classifier_3link_mlo_enabled)) {
                 DEBUG_ERROR("Failed to create 3 link MLO enabled file in debugfs\n");
-                debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-                return -1;
+		goto init_cleanup;
         }
 
 	/*
@@ -4140,6 +4423,12 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	sp_mapdb_notifier_register(&ecm_classifier_emesh_sawf_spm_notifier);
 
 	return 0;
+
+init_cleanup:
+
+	debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+	unregister_sysctl_table(ecm_classifier_emesh_ctl_table_header);
+	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_init);
 
@@ -4388,5 +4677,12 @@ void ecm_classifier_emesh_sawf_exit(void)
 	 * Unregister service prioritization notification update.
 	 */
 	sp_mapdb_notifier_unregister(&ecm_classifier_emesh_sawf_spm_notifier);
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_classifier_emesh_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_emesh_ctl_table_header);
+	}
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_exit);
