@@ -382,6 +382,11 @@ ECM_DB_ADVANCED_STATS_ENABLE=y
 ccflags-$(ECM_DB_ADVANCED_STATS_ENABLE) += -DECM_DB_ADVANCED_STATS_ENABLE
 
 # #############################################################################
+# Define ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE to support state output
+# #############################################################################
+ccflags-$(ECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE) += -DECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE
+
+# #############################################################################
 # Define ECM_DB_CONNECTION_CROSS_REFERENCING_ENABLE=y in order to enable
 # the database to track relationships between objects.
 # #############################################################################
