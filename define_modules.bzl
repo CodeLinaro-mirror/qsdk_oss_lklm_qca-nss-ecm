@@ -51,9 +51,13 @@ def define_modules(target, variant):
             "frontends/sfe/ecm_sfe_ported_ipv6.c",
             "frontends/sfe/ecm_sfe_ipv6.c",
             "frontends/sfe/ecm_sfe_stats_v6.c",
+	    "ecm_sdx/ecm_sdx_stats.c",
+	    "ecm_sdx/ecm_sdx.c",
         ],
         kernel_build = "//msm-kernel:{}-defconfig".format(kernel_build_variant),
         copts = [
+	    "-DECM_DB_PER_CLIENT_ROUTED_STATS_ENABLE=y",
+	    "-DECM_SDX_STATS_ENABLE=y",
             "-DECM_CLASSIFIER_PCC_ENABLE=y",
             "-DECM_INTERFACE_RAWIP_ENABLE=y",
             "-DECM_INTERFACE_RAWIP_ENABLE=y",
