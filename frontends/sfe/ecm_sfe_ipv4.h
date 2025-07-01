@@ -18,6 +18,11 @@
 #define __ECM_SFE_IPV4_H
 #include <sfe_api.h>
 
+/*
+ * Default path for sysctl
+ */
+#define ECM_SFE_IPV4_PATH "net/ecm/ecm_sfe_ipv4"
+
 extern int ecm_sfe_ipv4_no_action_limit_default;		/* Default no-action limit. */
 extern int ecm_sfe_ipv4_driver_fail_limit_default;		/* Default driver fail limit. */
 extern int ecm_sfe_ipv4_nack_limit_default;			/* Default nack limit. */

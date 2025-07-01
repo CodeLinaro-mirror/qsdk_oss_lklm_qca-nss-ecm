@@ -17,6 +17,8 @@
  **************************************************************************
  */
 
+#define ECM_CLASSIFIER_UDP_IPSEC_PORT 5200	/* Default port for UDP IPsec */
+
 extern int ecm_classifier_accel_delay_pkts;	/* Default slow path packets allowed before the acceleration */
 
 struct ecm_classifier_instance;

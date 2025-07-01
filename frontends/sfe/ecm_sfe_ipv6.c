@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -106,6 +95,8 @@
 
 #define ECM_SFE_IPV6_STATS_SYNC_PERIOD msecs_to_jiffies(1000)
 #define ECM_SFE_IPV6_STATS_SYNC_UDELAY 4000	/* Delay for 4ms */
+
+static struct ctl_table_header *ecm_sfe_ipv6_ctl_table_header;	/* Sysctl table header */
 
 int ecm_sfe_ipv6_no_action_limit_default = 250;		/* Default no-action limit. */
 int ecm_sfe_ipv6_driver_fail_limit_default = 250;		/* Default driver fail limit. */
@@ -605,41 +596,6 @@ static void ecm_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg
 
 	ecm_sfe_ipv6_process_one_conn_sync_msg(sync);
 }
-/*
- * ecm_sfe_ipv6_get_accel_limit_mode()
- */
-static int ecm_sfe_ipv6_get_accel_limit_mode(void *data, u64 *val)
-{
-	*val = ecm_sfe_ipv6_accel_limit_mode;
-
-	return 0;
-}
-
-/*
- * ecm_sfe_ipv6_set_accel_limit_mode()
- */
-static int ecm_sfe_ipv6_set_accel_limit_mode(void *data, u64 val)
-{
-	DEBUG_TRACE("ecm_sfe_ipv6_accel_limit_mode = %x\n", (int)val);
-
-	/*
-	 * Check that only valid bits are set.
-	 * It's fine for no bits to be set as that suggests no modes are wanted.
-	 */
-	if (val && (val ^ (ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED | ECM_FRONT_END_ACCEL_LIMIT_MODE_UNLIMITED))) {
-		DEBUG_WARN("ecm_sfe_ipv6_accel_limit_mode = %x bad\n", (int)val);
-		return -EINVAL;
-	}
-
-	ecm_sfe_ipv6_accel_limit_mode = (int)val;
-
-	return 0;
-}
-
-/*
- * Debugfs attribute for accel limit mode.
- */
-DEFINE_SIMPLE_ATTRIBUTE(ecm_sfe_ipv6_accel_limit_mode_fops, ecm_sfe_ipv6_get_accel_limit_mode, ecm_sfe_ipv6_set_accel_limit_mode, "%llu\n");
 
 /*
  * ecm_sfe_ipv6_get_accel_cmd_average_millis()
@@ -938,12 +894,262 @@ static void ecm_sfe_ipv6_sync_queue_exit(void)
 }
 
 /*
+ * ecm_sfe_ipv6_accel_limit_mode_handler()
+ * 	Proc handler to limit the number of connection
+ */
+static int ecm_sfe_ipv6_accel_limit_mode_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To limit the number of acceleration
+	 * echo 1 > /proc/sys/net/ecm/ecm_sfe_ipv6/accel_limit_mode
+	 *
+	 * To disable acceleration limitations
+	 * echo 0 > /proc/sys/net/ecm/ecm_sfe_ipv6/accel_limit_mode
+	 *
+	 * To read status
+	 * cat echo 0 > /proc/sys/net/ecm/ecm_sfe_ipv6/accel_limit_mode
+	 */
+
+	int ret;
+	uint32_t current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_sfe_ipv6_accel_limit_mode;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	/*
+	 * Check if input contains only allowed accel limit bits
+	 */
+	if (ecm_sfe_ipv6_accel_limit_mode & ~(ECM_FRONT_END_ACCEL_LIMIT_MODE_FIXED | ECM_FRONT_END_ACCEL_LIMIT_MODE_UNLIMITED)) {
+		DEBUG_ERROR("ecm_sfe_ipv6_accel_limit_mode %x bad\n", ecm_sfe_ipv6_accel_limit_mode);
+		ecm_sfe_ipv6_accel_limit_mode = current_val;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_sfe_ipv6_driver_fail_limit_default_handler()
+ * 	Proc handler to limit driver interactions failure
+ */
+static int ecm_sfe_ipv6_driver_fail_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To limit number of SFE interaction failure (x >= 0)
+	 * echo x > /proc/sys/net/ecm/ecm_sfe_ipv6/driver_fail_limit_default
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_sfe_ipv6/driver_fail_limit_default
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_sfe_ipv6_driver_fail_limit_default;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_sfe_ipv6_driver_fail_limit_default < 0) {
+		ecm_sfe_ipv6_driver_fail_limit_default = current_val;
+		DEBUG_ERROR("Invalid input, valid input positive integer\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_sfe_ipv6_nack_limit_default_handler()
+ * 	Proc handler to handle nack limit
+ */
+static int ecm_sfe_ipv6_nack_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To handle number of nack from SFE (x >= 0)
+	 * echo x > /proc/sys/net/ecm/ecm_sfe_ipv6/nack_limit_default
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_sfe_ipv6/nack_limit_default
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_sfe_ipv6_nack_limit_default;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_sfe_ipv6_nack_limit_default < 0) {
+		ecm_sfe_ipv6_nack_limit_default = current_val;
+		DEBUG_ERROR("Invalid input, valid input positive interger\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_sfe_ipv6_no_action_limit_default_handler()
+ * 	Proc handler to set default no action limit
+ */
+static int ecm_sfe_ipv6_no_action_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To set number of no action seen from frontend (x >= 0)
+	 * echo x > /proc/sys/net/ecm/ecm_sfe_ipv6/no_action_limit_default
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_sfe_ipv6/no_action_limit_default
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_sfe_ipv6_no_action_limit_default;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_sfe_ipv6_no_action_limit_default < 0) {
+		ecm_sfe_ipv6_no_action_limit_default = current_val;
+		DEBUG_ERROR("Invalid input, valid input positive integer\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+#ifdef CONFIG_XFRM
+/*
+ * ecm_sfe_ipv6_reject_acceleration_for_ipsec_handler()
+ * 	Proc handler to enable/disable IPsec acceleration
+ */
+static int ecm_sfe_ipv6_reject_acceleration_for_ipsec_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable IPsec acceleration
+	 * echo 1 > /proc/sys/net/ecm/ecm_sfe_ipv6/reject_acceleration_for_ipsec
+	 *
+	 * Disable IPsec acceleration
+	 * echo 0 > /proc/sys/net/ecm/ecm_sfe_ipv6/reject_acceleration_for_ipsec
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_sfe_ipv6/reject_acceleration_for_ipsec
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_sfe_ipv6_reject_acceleration_for_ipsec;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_sfe_ipv6_reject_acceleration_for_ipsec != 0) && (ecm_sfe_ipv6_reject_acceleration_for_ipsec != 1)) {
+		ecm_sfe_ipv6_reject_acceleration_for_ipsec = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+#endif
+
+static struct ctl_table ecm_sfe_ipv6_ctl_table[] = {
+	{
+		.procname	= "accel_limit_mode",
+		.data		= &ecm_sfe_ipv6_accel_limit_mode,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_ipv6_accel_limit_mode_handler,
+	},
+	{
+		.procname	= "driver_fail_limit_default",
+		.data		= &ecm_sfe_ipv6_driver_fail_limit_default,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_ipv6_driver_fail_limit_default_handler,
+	},
+	{
+		.procname	= "nack_limit_default",
+		.data		= &ecm_sfe_ipv6_nack_limit_default,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_ipv6_nack_limit_default_handler,
+	},
+	{
+		.procname	= "no_action_limit_default",
+		.data		= &ecm_sfe_ipv6_no_action_limit_default,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_ipv6_no_action_limit_default_handler,
+	},
+#ifdef CONFIG_XFRM
+	{
+		.procname	= "reject_acceleration_for_ipsec",
+		.data		= &ecm_sfe_ipv6_reject_acceleration_for_ipsec,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_ipv6_reject_acceleration_for_ipsec_handler,
+	},
+#endif
+	{ }
+};
+
+/*
  * ecm_sfe_ipv6_init()
  */
 int ecm_sfe_ipv6_init(struct dentry *dentry)
 {
-	int result = -1;
-
 	struct dentry *ecm_stats_dentry = NULL;
 
 	if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_SFE)) {
@@ -953,36 +1159,17 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 
 	DEBUG_INFO("ECM SFE IPv6 init\n");
 
+	ecm_sfe_ipv6_ctl_table_header = register_sysctl(ECM_SFE_IPV6_PATH, ecm_sfe_ipv6_ctl_table);
+	if (!ecm_sfe_ipv6_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm sfe ipv6 directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_sfe_ipv6_dentry = debugfs_create_dir("ecm_sfe_ipv6", dentry);
 	if (!ecm_sfe_ipv6_dentry) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 directory in debugfs\n");
-		return result;
-	}
-
-#ifdef CONFIG_XFRM
-	if (!ecm_debugfs_create_u32("reject_acceleration_for_ipsec", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_reject_acceleration_for_ipsec)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 reject_acceleration_for_ipsec file in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
-
-	if (!ecm_debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_no_action_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 no_action_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_driver_fail_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 driver_fail_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_nack_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 nack_limit_default file in debugfs\n");
-		goto task_cleanup;
+		unregister_sysctl_table(ecm_sfe_ipv6_ctl_table_header);
+		return -1;
 	}
 
 	if (!ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv6_dentry,
@@ -1000,12 +1187,6 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 	if (!ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv6_dentry,
 					(u32 *)&ecm_sfe_ipv6_pending_decel_count)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 pending_decel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_limit_mode", S_IRUGO | S_IWUSR, ecm_sfe_ipv6_dentry,
-					NULL, &ecm_sfe_ipv6_accel_limit_mode_fops)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 accel_limit_mode file in debugfs\n");
 		goto task_cleanup;
 	}
 
@@ -1065,6 +1246,7 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 #ifndef ECM_FRONT_END_NSS_ENABLE
 	if (ecm_sfe_multicast_ipv6_init(ecm_sfe_ipv6_dentry)) {
 		DEBUG_ERROR("Failed to init sfe multicast\n");
+		ecm_sfe_ipv6_sync_queue_exit();
 		goto task_cleanup;
 	}
 #endif
@@ -1077,7 +1259,8 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 task_cleanup:
 
 	debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
-	return result;
+	unregister_sysctl_table(ecm_sfe_ipv6_ctl_table_header);
+	return -1;
 }
 EXPORT_SYMBOL(ecm_sfe_ipv6_init);
 
@@ -1110,6 +1293,13 @@ void ecm_sfe_ipv6_exit(void)
 	 */
 	if (ecm_sfe_ipv6_dentry) {
 		debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_sfe_ipv6_ctl_table_header) {
+		unregister_sysctl_table(ecm_sfe_ipv6_ctl_table_header);
 	}
 }
 EXPORT_SYMBOL(ecm_sfe_ipv6_exit);
