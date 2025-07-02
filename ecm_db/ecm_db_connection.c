@@ -5268,7 +5268,7 @@ static struct ctl_table ecm_db_connection_ctl_table[] = {
 		.procname	= "defunct_by_5tuple_mask",
 		.data		= NULL,
 		.maxlen		= sizeof(int),
-		.mode		= 0644,
+		.mode		= 0666,
 		.proc_handler	= &ecm_db_connection_defunct_by_5tuple_mask_handler,
 	},
 	{ }
