@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -218,6 +207,7 @@ static inline uint32_t ecm_wifi_plugin_emesh_sawf_get_mark_data(struct ecm_class
 	metadata.sawf_param.dscp = sawf_flow_info->dscp;
 	metadata.sawf_param.valid_flag = ecm_wifi_plugin_emesh_ecm_valid_to_wifi_valid(sawf_flow_info->valid_flag);
 	metadata.sawf_param.mcast_flag = sawf_flow_info->is_mc_flow;
+	metadata.is_scs_mscs = sawf_flow_info->is_scs_mscs;
 
 	ecm_wifi_plugin_info("Mark SAWF params: rule_type: %u, pcp: %u, dscp: %u, service_id %u, rule_id %u\n, valid_flag %u, mcast_flag: %u, net_device: %s, peer_mac: %pM\n",
 			     metadata.sawf_param.sawf_rule_type,

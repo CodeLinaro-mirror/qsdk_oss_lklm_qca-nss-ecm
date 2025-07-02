@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2018, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 #include <linux/version.h>
@@ -66,6 +55,10 @@
 #include "ecm_front_end_types.h"
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
+#include "ecm_front_end_ipv4.h"
+#ifdef ECM_IPV6_ENABLE
+#include "ecm_front_end_ipv6.h"
+#endif
 
 /*
  * Global list.
@@ -1206,6 +1199,117 @@ keep_sni_conn:
 }
 #endif
 #endif
+
+/*
+ * ecm_db_traverse_node_connection_list_and_defunct_by_qm()
+ *	Defunc connections based on mac addr, qm id and qm type
+ */
+void ecm_db_traverse_node_connection_list_and_defunct_by_qm(struct ecm_db_node_instance *node,
+							    ecm_db_obj_dir_t dir, int ip_version,
+							    ecm_db_connection_defunct_type_t type,
+							    uint8_t wifi_qm_type, uint8_t wifi_qm_id)
+{
+	struct ecm_db_connection_instance *ci = NULL;
+	struct ecm_db_connection_defunct_info info;
+	struct ecm_classifier_instance *aci;
+	struct ecm_db_connection_defunct_info defunct_info;
+
+	memcpy(info.mac, node->address, ETH_ALEN);
+	info.type = type;
+
+	defunct_info.wifi_qm_id = wifi_qm_id;
+	defunct_info.wifi_qm_type = wifi_qm_type;
+	defunct_info.type = ECM_DB_CONNECTION_DEFUNCT_TYPE_SCS_MSCS_TEARDOWN;
+
+	/*
+	 * Iterate all from connections
+	 */
+	ci = ecm_db_node_connections_get_and_ref_first(node, dir);
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+
+		aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_WIFI);
+		if (!aci) {
+			DEBUG_WARN("wifi classifier is not assigned. ci=%px %u\n", ci, ci->serial);
+			goto next_conn;
+		}
+
+		defunct_info.should_keep_connection = true;
+
+		if (aci->should_keep_connection) {
+			aci->should_keep_connection(aci, &defunct_info);
+			if (!defunct_info.should_keep_connection) {
+				ecm_db_connection_make_defunct(ci);
+			}
+		}
+next_conn:
+		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+	DEBUG_INFO("%px: Defuncting from node connection list by qm complete\n", node);
+}
+
+/*
+ * ecm_db_node_defunct_qm_connections()
+ *	Get db node for mac address and defunc connections based on mac addr, qm id and qm type
+ */
+void ecm_db_node_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint8_t wifi_qm_id)
+{
+	struct ecm_db_node_instance *ni = NULL;
+
+	DEBUG_INFO("Defunct connections assigned to wifi qm based on qm_type and qm_id\n");
+	int ip_version = ECM_DB_IP_VERSION_IGNORE;
+	ecm_db_connection_defunct_type_t type = ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE;
+
+	/*
+	 * Disable frontend processing temporarily until defunct function call is completed.
+	 */
+	ecm_front_end_ipv4_stop_temp(1);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop_temp(1);
+#endif
+	ni = ecm_db_node_chain_get_and_ref_first(mac);
+	while (ni) {
+		struct ecm_db_node_instance *nin;
+
+		if (ecm_db_node_is_mac_addr_equal(ni, mac)) {
+			int dir;
+			/*
+			 * FROM and TO directions are enough to destroy all the connections.
+			 * FROM_NAT and TO_NAT have the same list of connections.
+			 */
+
+			for (dir = 0; dir <= ECM_DB_OBJ_DIR_TO; dir++) {
+				/*
+				 * If there is connection on this node, call the defunct function.
+				 */
+				if (ecm_db_node_get_connections_count(ni, dir))
+					ecm_db_traverse_node_connection_list_and_defunct_by_qm(ni, dir, ip_version, type, wifi_qm_type, wifi_qm_id);
+			}
+			/*
+			 * node was found and connections are destroyed, we are done.
+			 */
+			ecm_db_node_deref(ni);
+			break;
+		}
+
+		/*
+		 * Get next node in the chain
+		 */
+		nin = ecm_db_node_chain_get_and_ref_next(ni);
+		ecm_db_node_deref(ni);
+		ni = nin;
+	}
+
+	/*
+	 * Re-enable frontend processing.
+	 */
+	ecm_front_end_ipv4_stop_temp(0);
+#ifdef ECM_IPV6_ENABLE
+	ecm_front_end_ipv6_stop_temp(0);
+#endif
+}
 
 /*
  * ecm_db_node_init()

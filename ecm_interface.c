@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -145,10 +134,32 @@
 #endif
 #include "ecm_front_end_common.h"
 
+/*
+ * TODO:
+ * The following NL80211_ macros should be removed once the
+ * WLAN driver side changes (nl80211.h changes) are merged
+ */
+#define NL80211_QM_DESC_ATTR_MAX 7
+#define NL80211_QM_ATTR_MAX 4
+#define NL80211_QM_ATTR_MAC_ADDR 1
+#define NL80211_QM_ATTR_QM_TYPE 2
+#define NL80211_QM_ATTR_DESCRIPTOR_PARAMS 4
+
+#define NL80211_QM_DESC_ATTR_QM_ID 1
+#define NL80211_QM_DESC_ATTR_REQUEST_TYPE 2
+
+#define NL80211_ATTR_QOS_MGMT 357
+#define NL80211_CMD_QOS_MGMT 165
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 #define ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID	-1
 #define ECM_INTERFACE_GENEL_MESSAGE_SIZE		4096
 #endif
+
+#define ECM_INTERFACE_WIFI_QM_TYPE_SCS_REQUEST		0
+
+#define ECM_INTERFACE_WIFI_QM_SCS_REQ_REMOVE		1
+#define ECM_INTERFACE_WIFI_QM_SCS_REQ_CHANGE		2
 
 /*
  * Peer authorization event coming from WLAN driver.
@@ -244,7 +255,284 @@ int ecm_interface_src_check_no_flush;
 int ecm_interface_igs_enabled;
 #endif
 
+/*
+ * struct ecm_interface_netdev_hook_entry
+ *	Holds the netdev hook entry information
+ */
+struct ecm_interface_netdev_hook_entry {
+	struct list_head list;
+	struct nf_hook_ops nfho;
+};
+
 static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table header */
+
+static LIST_HEAD(ecm_interface_netdev_hook_reg_list);
+
+/*
+ * ecm_interface_handle_wlan_egress_packet()
+ *	Process the packets that need WLAN QoS handling
+ */
+int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
+{
+	__u8 proto;
+	int ip_version;
+	ip_addr_t src_ip, dst_ip;
+	struct ecm_db_connection_instance *ci;
+	struct ecm_front_end_flowsawf_msg msg;
+	struct ecm_classifier_instance *aci;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conntrack_tuple orig_tuple;
+	struct nf_conntrack_tuple reply_tuple;
+	u8 l3proto;
+	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+	int aci_index;
+	int assignment_count;
+
+	ct = nf_ct_get(skb, &ctinfo);
+	if (!ct) {
+		DEBUG_TRACE("%px: no ct\n", skb);
+		return -1;
+	}
+
+	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
+	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
+
+	l3proto = orig_tuple.src.l3num;
+	proto = orig_tuple.dst.protonum;
+
+	if (l3proto == NFPROTO_IPV4) {
+		ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
+		if (!ci) {
+			DEBUG_TRACE("%px: connection not found\n", ct);
+			return -1;
+		}
+
+		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.ip);
+		ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.ip);
+		ip_version = 4;
+	} else if (l3proto == NFPROTO_IPV6) {
+		ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
+		if (!ci) {
+			DEBUG_TRACE("%px: connection not found\n", ct);
+			return -1;
+		}
+
+		ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.in6);
+		ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.in6);
+		ip_version = 6;
+	} else {
+		DEBUG_TRACE("%px: Unsupported protocol %d\n", ct, l3proto);
+		return -1;
+	}
+
+	ECM_IP_ADDR_COPY(msg.flow_src_ip, src_ip);
+	ECM_IP_ADDR_COPY(msg.flow_dest_ip, dst_ip);
+	msg.flow_mark = skb->mark;
+	msg.ip_version = ip_version;
+	msg.protocol = proto;
+
+	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
+
+	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+		aci = assignments[aci_index];
+		if (aci->update) {
+			aci->update(aci, ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM, &msg);
+		}
+	}
+
+	ecm_db_connection_assignments_release(assignment_count, assignments);
+
+	ecm_db_connection_deref(ci);
+
+	return 0;
+}
+
+/*
+ * ecm_interface_wlan_egress_netdev_hookfn()
+ *	Process the SCS and MSCS tagged packets
+ */
+static unsigned int ecm_interface_wlan_egress_netdev_hookfn(void *priv,
+							    struct sk_buff *skb,
+							    const struct nf_hook_state *state)
+{
+	int ret;
+
+	if (((skb->mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_SCS_TAG) ||
+	    ((skb->mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_MSCS_TAG)) {
+		ret = ecm_interface_handle_wlan_egress_packet(skb);
+		if (ret) {
+			DEBUG_TRACE("%px WLAN egress packet handling failed, mark : 0x%x, err: %d\n", skb, skb->mark, ret);
+		}
+	}
+
+	return NF_ACCEPT;
+}
+
+/*
+ * ecm_interface_pop_netdev_hook_reg_list()
+ *	Pop a hook entry from the global list ecm_interface_netdev_hook_reg_list
+ */
+static struct ecm_interface_netdev_hook_entry *
+ecm_interface_pop_netdev_hook_reg_list(void)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry = NULL;
+
+	spin_lock_bh(&ecm_interface_lock);
+
+	if (list_empty(&ecm_interface_netdev_hook_reg_list)) {
+		goto end;
+	} else {
+		hook_entry = list_first_entry(&ecm_interface_netdev_hook_reg_list, struct ecm_interface_netdev_hook_entry, list);
+		list_del(&hook_entry->list);
+	}
+
+end:
+	spin_unlock_bh(&ecm_interface_lock);
+	return hook_entry;
+}
+
+/*
+ * ecm_interface_unregister_nf_hook()
+ *	Unregister nf hook
+ */
+void ecm_interface_unregister_nf_hook(struct ecm_interface_netdev_hook_entry *hook_entry)
+{
+	DEBUG_TRACE("unregister nf hook :%s ", hook_entry->nfho.dev->name);
+	nf_unregister_net_hook(&init_net, &hook_entry->nfho);
+}
+
+/*
+ *ecm_interface_unregister_nf_hook_wlan_device()
+ *	Unregister nf hook for wlan devices
+ */
+static void ecm_interface_unregister_nf_hook_wlan_device(void)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+
+	while ((hook_entry = ecm_interface_pop_netdev_hook_reg_list())) {
+		ecm_interface_unregister_nf_hook(hook_entry);
+		kfree(hook_entry);
+	}
+}
+
+/*
+ * ecm_interface_is_nf_hookfn_entry_present()
+ *	Check whether the hookfn entry is present in the global list
+ */
+static bool ecm_interface_is_nf_hookfn_entry_present(struct net_device *dev, nf_hookfn *hookfn)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+
+	spin_lock_bh(&ecm_interface_lock);
+
+	list_for_each_entry(hook_entry, &ecm_interface_netdev_hook_reg_list, list) {
+		if (hook_entry->nfho.dev == dev && hook_entry->nfho.hook == hookfn) {
+			spin_unlock_bh(&ecm_interface_lock);
+			return true;
+		}
+	}
+
+	spin_unlock_bh(&ecm_interface_lock);
+
+	return false;
+}
+
+/*
+ * ecm_interface_check_dup_and_add_nf_hookfn_entry()
+ *	Check whether the hookfn entry is present in the global list.
+ *	If not, add it in the global list
+ */
+static bool ecm_interface_check_dup_and_add_nf_hookfn_entry(struct ecm_interface_netdev_hook_entry *new_hook_entry)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+
+	spin_lock_bh(&ecm_interface_lock);
+
+	list_for_each_entry(hook_entry, &ecm_interface_netdev_hook_reg_list, list) {
+		if (hook_entry->nfho.dev == new_hook_entry->nfho.dev &&
+		    hook_entry->nfho.hook == new_hook_entry->nfho.hook) {
+			spin_unlock_bh(&ecm_interface_lock);
+			return true;
+		}
+	}
+
+	list_add_tail(&new_hook_entry->list, &ecm_interface_netdev_hook_reg_list);
+	spin_unlock_bh(&ecm_interface_lock);
+
+	return false;
+}
+
+/*
+ * ecm_interface_add_nf_hookfn_entry()
+ *	Register nf hook and add the hook entry to the global hook entry list
+ */
+void ecm_interface_add_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+	int ret;
+
+	hook_entry = kzalloc(sizeof(*hook_entry), GFP_ATOMIC);
+	if (!hook_entry) {
+		DEBUG_WARN("Failed to allocate hook entry%s\n", dev->name);
+		return;
+	}
+
+	hook_entry->nfho.pf = NFPROTO_NETDEV;
+	hook_entry->nfho.hooknum = NF_NETDEV_EGRESS;
+	hook_entry->nfho.hook = ecm_interface_wlan_egress_netdev_hookfn;
+	hook_entry->nfho.priority = NF_IP_PRI_LAST;
+	hook_entry->nfho.dev = dev;
+
+	ret = nf_register_net_hook(&init_net, &hook_entry->nfho);
+	if (ret) {
+		DEBUG_WARN("Failed to register netdev hook on %s err : %d\n", dev->name, ret);
+		kfree(hook_entry);
+		return;
+	}
+
+	ret = ecm_interface_check_dup_and_add_nf_hookfn_entry(hook_entry);
+	if (ret) {
+		DEBUG_TRACE("hook entry already present, iface %s", dev->name);
+		nf_unregister_net_hook(&init_net, &hook_entry->nfho);
+		kfree(hook_entry);
+	}
+
+	DEBUG_TRACE("Netdev egress hook register for iface %s success", dev->name);
+}
+
+/*
+ * ecm_interface_remove_nf_hookfn_entry()
+ *	Remove hook entry from the global hook entry list and unregister the nf hook
+ */
+void ecm_interface_remove_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+	struct ecm_interface_netdev_hook_entry *temp;
+	bool match_found = false;
+
+	spin_lock_bh(&ecm_interface_lock);
+
+	list_for_each_entry_safe(hook_entry, temp, &ecm_interface_netdev_hook_reg_list, list) {
+		if (hook_entry->nfho.dev == dev && hook_entry->nfho.hook == hookfn) {
+			list_del(&hook_entry->list);
+			match_found = true;
+			break;
+		}
+	}
+
+	spin_unlock_bh(&ecm_interface_lock);
+
+	if (!match_found) {
+		DEBUG_TRACE("No hook entry match found for iface %s", dev->name);
+		return;
+	}
+
+	ecm_interface_unregister_nf_hook(hook_entry);
+	kfree(hook_entry);
+
+	DEBUG_TRACE("Netdev egress hook unregister for iface %s", dev->name);
+}
 
 #ifdef ECM_INTERFACE_OVPN_ENABLE
 /*
@@ -7969,6 +8257,12 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		break;
 
 	case NETDEV_UNREGISTER:
+		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER %s \n", dev, dev->name);
+		if (dev->ieee80211_ptr &&
+		    ecm_interface_is_nf_hookfn_entry_present(dev, ecm_interface_wlan_egress_netdev_hookfn)) {
+			ecm_interface_remove_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+		}
+
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
 		/*
 		 * 'ppe_vxlantun' is the name of the dummy or the child netdevice.
@@ -8002,6 +8296,12 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 		}
 		break;
 
+	case NETDEV_REGISTER:
+		DEBUG_INFO("Net device: %px, NETDEV_UP %s \n", dev, dev->name);
+		if (dev->ieee80211_ptr) {
+			ecm_interface_add_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+		}
+		break;
 	default:
 		DEBUG_TRACE("Net device: %px, UNHANDLED: %lx\n", dev, event);
 		break;
@@ -8523,6 +8823,97 @@ static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *
 	return kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
 }
 
+/*
+ * ecm_interface_wifi_process_qos_mgmt_event()
+ *	Parse and process qos mgmt events received from Wi-Fi.
+ */
+void ecm_interface_wifi_process_qos_mgmt_event(struct nlmsghdr *nlh, int cmd)
+{
+	u8 peer_mac[ETH_ALEN];
+	u8 wifi_qm_type;
+	int rem_qm_desc;
+	struct genlmsghdr *gnlh;
+	struct nlattr *tb_qos_mgmt_desc;
+	struct nlattr *tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_MAX + 1];
+	struct nlattr **attrs = NULL;
+	int err;
+	uint8_t wifi_qm_id;
+	uint8_t request_type;
+	struct nlattr **tb_qos_mgmt = NULL;
+
+	gnlh = nlmsg_data(nlh);
+
+	DEBUG_TRACE("Received NL80211_CMD_QOS_MGMT");
+
+	attrs = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
+	if (!attrs) {
+		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
+		return;
+	}
+
+	tb_qos_mgmt = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
+	if (!tb_qos_mgmt) {
+		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
+		kfree(attrs);
+		return;
+	}
+
+	/*
+	 * Parse the top-level nl80211 attributes into attrs
+	 */
+	err = nla_parse(attrs, NL80211_ATTR_MAX,
+			nlmsg_attrdata(nlh, GENL_HDRLEN),
+			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL,
+			NULL);
+
+	if (err) {
+		DEBUG_WARN("nla_parse failed: %d\n", err);
+		goto end;
+	}
+
+	if (!attrs[NL80211_ATTR_QOS_MGMT]) {
+		DEBUG_WARN("attrs[NL80211_ATTR_QOS_MGMT] is NULL: %d\n", err);
+		goto end;
+	}
+
+	nla_parse_nested(tb_qos_mgmt, NL80211_QM_ATTR_MAX,
+			 attrs[NL80211_ATTR_QOS_MGMT],
+			 NULL, NULL);
+
+	if (!tb_qos_mgmt[NL80211_QM_ATTR_MAC_ADDR] ||
+	    !tb_qos_mgmt[NL80211_QM_ATTR_QM_TYPE] ||
+	    !tb_qos_mgmt[NL80211_QM_ATTR_DESCRIPTOR_PARAMS]) {
+		DEBUG_WARN("error parsing mac addr, qm_type and descriptor params\n");
+		goto end;
+	}
+
+	ether_addr_copy(peer_mac, nla_data(tb_qos_mgmt[NL80211_QM_ATTR_MAC_ADDR]));
+
+	wifi_qm_type = nla_get_u8(tb_qos_mgmt[NL80211_QM_ATTR_QM_TYPE]);
+
+	DEBUG_TRACE("peer mac : %pM qm_type : %d\n", peer_mac, wifi_qm_type);
+
+	if (wifi_qm_type == ECM_INTERFACE_WIFI_QM_TYPE_SCS_REQUEST) {
+		nla_for_each_nested(tb_qos_mgmt_desc, tb_qos_mgmt[NL80211_QM_ATTR_DESCRIPTOR_PARAMS], rem_qm_desc) {
+			nla_parse_nested(tb_qos_mgmt_desc_entry, NL80211_QM_DESC_ATTR_MAX, tb_qos_mgmt_desc, NULL, NULL);
+			/*
+			 * Extract QM desc attributes
+			 */
+			request_type = nla_get_u8(tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_REQUEST_TYPE]);
+			if (request_type == ECM_INTERFACE_WIFI_QM_SCS_REQ_REMOVE ||
+			    request_type == ECM_INTERFACE_WIFI_QM_SCS_REQ_CHANGE) {
+				wifi_qm_id = nla_get_u8(tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_QM_ID]);
+				DEBUG_TRACE("Defunct connections mac : %pM wifi_qm_type : %d wifi_qm_id : %d\n", peer_mac, wifi_qm_type, wifi_qm_id);
+				ecm_db_node_defunct_qm_connections(&peer_mac[0], wifi_qm_type, wifi_qm_id);
+			}
+		}
+	}
+
+end:
+	kfree(tb_qos_mgmt);
+	kfree(attrs);
+}
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 /*
  * ecm_interface_wifi_process_link_events()
@@ -8601,6 +8992,9 @@ static int ecm_interface_wifi_event_handler(void *buf, int len)
 		case NL80211_CMD_NEW_STATION:
 		case NL80211_CMD_DEL_STATION:
 			ecm_interface_wifi_process_link_events(nlh, hdr->cmd);
+			break;
+		case NL80211_CMD_QOS_MGMT:
+			ecm_interface_wifi_process_qos_mgmt_event(nlh, hdr->cmd);
 			break;
 		}
 
@@ -10158,6 +10552,25 @@ static struct notifier_block ecm_interface_netevent_notifier = {
 };
 
 /*
+ * ecm_interface_register_nf_hook_wlan_device()
+ *	Register nf hook for wlan interfaces
+ */
+void ecm_interface_register_nf_hook_wlan_device(void)
+{
+	struct net_device *dev;
+
+	rtnl_lock();
+
+	for_each_netdev(&init_net, dev) {
+		if (dev->ieee80211_ptr) {
+			ecm_interface_add_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+		}
+	}
+
+	rtnl_unlock();
+}
+
+/*
  * ecm_interface_init()
  */
 int ecm_interface_init(void)
@@ -10203,6 +10616,8 @@ int ecm_interface_init(void)
 #endif
 	ecm_interface_wifi_event_start();
 
+	ecm_interface_register_nf_hook_wlan_device();
+
 	return 0;
 }
 EXPORT_SYMBOL(ecm_interface_init);
@@ -10217,6 +10632,8 @@ void ecm_interface_exit(void)
 	spin_lock_bh(&ecm_interface_lock);
 	ecm_interface_terminate_pending  = true;
 	spin_unlock_bh(&ecm_interface_lock);
+
+	ecm_interface_unregister_nf_hook_wlan_device();
 
 	unregister_netevent_notifier(&ecm_interface_netevent_notifier);
 

@@ -106,6 +106,7 @@ enum ecm_db_connection_defunct_by_5tuple_options {
 enum ecm_db_connection_defunct_type {
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN,		/* Defunct connection on STA join notification */
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE,			/* Ignore the defunct type while defuncting the connection */
+	ECM_DB_CONNECTION_DEFUNCT_TYPE_SCS_MSCS_TEARDOWN,	/* Defunct connection on SCS/MSCS Teardown */
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_MAX,
 };
 typedef enum ecm_db_connection_defunct_type ecm_db_connection_defunct_type_t;
@@ -137,6 +138,8 @@ struct ecm_db_connection_defunct_info {
 	ecm_db_connection_defunct_type_t type;			/* Connection defunct event type */
 	uint8_t mac[ETH_ALEN];					/* MAC address */
 	bool should_keep_connection;				/* should keep connection decision of classifer */
+	uint8_t wifi_qm_id;						/* Wi-Fi QoS management id like SCS id */
+	uint8_t wifi_qm_type;					/* Wi-Fi QoS management type like SCS/MSCS */
 };
 
 /*

@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -135,6 +124,6 @@ void ecm_db_node_ovs_connections_masked_defunct(int ip_ver, uint8_t *src_mac, bo
 							uint16_t src_port_mask, uint8_t *dest_mac, bool dest_mac_check,
 							ip_addr_t dest_addr_mask, uint16_t dest_port_mask,
 							int proto, ecm_db_obj_dir_t dir, bool is_routed);
-
+void ecm_db_node_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint8_t wifi_qm_id);
 bool ecm_db_node_init(struct dentry *dentry);
 void ecm_db_node_exit(void);
