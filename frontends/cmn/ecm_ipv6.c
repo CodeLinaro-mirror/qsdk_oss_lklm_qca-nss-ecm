@@ -121,6 +121,9 @@ DEFINE_SPINLOCK(ecm_ipv6_lock);			/* Protect against SMP access between netfilte
  */
 bool ecm_ipv6_terminate_pending = false;		/* True when the user has signalled we should quit */
 
+extern int register_ip_post_routing;			/* Module param to indicate if ECM should register for post routing*/
+extern int register_br_post_routing;			/* Module param to indicate if ECM should register for bridge post routing*/
+
 /*
  * ecm_ipv6_dev_has_ipaddr()
  *	Returns true if dev has an IPv6 address with greater scope than link-local
@@ -2383,27 +2386,25 @@ int ecm_ipv6_init(struct dentry *dentry)
 	}
 
 	/*
+	 * Based on the module param register for post routing hook.
+	 * Now packets that are being routed at the IP layer
+	 * will be accelerated.
+	 * eg ETH <---> 5GFWA and WLAN<-->5GFWA flows.
 	 * Register netfilter routing hooks
 	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	result = nf_register_hooks(ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#else
-	result = nf_register_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#endif
-	if (result < 0) {
-		DEBUG_ERROR("Can't register common netfilter routing hooks.\n");
-		goto nf_register_failed_1;
+	if (register_ip_post_routing) {
+		result = nf_register_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
+		if (result < 0) {
+			DEBUG_ERROR("Can't register common netfilter routing hooks.\n");
+			goto nf_register_failed_1;
+		}
 	}
 
 	/*
-	 * Register netfilter bridge hooks, if the frontend type supports it. SFE only mode doesn't support it.
+	 * Register netfilter bridge hooks based on the module param register_br_post_routing.
 	 */
-	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-		result = nf_register_hooks(ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
-#else
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE) && register_br_post_routing) {
 		result = nf_register_net_hooks(&init_net, ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
-#endif
 		if (result < 0) {
 			DEBUG_ERROR("Can't register common netfilter bridge hooks.\n");
 			goto nf_register_failed_2;
@@ -2421,11 +2422,9 @@ int ecm_ipv6_init(struct dentry *dentry)
 	return 0;
 
 nf_register_failed_2:
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#endif
+	if (register_ip_post_routing) {
+		nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
+	}
 nf_register_failed_1:
 	ecm_sfe_ipv6_exit();
 
@@ -2453,24 +2452,19 @@ void ecm_ipv6_exit(void)
 	spin_unlock_bh(&ecm_ipv6_lock);
 
 	/*
-	 * Unregister netfilter bridge hooks, if the frontend type supports it. SFE only mode doesn't support it.
+	 * Unregister netfilter bridge hook, based on module param register_br_post_routing.
 	 */
-	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE)) {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-		nf_unregister_hooks(ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
-#else
+	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_BRIDGE) && register_br_post_routing) {
 		nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_bridge_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_bridge_hooks));
-#endif
 	}
 
 	/*
 	 * Unregister the netfilter routing hooks.
 	 */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0))
-	nf_unregister_hooks(ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#else
-	nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
-#endif
+	if (register_ip_post_routing) {
+		nf_unregister_net_hooks(&init_net, ecm_ipv6_netfilter_routing_hooks, ARRAY_SIZE(ecm_ipv6_netfilter_routing_hooks));
+	}
+
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	if (ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_BRIDGE)) {
 		ovsmgr_dp_hook_unregister(&ecm_ipv6_dp_hooks);
