@@ -494,8 +494,11 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			ppe_status = ppe_drv_v4_rule_sawf_mark_update(&mark);
 			if (ppe_status != PPE_DRV_RET_SUCCESS) {
 				DEBUG_WARN("%px: Failed to update mark value in PPE\n", feci);
+				msg->status = false;
 				return;
 			}
+
+			msg->status = true;
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
 					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,
@@ -527,8 +530,11 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			ppe_status = ppe_drv_v6_rule_sawf_mark_update(&mark);
 			if (ppe_status != PPE_DRV_RET_SUCCESS) {
 				DEBUG_WARN("%px: Failed to update mark value in PPE\n", feci);
+				msg->status = false;
 				return;
 			}
+
+			msg->status = true;
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6:%u -> %pI6:%u protocol=%u\n",
 					feci, mark.sawf_rule.flow_mark, mark.sawf_rule.return_mark,

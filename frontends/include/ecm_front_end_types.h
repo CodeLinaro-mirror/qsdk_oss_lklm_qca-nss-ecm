@@ -374,6 +374,7 @@ struct ecm_front_end_flowsawf_msg {
 	uint8_t ip_version;
 	uint8_t protocol;
 	uint32_t flags;
+	bool status;
 
 	/*
 	 * SAWF meta

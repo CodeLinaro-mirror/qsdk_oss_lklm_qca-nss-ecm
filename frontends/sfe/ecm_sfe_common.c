@@ -781,7 +781,11 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			mark.src_ip[0] = msg->flow_src_ip[0];
 			mark.dest_ip[0] = msg->flow_dest_ip[0];
 
-			sfe_ipv4_mark_rule_update(&mark);
+			msg->status = sfe_ipv4_mark_rule_update(&mark);
+			if (!msg->status) {
+				DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+				return;
+			}
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
 					feci, mark.flow_mark, mark.return_mark,
@@ -792,7 +796,11 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			ECM_IP_ADDR_COPY(mark.src_ip, msg->flow_src_ip);
 			ECM_IP_ADDR_COPY(mark.dest_ip, msg->flow_dest_ip);
 
-			sfe_ipv6_mark_rule_update(&mark);
+			msg->status = sfe_ipv6_mark_rule_update(&mark);
+			if (!msg->status) {
+				DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+				return;
+			}
 
 			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6c@%u -> %pI6c@%u protocol=%u\n",
 					feci, mark.flow_mark, mark.return_mark,
