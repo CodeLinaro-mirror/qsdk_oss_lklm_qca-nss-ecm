@@ -395,6 +395,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	struct sp_rm_sync_msg rm_msg = {0};
+	struct sp_rule_del_params del_params = {0};
 
 	/*
 	 * Check if MSDUQ callback is registered.
@@ -473,7 +474,6 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 			(cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_INVALID && cemi->return_rule_classifier_type != SP_RULE_TYPE_SAWF_IFLI)) {
 		DEBUG_INFO("%p: Another classifier %d is already in use", cemi, cemi->flow_rule_classifier_type);
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-		aci->deref(aci);
 		goto end;
 	}
 
@@ -753,9 +753,36 @@ update_rule:
 	 */
 	if (update_rule) {
 		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+
+		/*
+		 * TODO: This is a WAR and need to fix later.
+		 * In case of IFLI, rules might be evicted out of ECM
+		 * and in such case we need to delete the corresponding SPM rule.
+		 */
+		if (!msg->status) {
+			DEBUG_WARN("%px : failed to update mark", cemi);
+			del_params.rule_id = r->id;
+			del_params.key = r->key;
+			if (msg->ip_version == 4) {
+				del_params.src_ip[0] = in->src_ipv4_addr;
+				del_params.dest_ip[0] = in->dst_ipv4_addr;
+			} else {
+				memcpy(del_params.src_ip, in->src_ipv6_addr, sizeof(uint32_t) * 4);
+				memcpy(del_params.dest_ip, in->dst_ipv6_addr, sizeof(uint32_t) * 4);
+			}
+
+			del_params.src_port = in->src_port;
+			del_params.dest_port = in->dst_port;
+			del_params.protocol = in->protocol_number;
+			del_params.ip_version = msg->ip_version;
+			sp_mapdb_ifli_rule_flush(&del_params);
+			goto end;
+		}
 	}
 
 processing_done:
+	cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
+end:
 	if (src_dev) {
 		dev_put(src_dev);
 	}
@@ -764,8 +791,10 @@ processing_done:
 		dev_put(dest_dev);
 	}
 
-	aci->deref(aci);
-end:
+	if (aci) {
+		aci->deref(aci);
+	}
+
 	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
 
