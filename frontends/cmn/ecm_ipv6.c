@@ -375,7 +375,7 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, remote_ip, node_addr))) {
 					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
-					if (!ecm_interface_find_gateway(remote_ip, NULL, gw_addr)) {
+					if (!ecm_interface_find_gateway(remote_ip, NULL, gw_addr, skb->mark)) {
 						DEBUG_WARN("%px: failed to obtain Gateway address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
 						dev_put(local_dev);
 						return NULL;
@@ -559,7 +559,7 @@ struct ecm_db_node_instance *ecm_ipv6_node_establish_and_ref(struct ecm_front_en
 				/*
 				 * Try one more time with gateway ip address if it exists.
 				 */
-				if (!ecm_interface_find_gateway(addr, saddr, gw_addr)) {
+				if (!ecm_interface_find_gateway(addr, saddr, gw_addr, skb->mark)) {
 					DEBUG_WARN("%px: Node establish failed, there is no gateway address for 2nd mac lookup try\n", feci);
 					return NULL;
 				}

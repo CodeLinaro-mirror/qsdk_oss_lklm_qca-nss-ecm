@@ -754,7 +754,7 @@ process_packet:
 		/*
 		 * Egressing NAT
 		 */
-		in_dev_nat = ecm_interface_dev_find_by_addr(ip_src_addr_nat, &from_local_addr);
+		in_dev_nat = ecm_interface_dev_find_by_addr(ip_src_addr_nat, &from_local_addr, skb->mark);
 		if (!in_dev_nat) {
 			goto done;
 		}

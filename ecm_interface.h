@@ -60,8 +60,8 @@ extern struct net_device *bond_get_tx_dev(struct sk_buff *skb, uint8_t *src_mac,
 					  __be16 *layer4hdr);
 bool ecm_interface_mac_addr_get_pppoe(struct net_device *local_dev, uint8_t *node_addr);
 bool ecm_interface_mac_addr_get_no_route(struct net_device *dev, ip_addr_t ip_addr, uint8_t *mac_addr);
-bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr);
-bool ecm_interface_find_route_by_addr(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt);
+bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr, uint32_t skb_mark);
+bool ecm_interface_find_route_by_addr(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt, uint32_t skb_mark);
 void ecm_interface_route_release(struct ecm_interface_route *rt);
 #ifdef ECM_IPV6_ENABLE
 struct neighbour *ecm_interface_ipv6_neigh_get(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, ip_addr_t addr);
@@ -118,12 +118,12 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						uint8_t *dest_node_addr, uint8_t *src_node_addr,
 						__be16 *layer4hdr, struct sk_buff *skb, struct ecm_front_end_ovs_params *op);
 void ecm_interface_stats_update(struct ecm_db_connection_instance *ci, uint32_t from_tx_packets, uint32_t from_tx_bytes, uint32_t from_rx_packets, uint32_t from_rx_bytes, uint32_t to_tx_packets, uint32_t to_tx_bytes, uint32_t to_rx_packets, uint32_t to_rx_bytes);
-struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr);
+struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr, uint32_t skb_mark);
 
 struct net_device *ecm_interface_get_and_hold_dev_master(struct net_device *dev);
 void ecm_interface_dev_regenerate_connections(struct net_device *dev);
 struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr);
-bool ecm_interface_find_gateway(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr);
+bool ecm_interface_find_gateway(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr, uint32_t skb_mark);
 void ecm_interface_dev_defunct_connections(struct net_device *dev);
 void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version);
 void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type);
