@@ -230,6 +230,11 @@ static bool ecm_interface_terminate_pending = false;		/* True when the user has 
 int ecm_interface_src_check;
 
 /*
+ * Sysctl to enable mwan3
+ */
+int ecm_interface_mwan3_enable = 0;
+
+/*
  * Source interface check no flush flag.
  * 	If this is enabled, the flows with a mismatch of source interface will not be flushed.
  */
@@ -473,7 +478,7 @@ EXPORT_SYMBOL(ecm_interface_dev_find_by_local_addr);
  * NOTE: The device may be the device upon which has a default gateway to reach the address.
  * from_local_addr is true when the device was found by a local address search.
  */
-struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr)
+struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_local_addr, uint32_t skb_mark)
 {
 	struct ecm_interface_route ecm_rt;
 	struct net_device *dev;
@@ -501,7 +506,7 @@ struct net_device *ecm_interface_dev_find_by_addr(ip_addr_t addr, bool *from_loc
 	 * Try a route to the address instead
 	 * NOTE: This will locate a route entry in the route destination *cache*.
 	 */
-	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt)) {
+	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt, skb_mark)) {
 		DEBUG_WARN("no route found\n");
 		return NULL;
 	}
@@ -523,7 +528,7 @@ EXPORT_SYMBOL(ecm_interface_dev_find_by_addr);
  *
  * GGG TODO Need to make sure this also works for local IP addresses too.
  */
-static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr)
+static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	struct in6_addr daddr = {0};
 	struct ecm_interface_route ecm_rt;
@@ -537,7 +542,7 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
 	 * This means we will also work if the neighbours are routers too.
 	 */
 	ECM_IP_ADDR_TO_NIN6_ADDR(daddr, addr);
-	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt)) {
+	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt, skb_mark)) {
 		*on_link = false;
 		return false;
 	}
@@ -621,7 +626,7 @@ static bool ecm_interface_mac_addr_get_ipv6(ip_addr_t addr, uint8_t *mac_addr, b
  * ecm_interface_find_gateway_ipv6()
  *	Finds the ipv6 gateway ip address of a given ipv6 address.
  */
-static bool ecm_interface_find_gateway_ipv6(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr)
+static bool ecm_interface_find_gateway_ipv6(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	struct ecm_interface_route ecm_rt;
 	struct rt6_info *rt;
@@ -630,7 +635,7 @@ static bool ecm_interface_find_gateway_ipv6(ip_addr_t daddr, ip_addr_t saddr, ip
 	 * Find the ipv6 route of the given ip address to look up
 	 * whether we have a gateway to reach to that ip address or not.
 	 */
-	if (!ecm_interface_find_route_by_addr(daddr, saddr, &ecm_rt)) {
+	if (!ecm_interface_find_route_by_addr(daddr, saddr, &ecm_rt, skb_mark)) {
 		return false;
 	}
 	DEBUG_ASSERT(!ecm_rt.v4_route, "Did not locate a v6 route!\n");
@@ -655,7 +660,7 @@ static bool ecm_interface_find_gateway_ipv6(ip_addr_t daddr, ip_addr_t saddr, ip
  * ecm_interface_find_gateway_ipv4()
  *	Finds the ipv4 gateway address of a given ipv4 address.
  */
-static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
+static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	struct ecm_interface_route ecm_rt;
 	struct rtable *rt;
@@ -664,7 +669,7 @@ static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
 	 * Find the ipv4 route of the given ip address to look up
 	 * whether we have a gateway to reach to that ip address or not.
 	 */
-	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt)) {
+	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt, skb_mark)) {
 		return false;
 	}
 	DEBUG_ASSERT(ecm_rt.v4_route, "Did not locate a v4 route!\n");
@@ -691,14 +696,14 @@ static bool ecm_interface_find_gateway_ipv4(ip_addr_t addr, ip_addr_t gw_addr)
  * ecm_interface_find_gateway()
  *	Finds the gateway ip address of a given ECM ip address type.
  */
-bool ecm_interface_find_gateway(ip_addr_t d_addr, ip_addr_t s_addr, ip_addr_t gw_addr)
+bool ecm_interface_find_gateway(ip_addr_t d_addr, ip_addr_t s_addr, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	if (ECM_IP_ADDR_IS_V4(d_addr)) {
-		return ecm_interface_find_gateway_ipv4(d_addr, gw_addr);
+		return ecm_interface_find_gateway_ipv4(d_addr, gw_addr, skb_mark);
 	}
 
 #ifdef ECM_IPV6_ENABLE
-	return ecm_interface_find_gateway_ipv6(d_addr, s_addr, gw_addr);
+	return ecm_interface_find_gateway_ipv6(d_addr, s_addr, gw_addr, skb_mark);
 #else
 	return false;
 #endif
@@ -751,7 +756,7 @@ bool ecm_interface_mac_addr_get_pppoe(struct net_device *local_dev, uint8_t *nod
  * ecm_interface_mac_addr_get_ipv4()
  *	Return mac for an IPv4 address
  */
-static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr)
+static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	struct neighbour *neigh;
 	struct ecm_interface_route ecm_rt;
@@ -766,7 +771,7 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
 	 * We also locate the MAC if the address is a local host address.
 	 */
 	ECM_IP_ADDR_TO_NIN4_ADDR(ipv4_addr, addr);
-	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt)) {
+	if (!ecm_interface_find_route_by_addr(addr, NULL, &ecm_rt, skb_mark)) {
 		*on_link = false;
 		return false;
 	}
@@ -865,14 +870,14 @@ static bool ecm_interface_mac_addr_get_ipv4(ip_addr_t addr, uint8_t *mac_addr, b
  * ecm_interface_mac_addr_get()
  *	Return the mac address for the given IP address.  Returns false on failure.
  */
-bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr)
+bool ecm_interface_mac_addr_get(ip_addr_t addr, uint8_t *mac_addr, bool *on_link, ip_addr_t gw_addr, uint32_t skb_mark)
 {
 	if (ECM_IP_ADDR_IS_V4(addr)) {
-		return ecm_interface_mac_addr_get_ipv4(addr, mac_addr, on_link, gw_addr);
+		return ecm_interface_mac_addr_get_ipv4(addr, mac_addr, on_link, gw_addr, skb_mark);
 	}
 
 #ifdef ECM_IPV6_ENABLE
-	return ecm_interface_mac_addr_get_ipv6(addr, mac_addr, on_link, gw_addr);
+	return ecm_interface_mac_addr_get_ipv6(addr, mac_addr, on_link, gw_addr, skb_mark);
 #else
 	return false;
 #endif
@@ -1485,21 +1490,30 @@ static bool ecm_interface_has_multiple_ae_iface_type(struct net_device *dev)
  * ecm_interface_addr_find_route_by_addr_ipv4()
  *	Return the route for the given IP address.  Returns NULL on failure.
  */
-static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_interface_route *ecm_rt)
+static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt, uint32_t skb_mark)
 {
-	__be32 be_addr;
+	struct flowi4 fl4 = {0};
 
 	/*
 	 * Get a route to the given IP address, this will allow us to also find the interface
 	 * it is using to communicate with that IP address.
 	 */
-	ECM_IP_ADDR_TO_NIN4_ADDR(be_addr, addr);
-	ecm_rt->rt.rtv4 = ip_route_output(&init_net, be_addr, 0, 0, 0);
+	ECM_IP_ADDR_TO_NIN4_ADDR(fl4.daddr, daddr);
+
+	if (ecm_interface_mwan3_enable) {
+		if (saddr) {
+			ECM_IP_ADDR_TO_NIN4_ADDR(fl4.saddr, saddr);
+		}
+		fl4.flowi4_mark = skb_mark;
+	}
+
+	ecm_rt->rt.rtv4 = ip_route_output_key(&init_net, &fl4);
+
 	if (IS_ERR(ecm_rt->rt.rtv4)) {
-		DEBUG_TRACE("No output route to: %pI4n\n", &be_addr);
+		DEBUG_TRACE("No output route to: %pI4n from: %pI4n skb_mark: 0x%x\n", &fl4.daddr, &fl4.saddr, skb_mark);
 		return false;
 	}
-	DEBUG_TRACE("Output route to: %pI4n is: %px\n", &be_addr, ecm_rt->rt.rtv4);
+	DEBUG_TRACE("Output route to: %pI4n from: %pI4n skb_mark: 0x%x\n", &fl4.daddr, &fl4.saddr, skb_mark);
 	ecm_rt->dst = (struct dst_entry *)ecm_rt->rt.rtv4;
 	ecm_rt->v4_route = true;
 	return true;
@@ -1510,28 +1524,45 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t addr, struct ecm_int
  * ecm_interface_addr_find_route_by_addr_ipv6()
  *	Return the route for the given IP address.  Returns NULL on failure.
  */
-static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt)
+static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt, uint32_t skb_mark)
 {
-	struct in6_addr naddr = {0};
-	struct in6_addr nsaddr = {0};
-	struct in6_addr *pnsaddr = NULL;
+        int flags = 0;
+	struct dst_entry *dst = NULL;
+	struct flowi6 fl6 = {0};
 
-	ECM_IP_ADDR_TO_NIN6_ADDR(naddr, daddr);
+	ECM_IP_ADDR_TO_NIN6_ADDR(fl6.daddr, daddr);
 	if (saddr) {
-		ECM_IP_ADDR_TO_NIN6_ADDR(nsaddr, saddr);
-		pnsaddr = &nsaddr;
+		ECM_IP_ADDR_TO_NIN6_ADDR(fl6.saddr, saddr);
+		flags |= RT6_LOOKUP_F_HAS_SADDR;
 	}
 
 	/*
 	 * Get a route to the given IP address, this will allow us to also find the interface
 	 * it is using to communicate with that IP address.
 	 */
-	ecm_rt->rt.rtv6 = rt6_lookup(&init_net, &naddr, pnsaddr, 0, NULL, 0);
-	if (!ecm_rt->rt.rtv6) {
+	if (ecm_interface_mwan3_enable) {
+		fl6.flowi6_mark = skb_mark;
+	}
+
+	dst = ip6_route_lookup(&init_net, &fl6, NULL, flags);
+	if (!dst) {
 		DEBUG_TRACE("No output route to: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(daddr));
 		return NULL;
 	}
-	DEBUG_TRACE("Output route to: " ECM_IP_ADDR_OCTAL_FMT " is: %px\n", ECM_IP_ADDR_TO_OCTAL(daddr), ecm_rt->rt.rtv6);
+
+	if (dst->error != 0) {
+		dst_release(dst);
+		DEBUG_TRACE("No output route to: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(daddr));
+		return NULL;
+	}
+
+	ecm_rt->rt.rtv6 = (struct rt6_info *)dst;
+	DEBUG_TRACE("Output route to fl6 addr: " ECM_IP_ADDR_OCTAL_FMT " daddr: " ECM_IP_ADDR_OCTAL_FMT " skb->mark: %d is: %px\n", ECM_IP_ADDR_TO_OCTAL(&fl6.daddr),
+										ECM_IP_ADDR_TO_OCTAL(daddr), skb_mark, ecm_rt->rt.rtv6);
+	if (saddr) {
+		DEBUG_TRACE("Output route from fl6 addr: " ECM_IP_ADDR_OCTAL_FMT " saddr: " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(&fl6.saddr),
+										ECM_IP_ADDR_TO_OCTAL(saddr));;
+	}
 	ecm_rt->dst = (struct dst_entry *)ecm_rt->rt.rtv6;
 	ecm_rt->v4_route = false;
 	return true;
@@ -1546,17 +1577,17 @@ static bool ecm_interface_find_route_by_addr_ipv6(ip_addr_t daddr, ip_addr_t sad
  *
  * Returns true if the route was able to be located.  The route must be released using ecm_interface_route_release().
  */
-bool ecm_interface_find_route_by_addr(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt)
+bool ecm_interface_find_route_by_addr(ip_addr_t daddr, ip_addr_t saddr, struct ecm_interface_route *ecm_rt, uint32_t skb_mark)
 {
 	if (ECM_IP_ADDR_IS_V4(daddr)) {
 		DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_DOT_FMT "\n", ECM_IP_ADDR_TO_DOT(daddr));
-		return ecm_interface_find_route_by_addr_ipv4(daddr, ecm_rt);
+		return ecm_interface_find_route_by_addr_ipv4(daddr,saddr, ecm_rt, skb_mark);
 	}
 
 	DEBUG_TRACE("Locate dev for " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(daddr));
 
 #ifdef ECM_IPV6_ENABLE
-	return ecm_interface_find_route_by_addr_ipv6(daddr, saddr, ecm_rt);
+	return ecm_interface_find_route_by_addr_ipv6(daddr, saddr, ecm_rt, skb_mark);
 #else
 	return false;
 #endif
@@ -5082,12 +5113,12 @@ EXPORT_SYMBOL(ecm_interface_multicast_heirarchy_construct_bridged);
  */
 static bool ecm_interface_multicast_get_next_node_mac_address(
 	ip_addr_t dest_addr, struct net_device *dest_dev, int ip_version,
-	uint8_t *mac_addr)
+	uint8_t *mac_addr, uint32_t skb_mark)
 {
 	bool on_link;
 	ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
-	if (!ecm_interface_mac_addr_get(dest_addr, mac_addr, &on_link, gw_addr)) {
+	if (!ecm_interface_mac_addr_get(dest_addr, mac_addr, &on_link, gw_addr, skb_mark)) {
 		if (ip_version == 4) {
 			DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT "\n",
 				ECM_IP_ADDR_TO_DOT(dest_addr));
@@ -5113,7 +5144,7 @@ static bool ecm_interface_multicast_get_next_node_mac_address(
  */
 static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 					struct net_device *dest_dev,
-					int ip_version, uint8_t *mac_addr)
+					int ip_version, uint8_t *mac_addr, uint32_t skb_mark)
 {
 	ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 	bool on_link = true;
@@ -5132,7 +5163,7 @@ static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 	 * If it fails, send the request with the current dest_addr or
 	 * found gateway address.
 	 */
-	if (ecm_interface_find_gateway(dest_addr, NULL, gw_addr)) {
+	if (ecm_interface_find_gateway(dest_addr, NULL, gw_addr, skb_mark)) {
 		on_link = false;
 		if (ecm_interface_mac_addr_get_no_route(dest_dev, gw_addr, mac_addr)) {
 			DEBUG_TRACE("Found the mac address for the gateway\n");
@@ -5771,7 +5802,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						}
 #endif
 
-						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr)) {
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr, skb->mark)) {
 							DEBUG_WARN("%px: Unable to find the host MAC address connected to the Linux bridge\n", feci);
 							goto done;
 						}
@@ -5819,7 +5850,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						dev_put(tmp_dev);
 					}
 
-					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr)) {
+					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr, skb->mark)) {
 						DEBUG_WARN("%px: Unable to find the host MAC address connected to the OVS bridge\n", feci);
 						goto done;
 					}
@@ -5919,7 +5950,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 								/*
 								 * Try one more time with gateway ip address if it exists.
 								 */
-								if (!ecm_interface_find_gateway(dest_addr, NULL, gw_addr)) {
+								if (!ecm_interface_find_gateway(dest_addr, NULL, gw_addr, skb->mark)) {
 									goto lag_fail;
 								}
 
@@ -6320,6 +6351,11 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	uint8_t next_dest_node_addr[ETH_ALEN] = {0};
 	struct net_device *bridge;
 	uint32_t serial = ecm_db_connection_serial_get(feci->ci);
+	uint32_t skb_mark = 0;
+
+	if (skb) {
+		skb_mark = skb->mark;
+	}
 
 	/*
 	 * Get a big endian of the IPv4 address we have been given as our starting point.
@@ -6350,7 +6386,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	 */
 	from_local_addr = false;
 	if (is_routed) {
-		dest_dev = ecm_interface_dev_find_by_addr(dest_addr, &from_local_addr);
+		dest_dev = ecm_interface_dev_find_by_addr(dest_addr, &from_local_addr, skb->mark);
 		if (!dest_dev && given_dest_dev) {
 			/*
 			 * Fall back to any given
@@ -6365,7 +6401,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 		/*
 		 * Fall back to routed look up
 		 */
-		dest_dev = ecm_interface_dev_find_by_addr(dest_addr, &from_local_addr);
+		dest_dev = ecm_interface_dev_find_by_addr(dest_addr, &from_local_addr, skb->mark);
 	}
 
 	/*
@@ -6436,7 +6472,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 	 */
 	from_local_addr = false;
 	if (is_routed) {
-		src_dev = ecm_interface_dev_find_by_addr(src_addr, &from_local_addr);
+		src_dev = ecm_interface_dev_find_by_addr(src_addr, &from_local_addr, skb->mark);
 		if (!src_dev && given_src_dev) {
 			/*
 			 * Fall back to any given
@@ -6451,7 +6487,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 		/*
 		 * Fall back to routed look up
 		 */
-		src_dev = ecm_interface_dev_find_by_addr(src_addr, &from_local_addr);
+		src_dev = ecm_interface_dev_find_by_addr(src_addr, &from_local_addr, skb->mark);
 	}
 
 	/*
@@ -6707,7 +6743,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 						ecm_db_connection_interfaces_deref(interfaces, current_interface_index);
 						return ECM_DB_IFACE_HEIRARCHY_MAX;
 					} else {
-						if (!ecm_interface_multicast_get_next_node_mac_address(next_dest_addr, dest_dev, ip_version, mac_addr)) {
+						if (!ecm_interface_multicast_get_next_node_mac_address(next_dest_addr, dest_dev, ip_version, mac_addr, skb_mark)) {
 							dev_put(src_dev);
 							dev_put(dest_dev);
 
@@ -6745,8 +6781,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 					 * Figure out which port device the skb will go to using the dest_addr.
 					 */
 					uint8_t mac_addr[ETH_ALEN];
-
-					if (!ecm_interface_multicast_get_next_node_mac_address(next_dest_addr, dest_dev, ip_version, mac_addr)) {
+					if (!ecm_interface_multicast_get_next_node_mac_address(next_dest_addr, dest_dev, ip_version, mac_addr, skb_mark)) {
 						dev_put(src_dev);
 						dev_put(dest_dev);
 
@@ -6833,7 +6868,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 							return ECM_DB_IFACE_HEIRARCHY_MAX;
 						} else {
 							if (!ecm_interface_mac_addr_get(dest_addr, dest_mac_addr,
-										&dest_on_link, dest_gw_addr)) {
+										&dest_on_link, dest_gw_addr, skb_mark)) {
 
 								/*
 								 * Find proper interfce from which to issue ARP
@@ -9271,6 +9306,36 @@ static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int w
 	return ret;
 }
 
+/*
+ * ecm_interface_mwan3_enable_handler()
+ *	 mwan3 enable check sysctl node handler.
+ */
+static int ecm_interface_mwan3_enable_handler(struct ctl_table *ctl, int write, void __user *buffer,
+		 size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ecm_interface_mwan3_enable;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if ((ecm_interface_mwan3_enable != 1) && (ecm_interface_mwan3_enable != 0)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_interface_mwan3_enable = current_value;
+		return -EINVAL;
+	}
+	return 0;
+}
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
 /*
  * ecm_interface_accel_denied_read()
@@ -9633,6 +9698,13 @@ static struct ctl_table ecm_interface_table[] = {
 		.maxlen			= sizeof(ecm_interface_defunct_mac),
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_defunct_by_mac_address_handler,
+	},
+	{
+		.procname		= "mwan3_enable",
+		.data			= &ecm_interface_mwan3_enable,
+		.maxlen			= sizeof(int),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_mwan3_enable_handler,
 	},
 	{ }
 };
