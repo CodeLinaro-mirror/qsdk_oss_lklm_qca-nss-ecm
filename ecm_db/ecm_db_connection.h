@@ -107,6 +107,7 @@ enum ecm_db_connection_defunct_type {
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN,		/* Defunct connection on STA join notification */
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE,			/* Ignore the defunct type while defuncting the connection */
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_SCS_MSCS_TEARDOWN,	/* Defunct connection on SCS/MSCS Teardown */
+	ECM_DB_CONNECTION_DEFUNCT_TYPE_ARP_DELETE,		/* Defunct only routed connection in case of ARP delete event */
 	ECM_DB_CONNECTION_DEFUNCT_TYPE_MAX,
 };
 typedef enum ecm_db_connection_defunct_type ecm_db_connection_defunct_type_t;

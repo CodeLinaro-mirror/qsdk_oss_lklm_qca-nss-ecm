@@ -864,7 +864,12 @@ void ecm_db_traverse_node_connection_list_and_defunct(
 				goto keep_node_conn;
 			}
 
-			DEBUG_TRACE("%px: defunct %d\n", ci, ci->serial);
+			if (!ecm_db_connection_is_routed_get(ci) && type == ECM_DB_CONNECTION_DEFUNCT_TYPE_ARP_DELETE) {
+				DEBUG_TRACE("%px: keeping connection, bridge flow %d, type %d\n", ci, ci->serial, type);
+				goto keep_node_conn;
+			}
+
+			DEBUG_TRACE("%px: defunct %d, type %d\n", ci, ci->serial, type);
 			ecm_db_connection_make_defunct(ci);
 		} else {
 			DEBUG_TRACE("%px: keeping connection %d\n", ci, ci->serial);
