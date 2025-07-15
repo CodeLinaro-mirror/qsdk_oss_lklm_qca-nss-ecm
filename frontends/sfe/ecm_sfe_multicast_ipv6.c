@@ -1981,7 +1981,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 	DEBUG_INFO("%px: Accel Tx Failed\n", feci);
 
 	ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST_TX_FAILED);
-	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(nim->cm.error));
 
 	/*
 	 * Release that ref!

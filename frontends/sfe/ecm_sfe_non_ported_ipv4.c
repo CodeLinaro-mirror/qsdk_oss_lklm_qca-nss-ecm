@@ -1462,10 +1462,10 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 		return;
 	}
 
-	kfree(nim);
-
 	ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_NON_PORTED, ECM_SFE_STATS_V4_EXCEPTION_NON_PORTED_TX_FAILED);
-	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+	atomic64_set(&feci->sfe_accel_fail_reason, ecm_front_end_set_ae_failure_reason(nim->cm.error));
+
+	kfree(nim);
 
 	/*
 	 * Release that ref!
