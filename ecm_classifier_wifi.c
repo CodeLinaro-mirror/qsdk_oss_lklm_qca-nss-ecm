@@ -1,19 +1,8 @@
 /*
  ***************************************************************************
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  ***************************************************************************
  */
 
@@ -74,6 +63,8 @@ struct ecm_classifier_wifi_instance {
 
 	int refs;						/* Integer to trap we never go negative */
 
+	uint8_t wifi_qm_type;					/* Wi-Fi QoS management type like SCS/MSCS */
+	uint8_t wifi_qm_id;						/* Wi-Fi QoS management id like SCS id */
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
@@ -449,6 +440,7 @@ static int ecm_classifier_wifi_state_get(struct ecm_classifier_instance *ci, str
 	struct ecm_classifier_process_response process_response;
 	uint32_t flow_wifi_ds_node_id;
 	uint32_t return_wifi_ds_node_id;
+	uint8_t wifi_qm_id, wifi_qm_type;
 
 	cwifii = (struct ecm_classifier_wifi_instance *)ci;
 	DEBUG_CHECK_MAGIC(cwifii, ECM_CLASSIFIER_WIFI_INSTANCE_MAGIC, "%px: magic failed", cwifii);
@@ -461,6 +453,8 @@ static int ecm_classifier_wifi_state_get(struct ecm_classifier_instance *ci, str
 	process_response = cwifii->process_response;
 	flow_wifi_ds_node_id = cwifii->process_response.flow_wifi_ds_node_id;
 	return_wifi_ds_node_id = cwifii->process_response.return_wifi_ds_node_id;
+	wifi_qm_id = cwifii->wifi_qm_id;
+	wifi_qm_type = cwifii->wifi_qm_type;
 	spin_unlock_bh(&ecm_classifier_wifi_lock);
 
 	if ((result = ecm_classifier_process_response_state_get(sfi, &process_response))) {
@@ -471,6 +465,14 @@ static int ecm_classifier_wifi_state_get(struct ecm_classifier_instance *ci, str
 		return result;
 	}
 	if ((result = ecm_state_write(sfi, "return_wifi_ds_node_id", "0x%x", return_wifi_ds_node_id))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "wifi_qm_id", "%u", wifi_qm_id))) {
+		return result;
+	}
+
+	if ((result = ecm_state_write(sfi, "wifi_qm_type", "%u", wifi_qm_type))) {
 		return result;
 	}
 
@@ -596,6 +598,68 @@ static int ecm_classifier_wifi_deref(struct ecm_classifier_instance *ci)
 }
 
 /*
+ * ecm_classifier_wifi_update()
+ *	Update Wi-Fi classifier related information
+ */
+void ecm_classifier_wifi_update(struct ecm_classifier_instance *aci, enum ecm_rule_update_type type, void *arg)
+{
+	struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
+	struct ecm_classifier_wifi_instance *cwifii;
+	uint8_t wifi_qm_id, wifi_qm_type;
+
+	if (type != ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM) {
+		DEBUG_WARN("%px: unsupported update type: %d\n", aci, type);
+		return;
+	}
+
+	cwifii = (struct ecm_classifier_wifi_instance *)aci;
+	wifi_qm_id = (msg->flow_mark >> 8) & 0xFF;
+
+	/*
+	 * QM type 0 : SCS, QM type 1 : MSCS
+	 */
+	wifi_qm_type = ((msg->flow_mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_SCS_TAG) ? 0 : 1;
+
+	spin_lock_bh(&ecm_classifier_wifi_lock);
+	cwifii->wifi_qm_id = wifi_qm_id;
+	cwifii->wifi_qm_type = wifi_qm_type;
+	spin_unlock_bh(&ecm_classifier_wifi_lock);
+	DEBUG_TRACE("aci=%px wifi classifier: set qm_id %d and qm_type : %d", aci, wifi_qm_id, wifi_qm_type);
+}
+
+/*
+ * ecm_classifier_wifi_should_keep_connection()
+ *	Check whether the connection needs to be maintained
+ */
+static void ecm_classifier_wifi_should_keep_connection(struct ecm_classifier_instance *aci,
+						       struct ecm_db_connection_defunct_info *info)
+{
+	struct ecm_classifier_wifi_instance *cwifii;
+
+	if (info->type != ECM_DB_CONNECTION_DEFUNCT_TYPE_SCS_MSCS_TEARDOWN) {
+		/*
+		 * Classifier does not care about the connection deletion.
+		 */
+		return;
+	}
+
+	/*
+	 * In case of SCS, MSCS tear down event, defunct the connections related to the SCS/MSCS
+	 */
+	cwifii = (struct ecm_classifier_wifi_instance *)aci;
+
+	spin_lock_bh(&ecm_classifier_wifi_lock);
+
+	if (cwifii->wifi_qm_id == info->wifi_qm_id && cwifii->wifi_qm_type == info->wifi_qm_type) {
+		info->should_keep_connection = false;
+	} else {
+		info->should_keep_connection = true;
+	}
+
+	spin_unlock_bh(&ecm_classifier_wifi_lock);
+}
+
+/*
  * ecm_classifier_wifi_instance_alloc()
  *	Allocate an instance of the wifi classifier
  */
@@ -628,6 +692,8 @@ struct ecm_classifier_wifi_instance *ecm_classifier_wifi_instance_alloc(struct e
 #endif
 	cwifii->base.ref = ecm_classifier_wifi_ref;
 	cwifii->base.deref = ecm_classifier_wifi_deref;
+	cwifii->base.update = ecm_classifier_wifi_update;
+	cwifii->base.should_keep_connection = ecm_classifier_wifi_should_keep_connection;
 	cwifii->ci_serial = ecm_db_connection_serial_get(ci);
 	cwifii->process_response.process_actions = 0;
 	cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_MAYBE;
