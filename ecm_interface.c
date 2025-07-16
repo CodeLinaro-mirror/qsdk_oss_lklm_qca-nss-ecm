@@ -99,6 +99,10 @@
 #endif
 #include <linux/hex.h>
 
+#ifdef ECM_OPEN_PROFILE_ENABLE
+#include <qca-vendor.h>
+#endif
+
 /*
  * Debug output levels
  * 0 = OFF
@@ -8915,6 +8919,83 @@ end:
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+#ifdef ECM_OPEN_PROFILE_ENABLE
+/*
+ * ecm_interface_wifi_vendor_cmd_handle()
+ *	Parse and process events within the vendor cmd received from Wi-Fi.
+ */
+void ecm_interface_wifi_vendor_cmd_handle(struct nlmsghdr *nlh)
+{
+	struct nlattr **tb = NULL, **tb2 = NULL;
+	uint8_t mac[ETH_ALEN], newlink;
+	int *subcmd;
+	int res, len;
+	struct nlattr *data;
+
+	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
+		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
+		return;
+	}
+
+	tb = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
+	if (!tb) {
+		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
+		return;
+	}
+
+	/*
+	 * Parse the event coming from Wi-Fi.
+	 */
+	res = nla_parse(tb, NL80211_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
+			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
+
+	if (res < 0) {
+		DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
+		kfree(tb);
+		return;
+	}
+
+	tb2 = (struct nlattr **) kzalloc((sizeof(struct nlattr *) * (QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
+	if (!tb2) {
+		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
+		kfree(tb);
+		return;
+	}
+
+	subcmd = (int *) nla_data(tb[NL80211_ATTR_VENDOR_SUBCMD]);
+	DEBUG_INFO("Netlink parsed sub command: %u\n", *subcmd);
+	switch (*subcmd) {
+	/*
+	 * Get the mac addr of last primary link and defunct all the connections by mac addr.
+	 */
+	case QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE:
+		if (tb[NL80211_ATTR_VENDOR_DATA]) {
+			data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
+			len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
+			if (nla_parse(tb2, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX, (struct nlattr *) data, len, NULL, NULL)) {
+				DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
+				goto free_mem;
+			}
+
+			newlink = nla_get_u8(tb2[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
+			memcpy(mac, nla_data(tb2[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]), ETH_ALEN);
+			ecm_interface_node_connections_defunct((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE);
+			DEBUG_INFO("Deleted all entries corresponding to mac: %pM new link id: %u\n", mac, newlink);
+		} else {
+			DEBUG_WARN("%px: Not able to parse vendor data attribute.\n", nlh);
+		}
+
+		break;
+	default:
+		DEBUG_INFO("Netlink parsed sub command: %u\n", *subcmd);
+		break;
+	}
+free_mem:
+	kfree(tb);
+	kfree(tb2);
+}
+#endif
+
 /*
  * ecm_interface_wifi_process_link_events()
  *	Parse and process link add / delete events received from Wi-Fi.
@@ -8996,6 +9077,11 @@ static int ecm_interface_wifi_event_handler(void *buf, int len)
 		case NL80211_CMD_QOS_MGMT:
 			ecm_interface_wifi_process_qos_mgmt_event(nlh, hdr->cmd);
 			break;
+		case NL80211_CMD_VENDOR:
+#ifdef ECM_OPEN_PROFILE_ENABLE
+			ecm_interface_wifi_vendor_cmd_handle(nlh);
+#endif
+			break;
 		}
 
 		nlh = NLMSG_NEXT(nlh, left);
@@ -9005,29 +9091,31 @@ static int ecm_interface_wifi_event_handler(void *buf, int len)
 }
 
 /*
- * ecm_interface_parse_genl_ctrl_response()
- *	Parse the generic control family response message and
- *	get the multicast id of MLME multicast group of nl80211 family.
+ * ecm_interface_process_genl_ctrl_response()
+ *	Parse and process the generic control family response message,
+ *	get the mcast id of MLME/Vendor mcast group of nl80211 family and
+ *	set the membership of the mcast group to the given socket.
  */
-int ecm_interface_parse_genl_ctrl_response(struct nlmsghdr *nlh)
+bool ecm_interface_process_genl_ctrl_response(struct nlmsghdr *nlh, struct socket *sock)
 {
 	struct nlattr *tb[CTRL_ATTR_MAX+1];
 	struct nlattr *mcgrp;
 	char data[16];
+	int mcast_id = ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID;
 	int family_id;
 	int res = -1;
 	int i;
 
 	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
 		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
-		return res;
+		return false;
 	}
 
 	res = nla_parse(tb, CTRL_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
 			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
 	if (res < 0) {
 		DEBUG_WARN("%px: Error in parsing NL message %d err\n", nlh, res);
-		return res;
+		return false;
 	}
 
 	/*
@@ -9035,16 +9123,16 @@ int ecm_interface_parse_genl_ctrl_response(struct nlmsghdr *nlh)
 	 */
 	if (!tb[CTRL_ATTR_FAMILY_ID]) {
 		DEBUG_INFO("%px: Failed to get the family ID of nl80211 \n", nlh);
-		return -1;
+		return false;
 	}
 
 	if (!tb[CTRL_ATTR_MCAST_GROUPS]) {
 		DEBUG_WARN("%px: Failed to fetch the multicast groups \n", nlh);
-		return -1;
+		return false;
 	}
 
 	/*
-	 * Parse the multicast groups and get the ID of MLME group.
+	 * Parse the multicast groups and get the ID of MLME/Vendor group.
 	 */
 	family_id = nla_get_u16(tb[CTRL_ATTR_FAMILY_ID]);
 	nla_for_each_nested(mcgrp, tb[CTRL_ATTR_MCAST_GROUPS], i) {
@@ -9053,26 +9141,40 @@ int ecm_interface_parse_genl_ctrl_response(struct nlmsghdr *nlh)
 		res = nla_parse(tb2, CTRL_ATTR_MCAST_GRP_MAX, (struct nlattr *)nla_data(mcgrp), nla_len(mcgrp), NULL, NULL);
 		if (res < 0) {
 			DEBUG_WARN("%px: Error in parsing NL message multicast group %d res\n", nlh, res);
-			return res;
+			return false;
+		}
+
+		if (tb2[CTRL_ATTR_MCAST_GRP_NAME]) {
+			nla_strscpy(data, tb2[CTRL_ATTR_MCAST_GRP_NAME], sizeof(data));
+		} else {
+			DEBUG_INFO("%px: Multicast group name not resolved.\n", nlh);
+			continue;
 		}
 
 		/*
-		 * Look for MLME multicast group and get the ID.
+		 * Look for given multicast group type and set their membership to socket.
 		 */
-		if (tb2[CTRL_ATTR_MCAST_GRP_NAME]) {
-			nla_strscpy(data, tb2[CTRL_ATTR_MCAST_GRP_NAME], sizeof(data));
-			if (strcmp(data, "mlme") == 0) {
-				if (tb2[CTRL_ATTR_MCAST_GRP_ID]) {
-					res = nla_get_u32(tb2[CTRL_ATTR_MCAST_GRP_ID]);
-					DEBUG_INFO("%px: Successfully fetched the MLME group ID %d family ID %d\n", nlh, res, family_id);
-					return res;
+		if (strcmp(data, "vendor") == 0 || strcmp(data, "mlme") == 0) {
+			if (tb2[CTRL_ATTR_MCAST_GRP_ID]) {
+				mcast_id = nla_get_u32(tb2[CTRL_ATTR_MCAST_GRP_ID]);
+				/*
+				 * Add this socket as a memeber to the MLME or Vendor multicast group of the
+				 * nl80211 family.
+				 */
+				res = sock->ops->setsockopt(sock, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, KERNEL_SOCKPTR((void *)&mcast_id), sizeof(mcast_id));
+				if (res < 0) {
+					DEBUG_WARN("%px: Failed to set the multicast membership %s(%d) res %d\n", sock, data, mcast_id, res);
+					return false;
 				}
+
+				DEBUG_INFO("%px: Added the socket as a member to nl80211 %s(%d) multicast group \n", sock, data, mcast_id);
+			} else {
+				DEBUG_WARN("%px: Parsed mcast id is invalid.\n", sock);
 			}
 		}
 	};
 
-	DEBUG_WARN("%px: Failed to get the MLME group from ctrl msg response \n", nlh);
-	return -1;
+	return true;
 }
 
 /*
@@ -9149,7 +9251,6 @@ int ecm_interface_resolve_nl80211_family(struct socket *sock, struct sockaddr_nl
 	struct kvec iov = {0};
 	struct msghdr mhdr = {0};
 	unsigned char *buf;
-	int mc_group_id = ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID;
 	int len = ECM_INTERFACE_GENEL_MESSAGE_SIZE;
 	int ret = -1;
 	int size = 0;
@@ -9200,18 +9301,18 @@ int ecm_interface_resolve_nl80211_family(struct socket *sock, struct sockaddr_nl
 	}
 
 	/*
-	 * Parse the NL message response received from kernel.
+	 * Parse and process the NL message response received from kernel.
 	 * This has all the information about the family, its multicast groups,
 	 * callbacks etc.
 	 */
 	nlh = (struct nlmsghdr *)buf;
 	while (NLMSG_OK(nlh, size)) {
 		DEBUG_INFO("%px: Received an NL response, length %d type %d\n", nlh, nlh->nlmsg_len, nlh->nlmsg_type);
-		mc_group_id = ecm_interface_parse_genl_ctrl_response(nlh);
-		if (mc_group_id < 0) {
-			DEBUG_WARN("%px: Failed to parse the multicast group message %d\n", sock, mc_group_id);
+
+		if (!ecm_interface_process_genl_ctrl_response(nlh, sock)) {
+			DEBUG_WARN("%px: Failed to parse and process the multicast group message.\n", sock);
 			kfree(buf);
-			return mc_group_id;
+			return -1;
 		}
 
 		nlh = NLMSG_NEXT(nlh, size);
@@ -9221,21 +9322,6 @@ int ecm_interface_resolve_nl80211_family(struct socket *sock, struct sockaddr_nl
 	 * Release the buffer allocated for receiving the message.
 	 */
 	kfree(buf);
-
-	/*
-	 * Add this socket as a memeber to the MLME multicast group of the
-	 * nl80211 family.
-	 */
-	if (mc_group_id != ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID) {
-		ret = sock->ops->setsockopt(sock, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, KERNEL_SOCKPTR((void *)&mc_group_id), sizeof(mc_group_id));
-		if (ret < 0) {
-			DEBUG_WARN("%px: Failed to set the multicast membership %d ret %d\n", sock, mc_group_id, ret);
-			return ret;
-		}
-
-		DEBUG_INFO("%px: Adding a this sokcet as a member to NL80211 MLME multicast group %d \n", sock, mc_group_id);
-	}
-
 	return 0;
 }
 
