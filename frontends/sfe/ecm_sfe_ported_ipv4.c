@@ -439,6 +439,9 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	struct ecm_classifier_rule_create ecrc;
 	uint32_t l2_accel_bits = (ECM_SFE_COMMON_FLOW_L2_ACCEL_ALLOWED | ECM_SFE_COMMON_RETURN_L2_ACCEL_ALLOWED);
 	ecm_sfe_common_l2_accel_check_callback_t l2_accel_check;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+	int vp;
+#endif
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
 
@@ -729,7 +732,21 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			ecm_db_iface_ethernet_address_get(ii, from_sfe_iface_address);
 			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, from_sfe_iface_address);
-			break;
+#ifdef ECM_FRONT_END_PPE_ENABLE
+			/*
+			 * Check if the destination interface is tunnel end point which has tunnel vp active.
+			 */
+			vp = ecm_sfe_common_get_vp_from_iface_id(ii->interface_identifier);
+			if (vp > 0) {
+				/*
+				 * Set flag to notify tunnel VP being active to queue the
+				 * packets to PPE VP post inner flow lookup
+				 */
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_DEST_TUN_VP;
+			}
+#endif
+	break;
+
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
 			/*
@@ -1114,6 +1131,20 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			ecm_db_iface_ethernet_address_get(ii, to_sfe_iface_address);
 			DEBUG_TRACE("%px: Ethernet - mac: %pM\n", feci, to_sfe_iface_address);
+
+#ifdef ECM_FRONT_END_PPE_ENABLE
+			/*
+			 * Check if the destination interface is tunnel end point which has tunnel vp active.
+			 */
+			vp = ecm_sfe_common_get_vp_from_iface_id(ii->interface_identifier);
+			if (vp > 0) {
+				/*
+				 * Set flag to notify tunnel VP being active to queue the
+				 * packets to PPE VP post inner flow lookup
+				 */
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_DEST_TUN_VP;
+			}
+#endif
 			break;
 		case ECM_DB_IFACE_TYPE_PPPOE:
 #ifdef ECM_INTERFACE_PPPOE_ENABLE
