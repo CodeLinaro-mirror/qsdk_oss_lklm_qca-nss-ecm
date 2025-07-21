@@ -185,7 +185,7 @@ static bool ecm_ipv4_is_bridge_pkt(struct net_device *in,
  * Returns NULL on failure.
  */
 struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_end_connection_instance *feci,
-							struct net_device *dev, ip_addr_t addr,
+							struct net_device *dev, ip_addr_t addr, ip_addr_t saddr,
 							struct ecm_db_iface_instance *interface_list[], int32_t interface_list_first,
 							uint8_t *given_node_addr, struct sk_buff *skb)
 {
@@ -334,7 +334,7 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 					 * If the host is behind a route device, use the gateway's mac
 					 * address instead.
 					 */
-					if (ecm_interface_find_gateway(remote_ip, NULL, gw_addr)) {
+					if (ecm_interface_find_gateway(remote_ip, NULL, gw_addr, skb->mark)) {
 						DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
 						if (!ecm_interface_mac_addr_get_no_route(local_dev, gw_addr, node_addr)) {
 							DEBUG_TRACE("%px: Failed to find the mac address for gateway\n", feci);
@@ -405,7 +405,7 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 				if (unlikely(!ecm_interface_mac_addr_get_no_route(local_dev, remote_ip, node_addr))) {
 					ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 
-					if (!ecm_interface_find_gateway(remote_ip, NULL, gw_addr)) {
+					if (!ecm_interface_find_gateway(remote_ip, NULL, gw_addr, skb->mark)) {
 						DEBUG_WARN("%px: failed to obtain Gateway address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(remote_ip));
 						dev_put(local_dev);
 						return NULL;
@@ -579,7 +579,7 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 				 * of that gateway. If it fails, we will send ARP request to that address
 				 * to find the node MAC address while processing the subsequent packets.
 				 */
-				if (ecm_interface_find_gateway(addr, NULL, gw_addr)) {
+				if (ecm_interface_find_gateway(addr, saddr, gw_addr, skb->mark)) {
 					DEBUG_TRACE("%px: Have a gw address " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(gw_addr));
 					if (ecm_interface_mac_addr_get_no_route(mac_dev, gw_addr, node_addr)) {
 						DEBUG_TRACE("%px: Found the mac address for gateway\n", feci);
