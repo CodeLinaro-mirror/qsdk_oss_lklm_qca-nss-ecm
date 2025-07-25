@@ -11,10 +11,7 @@ obj-m += ecm-wifi-plugin.o
 ecm-wifi-plugin-objs := ecm_wifi_plugin_init.o
 ecm-wifi-plugin-objs += ecm_wifi_plugin_emesh.o
 ecm-wifi-plugin-objs += ecm_wifi_plugin_fse.o
-
-ifneq ($(ECM_WIFI_PLUGIN_OPEN_PROFILE_ENABLE), y)
 ecm-wifi-plugin-objs += ecm_wifi_plugin_mscs.o
-endif
 
 ifeq ($(ECM_CLASSIFIER_WIFI_ENABLE), y)
 ecm-wifi-plugin-objs += ecm_wifi_plugin_wifi_classifier.o
