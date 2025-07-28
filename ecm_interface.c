@@ -1688,7 +1688,7 @@ __be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *d
 
 		daddr = netif_is_vxlan(indev) ? ip_hdr(skb)->saddr : ip_hdr(skb)->daddr;
 		rt = ip_route_output(&init_net, daddr, 0, 0, 0);
-		if (IS_ERR(rt)) {
+		if (IS_ERR_OR_NULL(rt)) {
 			DEBUG_WARN("%px: VXLAN-GPE failed to get IPv4 route to: %pI4\n", dev, &daddr);
 			goto rt_error;
 		}
@@ -1801,7 +1801,7 @@ static bool ecm_interface_find_route_by_addr_ipv4(ip_addr_t daddr, ip_addr_t sad
 
 	ecm_rt->rt.rtv4 = ip_route_output_key(&init_net, &fl4);
 
-	if (IS_ERR(ecm_rt->rt.rtv4)) {
+	if (IS_ERR_OR_NULL(ecm_rt->rt.rtv4)) {
 		DEBUG_TRACE("No output route to: %pI4n from: %pI4n skb_mark: 0x%x\n", &fl4.daddr, &fl4.saddr, skb_mark);
 		return false;
 	}
@@ -1932,7 +1932,7 @@ void ecm_interface_send_neighbour_solicitation(struct net_device *dev, ip_addr_t
 	 * Find the neighbor entry
 	 */
 	neigh = rt6i->dst.ops->neigh_lookup(&rt6i->dst, NULL, &dst_addr);
-	if (IS_ERR(neigh)) {
+	if (IS_ERR_OR_NULL(neigh)) {
 		DEBUG_TRACE("Neighbour lookup failure for destination IPv6 address " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 		dst_release(&rt6i->dst);
 		return;
@@ -1984,7 +1984,7 @@ void ecm_interface_send_arp_request(struct net_device *dest_dev, ip_addr_t dest_
 	neigh = neigh_lookup(&arp_tbl, &ipv4_addr, dest_dev);
 	if (!neigh) {
 		neigh = neigh_create(&arp_tbl, &ipv4_addr, dest_dev);
-		if (IS_ERR(neigh)) {
+		if (IS_ERR_OR_NULL(neigh)) {
 			DEBUG_WARN("Unable to create ARP request neigh for %pI4\n", &ipv4_addr);
 			return;
 		}
@@ -2011,7 +2011,7 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
 
 	ECM_IP_ADDR_TO_NIN4_ADDR(ipv4_addr, addr);
 	rt = ip_route_output(&init_net, ipv4_addr, 0, 0, 0);
-	if (IS_ERR(rt)) {
+	if (IS_ERR_OR_NULL(rt)) {
 		return NULL;
 	}
 	dst = (struct dst_entry *)rt;
