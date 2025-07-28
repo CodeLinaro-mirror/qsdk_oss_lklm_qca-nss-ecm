@@ -127,6 +127,7 @@ int ecm_wifi_plugin_adm_ctrl_cb_register(void);
  *	API to unregister the admission control callbacks.
  */
 void ecm_wifi_plugin_adm_ctrl_cb_unregister(void);
+#endif
 
 /*
  * ecm_wifi_plugin_mscs_register()
@@ -139,7 +140,6 @@ int ecm_wifi_plugin_mscs_register(void);
  *	API to unregister the mscs callbacks.
  */
 void ecm_wifi_plugin_mscs_unregister(void);
-#endif
 
 /*
  * ecm_wifi_plugin_wifi_cb_register()
