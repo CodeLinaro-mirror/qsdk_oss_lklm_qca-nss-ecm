@@ -743,10 +743,12 @@ process_next_iface_flow:
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 			/*
-			 * TODO: Add support for IPsec in PPE Frontend.
+			 * If the IPsec flow is a decapsulation (outer) flow, set rule_flags to IPSEC_DECAP.
 			 */
-			ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_IPSEC_NOT_ENABLED);
-			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
+			if (ecm_db_connection_flag_check(feci->ci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
+				pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_IPSEC_DECAP_FLOW;
+			}
+#else
 			rule_invalid = true;
 #endif
 			break;
@@ -1142,10 +1144,12 @@ process_next_iface_return:
 		case ECM_DB_IFACE_TYPE_IPSEC_TUNNEL:
 #ifdef ECM_INTERFACE_IPSEC_ENABLE
 			/*
-			 * TODO: Add support for IPsec in PPE Frontend.
+			 * If the IPsec flow is a decapsulation (outer) flow, set rule_flags to IPSEC_DECAP.
 			 */
-			ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_IPSEC_NOT_ENABLED);
-			DEBUG_WARN("%px: IPSEC is unsupported in PPE : %d (%s)\n", feci, ii_type, ii_name);
+			if (ecm_db_connection_flag_check(feci->ci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
+				pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_IPSEC_DECAP_FLOW;
+			}
+#else
 			rule_invalid = true;
 #endif
 			break;

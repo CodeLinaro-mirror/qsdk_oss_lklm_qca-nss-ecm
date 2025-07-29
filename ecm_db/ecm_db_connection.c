@@ -263,6 +263,21 @@ void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t 
 	spin_unlock_bh(&ecm_db_lock);
 
 }
+/*
+ * ecm_db_connection_flag_check
+ *	Checkss the flag in connection instance.
+ */
+bool ecm_db_connection_flag_check(struct ecm_db_connection_instance *ci, uint32_t flag)
+{
+	bool ret;
+
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+	spin_lock_bh(&ecm_db_lock);
+	ret = ci->flags & flag;
+	spin_unlock_bh(&ecm_db_lock);
+
+	return ret;
+}
 
 /*
  * ecm_db_connection_flag_set()
