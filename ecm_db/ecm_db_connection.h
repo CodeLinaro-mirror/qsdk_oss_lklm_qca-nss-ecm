@@ -508,6 +508,7 @@ void ecm_db_netdevs_get_and_hold(struct ecm_db_connection_instance *ci, ecm_trac
 				struct net_device **src_dev, struct net_device **dest_dev);
 
 void ecm_db_connection_flag_set(struct ecm_db_connection_instance *ci, uint32_t flag);
+bool ecm_db_connection_flag_check(struct ecm_db_connection_instance *ci, uint32_t flag);
 
 void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci, uint16_t l2_encap_proto);
 uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
