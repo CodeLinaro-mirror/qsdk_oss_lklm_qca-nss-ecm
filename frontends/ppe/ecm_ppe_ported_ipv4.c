@@ -635,10 +635,16 @@ process_next_iface_flow:
 			}
 
 			/*
-			 * overwrite the first and top interface id
+			 * Overwrite the first and top interface id with vxlan dev id for ppe, as
+			 * linux vxlan netdevice details are not available with PPE.
+			 * For top interface, override only if top and bottom iface are same, case
+			 * with VxLAN outer flow.
 			 */
+			if (from_iface_id == from_top_iface_id) {
+				from_top_iface_id = vxlan_ppe_dev_id;
+			}
+
 			from_iface_id = vxlan_ppe_dev_id;
-			from_top_iface_id = vxlan_ppe_dev_id;
 			ae_iface_id = vxlan_ppe_dev_id;
 
 			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_FROM, ECM_DB_IFACE_TYPE_VXLAN);
@@ -1022,9 +1028,17 @@ process_next_iface_return:
 				break;
 			}
 
-			/* overwrite the first and top interface id */
+			/*
+			 * Overwrite the first and top interface id with vxlan dev id for ppe, as
+			 * linux vxlan netdevice details are not available with PPE.
+			 * For top interface, override only if top and bottom iface are same, case
+			 * with VxLAN outer flow.
+			 */
+			if (to_iface_id == to_top_iface_id) {
+				to_top_iface_id = vxlan_ppe_dev_id;
+			}
+
 			to_iface_id = vxlan_ppe_dev_id;
-			to_top_iface_id = vxlan_ppe_dev_id;
 			ae_iface_id = vxlan_ppe_dev_id;
 
 			feci->set_stats_bitmap(feci, ECM_DB_OBJ_DIR_TO, ECM_DB_IFACE_TYPE_VXLAN);
