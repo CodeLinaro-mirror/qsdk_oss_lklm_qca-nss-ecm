@@ -24,6 +24,9 @@ endif
 ifeq ($(EXAMPLES_BUILD_OVS),y)
 obj-m += examples/ecm_ovs.o
 endif
+ifeq ($(EXAMPLES_BUILD_SDX),y)
+obj-m += examples/ecm_sdx_pcc.o
+endif
 
 ecm-y := \
 	 frontends/cmn/ecm_ae_classifier.o \
