@@ -3190,7 +3190,7 @@ done:
 		cemi->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_YES;
 		spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 
-		DEBUG_TRACE("update_rule done arg_msg->flow_mark : 0x%x msduq_forward : 0x%x msduq_reverse : 0x%x", arg_msg->flow_mark, msduq_forward, msduq_reverse);
+		DEBUG_TRACE("update_rule done arg_msg->flow_mark : 0x%x msduq_forward : 0x%x msduq_reverse : 0x%x\n", arg_msg->flow_mark, msduq_forward, msduq_reverse);
 	}
 
 	if (src_dev)
@@ -3462,7 +3462,8 @@ static int ecm_classifier_emesh_sawf_state_get(struct ecm_classifier_instance *c
 		return result;
 	}
 
-	if (cemi->process_response.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+	if ((ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(flow_sawf_metadata) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) ||
+	    (ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(return_sawf_metadata) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG)) {
 		if ((result = ecm_state_write(sfi, "flow_valid_flag", "0x%x", flow_valid_flag))) {
 			return result;
 		}
