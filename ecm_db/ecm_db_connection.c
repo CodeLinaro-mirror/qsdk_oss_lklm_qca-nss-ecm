@@ -4678,6 +4678,364 @@ static ssize_t ecm_db_get_connection_counts_simple(struct file *file,
 }
 
 /*
+ * ecm_db_connection_defunct_5tuple_mask_buffer()
+ *	Writes the defunct by 5-tuple command to the debugfs node.
+ */
+static bool ecm_db_connection_defunct_5tuple_mask_buffer(char *buf)
+{
+	int field_count;
+	char *fields_ptr = buf;
+	char *fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_MAX];
+	char *option, *value;
+	int ip_ver;
+	uint32_t sip_addr_v4;
+	uint32_t dip_addr_v4;
+	struct in6_addr sip_addr_v6;
+	struct in6_addr dip_addr_v6;
+	int sport, dport, ci_sport, ci_dport;
+	int protocol;
+	bool defunct_result = false;
+	struct ecm_db_connection_instance *ci = NULL, *cin = NULL;
+	__be32 be_addr;
+	struct in6_addr addr6;
+	static const struct in6_addr v6_0addr = IN6ADDR_ANY_INIT;
+	ip_addr_t ip_addr;
+
+	/*
+	 * Split the buffer into its fields
+	 */
+	field_count = 0;
+	fields[field_count] = strsep(&fields_ptr, " ");
+	while (fields[field_count] != NULL) {
+		DEBUG_INFO("Field %d: %s\n", field_count, fields[field_count]);
+		field_count++;
+		if (field_count == ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_MAX)
+			break;
+
+		fields[field_count] = strsep(&fields_ptr, " ");
+	}
+
+	if (field_count != ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_MAX) {
+                DEBUG_ERROR("Invalid field count %d\n", field_count);
+		return false;
+	}
+
+	/*
+	 * IP version (ip_ver) field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION], "=");
+	if (!option || strcmp(option, "ip_ver")) {
+		DEBUG_ERROR("invalid IP version option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_IP_VERSION];
+	if (!sscanf(value, "%d", &ip_ver)) {
+		DEBUG_ERROR("Unable to read IP version value %s\n", value);
+		return false;
+	}
+
+	/*
+	 * Source IP (sip) field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SIP], "=");
+	if (!option || strcmp(option, "sip")) {
+		DEBUG_ERROR("invalid source IP option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SIP];
+
+	if (ip_ver == 4) {
+		if (!in4_pton(value, -1, (uint8_t *)&sip_addr_v4, -1, NULL)) {
+			DEBUG_ERROR("invalid source IP V4 value: %s\n", value);
+			return false;
+		}
+	} else if (ip_ver == 6){
+		if (!in6_pton(value, -1, (uint8_t *)sip_addr_v6.s6_addr, -1, NULL)) {
+			DEBUG_ERROR("invalid source IP V6 value: %s\n", value);
+			return false;
+		}
+	} else if (ip_ver != 0){
+		DEBUG_ERROR("ip version should not be other than 4, 6 or 0\n");
+		return false;
+	}
+
+	/*
+	 * Source port (sport) field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SPORT], "=");
+	if (!option || strcmp(option, "sport")) {
+		DEBUG_ERROR("invalid source port option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_SPORT];
+	if (!sscanf(value, "%d", &sport)) {
+		DEBUG_ERROR("Unable to read source port value %s\n", value);
+		return false;
+	}
+
+	/*
+	 * Destination IP (dip) field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DIP], "=");
+	if (!option || strcmp(option, "dip")) {
+		DEBUG_ERROR("invalid destination IP option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DIP];
+
+	if (ip_ver == 4) {
+		if (!in4_pton(value, -1, (uint8_t *)&dip_addr_v4, -1, NULL)) {
+			DEBUG_ERROR("invalid destination IP V4 value: %s\n", value);
+			return false;
+		}
+	} else if (ip_ver == 6) {
+		if (!in6_pton(value, -1, (uint8_t *)dip_addr_v6.s6_addr, -1, NULL)) {
+			DEBUG_ERROR("invalid destination IP V6 value: %s\n", value);
+			return false;
+		}
+	}
+
+	/*
+	 * Destination port (dport) field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DPORT], "=");
+	if (!option || strcmp(option, "dport")) {
+		DEBUG_ERROR("invalid destination port option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_DPORT];
+	if (!sscanf(value, "%d", &dport)) {
+		DEBUG_ERROR("Unable to read destination port value %s\n", value);
+		return false;
+	}
+
+	/*
+	 * Protocol field validation.
+	 */
+	option = strsep(&fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL], "=");
+	if (!option || strcmp(option, "protocol")) {
+		DEBUG_ERROR("invalid protocol option name: %s\n", option);
+		return false;
+	}
+
+	value = fields[ECM_DB_CONNECTION_DEFUNCT_BY_5TUPLE_OPTION_PROTOCOL];
+	if (!sscanf(value, "%d", &protocol)) {
+		DEBUG_ERROR("Unable to read protocol value %s\n", value);
+		return false;
+	}
+
+	/*
+	 * Call 5-tuple defunct functions.
+	 */
+	if (ip_ver == 4) {
+		DEBUG_INFO("sip: %pI4 sport: %d dip: %pI4 dport: %d protocol: %d\n", &sip_addr_v4, sport, &dip_addr_v4, dport, protocol);
+
+		/*
+		 * Iterate all connections
+		 */
+		ci = ecm_db_connections_get_and_ref_first();
+		while (ci) {
+			if (ecm_db_connection_ip_version_get(ci) != ip_ver) {
+				goto next_v4;
+			}
+
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, ip_addr);
+			ECM_IP_ADDR_TO_NIN4_ADDR(be_addr, ip_addr);
+			DEBUG_INFO("sip: %pI4\n", &be_addr);
+			if ((sip_addr_v4) && (be_addr != sip_addr_v4)) {
+				goto next_v4;
+			}
+
+			ci_sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+			DEBUG_INFO("sport: %d\n", ci_sport);
+			if ((sport) && (ci_sport != sport)) {
+				goto next_v4;
+			}
+
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, ip_addr);
+			ECM_IP_ADDR_TO_NIN4_ADDR(be_addr, ip_addr);
+			DEBUG_INFO("dip: %pI4\n", &be_addr);
+			if ((dip_addr_v4) && (be_addr != dip_addr_v4)) {
+				goto next_v4;
+			}
+
+			ci_dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+			DEBUG_INFO("dport: %d\n", ci_dport);
+			if ((dport) && (ci_dport != dport)) {
+				goto next_v4;
+			}
+
+			DEBUG_INFO("protocol: %d\n", protocol);
+			if ((protocol) && (ecm_db_connection_protocol_get(ci) != protocol)) {
+				goto next_v4;
+			}
+
+			DEBUG_TRACE("%px: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+			defunct_result = true;
+
+next_v4:
+			cin = ecm_db_connection_get_and_ref_next(ci);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+	} else if (ip_ver == 6){
+		DEBUG_INFO("sip: %pI6 sport: %d dip: %pI6 dport: %d protocol: %d\n", &sip_addr_v6, sport, &dip_addr_v6, dport, protocol);
+
+		/*
+		 * Iterate all connections
+		 */
+		ci = ecm_db_connections_get_and_ref_first();
+		while (ci) {
+			if (ecm_db_connection_ip_version_get(ci) != ip_ver) {
+				goto next_v6;
+			}
+
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, ip_addr);
+			ECM_IP_ADDR_TO_NIN6_ADDR(addr6, ip_addr);
+			DEBUG_INFO("sip: %pI6\n", &addr6);
+			if (memcmp(&sip_addr_v6, &v6_0addr, sizeof(struct in6_addr)) &&  memcmp(&addr6, &sip_addr_v6, sizeof(struct in6_addr)) ) {
+				goto next_v6;
+			}
+
+			ci_sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+			DEBUG_INFO("sport: %d\n", ci_sport);
+			if ((sport) && (ci_sport != sport)) {
+				goto next_v6;
+			}
+
+			ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, ip_addr);
+			ECM_IP_ADDR_TO_NIN6_ADDR(addr6, ip_addr)
+			DEBUG_INFO("dip: %pI6\n", &addr6);
+			if (memcmp(&dip_addr_v6, &v6_0addr, sizeof(struct in6_addr)) && memcmp(&addr6, &dip_addr_v6, sizeof(struct in6_addr))) {
+				goto next_v6;
+			}
+
+			ci_dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+			DEBUG_INFO("dport: %d\n", ci_dport);
+			if ((dport) && (ci_dport != dport)) {
+				goto next_v6;
+			}
+
+			DEBUG_INFO("protocol: %d\n", protocol);
+			if ((protocol) && (ecm_db_connection_protocol_get(ci) != protocol)) {
+				goto next_v6;
+			}
+
+			DEBUG_TRACE("%px: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+			defunct_result = true;
+
+next_v6:
+			cin = ecm_db_connection_get_and_ref_next(ci);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+	} else if (ip_ver == 0) {
+		DEBUG_INFO("sport: %d dport: %d protocol: %d\n", sport, dport, protocol);
+
+		/*
+		 * Iterate all connections
+		 */
+		ci = ecm_db_connections_get_and_ref_first();
+		while (ci) {
+			ci_sport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+			DEBUG_INFO("sport: %d\n", ci_sport);
+			if ((sport) && (ci_sport != sport)) {
+				goto next_v0;
+			}
+
+			ci_dport = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+			DEBUG_INFO("dport: %d\n", ci_dport);
+			if ((dport) && (ci_dport != dport)) {
+				goto next_v0;
+                        }
+
+			DEBUG_INFO("protocol: %d\n", protocol);
+			if ((protocol) && (ecm_db_connection_protocol_get(ci) != protocol)) {
+				goto next_v0;
+			}
+
+			DEBUG_TRACE("%px: defunct\n", ci);
+			ecm_db_connection_make_defunct(ci);
+			defunct_result = true;
+
+next_v0:
+			cin = ecm_db_connection_get_and_ref_next(ci);
+			ecm_db_connection_deref(ci);
+			ci = cin;
+		}
+	}
+
+	if (!defunct_result) {
+		DEBUG_WARN("No connection found with this 5-tuple\n");
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ecm_db_connection_defunct_by_5tuple_mask_handler()
+ * 	Proc handler to defunct the ecm rules by giving 5 tuple mask
+ */
+static int ecm_db_connection_defunct_by_5tuple_mask_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * return if operation is read(cat /proc/sys/net/ecm/defunct_by_5tuple_mask)
+	 * We are not storing the value when it is written
+	 */
+	if (!write) {
+		*lenp = 0;
+		return 0;
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		DEBUG_WARN("Unable to allocate memory for Parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	/*
+	 * Command is formed as for IPv4 and IPv6 5-tuples as below respectively.
+	 *
+	 * echo "ip_ver=4 sip=192.168.1.100 sport=443 dip=192.168.2.100 dport=1000 protocol=17" > /proc/sys/net/ecm/defunct_by_5tuple_mask
+	 * echo "ip_ver=6 sip=2aaa::100 sport=443 dip=3bbb::200 dport=1000 protocol=17" > /proc/sys/net/ecm/defunct_by_5tuple_mask
+	 *
+	 * The order of the options MUST be as above and it MUST contain all the 5-tuple fields and the ip_ver.
+	 *
+	 * Suppose, we need to defunct all v4 connections based on only sport and protocol
+	 * echo "ip_ver=4 sip=0:0:0:0 sport=443 dip=0:0:0:0 dport=0 protocol=17" > /proc/sys/net/ecm/defunct_by_5tuple_mask
+	 *
+	 * Suppose, we need to defunct all v6 connections based on only sip
+	 * echo "ip_ver=6 sip=2aaa::100 sport=0 dip=0:0:0:0:0:0:0:0 dport=0 protocol=0" > /proc/sys/net/ecm/defunct_by_5tuple_mask
+	 *
+	 * Suppose, we want to defunct all v4/6 connections based on only sport
+	 * echo "ip_ver=0 sip=0:0:0:0 sport=1024 dip=0:0:0:0 dport=0 protocol=0" > /proc/sys/net/ecm/defunct_by_5tuple_mask
+	 *
+	 * Only one 5 tuple can be processed per defunct by 5tuple
+	 */
+	memcpy(buf, buffer, count);
+	if (!ecm_db_connection_defunct_5tuple_mask_buffer(buf)) {
+		DEBUG_WARN("Unable to defunct the rule for the given 5 tuple\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	kfree(buf);
+	return count;
+}
+
+/*
  * ecm_db_connection_defunct_5tuple_buffer()
  * 	Defunct the ecm database for the given 5 tuple
  */
@@ -4893,6 +5251,13 @@ static struct ctl_table ecm_db_connection_ctl_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &ecm_db_connection_defunct_by_5tuple_handler,
+	},
+	{
+		.procname	= "defunct_by_5tuple_mask",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_db_connection_defunct_by_5tuple_mask_handler,
 	},
 	{ }
 };
