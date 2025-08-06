@@ -119,6 +119,7 @@ void ecm_interface_dev_regenerate_connections(struct net_device *dev);
 struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr);
 bool ecm_interface_find_gateway(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr, uint32_t skb_mark);
 void ecm_interface_dev_defunct_connections(struct net_device *dev);
+void ecm_interface_defunct_connections_by_bridge_port(struct net_device *dev);
 void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version);
 void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type);
 bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_iface_type_t type, int32_t *mtu);
