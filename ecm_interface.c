@@ -10695,9 +10695,9 @@ static int ecm_interface_netevent_callback(struct notifier_block *self, unsigned
 
 	if (neigh->nud_state & NUD_FAILED) {
 		DEBUG_TRACE("NUD_FAILED for mac=%pM nud_state : 0x%x", neigh->ha, neigh->nud_state);
-		ecm_interface_node_connections_defunct(neigh->ha,
-						       ECM_DB_IP_VERSION_IGNORE);
+		ecm_interface_node_connections_defunct_by_type(neigh->ha, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_ARP_DELETE);
 	}
+
 	return NOTIFY_DONE;
 }
 

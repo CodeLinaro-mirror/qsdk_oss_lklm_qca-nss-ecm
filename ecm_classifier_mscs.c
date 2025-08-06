@@ -432,7 +432,6 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	int protocol;
 	uint32_t became_relevant = 0;
 	ecm_classifier_mscs_process_callback_t cb = NULL;
-	bool scs_result = false;
 	ecm_classifier_mscs_result_t result = 0;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
@@ -441,10 +440,11 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
 	uint64_t slow_pkts;
+	struct ecm_classifier_mscs_get_priority_info get_priority_info = {0};
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+	bool scs_result = false;
 	struct sp_rule_input_params flow_input_params;
 	struct sp_rule_output_params flow_output_params;
-	struct ecm_classifier_mscs_get_priority_info get_priority_info = {0};
 	struct ecm_classifier_mscs_rule_match_info rule_match_info = {0};
 	ecm_classifier_mscs_scs_priority_callback_t scs_cb = NULL;
 #endif
@@ -738,7 +738,7 @@ mscs_classifier_exit:
 
 	if (src_dev->ieee80211_ptr) {
 		/*
-		 * MSCS classification information comes in UL packets from WLAN side. 
+		 * MSCS classification information comes in UL packets from WLAN side.
 		 * Waiting on slow packets to update right priority in ECM flow entry
 		 */
 		spin_lock_bh(&ecm_classifier_mscs_lock);
@@ -775,7 +775,7 @@ mscs_classifier_exit:
 
 	if (ecm_classifier_scs_enabled) {
 		/*
-		 * If SCS classifier is enabled, give chance to SCS first for 
+		 * If SCS classifier is enabled, give chance to SCS first for
 		 * ECM_CLASSIFIER_MSCS_SCS_ACCEL_DELAY_PACKETS packets to see if it
 		 * has to update the priority, if not fall back to MSCS.
 		 */
