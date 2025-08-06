@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -124,6 +114,7 @@ void ecm_interface_dev_regenerate_connections(struct net_device *dev);
 struct net_device *ecm_interface_dev_find_by_local_addr(ip_addr_t addr);
 bool ecm_interface_find_gateway(ip_addr_t daddr, ip_addr_t saddr, ip_addr_t gw_addr);
 void ecm_interface_dev_defunct_connections(struct net_device *dev);
+void ecm_interface_defunct_connections_by_bridge_port(struct net_device *dev);
 void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version);
 void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version, ecm_db_connection_defunct_type_t type);
 bool ecm_interface_tunnel_mtu_update(ip_addr_t saddr, ip_addr_t daddr, ecm_db_iface_type_t type, int32_t *mtu);
