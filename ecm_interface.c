@@ -199,6 +199,11 @@ struct ecm_interface_denied_node {
 static uint8_t ecm_interface_defunct_mac[ETH_ALEN];
 
 /*
+ * Store iface name that is marked for defunct
+ */
+static char ecm_interface_defunct_iface[IFNAMSIZ];
+
+/*
  * Wi-Fi event node authorized information structure.
  */
 struct ecm_interface_wifi_event_node_authorized {
@@ -10130,6 +10135,81 @@ static int ecm_interface_defunct_by_mac_address(int write, void *buffer, size_t 
 }
 
 /*
+ * ecm_interface_defunct_by_iface_read()
+ * 	Read function for defunct the ecm rules by iface
+ */
+static int ecm_interface_defunct_by_iface_read(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	size_t bytes = 0;
+	char *read_buf;
+	int len;
+
+	read_buf = kzalloc(IFNAMSIZ * sizeof(char), GFP_KERNEL);
+	if (!read_buf) {
+		DEBUG_ERROR("Failed to allocate buffer for iface\n");
+		return -ENOMEM;
+	}
+
+	len = scnprintf(read_buf, IFNAMSIZ, "%s", ecm_interface_defunct_iface);
+	if (!len) {
+		DEBUG_ERROR("Failed to format iface\n");
+		kfree(read_buf);
+		return -EINVAL;
+	}
+
+	bytes += len;
+	len = scnprintf(read_buf + bytes, 4, "\n");
+	bytes += len;
+	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
+	*lenp = bytes;
+	kfree(read_buf);
+
+	return 0;
+}
+
+/*
+ * ecm_interface_defunct_by_iface()
+ * 	write function for defunct the ecm rules by iface
+ */
+static int ecm_interface_defunct_by_iface(int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int count;
+	struct net_device *dev;
+
+	if (!write) {
+		return ecm_interface_defunct_by_iface_read(buffer, lenp, ppos);
+	}
+
+	count = *lenp;
+	if (count > (IFNAMSIZ * sizeof(char))) {
+		DEBUG_ERROR("maximum length supported is 16\n");
+		return -EINVAL;
+	}
+
+	memset(ecm_interface_defunct_iface, 0, IFNAMSIZ * sizeof(char));
+	memcpy(ecm_interface_defunct_iface, buffer, count);
+	*ppos += count;
+	ecm_interface_defunct_iface[count-1] = '\0';
+
+	/*
+	 * Converting iface to dev
+	 */
+	dev = dev_get_by_name(&init_net, ecm_interface_defunct_iface);
+	if (dev == NULL) {
+		DEBUG_ERROR("dev %s couldn't be found\n", ecm_interface_defunct_iface);
+		return -ENODEV;
+	}
+
+	/*
+	 * defunct the ecm rules corresponding to dev
+	 */
+	ecm_interface_dev_defunct_connections(dev);
+	dev_put(dev);
+
+	return 0;
+}
+
+/*
  * ecm_interface_defunct_by_mac_addr_handler()
  * 	Proc handler function for defunct the ecm rules by mac address
  */
@@ -10142,6 +10222,22 @@ static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, i
 	 * Only one MAC address can be processed per defunct_by_mac
 	 */
 	return ecm_interface_defunct_by_mac_address(write, buffer, lenp, ppos);
+}
+
+/*
+ * ecm_interface_defunct_by_iface_handler()
+ * 	Proc handler function for defunct the ecm rules by iface
+ */
+static int ecm_interface_defunct_by_iface_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * To mark a iface name as defunct:
+	 * echo "eth0" > /proc/sys/net/ecm/defunct_by_iface
+	 * echo "br-lan" > /proc/sys/net/ecm/defunct_by_iface
+	 *
+	 * Only one iface can be processed per defunct_by_iface
+	 */
+	return ecm_interface_defunct_by_iface(write, buffer, lenp, ppos);
 }
 
 static struct ctl_table ecm_interface_table[] = {
@@ -10190,6 +10286,13 @@ static struct ctl_table ecm_interface_table[] = {
 		.maxlen			= sizeof(int),
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_mwan3_enable_handler,
+	},
+	{
+		.procname		= "defunct_by_iface",
+		.data			= &ecm_interface_defunct_iface,
+		.maxlen			= sizeof(ecm_interface_defunct_iface),
+		.mode			= 0644,
+		.proc_handler		= &ecm_interface_defunct_by_iface_handler,
 	},
 	{ }
 };
