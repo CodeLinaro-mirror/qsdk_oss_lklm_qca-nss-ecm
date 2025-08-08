@@ -249,6 +249,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		/*
 		 * Lock still held
 		 */
+		DEBUG_WARN("%px: classifier not enabled serial:%u \n", cwifii, cwifii->ci_serial);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
 	}
@@ -257,7 +258,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	if (!ecm_wifi.get_wifi_metadata) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
-		DEBUG_WARN("%px: No callback registered to get metadata \n", cwifii);
+		DEBUG_WARN("%px: No callback registered to get metadata serial:%u \n", cwifii, cwifii->ci_serial);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
 	}
@@ -267,7 +268,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	 */
 	ci = ecm_db_connection_serial_find_and_ref(cwifii->ci_serial);
 	if (!ci) {
-		DEBUG_TRACE("%px: No ci found for %u\n", cwifii, cwifii->ci_serial);
+		DEBUG_TRACE("%px: No ci found for serial:%u\n", cwifii, cwifii->ci_serial);
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		goto process_wifi_classifier_out;
@@ -281,7 +282,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
-		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		DEBUG_TRACE("%px: Accel not possible serial:%u\n", cwifii, cwifii->ci_serial);
 		goto process_wifi_classifier_out;
 	}
 
@@ -302,6 +303,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP) && (protocol != IPPROTO_GRE)) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		DEBUG_TRACE("%px: Invalid protocol 0x:%x serial:%u\n", cwifii, protocol, cwifii->ci_serial);
 		goto process_wifi_classifier_out;
 	}
 
@@ -338,6 +340,8 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 			&& (return_ds_metadata == ECM_CLASSIFIER_WIFI_INVALID_DS_NODE_ID)) {
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+		DEBUG_TRACE("%px: WiFi classifier wifi_flow_mdata:0x%x Return_wifi_mdata:0x%x flow_ds_mdata:0x%x return_ds_mdata:0x%x serial:%u\n",
+				cwifii, wifi_flow_metadata, wifi_return_metadata, flow_ds_metadata, return_ds_metadata, cwifii->ci_serial);
 		goto process_wifi_classifier_out;
 	}
 
@@ -367,6 +371,7 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		ct = nf_ct_get(skb, &ctinfo);
 		if (!ct) {
 			cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+			DEBUG_TRACE("%px: WiFi classifier Conntrack is not established serial:%u\n", cwifii, cwifii->ci_serial);
 			goto process_wifi_classifier_out;
 		}
 
@@ -410,10 +415,10 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		cwifii->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	}
 
-	DEBUG_TRACE("%px: flow mark: %x, return mark: %x, flow DS node id %d, return DS node id %d, sender %d flow_hlos_tid_override: %d, return_hlos_tid_override: %d skb->priority:%d\n",
+	DEBUG_TRACE("%px: flow mark: %x, return mark: %x, flow DS node id %d, return DS node id %d, sender %d flow_hlos_tid_override: %d, return_hlos_tid_override: %d skb->priority:%d serial:%u\n",
 			cwifii, cwifii->process_response.flow_mark, cwifii->process_response.return_mark,
 			cwifii->process_response.flow_wifi_ds_node_id, cwifii->process_response.return_wifi_ds_node_id,
-			sender, flow_hlos_tid_override, return_hlos_tid_override, skb->priority);
+			sender, flow_hlos_tid_override, return_hlos_tid_override, skb->priority, cwifii->ci_serial);
 
 process_wifi_classifier_out:
 
