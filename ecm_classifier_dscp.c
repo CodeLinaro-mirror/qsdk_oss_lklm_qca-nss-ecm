@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -79,6 +68,11 @@
 #define ECM_CLASSIFIER_DSCP_INSTANCE_MAGIC 0xFA43
 
 /*
+ * Default sysctl path
+ */
+#define ECM_CLASSIFIER_DSCP_PATH "net/ecm/ecm_classifier_dscp"
+
+/*
  * struct ecm_classifier_dscp_instance
  * 	State to allow tracking of dynamic qos for a connection
  */
@@ -123,6 +117,8 @@ static DEFINE_SPINLOCK(ecm_classifier_dscp_lock);			/* Protect SMP access. */
 static struct ecm_classifier_dscp_instance *ecm_classifier_dscp_instances = NULL;
 								/* list of all active instances */
 static int ecm_classifier_dscp_count = 0;			/* Tracks number of instances allocated */
+
+static struct ctl_table_header *ecm_classifier_dscp_ctl_table_header; /* Sysctl table header */
 
 static bool ecm_classifier_dscp_stats_enabled;
 struct ecm_classifier_dscp_stats_registrant ecm_classifier_dscp_client_stats_reg;
@@ -897,6 +893,62 @@ static int ecm_classifier_dscp_state_get(struct ecm_classifier_instance *ci, str
 #endif
 
 /*
+ * ecm_classifier_dscp_enable_handler()
+ * 	Proc handler to enable or disable DSCP classifier
+ */
+static int ecm_classifier_dscp_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To enable/disable DSCP classifier
+	 *
+	 * Enable DSCP classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_dscp/enabled
+	 *
+	 * Disable DSCP classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_dscp/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_dscp/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_dscp_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_dscp_enabled != 0) && (ecm_classifier_dscp_enabled != 1)) {
+		ecm_classifier_dscp_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input should be 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_dscp_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_dscp_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_dscp_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_dscp_instance_alloc()
  *	Allocate an instance of the DSCP classifier
  */
@@ -974,9 +1026,19 @@ int ecm_classifier_dscp_init(struct dentry *dentry)
 {
 	DEBUG_INFO("DSCP classifier Module init\n");
 
+	/*
+	 * Register sysctl table for dscp classifier
+	 */
+	ecm_classifier_dscp_ctl_table_header = register_sysctl(ECM_CLASSIFIER_DSCP_PATH, ecm_classifier_dscp_ctl_table);
+	if (!ecm_classifier_dscp_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm dscp directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_dscp_dentry = debugfs_create_dir("ecm_classifier_dscp", dentry);
 	if (!ecm_classifier_dscp_dentry) {
 		DEBUG_ERROR("Failed to create ecm dscp directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_dscp_ctl_table_header);
 		return -1;
 	}
 
@@ -984,6 +1046,7 @@ int ecm_classifier_dscp_init(struct dentry *dentry)
 					(u32 *)&ecm_classifier_dscp_enabled)) {
 		DEBUG_ERROR("Failed to create dscp enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_dscp_dentry);
+		unregister_sysctl_table(ecm_classifier_dscp_ctl_table_header);
 		return -1;
 	}
 
@@ -1007,6 +1070,13 @@ void ecm_classifier_dscp_exit(void)
 	 */
 	if (ecm_classifier_dscp_dentry) {
 		debugfs_remove_recursive(ecm_classifier_dscp_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_classifier_dscp_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_dscp_ctl_table_header);
 	}
 }
 EXPORT_SYMBOL(ecm_classifier_dscp_exit);

@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -81,6 +70,15 @@
 #define ECM_CLASSIFIER_MSCS_INVALID_SPI 0xff
 #define ECM_CLASSIFIER_MSCS_INVALID_RULE_ID 0xffff
 
+/*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_MSCS_INSTANCE_PATH "net/ecm/ecm_classifier_mscs"
+
+/*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_classifier_mscs_ctl_table_header;
 /*
  * MSCS-SCS classifier type.
  */
@@ -1224,6 +1222,160 @@ static int ecm_classifier_mscs_scs_set_udp_ipsec_port(void *data, u64 val)
 #endif
 
 /*
+ * ecm_classifier_mscs_enable_handler()
+ *  Proc handler to enable or disable mscs classifier
+ */
+static int ecm_classifier_mscs_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable MSCS classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_mscs/enabled
+	 *
+	 * Disable MSCS classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_mscs/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_mscs/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_mscs_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operations
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_mscs_enabled != 0) && (ecm_classifier_mscs_enabled != 1)) {
+		ecm_classifier_mscs_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_scs_enable_handler()
+ * 	Proc handler to enable or disable scs classifier
+ */
+static int ecm_classifier_scs_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable SCS classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_mscs/scs_enabled
+	 *
+	 * Disable SCS classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_mscs/scs_enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_mscs/scs_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_scs_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_scs_enabled != 0) && (ecm_classifier_scs_enabled != 1)) {
+		ecm_classifier_scs_enabled = current_val;
+		DEBUG_ERROR("Invalid input, valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * ecm_classifier_mscs_scs_multi_ap_enable_handler()
+ * 	Proc handler to enable/disable Multi AP for MSCS classifier
+ */
+static int ecm_classifier_mscs_scs_multi_ap_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable Multi AP for MSCS classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_mscs/multi_ap_enabled
+	 *
+	 * Disable Multi AP for MSCS classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_mscs/multi_ap_enabled
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_classifier_mscs/multi_ap_enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_mscs_scs_multi_ap_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_mscs_scs_multi_ap_enabled != 0) && (ecm_classifier_mscs_scs_multi_ap_enabled != 1)) {
+		ecm_classifier_mscs_scs_multi_ap_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_mscs_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_mscs_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_mscs_enable_handler,
+	},
+	{
+		.procname	= "scs_enabled",
+		.data		= &ecm_classifier_scs_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_scs_enable_handler,
+	},
+	{
+		.procname	= "multi_ap_enabled",
+		.data		= &ecm_classifier_mscs_scs_multi_ap_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_mscs_scs_multi_ap_enable_handler,
+	},
+	{ }
+};
+
+/*
  * Debugfs attribute for Emesh Enabled parameter.
  */
 DEFINE_SIMPLE_ATTRIBUTE(ecm_classifier_mscs_enabled_fops, ecm_classifier_mscs_rule_get_enabled, ecm_classifier_mscs_rule_set_enabled, "%llu\n");
@@ -1295,39 +1447,45 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 {
 	DEBUG_INFO("mscs classifier Module init\n");
 
+	/*
+	 * Register sysctl table for MSCS classifier
+	 */
+	ecm_classifier_mscs_ctl_table_header = register_sysctl(ECM_CLASSIFIER_MSCS_INSTANCE_PATH, ecm_classifier_mscs_ctl_table);
+	if (!ecm_classifier_mscs_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm mscs directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_mscs_dentry = debugfs_create_dir("ecm_classifier_mscs", dentry);
 	if (!ecm_classifier_mscs_dentry) {
 		DEBUG_ERROR("Failed to create ecm mscs directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_mscs_ctl_table_header);
 		return -1;
 	}
 
 	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_mscs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm mscs classifier enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!debugfs_create_file("multi_ap_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 			NULL, &ecm_classifier_mscs_scs_multi_ap_enabled_fops)) {
 		DEBUG_ERROR("Failed to create multi ap enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
 	if (!debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm scs classifier enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_udp_ipsec_port_fops)) {
 		DEBUG_ERROR("Failed to create ecm scs udp ipsec port file in debugfs for adding port number\n");
-		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	/*
@@ -1336,6 +1494,12 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 	sp_mapdb_notifier_register(&ecm_classifier_mscs_spm_notifier);
 #endif
 	return 0;
+
+init_cleanup:
+
+	debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+	unregister_sysctl_table(ecm_classifier_mscs_ctl_table_header);
+	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_mscs_init);
 
@@ -1355,6 +1519,13 @@ void ecm_classifier_mscs_exit(void)
 	 */
 	if (ecm_classifier_mscs_dentry) {
 		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+	}
+
+	/*
+	 * Unregister sysctl entry
+	 */
+	if (ecm_classifier_mscs_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_mscs_ctl_table_header);
 	}
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE

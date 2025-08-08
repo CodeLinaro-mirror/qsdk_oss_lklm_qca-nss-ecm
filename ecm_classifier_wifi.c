@@ -48,6 +48,11 @@
 #define ECM_CLASSIFIER_WIFI_INSTANCE_MAGIC 0xFE35
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_WIFI_PATH "net/ecm/ecm_classifier_wifi"
+
+/*
  * struct ecm_classifier_wifi_instance
  */
 struct ecm_classifier_wifi_instance {
@@ -101,6 +106,8 @@ static struct ecm_classifier_wifi_callbacks ecm_wifi;
  * Debugfs dentry object.
  */
 static struct dentry *ecm_classifier_wifi_dentry;
+
+static struct ctl_table_header *ecm_classifier_wifi_ctl_table_header; /* Sysctl table header */
 
 /*
  * ecm_classifier_wifi_type_get()
@@ -660,6 +667,60 @@ static void ecm_classifier_wifi_should_keep_connection(struct ecm_classifier_ins
 }
 
 /*
+ * ecm_classifier_wifi_enable_handler
+ * 	Proc handler to enable or disable WIFI classifier
+ */
+static int ecm_classifier_wifi_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable WIFI classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_wifi/enabled
+	 *
+	 * Disable WIFI classifier
+	 * echo 0 >/proc/sys/net/ecm/ecm_classifier_wifi/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_wifi/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_wifi_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operations
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_wifi_enabled != 0) && (ecm_classifier_wifi_enabled != 1)) {
+		ecm_classifier_wifi_enabled = current_val;
+		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_wifi_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_wifi_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_wifi_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_wifi_instance_alloc()
  *	Allocate an instance of the wifi classifier
  */
@@ -765,10 +826,20 @@ EXPORT_SYMBOL(ecm_classifier_wifi_callback_unregister);
 int ecm_classifier_wifi_init(struct dentry *dentry)
 {
 	DEBUG_INFO("Wi-fi classifier Module init\n");
-	ecm_classifier_wifi_dentry = debugfs_create_dir("ecm_classifier_wifi", dentry);
 
+	/*
+	 * Register sysctl table for WIFI classifier
+	 */
+	ecm_classifier_wifi_ctl_table_header = register_sysctl(ECM_CLASSIFIER_WIFI_PATH, ecm_classifier_wifi_ctl_table);
+	if (!ecm_classifier_wifi_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm wifi directory in sysctl\n");
+		return -1;
+	}
+
+	ecm_classifier_wifi_dentry = debugfs_create_dir("ecm_classifier_wifi", dentry);
 	if (!ecm_classifier_wifi_dentry) {
 		DEBUG_ERROR("Failed to create ecm wifi directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_wifi_ctl_table_header);
 		return -1;
 	}
 
@@ -776,6 +847,7 @@ int ecm_classifier_wifi_init(struct dentry *dentry)
 					(u32 *)&ecm_classifier_wifi_enabled)) {
 		DEBUG_ERROR("Failed to create ecm wifi classifier enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_wifi_dentry);
+		unregister_sysctl_table(ecm_classifier_wifi_ctl_table_header);
 		return -1;
 	}
 
@@ -798,5 +870,12 @@ void ecm_classifier_wifi_exit(void)
 	 */
 	if (ecm_classifier_wifi_dentry) {
 		debugfs_remove_recursive(ecm_classifier_wifi_dentry);
+	}
+
+	/*
+	 * Unregister sysclt table header
+	 */
+	if (ecm_classifier_wifi_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_wifi_ctl_table_header);
 	}
 }

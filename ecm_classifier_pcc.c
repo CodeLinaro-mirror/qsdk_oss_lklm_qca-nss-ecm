@@ -77,6 +77,13 @@
 #define ECM_CLASSIFIER_PCC_INSTANCE_MAGIC 0x2351
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_CLASSIFIER_PCC_PATH "net/ecm/ecm_classifier_pcc"
+
+static struct ctl_table_header *ecm_classifier_pcc_ctl_table_header; /* Sysctl table header */
+
+/*
  * struct ecm_classifier_pcc_instance
  * 	State per connection for PCC classifier
  */
@@ -1277,6 +1284,60 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
 #endif
 
 /*
+ * ecm_classifier_pcc_enable_handler()
+ * 	Proc handler to enable or disable PCC classifier
+ */
+static int ecm_classifier_pcc_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable PCC classifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_classifier_pcc/enabled
+	 *
+	 * Disable PCC classifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_classifier_pcc/enabled
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_classifier_pcc/enabled
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_pcc_enabled;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if ((ecm_classifier_pcc_enabled != 0) && (ecm_classifier_pcc_enabled != 1)) {
+		ecm_classifier_pcc_enabled = current_val;
+		DEBUG_ERROR("Invalid input, valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_classifier_pcc_ctl_table[] = {
+	{
+		.procname	= "enabled",
+		.data		= &ecm_classifier_pcc_enabled,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_pcc_enable_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_classifier_pcc_instance_alloc()
  *	Allocate an instance of the Parental Controls classifier
  */
@@ -1352,9 +1413,19 @@ int ecm_classifier_pcc_init(struct dentry *dentry)
 {
 	DEBUG_INFO("Parental Controls classifier Module init\n");
 
+	/*
+	 * Register sysctl table for PCC classifier
+	 */
+	ecm_classifier_pcc_ctl_table_header = register_sysctl(ECM_CLASSIFIER_PCC_PATH, ecm_classifier_pcc_ctl_table);
+	if (!ecm_classifier_pcc_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm pcc directory in sysctl\n");
+		return -1;
+	}
+
 	ecm_classifier_pcc_dentry = debugfs_create_dir("ecm_classifier_pcc", dentry);
 	if (!ecm_classifier_pcc_dentry) {
 		DEBUG_ERROR("Failed to create ecm pcc directory in debugfs\n");
+		unregister_sysctl_table(ecm_classifier_pcc_ctl_table_header);
 		return -1;
 	}
 
@@ -1362,6 +1433,7 @@ int ecm_classifier_pcc_init(struct dentry *dentry)
 					(u32 *)&ecm_classifier_pcc_enabled)) {
 		DEBUG_ERROR("Failed to create pcc enabled file in debugfs\n");
 		debugfs_remove_recursive(ecm_classifier_pcc_dentry);
+		unregister_sysctl_table(ecm_classifier_pcc_ctl_table_header);
 		return -1;
 	}
 
@@ -1381,6 +1453,13 @@ void ecm_classifier_pcc_exit(void)
 	 */
 	if (ecm_classifier_pcc_dentry) {
 		debugfs_remove_recursive(ecm_classifier_pcc_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_classifier_pcc_ctl_table_header) {
+		unregister_sysctl_table(ecm_classifier_pcc_ctl_table_header);
 	}
 
 }

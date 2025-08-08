@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2017, 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -83,6 +73,11 @@
 #include "ecm_interface.h"
 
 /*
+ * Default path for syctl
+ */
+#define ECM_BOND_NOTIFIER_PATH "net/ecm/ecm_bond_notifier"
+
+/*
  * Locking of the classifier - concurrency control
  */
 static DEFINE_SPINLOCK(ecm_bond_notifier_lock);             /* Protect against SMP access between netfilter, events and private threaded function. */
@@ -91,6 +86,11 @@ static DEFINE_SPINLOCK(ecm_bond_notifier_lock);             /* Protect against S
  * Debugfs dentry object.
  */
 static struct dentry *ecm_bond_notifier_dentry;
+
+/*
+ * sysctl table header
+ */
+static struct ctl_table_header *ecm_bond_notifier_ctl_table_header;
 
 /*
  * General operational control
@@ -222,6 +222,57 @@ static void ecm_bond_notifier_bond_delete_by_mac(uint8_t *mac)
 	ecm_interface_node_connections_defunct(mac, ECM_DB_IP_VERSION_IGNORE);
 }
 
+/*
+ * ecm_bond_notifier_stop_handler()
+ * 	Proc handler for enable or disable ECM bond notifier
+ */
+static int ecm_bond_notifier_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * Enable ECM bond notifier
+	 * echo 0 > /proc/sys/net/ecm/ecm_bond_notifier/stop
+	 *
+	 * Disable ECM bond notifier
+	 * echo 1 > /proc/sys/net/ecm/ecm_bond_notifier/stop
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_bond_notifier/stop
+	 */
+	int ret;
+	int original_value;
+
+	/*
+	 * Take the original value in case to restore it
+	 * due to invalid input
+	 */
+	original_value = ecm_bond_notifier_stopped;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if ((ecm_bond_notifier_stopped != 0) && (ecm_bond_notifier_stopped != 1)) {
+		DEBUG_WARN("Invalid input, Valid values 0/1\n");
+		ecm_bond_notifier_stopped = original_value;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_bond_notifier_ctl_table[] = {
+	{
+		.procname	= "stop",
+		.data		= &ecm_bond_notifier_stopped,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_bond_notifier_stop_handler,
+	},
+	{ }
+};
+
 void ecm_bond_notifier_stop(int num)
 {
 	ecm_bond_notifier_stopped = num;
@@ -235,9 +286,19 @@ int ecm_bond_notifier_init(struct dentry *dentry)
 {
 	DEBUG_INFO("ECM Bonding Notifier init\n");
 
+	/*
+	 * Register sysctl table for bond notifier
+	 */
+	ecm_bond_notifier_ctl_table_header = register_sysctl(ECM_BOND_NOTIFIER_PATH, ecm_bond_notifier_ctl_table);
+	if (!ecm_bond_notifier_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm bond notifier stopped file in sysctl\n");
+		return -1;
+	}
+
 	ecm_bond_notifier_dentry = debugfs_create_dir("ecm_bond_notifier", dentry);
 	if (!ecm_bond_notifier_dentry) {
 		DEBUG_ERROR("Failed to create ecm bond notifier directory in debugfs\n");
+		unregister_sysctl_table(ecm_bond_notifier_ctl_table_header);
 		return -1;
 	}
 
@@ -245,6 +306,7 @@ int ecm_bond_notifier_init(struct dentry *dentry)
 					(u32 *)&ecm_bond_notifier_stopped)) {
 		DEBUG_ERROR("Failed to create ecm bond notifier stopped file in debugfs\n");
 		debugfs_remove_recursive(ecm_bond_notifier_dentry);
+		unregister_sysctl_table(ecm_bond_notifier_ctl_table_header);
 		return -1;
 	}
 
@@ -278,6 +340,13 @@ void ecm_bond_notifier_exit(void)
 	 */
 	if (ecm_bond_notifier_dentry) {
 		debugfs_remove_recursive(ecm_bond_notifier_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table
+	 */
+	if (ecm_bond_notifier_ctl_table_header) {
+		unregister_sysctl_table(ecm_bond_notifier_ctl_table_header);
 	}
 }
 EXPORT_SYMBOL(ecm_bond_notifier_exit);
