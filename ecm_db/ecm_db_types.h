@@ -295,6 +295,7 @@ typedef enum ecm_db_iface_types ecm_db_iface_type_t;
  */
 struct ecm_db_interface_info_ethernet {			/* type == ECM_DB_IFACE_TYPE_ETHERNET */
 	uint8_t address[ETH_ALEN];			/* MAC Address of this Interface */
+	struct net_device *dev;				/* netdevice of this Interface */
 };
 
 #ifdef ECM_INTERFACE_DSA_ENABLE

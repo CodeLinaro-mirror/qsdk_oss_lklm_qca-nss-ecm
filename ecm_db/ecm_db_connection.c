@@ -2638,7 +2638,19 @@ struct net_device *ecm_db_connection_first_iface_dev_get_and_ref(struct ecm_db_c
 	_ecm_db_iface_ref(ii);
 	spin_unlock_bh(&ecm_db_lock);
 
-	dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+	/*
+	 * Dev pointer may get removed from inet array when wifi interface is unregistered 
+	 * And dev_get_by_index() will return null then.
+	 * To avoid this store dev pointer in ii during interface establishment
+	 * And get it from ii if iface_type is ECM_DB_IFACE_TYPE_ETHERNET.
+	 */
+	if (ii->type == ECM_DB_IFACE_TYPE_ETHERNET) {
+		dev = ii->type_info.ethernet.dev;
+		dev_hold(dev);
+	} else {
+		dev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+	}
+
 	ecm_db_iface_deref(ii);
 
 	return dev;

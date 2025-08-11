@@ -2586,18 +2586,18 @@ static struct ecm_db_iface_instance *ecm_interface_lag_interface_establish(struc
  * Returns NULL on failure or a reference to interface.
  */
 static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(struct ecm_db_interface_info_ethernet *type_info,
-							char *dev_name, int32_t dev_interface_num, int32_t ae_interface_num, int32_t mtu)
+							struct net_device *dev, int32_t ae_interface_num, int32_t mtu)
 {
 	struct ecm_db_iface_instance *nii;
 	struct ecm_db_iface_instance *ii;
 
 	DEBUG_INFO("Establish ETHERNET iface: %s with address: %pM, MTU: %d, if num: %d, accel engine if id: %d\n",
-			dev_name, type_info->address, mtu, dev_interface_num, ae_interface_num);
+			dev->name, type_info->address, mtu, dev->ifindex, ae_interface_num);
 
 	/*
 	 * Locate the iface
 	 */
-	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num, ae_interface_num);
+	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev->ifindex, ae_interface_num);
 
 	if (ii) {
 		DEBUG_TRACE("%px: iface established\n", ii);
@@ -2617,14 +2617,14 @@ static struct ecm_db_iface_instance *ecm_interface_ethernet_interface_establish(
 	 * Add iface into the database, atomically to avoid races creating the same thing
 	 */
 	spin_lock_bh(&ecm_interface_lock);
-	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev_interface_num, ae_interface_num);
+	ii = ecm_db_iface_ifidx_find_and_ref_ethernet(type_info->address, dev->ifindex, ae_interface_num);
 	if (ii) {
 		spin_unlock_bh(&ecm_interface_lock);
 		ecm_db_iface_deref(nii);
 		return ii;
 	}
-	ecm_db_iface_add_ethernet(nii, type_info->address, dev_name,
-			mtu, dev_interface_num, ae_interface_num, NULL, nii);
+	ecm_db_iface_add_ethernet(nii, type_info->address, dev,
+			mtu, ae_interface_num, NULL, nii);
 	spin_unlock_bh(&ecm_interface_lock);
 
 	DEBUG_TRACE("%px: ethernet iface established\n", nii);
@@ -4048,7 +4048,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 		/*
 		 * Establish this type of interface
 		 */
-		ii = ecm_interface_ethernet_interface_establish(&type_info.ethernet, dev_name, dev_interface_num, ae_interface_num, dev_mtu);
+		ii = ecm_interface_ethernet_interface_establish(&type_info.ethernet, dev, ae_interface_num, dev_mtu);
 
 identifier_update:
 		if (ii) {

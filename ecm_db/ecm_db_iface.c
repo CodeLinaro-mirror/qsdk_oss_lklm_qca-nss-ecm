@@ -2878,9 +2878,8 @@ static inline void ecm_db_iface_add_to_db(struct ecm_db_iface_instance *ii,  ecm
  * ecm_db_iface_add_ethernet()
  *	Add a iface instance into the database
  */
-void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *address, char *name, int32_t mtu,
-					int32_t interface_identifier, int32_t ae_interface_identifier,
-					ecm_db_iface_final_callback_t final, void *arg)
+void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *address, struct net_device *dev, int32_t mtu,
+					int32_t ae_interface_identifier, ecm_db_iface_final_callback_t final, void *arg)
 {
 	ecm_db_iface_hash_t hash_index;
 	struct ecm_db_interface_info_ethernet *type_info;
@@ -2892,7 +2891,7 @@ void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *addres
 	DEBUG_ASSERT((ii->nodes == NULL) && (ii->node_count == 0), "%px: nodes not null\n", ii);
 #endif
 	DEBUG_ASSERT(!(ii->flags & ECM_DB_IFACE_FLAGS_INSERTED), "%px: inserted\n", ii);
-	DEBUG_ASSERT(name, "%px: no name given\n", ii);
+	DEBUG_ASSERT(dev->name, "%px: no name given\n", ii);
 	spin_unlock_bh(&ecm_db_lock);
 
 	/*
@@ -2904,9 +2903,9 @@ void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *addres
 #endif
 	ii->arg = arg;
 	ii->final = final;
-	strlcpy(ii->name, name, IFNAMSIZ);
+	strlcpy(ii->name, dev->name, IFNAMSIZ);
 	ii->mtu = mtu;
-	ii->interface_identifier = interface_identifier;
+	ii->interface_identifier = dev->ifindex;
 	ii->ae_interface_identifier = ae_interface_identifier;
 
 	/*
@@ -2914,6 +2913,7 @@ void ecm_db_iface_add_ethernet(struct ecm_db_iface_instance *ii, uint8_t *addres
 	 */
 	type_info = &ii->type_info.ethernet;
 	memcpy(type_info->address, address, ETH_ALEN);
+	type_info->dev = dev;
 
 	/*
 	 * Compute hash chain for insertion
