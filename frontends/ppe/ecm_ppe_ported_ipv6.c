@@ -436,6 +436,174 @@ bool ecm_ppe_ported_ipv6_bidir_sawf_rule_update(
 	return true;
 }
 
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+/* ecm_ppe_ported_ipv6_connection_is_mapt_accel_valid()
+ *	Check whether MAPT can be allowed to accelerate.
+ *
+ *	Returns true if the MAPT flow is valid for PPE acceleration.
+ *	Returns false if not; in that case *accel_mode is set to the appropriate
+ *	acceleration mode the caller should use when clearing the accel pending state:
+ *	  - ECM_FRONT_END_ACCELERATION_MODE_DECEL:            temporary failure, retry later
+ *	  - ECM_FRONT_END_ACCELERATION_MODE_FAIL_ACCEL_ENGINE: inner flow is on SFE,
+ *	    outer flow must also use SFE
+ */
+static bool ecm_ppe_ported_ipv6_connection_is_mapt_accel_valid(
+								struct ecm_front_end_connection_instance *feci,
+								struct ecm_db_iface_instance *ii, bool is_from,
+								ecm_front_end_acceleration_mode_t *accel_mode)
+{
+	struct in6_addr saddr, daddr;
+	uint8_t proto;
+	uint16_t sport, dport;
+	struct net_device *mapdev;
+	struct ipv6hdr ip6 = {0};
+	struct ecm_db_connection_instance *ci_v4;
+	__be32 src_ip_v4, dst_ip_v4;
+	ip_addr_t ecm_saddr_v4 = {0}, ecm_daddr_v4 = {0};
+	struct ecm_front_end_connection_instance *feci_v4;
+	ip_addr_t src_ip;
+	ip_addr_t dest_ip;
+	bool ppe_not_accel;
+	bool inner_on_sfe;
+
+	proto = ecm_db_connection_protocol_get(feci->ci);
+
+	/*
+	 * xlate_6_to_4() expects ip6.saddr to be the WAN (remote) IPv6 address.
+	 * For is_from=true (LAN->WAN): TO is the WAN side, so fetch TO as saddr.
+	 * For is_from=false (WAN->LAN): FROM is the WAN side, so fetch FROM as saddr.
+	 */
+	if (is_from) {
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(saddr, src_ip);
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, dest_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(daddr, dest_ip);
+		sport = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+		dport = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	} else {
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(saddr, src_ip);
+		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, dest_ip);
+		ECM_IP_ADDR_TO_NIN6_ADDR(daddr, dest_ip);
+		sport = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+		dport = ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+	}
+
+	ip6.saddr = saddr;
+	ip6.daddr = daddr;
+
+	mapdev = dev_get_by_index(&init_net, ecm_db_iface_interface_identifier_get(ii));
+	if (!mapdev) {
+		DEBUG_TRACE("%px: MAPT dev not found\n", feci);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		return false;
+	}
+
+	if (!(xlate_6_to_4(mapdev, &ip6, proto, &src_ip_v4, &dst_ip_v4))) {
+		DEBUG_TRACE("%px: MAPT xlate_6_to_4 failed\n", feci);
+		dev_put(mapdev);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		return false;
+	}
+
+	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_saddr_v4, src_ip_v4);
+	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_daddr_v4, dst_ip_v4);
+
+	/*
+	 * Retrieve real LAN IP/ports via conntrack to avoid hash bucket mismatches
+	 * caused by NAPT44 NATed addresses. Fall back to translated addresses if
+	 * conntrack lookup fails.
+	 */
+	{
+		struct nf_conntrack_tuple tuple;
+		struct nf_conntrack_tuple_hash *h;
+		struct nf_conn *ct;
+		ip_addr_t ecm_real_wan = {0}, ecm_real_lan = {0};
+		uint16_t real_wan_port, real_lan_port;
+
+		memset(&tuple, 0, sizeof(tuple));
+		tuple.src.u3.ip    = src_ip_v4;    /* WAN IPv4 (always src from xlate) */
+		tuple.src.u.all    = htons(sport); /* WAN port */
+		tuple.src.l3num    = AF_INET;
+		tuple.dst.u3.ip    = dst_ip_v4;    /* CPE public IPv4 */
+		tuple.dst.u.all    = htons(dport); /* CPE public port */
+		tuple.dst.protonum = proto;
+		tuple.dst.dir      = IP_CT_DIR_REPLY;
+
+		h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
+		if (h) {
+			/*
+			 * NAPT44 case: the ORIGINAL direction is LAN_priv->WAN.
+			 * Use dst (WAN) as host1 and src (LAN_priv) as host2 so the
+			 * lookup hits the reverse-match path that checks interfaces[TO].
+			 */
+			ct = nf_ct_tuplehash_to_ctrack(h);
+			ECM_NIN4_ADDR_TO_IP_ADDR(ecm_real_wan,
+				ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip);
+			ECM_NIN4_ADDR_TO_IP_ADDR(ecm_real_lan,
+				ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip);
+			real_wan_port = ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all);
+			real_lan_port = ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all);
+			nf_ct_put(ct);
+
+			ci_v4 = ecm_db_connection_mapt_find_and_ref(ecm_real_wan, ecm_real_lan,
+						proto, real_wan_port, real_lan_port, mapdev);
+		} else {
+			/*
+			 * Non-NAPT44: translated addresses are the real addresses.
+			 * ecm_saddr_v4=WAN, ecm_daddr_v4=LAN, sport=WAN port, dport=LAN port.
+			 */
+			ci_v4 = ecm_db_connection_mapt_find_and_ref(ecm_saddr_v4, ecm_daddr_v4,
+						proto, sport, dport, mapdev);
+		}
+	}
+
+	dev_put(mapdev);
+
+	if (!ci_v4) {
+		DEBUG_TRACE("%px: Wait till MAPT inner flow is found\n", feci);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		return false;
+	}
+
+	feci_v4 = ci_v4->feci;
+
+	/*
+	 * Read the inner flow's AE type and acceleration state under its lock
+	 * to get a consistent snapshot of both fields.
+	 */
+	spin_lock_bh(&feci_v4->lock);
+	ppe_not_accel = (feci_v4->accel_engine == ECM_FRONT_END_ENGINE_PPE) &&
+	                (feci_v4->accel_mode != ECM_FRONT_END_ACCELERATION_MODE_ACCEL);
+	inner_on_sfe  = (feci_v4->accel_engine == ECM_FRONT_END_ENGINE_SFE);
+	spin_unlock_bh(&feci_v4->lock);
+
+	if (ppe_not_accel) {
+		DEBUG_TRACE("%px: Wait till MAPT inner flow is accelerated\n", feci);
+		ecm_db_connection_deref(ci_v4);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		return false;
+	}
+
+#ifdef ECM_FRONT_END_SFE_ENABLE
+	if (inner_on_sfe) {
+		/*
+		 * The inner IPv4 flow is accelerated by SFE. For MAPT, both inner and outer
+		 * flows must use the same AE. Signal FAIL_ACCEL_ENGINE via accel_mode so the
+		 * caller triggers AE re-selection for the outer IPv6 MAPT flow to SFE.
+		 */
+		DEBUG_TRACE("%px: MAPT inner flow is on SFE; outer flow must also use SFE\n", feci);
+		ecm_db_connection_deref(ci_v4);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_ACCEL_ENGINE;
+		return false;
+	}
+#endif
+
+	ecm_db_connection_deref(ci_v4);
+	return true;
+}
+#endif
+
 /*
  * ecm_ppe_ported_ipv6_connection_accelerate()
  *	Accelerate a connection
@@ -882,6 +1050,23 @@ process_next_iface_flow:
 #endif
 			break;
 
+		case ECM_DB_IFACE_TYPE_MAP_T:
+		{
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+			ecm_front_end_acceleration_mode_t mapt_fail_mode;
+			if (!ecm_ppe_ported_ipv6_connection_is_mapt_accel_valid(feci, ii, true, &mapt_fail_mode)) {
+				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+				kfree(pd6rc);
+				if (ecm_ppe_ipv6_accel_pending_clear(feci, mapt_fail_mode)) {
+					feci->is_defunct = false;
+				}
+				return;
+			}
+#endif
+		}
+		break;
+
 		case ECM_DB_IFACE_TYPE_VXLAN:
 		{
 			/*
@@ -1300,6 +1485,23 @@ process_next_iface_return:
 			rule_invalid = true;
 #endif
 			break;
+
+		case ECM_DB_IFACE_TYPE_MAP_T:
+		{
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+			ecm_front_end_acceleration_mode_t mapt_fail_mode;
+			if (!ecm_ppe_ported_ipv6_connection_is_mapt_accel_valid(feci, ii, false, &mapt_fail_mode)) {
+				ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
+				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
+				kfree(pd6rc);
+				if (ecm_ppe_ipv6_accel_pending_clear(feci, mapt_fail_mode)) {
+					feci->is_defunct = false;
+				}
+				return;
+			}
+#endif
+		}
+		break;
 
 		case ECM_DB_IFACE_TYPE_VXLAN:
 		{
