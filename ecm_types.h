@@ -335,7 +335,7 @@ static inline bool ecm_ip_addr_is_multicast(ip_addr_t addr)
 	return false;
 }
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_translate_multicast_mac()
  * 	Create the multicast MAC address given a multicast IP address

@@ -68,9 +68,9 @@
  * 4 = 3 + TRACE
  */
 #define DEBUG_LEVEL ECM_SFE_MULTICAST_IPV6_DEBUG_LEVEL
-
+#if defined(ECM_MULTICAST_ENABLE)
 #include <mc_ecm.h>
-
+#endif
 #include "ecm_types.h"
 #include "ecm_db_types.h"
 #include "ecm_state.h"
@@ -2397,7 +2397,7 @@ static int ecm_sfe_multicast_ipv6_connection_state_get(struct ecm_front_end_conn
  * ecm_sfe_multicast_ipv6_bridge_update_connections()
  * 	Update SFE with new multicast egress ports.
  */
-static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
+void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_multicast_tuple_instance *ti;
@@ -2455,8 +2455,14 @@ static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num == 0  All slaves have left the group. Deacel the flow.
 		 * 	if_num > 0   An interface leave/Join the group. Process the leave/join interface request.
 		 */
+#if defined(ECM_ATH_MCAST_ENABLE)
+		rcu_read_lock();
+		if_num = ecm_ath_mc_bridge_ipv6_get_if(brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		rcu_read_unlock();
+#else
 		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6,
 				ECM_DB_MULTICAST_IF_MAX, mc_dst_dev, dest_mac);
+#endif
 		if (if_num < 0) {
 			/*
 			 * This may a valid case when all the interface has left a multicast group.
@@ -2826,6 +2832,7 @@ struct ecm_front_end_connection_instance *ecm_sfe_multicast_ipv6_connection_inst
 	return feci;
 }
 
+#if defined(ECM_MULTICAST_ENABLE)
 /*
  * ecm_sfe_multicast_ipv6_br_update_event_callback()
  *	Callback received from bridge multicast snooper module in the
@@ -2854,6 +2861,7 @@ static void ecm_sfe_multicast_ipv6_br_update_event_callback(struct net_device *b
 
 	ecm_sfe_multicast_ipv6_bridge_update_connections(dest_ip, brdev);
 }
+#endif
 
 /*
  * ecm_sfe_multicast_ipv6_mfc_update_event_callback()
@@ -3237,6 +3245,7 @@ int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 
 	ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry, &ecm_sfe_multicast_ipv6_accelerated_count);
 
+#if defined(ECM_MULTICAST_ENABLE)
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
@@ -3245,14 +3254,16 @@ int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 		unregister_sysctl_table(ecm_sfe_multicast_ipv6_ctl_table_header);
 		return -1;
 	}
-
+#endif
 	/*
 	 * Register multicast update callbacks to MFC
 	 */
 	if (!ip6mr_register_mfc_event_offload_callback(ecm_sfe_multicast_ipv6_mfc_update_event_callback)) {
 		DEBUG_ERROR("Failed to register MFC callback\n");
 		unregister_sysctl_table(ecm_sfe_multicast_ipv6_ctl_table_header);
+#if defined(ECM_MULTICAST_ENABLE)
 		mc_bridge_ipv6_update_callback_deregister();
+#endif
 		return -1;
 	}
 
@@ -3270,8 +3281,9 @@ void ecm_sfe_multicast_ipv6_exit(void)
 	 * MFC and MCS snooper
 	 */
 	ip6mr_unregister_mfc_event_offload_callback();
+#if defined(ECM_MULTICAST_ENABLE)
 	mc_bridge_ipv6_update_callback_deregister();
-
+#endif
 	/*
 	 * Unregister sysctl table header
 	 */

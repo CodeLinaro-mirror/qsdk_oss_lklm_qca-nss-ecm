@@ -62,8 +62,9 @@
 #define DEBUG_LEVEL ECM_NSS_MULTICAST_IPV4_DEBUG_LEVEL
 
 #include <nss_api_if.h>
+#if defined(ECM_MULTICAST_ENABLE)
 #include <mc_ecm.h>
-
+#endif
 #include "ecm_types.h"
 #include "ecm_db_types.h"
 #include "ecm_state.h"
@@ -1971,8 +1972,15 @@ static void ecm_nss_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num > 0   An interface has either left or joined the group. Process the leave/join interface request.
 		 */
 		memset(mc_dst_dev, 0, sizeof(mc_dst_dev));
+
+#if defined(ECM_ATH_MCAST_ENABLE)
+		rcu_read_lock();
+		if_num = ecm_ath_mc_bridge_ipv4_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		rcu_read_unlock();
+#else
 		if_num = mc_bridge_ipv4_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX,
 				mc_dst_dev, dest_mac_addr);
+#endif
 		if (if_num < 0) {
 			/*
 			 * This may a valid case when all the interfaces have left a multicast group.

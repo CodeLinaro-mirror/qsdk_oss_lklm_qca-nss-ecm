@@ -76,7 +76,9 @@
 #include <nss_api_if.h>
 #endif
 
+#if defined(ECM_MULTICAST_ENABLE)
 #include <mc_ecm.h>
+#endif
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -686,8 +688,15 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
+
+#if defined(ECM_ATH_MCAST_ENABLE)
+			rcu_read_lock();
+			if_cnt_bridge = ecm_ath_mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			rcu_read_unlock();
+#else
 			if_cnt_bridge = mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX,
 					dst_dev_bridge, mcuc_addr);
+#endif
 			if (if_cnt_bridge <= 0) {
 				DEBUG_WARN("No bridge ports have joined multicast group\n");
 				goto process_packet;
@@ -721,7 +730,13 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 		goto done;
 	}
 
+#if defined(ECM_ATH_MCAST_ENABLE)
+	rcu_read_lock();
+	if_cnt = ecm_ath_mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
+	rcu_read_unlock();
+#else
 	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev, mcuc_addr);
+#endif
 	if (if_cnt <= 0) {
 		DEBUG_WARN("Not found a valid MCS if count %d %pI4 -> %pI4\n",
 				if_cnt, &orig_tuple->src.u3.ip, &orig_tuple->dst.u3.ip);

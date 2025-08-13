@@ -16,7 +16,7 @@
  **************************************************************************
  */
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_db_multicast_iface_list_info
  * 	The structure contains info of multicast dest_ifindex and

@@ -73,7 +73,9 @@
  */
 #define DEBUG_LEVEL ECM_CMN_MULTICAST_IPV6_DEBUG_LEVEL
 
+#if defined(ECM_MULTICAST_ENABLE)
 #include <mc_ecm.h>
+#endif
 
 #include "ecm_types.h"
 #include "ecm_db_types.h"
@@ -659,8 +661,15 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
+
+#if defined(ECM_ATH_MCAST_ENABLE)
+			rcu_read_lock();
+			mc_if_cnt_bridge = ecm_ath_mc_bridge_ipv6_get_if(in_dev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			rcu_read_unlock();
+#else
 			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6,
 					ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge, mcuc_addr);
+#endif
 			if (mc_if_cnt_bridge <= 0) {
 				DEBUG_WARN("%px: No bridge ports have joined multicast group\n", ci);
 				goto process_packet;
@@ -690,8 +699,15 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 	 */
 	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
 	DEBUG_ASSERT(out_dev_master, "Expected a master\n");
+
+#if defined(ECM_ATH_MCAST_ENABLE)
+	rcu_read_lock();
+	mc_if_cnt = ecm_ath_mc_bridge_ipv6_get_if(out_dev_master, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
+	rcu_read_unlock();
+#else
 	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6,
 			ECM_DB_MULTICAST_IF_MAX, mc_dest_if, mcuc_addr);
+#endif
 	if (mc_if_cnt <= 0) {
 		DEBUG_WARN("Not found a valid MCS if count %d\n", mc_if_cnt);
 		goto done;
