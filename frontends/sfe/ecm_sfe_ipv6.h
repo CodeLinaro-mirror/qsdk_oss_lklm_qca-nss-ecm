@@ -18,6 +18,11 @@
 #define __ECM_SFE_IPV6_H
 #include <sfe_api.h>
 
+/*
+ * Default path for sysctl
+ */
+#define ECM_SFE_IPV6_PATH "net/ecm/ecm_sfe_ipv6"
+
 extern int ecm_sfe_ipv6_no_action_limit_default;		/* Default no-action limit. */
 extern int ecm_sfe_ipv6_driver_fail_limit_default;		/* Default driver fail limit. */
 extern int ecm_sfe_ipv6_nack_limit_default;			/* Default nack limit. */

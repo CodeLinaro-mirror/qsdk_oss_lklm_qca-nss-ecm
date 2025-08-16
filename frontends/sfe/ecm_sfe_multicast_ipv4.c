@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -100,6 +89,9 @@
 #include "ecm_sfe_stats_v4.h"
 static int ecm_sfe_multicast_ipv4_accelerated_count = 0;
 						/* Array of Number of Multicast UDP connections currently offloaded */
+
+static struct ctl_table_header *ecm_sfe_multicast_ipv4_ctl_table_header;	/* Sysctl table header */
+
 /*
  * ecm_sfe_multicast_ipv4_connection_update_callback()
  * 	Callback for handling Ack/Nack for update accelerate rules
@@ -3159,18 +3151,58 @@ find_next_tuple:
 }
 
 /*
- * ecm_sfe_multicast_ipv4_debugfs_init()
+ * ecm_front_end_ipv4_mc_stop_handler()
+ * 	Proc handler to enable/disable multicast traffic via SFE
  */
-bool ecm_sfe_multicast_ipv4_debugfs_init(struct dentry *dentry)
+static int ecm_front_end_ipv4_mc_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
-	if (!ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
-					&ecm_sfe_multicast_ipv4_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 multicast_accelerated_count file in debugfs\n");
-		return false;
+	/*
+	 * Usage:
+	 *
+	 * Enable Multicast traffic
+	 * echo 1 > /proc/sys/net/ecm/ecm_sfe_ipv4/ecm_sfe_multicast_ipv4_stop
+	 *
+	 * Disable Multicast traffic
+	 * echo 0 > /proc/sys/net/ecm/ecm_sfe_ipv4/ecm_sfe_multicast_ipv4_stop
+	 *
+	 * To read status
+	 * cat /proc/sys/net/ecm/ecm_sfe_ipv4/ecm_sfe_multicast_ipv4_stop
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_front_end_ipv4_mc_stopped;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
 	}
 
-	return true;
+	if ((ecm_front_end_ipv4_mc_stopped != 0) && (ecm_front_end_ipv4_mc_stopped != 1)) {
+		ecm_front_end_ipv4_mc_stopped = current_val;
+		DEBUG_ERROR("Invalid input, valid input 0/1\n");
+		return -EINVAL;
+	}
+
+	return ret;
 }
+
+static struct ctl_table ecm_sfe_multicast_ipv4_ctl_table[] = {
+	{
+		.procname	= "ecm_sfe_multicast_ipv4_stop",
+		.data		= &ecm_front_end_ipv4_mc_stopped,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_ipv4_mc_stop_handler,
+	},
+	{ }
+};
 
 /*
  * ecm_sfe_multicast_ipv4_stop()
@@ -3186,9 +3218,16 @@ void ecm_sfe_multicast_ipv4_stop(int num)
  */
 int ecm_sfe_multicast_ipv4_init(struct dentry *dentry)
 {
-	if (!ecm_debugfs_create_u32("ecm_sfe_multicast_ipv4_stop", S_IRUGO | S_IWUSR, dentry,
-					(u32 *)&ecm_front_end_ipv4_mc_stopped)) {
-		DEBUG_ERROR("Failed to create ecm sfe front end ipv4 mc stop file in debugfs\n");
+	ecm_sfe_multicast_ipv4_ctl_table_header = register_sysctl(ECM_SFE_IPV4_PATH, ecm_sfe_multicast_ipv4_ctl_table);
+	if (!ecm_sfe_multicast_ipv4_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm sfe front end ipv4 mc stop in sysctl\n");
+		return -1;
+	}
+
+	if (!ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
+					&ecm_sfe_multicast_ipv4_accelerated_count)) {
+		DEBUG_ERROR("Failed to create ecm sfe ipv4 multicast_accelerated_count file in debugfs\n");
+		unregister_sysctl_table(ecm_sfe_multicast_ipv4_ctl_table_header);
 		return -1;
 	}
 
@@ -3216,4 +3255,11 @@ void ecm_sfe_multicast_ipv4_exit(void)
 	 */
 	ipmr_unregister_mfc_event_offload_callback();
 	mc_bridge_ipv4_update_callback_deregister();
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_sfe_multicast_ipv4_ctl_table_header) {
+		unregister_sysctl_table(ecm_sfe_multicast_ipv4_ctl_table_header);
+	}
 }

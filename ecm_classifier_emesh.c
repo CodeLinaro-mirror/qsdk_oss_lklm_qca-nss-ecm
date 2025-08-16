@@ -4137,6 +4137,46 @@ static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int wr
 	return ret;
 }
 
+/*
+ * ecm_classifier_sawf_emesh_udp_ipsec_port_handler()
+ * 	Proc handler to update UDP ipsec port
+ */
+static int ecm_classifier_sawf_emesh_udp_ipsec_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To update UDP encapsulated IPsec Port
+	 * echo 5200 > /proc/sys/net/ecm/ecm_classifier_emesh/udp_ipsec_port
+	 *
+	 * To read default UDP IPsec Port
+	 * cat /proc/sys/net/ecm/ecm_classifier_emesh/udp_ipsec_port
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = ecm_classifier_sawf_emesh_udp_ipsec_port;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_classifier_sawf_emesh_udp_ipsec_port != ECM_CLASSIFIER_UDP_IPSEC_PORT) {
+		ecm_classifier_sawf_emesh_udp_ipsec_port = current_val;
+		DEBUG_ERROR("Invalid input, Valid input is %d\n", ECM_CLASSIFIER_UDP_IPSEC_PORT);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
 static struct ctl_table ecm_classifier_emesh_ctl_table[] = {
 	{
 		.procname	= "enabled",
@@ -4172,6 +4212,13 @@ static struct ctl_table ecm_classifier_emesh_ctl_table[] = {
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_3link_mlo_enable_handler,
+	},
+	{
+		.procname	= "udp_ipsec_port",
+		.data		= &ecm_classifier_sawf_emesh_udp_ipsec_port,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_sawf_emesh_udp_ipsec_port_handler,
 	},
 	{ }
 };
@@ -4402,12 +4449,6 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	if (!ecm_debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
 				(u32 *)&ecm_classifier_sawf_cake_enabled)) {
 		DEBUG_ERROR("Failed to create ecm sawf cake enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				NULL, &ecm_classifier_sawf_emesh_udp_ipsec_port_fops)) {
-		DEBUG_ERROR("Failed to create ecm sawf udp ipsec port file in debugfs for adding port number\n");
 		goto init_cleanup;
 	}
 

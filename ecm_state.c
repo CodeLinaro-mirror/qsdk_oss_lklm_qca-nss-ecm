@@ -1,16 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2020-2021, The Linux Foundation. All rights reserved.
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -52,9 +44,19 @@
 #define ECM_STATE_FILE_INSTANCE_MAGIC 0xB3FE
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_STATE_PATH "net/ecm/ecm_state"
+
+/*
  * Debugfs dentry object.
  */
 static struct dentry *ecm_state_dentry;
+
+/*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_state_ctl_table_header;
 
 /*
  * Locking of the state - concurrency control
@@ -881,6 +883,99 @@ static struct file_operations ecm_state_fops = {
 };
 
 /*
+ * ecm_state_file_output_mask_handler()
+ * 	Proc handler to select different output flags for ecm dump
+ */
+static int ecm_state_file_output_mask_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To update output selection flag for ecm dump script
+	 *
+	 * To Dump connection info
+	 * echo 1 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump mapping info
+	 * echo 2 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump host info
+	 * echo 4 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump nodes info
+	 * echo 8 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump interfaces info
+	 * echo 16 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump connection chain info
+	 * echo 32 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump mapping chain info
+	 * echo 64 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump host chain info
+	 * echo 128 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump nodes chain info
+	 * echo 256 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump interface chain info
+	 * echo 512 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump protocol count info
+	 * echo 1024 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Dump classifier info
+	 * echo 2048 > /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 *
+	 * To Read status:
+	 * cat /proc/sys/net/ecm/ecm_state/state_file_output_mask
+	 */
+
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the val with user input
+	 */
+	current_val = ecm_state_file_output_mask;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_state_file_output_mask < 0) {
+		ecm_state_file_output_mask = current_val;
+		DEBUG_ERROR("Invalid input, Valid input positive integer\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ctl_table ecm_state_ctl_table[] = {
+	{
+		.procname	= "state_dev_major",
+		.data		= &ecm_state_dev_major_id,
+		.maxlen		= sizeof(int),
+		.mode		= 0444,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "state_file_output_mask",
+		.data		= &ecm_state_file_output_mask,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_state_file_output_mask_handler,
+	},
+	{ }
+};
+
+/*
  * ecm_state_init()
  */
 int ecm_state_init(struct dentry *dentry)
@@ -888,16 +983,17 @@ int ecm_state_init(struct dentry *dentry)
 	int result = -1;
 	DEBUG_INFO("ECM State init\n");
 
-	ecm_state_dentry = debugfs_create_dir("ecm_state", dentry);
-	if (!ecm_state_dentry) {
-		DEBUG_ERROR("Failed to create ecm state directory in debugfs\n");
+	ecm_state_ctl_table_header = register_sysctl(ECM_STATE_PATH, ecm_state_ctl_table);
+	if (!ecm_state_ctl_table_header) {
+		DEBUG_ERROR("Failed to create ecm state directory in sysctl\n");
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("state_dev_major", S_IRUGO, ecm_state_dentry,
-					(u32 *)&ecm_state_dev_major_id)) {
-		DEBUG_ERROR("Failed to create ecm state dev major file in debugfs\n");
-		goto init_cleanup;
+	ecm_state_dentry = debugfs_create_dir("ecm_state", dentry);
+	if (!ecm_state_dentry) {
+		DEBUG_ERROR("Failed to create ecm state directory in debugfs\n");
+		unregister_sysctl_table(ecm_state_ctl_table_header);
+		return -1;
 	}
 
 	if (!ecm_debugfs_create_u32("state_file_output_mask", S_IRUGO | S_IWUSR, ecm_state_dentry,
@@ -922,6 +1018,7 @@ int ecm_state_init(struct dentry *dentry)
 init_cleanup:
 
 	debugfs_remove_recursive(ecm_state_dentry);
+	unregister_sysctl_table(ecm_state_ctl_table_header);
 	return result;
 }
 
@@ -939,5 +1036,12 @@ void ecm_state_exit(void)
 	 */
 	if (ecm_state_dentry) {
 		debugfs_remove_recursive(ecm_state_dentry);
+	}
+
+	/*
+	 * Unregister sysctl table header
+	 */
+	if (ecm_state_ctl_table_header) {
+		unregister_sysctl_table(ecm_state_ctl_table_header);
 	}
 }

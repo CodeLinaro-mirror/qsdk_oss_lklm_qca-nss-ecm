@@ -1350,6 +1350,45 @@ static int ecm_classifier_mscs_scs_multi_ap_enable_handler(struct ctl_table *ctl
 	return ret;
 }
 
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+/*
+ * ecm_classifier_mscs_scs_udp_ipsec_port_handler()
+ * 	Proc handler to update UDP IPsec port
+ */
+static int ecm_classifier_mscs_scs_udp_ipsec_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To update UDP encapsulated IPsec Port
+	 * echo 5200 > /proc/sys/net/ecm/ecm_classifier_mscs/udp_ipsec_port
+	 *
+	 * To read default UDP IPsec Port
+	 * cat /proc/sys/net/ecm/ecm_classifier_mscs/udp_ipsec_port
+	 */
+
+	int ret;
+	int current_val;
+
+	current_val = ecm_classifier_mscs_scs_udp_ipsec_port;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	if (ecm_classifier_mscs_scs_udp_ipsec_port != ECM_CLASSIFIER_UDP_IPSEC_PORT) {
+		ecm_classifier_mscs_scs_udp_ipsec_port = current_val;
+		DEBUG_ERROR("Invalid input, valid input = %d\n", ECM_CLASSIFIER_UDP_IPSEC_PORT);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+#endif
+
 static struct ctl_table ecm_classifier_mscs_ctl_table[] = {
 	{
 		.procname	= "enabled",
@@ -1372,6 +1411,15 @@ static struct ctl_table ecm_classifier_mscs_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_mscs_scs_multi_ap_enable_handler,
 	},
+#ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
+	{
+		.procname	= "udp_ipsec_port",
+		.data		= &ecm_classifier_mscs_scs_udp_ipsec_port,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_classifier_mscs_scs_udp_ipsec_port_handler,
+	},
+#endif
 	{ }
 };
 
@@ -1479,12 +1527,6 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 	if (!debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm scs classifier enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!debugfs_create_file("udp_ipsec_port", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
-				NULL, &ecm_classifier_scs_udp_ipsec_port_fops)) {
-		DEBUG_ERROR("Failed to create ecm scs udp ipsec port file in debugfs for adding port number\n");
 		goto init_cleanup;
 	}
 
