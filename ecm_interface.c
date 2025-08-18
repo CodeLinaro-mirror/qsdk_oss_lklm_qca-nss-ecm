@@ -5202,6 +5202,13 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 					DEBUG_TRACE("%px: HACK: %s tunnel packet with dest_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", feci, "IPV6", ECM_IP_ADDR_TO_OCTAL(dest_addr), dest_dev, dest_dev->name);
 				}
 			}
+		} else {
+			/* in non-tunnel case, if the dest_dev obtained is different than SKB routing decision, use SKB provided dev */
+			if(dest_dev != const_if) {
+				dev_put(dest_dev);
+				dest_dev = const_if;
+				dev_hold(dest_dev);
+			}
 		}
 	}
 
@@ -5299,6 +5306,13 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 				} else {
 					DEBUG_TRACE("%px: HACK: %s tunnel packet with src_addr: " ECM_IP_ADDR_OCTAL_FMT " uses dev: %px(%s)\n", feci, "IPV6", ECM_IP_ADDR_TO_OCTAL(src_addr), src_dev, src_dev->name);
 				}
+			}
+		} else {
+			/* in non-tunnel case, if the src_dev obtained is different than SKB routing decision, use SKB provided dev */
+			if(src_dev != other_if) {
+				dev_put(src_dev);
+				src_dev = other_if;
+				dev_hold(src_dev);
 			}
 		}
 	}
