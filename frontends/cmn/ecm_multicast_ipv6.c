@@ -355,7 +355,7 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 #ifdef ECM_INTERFACE_L2TPV2_ENABLE
 			ecm_db_iface_pppol2tpv2_session_info_get(interface_list[i], &pppol2tpv2_info);
 			ECM_HIN4_ADDR_TO_IP_ADDR(remote_ip, pppol2tpv2_info.ip.daddr);
-			if (unlikely(!ecm_interface_mac_addr_get(remote_ip, node_addr, &on_link, gw_addr))) {
+			if (unlikely(!ecm_interface_mac_addr_get(remote_ip, node_addr, &on_link, gw_addr, skb->mark))) {
 				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 				return NULL;
 			}
@@ -399,7 +399,7 @@ static struct ecm_db_node_instance *ecm_multicast_ipv6_node_establish_and_ref(st
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 		case ECM_DB_IFACE_TYPE_OVS_BRIDGE:
 #endif
-			if (!ecm_interface_mac_addr_get(addr, node_addr, &on_link, gw_addr)) {
+			if (!ecm_interface_mac_addr_get(addr, node_addr, &on_link, gw_addr, skb->mark)) {
 				DEBUG_TRACE("Failed to obtain mac for host " ECM_IP_ADDR_OCTAL_FMT "\n", ECM_IP_ADDR_TO_OCTAL(addr));
 
 				/*
