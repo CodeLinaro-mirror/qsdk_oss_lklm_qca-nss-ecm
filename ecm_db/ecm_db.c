@@ -74,6 +74,18 @@
 DEFINE_SPINLOCK(ecm_db_lock);					/* Protect the table from SMP access. */
 
 /*
+ * Enable/Disable IPV4 routing table events
+ */
+static int ecm_db_ipv4_route_enable = 1;
+
+/*
+ * Enable/Disable IPV6 routing table events
+ */
+#ifdef ECM_IPV6_ENABLE
+static int ecm_db_ipv6_route_enable = 1;
+#endif
+
+/*
  * Debugfs dentry object.
  */
 static struct dentry *ecm_db_dentry;
@@ -509,6 +521,128 @@ static int ecm_db_defunct_all_handler(struct ctl_table *ctl, int write, void *bu
 	return 0;
 }
 
+/*
+ * ecm_db_ipv4_route_handler()
+ * 	Proc handler to disable IPV4 route table events
+ */
+static int ecm_db_ipv4_route_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To disable IPV4 route table events
+	 * echo 0 > /proc/sys/net/ecm/ecm_db/ipv4_route_handle
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_db/ipv4_route_handle
+	 */
+
+	int current_val;
+	int ret;
+
+	current_val = ecm_db_ipv4_route_enable;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if ((ecm_db_ipv4_route_enable != 0) && (ecm_db_ipv4_route_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_db_ipv4_route_enable = current_val;
+		return -EINVAL;
+	}
+
+	if (current_val == ecm_db_ipv4_route_enable) {
+		DEBUG_WARN("No change in the current configuration.\n");
+		return ret;
+	}
+
+	if (ecm_db_ipv4_route_enable) {
+		ecm_front_end_ipv4_stop_temp(1);
+		ret = ip_rt_register_notifier(&ecm_db_iproute_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not register for the IPV4 routing events error:%d\n", ret);
+		}
+		ecm_front_end_ipv4_stop_temp(0);
+		return ret;
+	}
+
+	ecm_front_end_ipv4_stop_temp(1);
+	ret = ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
+	if (ret) {
+		DEBUG_ERROR("Could not unregister for the IPV4 routing events error:%d\n", ret);
+	}
+	ecm_front_end_ipv4_stop_temp(0);
+
+	return ret;
+}
+
+/*
+ * ecm_db_ipv6_route_handler()
+ * 	Proc handler to disable IPV6 route table events
+ */
+#ifdef ECM_IPV6_ENABLE
+static int ecm_db_ipv6_route_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * Usage:
+	 *
+	 * To disable IPV6 route table events
+	 * echo 0 > /proc/sys/net/ecm/ecm_db/ipv6_route_handle
+	 *
+	 * To read status:
+	 * cat /proc/sys/net/ecm/ecm_db/ipv6_route_handle
+	 */
+
+	int current_val;
+	int ret;
+
+	current_val = ecm_db_ipv6_route_enable;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		return ret;
+	}
+
+	if ((ecm_db_ipv6_route_enable != 0) && (ecm_db_ipv6_route_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_db_ipv6_route_enable = current_val;
+		return -EINVAL;
+	}
+
+	if (current_val == ecm_db_ipv6_route_enable) {
+		DEBUG_WARN("No change in the current configuration.\n");
+		return ret;
+	}
+
+	if (ecm_db_ipv6_route_enable) {
+		ecm_front_end_ipv6_stop_temp(1);
+		ret = rt6_register_notifier(&ecm_db_ip6route_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not register for the IPV6 routing events error:%d\n", ret);
+		}
+		ecm_front_end_ipv6_stop_temp(0);
+		return ret;
+	}
+
+	ecm_front_end_ipv6_stop_temp(1);
+	ret = rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
+	if (ret) {
+		DEBUG_ERROR("Could not unregister for the IPV6 routing events error:%d\n", ret);
+	}
+	ecm_front_end_ipv6_stop_temp(0);
+
+	return ret;
+}
+#endif
+
 static struct ctl_table ecm_db_ctl_table[] = {
 	{
 		.procname	= "defunct_all",
@@ -517,6 +651,24 @@ static struct ctl_table ecm_db_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_db_defunct_all_handler,
 	},
+	{
+		.procname	= "ipv4_route_handle",
+		.data		= &ecm_db_ipv4_route_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_db_ipv4_route_handler,
+	},
+
+#ifdef ECM_IPV6_ENABLE
+	{
+		.procname	= "ipv6_route_handle",
+		.data		= &ecm_db_ipv6_route_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_db_ipv6_route_handler,
+	},
+#endif
+
 	{ }
 };
 
@@ -525,6 +677,8 @@ static struct ctl_table ecm_db_ctl_table[] = {
  */
 int ecm_db_init(struct dentry *dentry)
 {
+	int ret = 0;
+
 	DEBUG_INFO("ECM Module init\n");
 
 	ecm_db_ctl_table_header = register_sysctl(ECM_DB_PATH, ecm_db_ctl_table);
@@ -599,11 +753,22 @@ int ecm_db_init(struct dentry *dentry)
 	/*
 	 * register for route table modification events
 	 */
-	ip_rt_register_notifier(&ecm_db_iproute_table_update_nb);
+	if (ecm_db_ipv4_route_enable) {
+		ret = ip_rt_register_notifier(&ecm_db_iproute_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not register for the IPV4 routing events error:%d\n", ret);
+		}
+	}
+
 #ifdef ECM_IPV6_ENABLE
-	rt6_register_notifier(&ecm_db_ip6route_table_update_nb);
+	if (ecm_db_ipv6_route_enable) {
+		ret = rt6_register_notifier(&ecm_db_ip6route_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not register for the IPV6 routing events error:%d\n", ret);
+		}
+	}
 #endif
-	return 0;
+	return ret;
 
 init_cleanup_4:
 	ecm_db_node_exit();
@@ -627,16 +792,29 @@ void ecm_db_exit(void)
 {
 	DEBUG_INFO("ECM DB Module exit\n");
 
+	int ret;
+
 	spin_lock_bh(&ecm_db_lock);
 	ecm_db_terminate_pending = true;
 	spin_unlock_bh(&ecm_db_lock);
 
 	/*
-	 * unregister for route table update events
+	 * unregister for route table update events only if registered.
 	 */
-	ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
+	if (ecm_db_ipv4_route_enable) {
+		ret = ip_rt_unregister_notifier(&ecm_db_iproute_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not unregister for the IPV4 routing events error:%d\n", ret);
+		}
+	}
+
 #ifdef ECM_IPV6_ENABLE
-	rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
+	if (ecm_db_ipv6_route_enable) {
+		ret = rt6_unregister_notifier(&ecm_db_ip6route_table_update_nb);
+		if (ret) {
+			DEBUG_ERROR("Could not unregister for the IPV6 routing events error:%d\n", ret);
+		}
+	}
 #endif
 	ecm_db_connection_defunct_all();
 
