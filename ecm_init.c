@@ -3,20 +3,9 @@
  * Copyright (c) 2014-2016, 2018, 2020-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * SPDX-License-Identifier: ISC
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  **************************************************************************
  */
+
 #include <linux/version.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -128,6 +117,10 @@ extern void ecm_classifier_mscs_exit(void);
 #ifdef ECM_CLASSIFIER_WIFI_ENABLE
 extern int ecm_classifier_wifi_init(struct dentry *dentry);
 extern void ecm_classifier_wifi_exit(void);
+#endif
+#ifdef ECM_SDX_STATS_ENABLE
+extern int ecm_sdx_init(struct dentry *dentry);
+extern void ecm_sdx_exit(void);
 #endif
 
 /*
@@ -242,6 +235,13 @@ static int __init ecm_init(void)
 	}
 #endif
 
+#ifdef ECM_SDX_STATS_ENABLE
+	ret = ecm_sdx_init(ecm_dentry);
+	if (0 != ret) {
+		goto err_sdx_interface;
+	}
+#endif
+
 	ret = ecm_interface_init();
 	if (0 != ret) {
 		goto err_iface;
@@ -300,6 +300,10 @@ err_bond:
 #endif
 	ecm_interface_exit();
 err_iface:
+#ifdef ECM_SDX_STATS_ENABLE
+	ecm_sdx_exit();
+err_sdx_interface:
+#endif
 #ifdef ECM_CLASSIFIER_WIFI_ENABLE
 	ecm_classifier_wifi_exit();
 err_cls_wifi:
@@ -430,6 +434,11 @@ static void __exit ecm_exit(void)
 	DEBUG_INFO("exit wifi classifier\n");
 	ecm_classifier_wifi_exit();
 #endif
+#ifdef ECM_SDX_STATS_ENABLE
+	DEBUG_INFO("exit sdx interface\n");
+	ecm_sdx_exit();
+#endif
+
 	DEBUG_INFO("exit default classifier\n");
 	ecm_classifier_default_exit();
 	DEBUG_INFO("exit db\n");
