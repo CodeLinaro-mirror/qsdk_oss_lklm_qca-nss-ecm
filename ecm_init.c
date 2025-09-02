@@ -49,6 +49,8 @@ enum ecm_front_end_type selected_front_end;
 int front_end_selection;
 int register_ip_post_routing = 1;
 int register_br_post_routing = 1;
+int ecm_front_end_ipv4_stopped;
+int ecm_front_end_ipv6_stopped;
 
 module_param(front_end_selection, int, 0);
 MODULE_PARM_DESC(front_end_selection, "Select front end for ECM");
@@ -58,6 +60,12 @@ MODULE_PARM_DESC(register_ip_post_routing, "Register for ECM to intercept packet
 
 module_param(register_br_post_routing, int, 0);
 MODULE_PARM_DESC(register_br_post_routing, "Register for ECM to intercept packets on bridge post routing hook");
+
+module_param(ecm_front_end_ipv4_stopped, int, 0644) ;
+MODULE_PARM_DESC(ecm_front_end_ipv4_stopped, "Frontend disable");
+
+module_param(ecm_front_end_ipv6_stopped, int, 0644) ;
+MODULE_PARM_DESC(ecm_front_end_ipv6_stopped, "Frontend disable");
 
 struct dentry *ecm_dentry;	/* Dentry object for top level ecm debugfs directory */
 

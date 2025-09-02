@@ -56,7 +56,7 @@ static struct ctl_table_header *ecm_front_end_ipv6_ctl_table_header;
 /*
  * General operational control
  */
-int ecm_front_end_ipv6_stopped = 0;	/* When non-zero further traffic will not be processed */
+extern int ecm_front_end_ipv6_stopped;	/* When non-zero further traffic will not be processed */
 
 /*
  * Temporary operational control
