@@ -524,14 +524,9 @@ int ecm_front_end_ipv6_init(struct dentry *dentry)
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("front_end_ipv6_stop", S_IRUGO | S_IWUSR, dentry,
-					(u32 *)&ecm_front_end_ipv6_stopped)) {
-		DEBUG_ERROR("Failed to create ecm front end ipv6 stop file in debugfs\n");
-		goto init_cleanup;
-	}
+	ecm_debugfs_create_u32("front_end_ipv6_stop", S_IRUGO | S_IWUSR, dentry, (u32 *)&ecm_front_end_ipv6_stopped);
 
-	ecm_stats_dentry = debugfs_lookup("stats", dentry);
-	if (!ecm_stats_dentry) {
+	if (!ecm_debugfs_lookup("stats", dentry, &ecm_stats_dentry)) {
 		DEBUG_ERROR("Stats dentry not created\n");
 		goto init_cleanup;
 	}

@@ -687,8 +687,7 @@ int ecm_db_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_db_dentry = debugfs_create_dir("ecm_db", dentry);
-	if (!ecm_db_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_db", dentry, &ecm_db_dentry)) {
 		DEBUG_ERROR("Failed to create ecm db directory in debugfs\n");
 		unregister_sysctl_table(ecm_db_ctl_table_header);
 		return -1;
@@ -716,11 +715,9 @@ int ecm_db_init(struct dentry *dentry)
 		goto init_cleanup_3;
 	}
 
-	if (!ecm_db_iface_init(ecm_db_dentry)) {
-		goto init_cleanup_4;
-	}
+	ecm_db_iface_init(ecm_db_dentry);
 
-	if (!debugfs_create_file("defunct_all", S_IRUGO | S_IWUSR, ecm_db_dentry,
+	if (!ecm_debugfs_create_file("defunct_all", S_IRUGO | S_IWUSR, ecm_db_dentry,
 					NULL, &ecm_db_defunct_all_fops)) {
 		DEBUG_ERROR("Failed to create ecm db defunct_all file in debugfs\n");
 		goto init_cleanup_4;
@@ -779,7 +776,7 @@ init_cleanup_2:
 init_cleanup_1:
 	ecm_db_connection_exit();
 init_cleanup:
-	debugfs_remove_recursive(ecm_db_dentry);
+	ecm_debugfs_remove_recursive(ecm_db_dentry);
 	unregister_sysctl_table(ecm_db_ctl_table_header);
 	return -1;
 }
@@ -840,7 +837,7 @@ void ecm_db_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_db_dentry) {
-		debugfs_remove_recursive(ecm_db_dentry);
+		ecm_debugfs_remove_recursive(ecm_db_dentry);
 	}
 
 	/*

@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -1105,23 +1094,19 @@ int ecm_classifier_hyfi_rules_init(struct dentry *dentry)
 {
 	DEBUG_INFO("HyFi classifier Module init\n");
 
-	ecm_classifier_hyfi_dentry = debugfs_create_dir("ecm_classifier_hyfi", dentry);
-	if (!ecm_classifier_hyfi_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_hyfi", dentry, &ecm_classifier_hyfi_dentry)) {
 		DEBUG_ERROR("Failed to create ecm hyfi classifier directory in debugfs\n");
 		goto classifier_task_cleanup;
 	}
 
-	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_hyfi_dentry,
-					(u32 *)&ecm_classifier_hyfi_enabled)) {
-		DEBUG_ERROR("Failed to create ecm hyfi classifier enabled file in debugfs\n");
-		goto classifier_task_cleanup;
-	}
-
-	if (!debugfs_create_file("cmd", S_IWUSR, ecm_classifier_hyfi_dentry,
+	if (!ecm_debugfs_create_file("cmd", S_IWUSR, ecm_classifier_hyfi_dentry,
 					NULL, &ecm_classifier_hyfi_cmd_fops)) {
 		DEBUG_ERROR("Failed to create ecm hyfi classifier cmd file in debugfs\n");
 		goto classifier_task_cleanup;
 	}
+
+	ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_hyfi_dentry,
+				(u32 *)&ecm_classifier_hyfi_enabled);
 
 	/*
 	 * Allocate listener instance to listen for db events
@@ -1154,7 +1139,7 @@ int ecm_classifier_hyfi_rules_init(struct dentry *dentry)
 
 classifier_task_cleanup:
 
-	debugfs_remove_recursive(ecm_classifier_hyfi_dentry);
+	ecm_debugfs_remove_recursive(ecm_classifier_hyfi_dentry);
 	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_hyfi_rules_init);
@@ -1185,7 +1170,7 @@ void ecm_classifier_hyfi_rules_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_hyfi_dentry) {
-		debugfs_remove_recursive(ecm_classifier_hyfi_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_hyfi_dentry);
 	}
 }
 EXPORT_SYMBOL(ecm_classifier_hyfi_rules_exit);

@@ -961,38 +961,20 @@ int ecm_classifier_default_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_classifier_default_dentry = debugfs_create_dir("ecm_classifier_default", dentry);
-	if (!ecm_classifier_default_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_default", dentry, &ecm_classifier_default_dentry)) {
 		DEBUG_ERROR("Failed to create ecm default classifier directory in debugfs\n");
 		unregister_sysctl_table(ecm_classifier_default_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
-					(u32 *)&ecm_classifier_default_enabled)) {
-		DEBUG_ERROR("Failed to create ecm deafult classifier enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("accel_mode", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
-					(u32 *)&ecm_classifier_default_accel_mode)) {
-		DEBUG_ERROR("Failed to create ecm deafult classifier accel_mode file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("accel_delay_pkts", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
-					(u32 *)&ecm_classifier_accel_delay_pkts)) {
-		DEBUG_ERROR("Failed to create accel delay packet counts in debugfs\n");
-		goto init_cleanup;
-	}
+	ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
+					(u32 *)&ecm_classifier_default_enabled);
+	ecm_debugfs_create_u32("accel_mode", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
+					(u32 *)&ecm_classifier_default_accel_mode);
+	ecm_debugfs_create_u32("accel_delay_pkts", S_IRUGO | S_IWUSR, ecm_classifier_default_dentry,
+					(u32 *)&ecm_classifier_accel_delay_pkts);
 
 	return 0;
-
-init_cleanup:
-
-	debugfs_remove_recursive(ecm_classifier_default_dentry);
-	unregister_sysctl_table(ecm_classifier_default_ctl_table_header);
-	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_default_init);
 
@@ -1010,7 +992,7 @@ void ecm_classifier_default_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_default_dentry) {
-		debugfs_remove_recursive(ecm_classifier_default_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_default_dentry);
 	}
 
 	/*

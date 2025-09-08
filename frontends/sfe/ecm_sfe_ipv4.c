@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: ISC
  **************************************************************************
  */
+
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/ip.h>
@@ -1165,49 +1166,34 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_sfe_ipv4_dentry = debugfs_create_dir("ecm_sfe_ipv4", dentry);
-	if (!ecm_sfe_ipv4_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_sfe_ipv4", dentry, &ecm_sfe_ipv4_dentry)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 directory in debugfs\n");
 		unregister_sysctl_table(ecm_sfe_ipv4_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv4_dentry,
-					(u32 *)&ecm_sfe_ipv4_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 accelerated_count file in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+				(u32 *)&ecm_sfe_ipv4_accelerated_count);
+	ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+				(u32 *)&ecm_sfe_ipv4_pending_accel_count);
+	ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
+				(u32 *)&ecm_sfe_ipv4_pending_decel_count);
 
-	if (!ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
-					(u32 *)&ecm_sfe_ipv4_pending_accel_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 pending_accel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv4_dentry,
-					(u32 *)&ecm_sfe_ipv4_pending_decel_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 pending_decel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv4_dentry,
 					NULL, &ecm_sfe_ipv4_accel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 accel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv4_dentry,
 					NULL, &ecm_sfe_ipv4_decel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 decel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!ecm_sfe_ported_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_sfe_ported_ipv4_init(ecm_sfe_ipv4_dentry);
 
-	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv4_dentry,
+	if (!ecm_debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv4_dentry,
 					NULL, &ecm_sfe_ipv4_stats_request_counter_fops))
 	{
 		DEBUG_ERROR("Failed to create ecm sfe ipv4 stats request ounter file in debugfs\n");
@@ -1215,14 +1201,10 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	}
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_sfe_non_ported_ipv4_debugfs_init(ecm_sfe_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_sfe_non_ported_ipv4_init(ecm_sfe_ipv4_dentry);
 #endif
 
-	ecm_stats_dentry = debugfs_lookup("stats", dentry);
-	if (!ecm_stats_dentry) {
+	if (!ecm_debugfs_lookup("stats", dentry, &ecm_stats_dentry)) {
 		DEBUG_ERROR("Stats dentry not created\n");
 		goto task_cleanup;
 	}
@@ -1258,7 +1240,7 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 
 task_cleanup:
 
-	debugfs_remove_recursive(ecm_sfe_ipv4_dentry);
+	ecm_debugfs_remove_recursive(ecm_sfe_ipv4_dentry);
 	unregister_sysctl_table(ecm_sfe_ipv4_ctl_table_header);
 	return -1;
 }
@@ -1287,7 +1269,7 @@ void ecm_sfe_ipv4_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_sfe_ipv4_dentry) {
-		debugfs_remove_recursive(ecm_sfe_ipv4_dentry);
+		ecm_debugfs_remove_recursive(ecm_sfe_ipv4_dentry);
 	}
 
 	/*

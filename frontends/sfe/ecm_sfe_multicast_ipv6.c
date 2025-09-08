@@ -3235,22 +3235,27 @@ int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
-						&ecm_sfe_multicast_ipv6_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 multicast_accelerated_count file in debugfs\n");
+	ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry, &ecm_sfe_multicast_ipv6_accelerated_count);
+
+	/*
+	 * Register multicast update callback to MCS snooper
+	 */
+	if (mc_bridge_ipv6_update_callback_register(ecm_sfe_multicast_ipv6_br_update_event_callback)) {
+		DEBUG_ERROR("Failed to register MCS callback\n");
 		unregister_sysctl_table(ecm_sfe_multicast_ipv6_ctl_table_header);
 		return -1;
 	}
 
 	/*
-	 * Register multicast update callback to MCS snooper
-	 */
-	mc_bridge_ipv6_update_callback_register(ecm_sfe_multicast_ipv6_br_update_event_callback);
-
-	/*
 	 * Register multicast update callbacks to MFC
 	 */
-	ip6mr_register_mfc_event_offload_callback(ecm_sfe_multicast_ipv6_mfc_update_event_callback);
+	if (!ip6mr_register_mfc_event_offload_callback(ecm_sfe_multicast_ipv6_mfc_update_event_callback)) {
+		DEBUG_ERROR("Failed to register MFC callback\n");
+		unregister_sysctl_table(ecm_sfe_multicast_ipv6_ctl_table_header);
+		mc_bridge_ipv6_update_callback_deregister();
+		return -1;
+	}
+
 	return 0;
 }
 

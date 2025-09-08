@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 #include <linux/module.h>
@@ -31,7 +21,10 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 
+#define DEBUG_LEVEL ECM_AE_CLASSIFIER_DEBUG_LEVEL
+
 #include "ecm_ae_classifier_public.h"
+#include "ecm_types.h"
 
 #define RULE_FIELDS 7
 #define IPV4 4
@@ -557,17 +550,16 @@ static int __init ecm_ae_select_init(void)
 	/*
 	 * Create entries in DebugFS for control functions
 	 */
-	ecm_ae_select_test_dentry = debugfs_create_dir("ecm_ae_select_test", NULL);
-	if (!ecm_ae_select_test_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_ae_select_test", NULL, &ecm_ae_select_test_dentry)) {
 		pr_info("Failed to create ecm-ae-select-test directory entry\n");
 		return -EPERM;
 	}
 
-	if (!debugfs_create_file("rule",
+	if (!ecm_debugfs_create_file("rule",
 			S_IRUGO | S_IWUSR, ecm_ae_select_test_dentry,
 			NULL, &ecm_ae_select_test_rule_fops)) {
 		pr_info("Failed to create ecm_ae_select_test_rule_fops\n");
-		debugfs_remove_recursive(ecm_ae_select_test_dentry);
+		ecm_debugfs_remove_recursive(ecm_ae_select_test_dentry);
 		return -ENOENT;
 	}
 
@@ -590,7 +582,7 @@ static void __exit ecm_ae_select_exit(void)
 	 * Unregister the callbacks.
 	 */
 	ecm_ae_classifier_ops_unregister();
-	debugfs_remove_recursive(ecm_ae_select_test_dentry);
+	ecm_debugfs_remove_recursive(ecm_ae_select_test_dentry);
 }
 
 module_init(ecm_ae_select_init)

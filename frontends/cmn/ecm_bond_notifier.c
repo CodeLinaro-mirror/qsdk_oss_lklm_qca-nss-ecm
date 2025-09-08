@@ -295,20 +295,14 @@ int ecm_bond_notifier_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_bond_notifier_dentry = debugfs_create_dir("ecm_bond_notifier", dentry);
-	if (!ecm_bond_notifier_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_bond_notifier", dentry, &ecm_bond_notifier_dentry)) {
 		DEBUG_ERROR("Failed to create ecm bond notifier directory in debugfs\n");
 		unregister_sysctl_table(ecm_bond_notifier_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("stop", S_IRUGO | S_IWUSR, ecm_bond_notifier_dentry,
-					(u32 *)&ecm_bond_notifier_stopped)) {
-		DEBUG_ERROR("Failed to create ecm bond notifier stopped file in debugfs\n");
-		debugfs_remove_recursive(ecm_bond_notifier_dentry);
-		unregister_sysctl_table(ecm_bond_notifier_ctl_table_header);
-		return -1;
-	}
+	ecm_debugfs_create_u32("stop", S_IRUGO | S_IWUSR, ecm_bond_notifier_dentry,
+					(u32 *)&ecm_bond_notifier_stopped);
 
 	/*
 	 * Register Link Aggregation callbacks with the bonding driver
@@ -339,7 +333,7 @@ void ecm_bond_notifier_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_bond_notifier_dentry) {
-		debugfs_remove_recursive(ecm_bond_notifier_dentry);
+		ecm_debugfs_remove_recursive(ecm_bond_notifier_dentry);
 	}
 
 	/*

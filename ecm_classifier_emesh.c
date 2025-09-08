@@ -4534,42 +4534,22 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_classifier_emesh_sawf_dentry = debugfs_create_dir("ecm_classifier_emesh", dentry);
-	if (!ecm_classifier_emesh_sawf_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_emesh", dentry, &ecm_classifier_emesh_sawf_dentry)) {
 		DEBUG_ERROR("Failed to create ecm emesh directory in debugfs\n");
 		unregister_sysctl_table(ecm_classifier_emesh_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				(u32 *)&ecm_classifier_emesh_enabled)) {
-		DEBUG_ERROR("Failed to create ecm emesh classifier enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				(u32 *)&ecm_classifier_emesh_latency_config_enabled)) {
-		DEBUG_ERROR("Failed to create ecm emesh classifier latency config enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("sawf_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				(u32 *)&ecm_classifier_sawf_enabled)) {
-		DEBUG_ERROR("Failed to create ecm sawf classifier  enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-				(u32 *)&ecm_classifier_sawf_cake_enabled)) {
-		DEBUG_ERROR("Failed to create ecm sawf cake enabled file in debugfs\n");
-		goto init_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("3link_mlo_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
-                                (u32 *)&ecm_classifier_3link_mlo_enabled)) {
-                DEBUG_ERROR("Failed to create 3 link MLO enabled file in debugfs\n");
-		goto init_cleanup;
-        }
+	ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_emesh_enabled);
+	ecm_debugfs_create_u32("latency_config_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_emesh_latency_config_enabled);
+	ecm_debugfs_create_u32("sawf_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_sawf_enabled);
+	ecm_debugfs_create_u32("cake_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_sawf_cake_enabled);
+	ecm_debugfs_create_u32("3link_mlo_enabled", S_IRUGO | S_IWUSR, ecm_classifier_emesh_sawf_dentry,
+				(u32 *)&ecm_classifier_3link_mlo_enabled);
 
 	/*
 	 * Register for service prioritization notification update.
@@ -4577,12 +4557,6 @@ int ecm_classifier_emesh_sawf_init(struct dentry *dentry)
 	sp_mapdb_notifier_register(&ecm_classifier_emesh_sawf_spm_notifier);
 
 	return 0;
-
-init_cleanup:
-
-	debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
-	unregister_sysctl_table(ecm_classifier_emesh_ctl_table_header);
-	return -1;
 }
 EXPORT_SYMBOL(ecm_classifier_emesh_sawf_init);
 
@@ -4824,7 +4798,7 @@ void ecm_classifier_emesh_sawf_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_emesh_sawf_dentry) {
-		debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_emesh_sawf_dentry);
 	}
 
 	/*

@@ -479,18 +479,14 @@ int ecm_conntrack_notifier_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_conntrack_notifier_dentry = debugfs_create_dir("ecm_conntrack_notifier", dentry);
-	if (!ecm_conntrack_notifier_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_conntrack_notifier", dentry, &ecm_conntrack_notifier_dentry)) {
 		DEBUG_ERROR("Failed to create ecm conntrack notifier directory in debugfs\n");
 		unregister_sysctl_table(ecm_conntrack_notifier_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("stop", S_IRUGO | S_IWUSR, ecm_conntrack_notifier_dentry,
-					(u32 *)&ecm_conntrack_notifier_stopped)) {
-		DEBUG_ERROR("Failed to create ecm conntrack notifier stopped file in debugfs\n");
-		goto init_cleanup_1;
-	}
+	ecm_debugfs_create_u32("stop", S_IRUGO | S_IWUSR, ecm_conntrack_notifier_dentry,
+				(u32 *)&ecm_conntrack_notifier_stopped);
 
 #ifdef CONFIG_NF_CONNTRACK_EVENTS
 	/*
@@ -535,7 +531,7 @@ init_cleanup_2:
 #endif
 
 init_cleanup_1:
-	debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
+	ecm_debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
 	unregister_sysctl_table(ecm_conntrack_notifier_ctl_table_header);
 	return -1;
 }
@@ -566,7 +562,7 @@ void ecm_conntrack_notifier_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_conntrack_notifier_dentry) {
-		debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
+		ecm_debugfs_remove_recursive(ecm_conntrack_notifier_dentry);
 	}
 
 	/*

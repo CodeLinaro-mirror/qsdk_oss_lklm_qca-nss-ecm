@@ -154,14 +154,12 @@ static int __init ecm_init(void)
 		return -1;
 	}
 
-	ecm_dentry = debugfs_create_dir("ecm", NULL);
-	if (!ecm_dentry) {
+	if (!ecm_debugfs_create_dir("ecm", NULL, &ecm_dentry)) {
 		DEBUG_ERROR("Failed to create ecm directory in debugfs\n");
 		return -1;
 	}
 
-	ecm_stats_dentry = debugfs_create_dir("stats", ecm_dentry);
-	if (!ecm_stats_dentry) {
+	if (!ecm_debugfs_create_dir("stats", ecm_dentry, &ecm_stats_dentry)) {
 		DEBUG_ERROR("Failed to create stats dir in ecm\n");
 		goto err_db;
 	}
@@ -357,7 +355,7 @@ err_db:
 		ppe_drv_fse_feature_disable();
 	}
 #endif
-	debugfs_remove_recursive(ecm_dentry);
+	ecm_debugfs_remove_recursive(ecm_dentry);
 
 	printk(KERN_INFO "ECM init failed: %d\n", ret);
 	return ret;
@@ -454,7 +452,7 @@ static void __exit ecm_exit(void)
 
 	if (ecm_dentry != NULL) {
 		DEBUG_INFO("remove ecm debugfs\n");
-		debugfs_remove_recursive(ecm_dentry);
+		ecm_debugfs_remove_recursive(ecm_dentry);
 	}
 
 	ecm_tracker_udp_sysctl_unregister();

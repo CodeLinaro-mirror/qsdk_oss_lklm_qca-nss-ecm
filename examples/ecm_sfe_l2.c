@@ -14,7 +14,10 @@
 #include <linux/etherdevice.h>
 #include <linux/inet.h>
 
+#define DEBUG_LEVEL 1
+
 #include "exports/ecm_sfe_common_public.h"
+#include "ecm_types.h"
 
 /*
  * Global WAN interface name parameter.
@@ -848,53 +851,50 @@ static int __init ecm_sfe_l2_init(void)
 	/*
 	 * Create entries in DebugFS for control functions
 	 */
-	ecm_sfe_l2_dentry = debugfs_create_dir("ecm_sfe_l2", NULL);
-	if (!ecm_sfe_l2_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_sfe_l2", NULL, &ecm_sfe_l2_dentry)) {
 		pr_info("Failed to create SFE L2 directory entry\n");
 		return -1;
 	}
 
-	if (!debugfs_create_file("wan_name", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!ecm_debugfs_create_file("wan_name", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_wan_name_fops)) {
 		pr_debug("Failed to create ecm wan interface file in debugfs\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
-	if (!debugfs_create_file("policy_rules", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!ecm_debugfs_create_file("policy_rules", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_policy_rule_fops)) {
 		pr_debug("Failed to create ecm SFE L2 policy rules file in debugfs\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
-	if (!debugfs_create_file("defunct_by_protocol", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!ecm_debugfs_create_file("defunct_by_protocol", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_protocol_fops)) {
 		pr_debug("Failed to create ecm defunct by protocol file in debugfs\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
-	if (!debugfs_create_file("defunct_by_5tuple", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!ecm_debugfs_create_file("defunct_by_5tuple", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_5tuple_fops)) {
 		pr_debug("Failed to create ecm defunct by 5tuple file in debugfs\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
-	if (!debugfs_create_file("defunct_by_port", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!ecm_debugfs_create_file("defunct_by_port", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_port_fops)) {
 		pr_debug("Failed to create ecm defunct by port file in debugfs\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 
 	if (ecm_sfe_common_callbacks_register(&sfe_cbs)) {
 		pr_debug("Failed to register callbacks\n");
-		debugfs_remove_recursive(ecm_sfe_l2_dentry);
-		return -1;
+		goto init_cleanup;
 	}
 	return 0;
+
+init_cleanup:
+	ecm_debugfs_remove_recursive(ecm_sfe_l2_dentry);
+	return -1;
 }
 
 /*
@@ -909,7 +909,7 @@ static void __exit ecm_sfe_l2_exit(void)
 	/*
 	 * Remove the debugfs files recursively.
 	 */
-	debugfs_remove_recursive(ecm_sfe_l2_dentry);
+	ecm_debugfs_remove_recursive(ecm_sfe_l2_dentry);
 }
 
 module_init(ecm_sfe_l2_init)

@@ -1165,63 +1165,44 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_sfe_ipv6_dentry = debugfs_create_dir("ecm_sfe_ipv6", dentry);
-	if (!ecm_sfe_ipv6_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_sfe_ipv6", dentry, &ecm_sfe_ipv6_dentry)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 directory in debugfs\n");
 		unregister_sysctl_table(ecm_sfe_ipv6_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 accelerated_count file in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_sfe_ipv6_dentry,
+				(u32 *)&ecm_sfe_ipv6_accelerated_count);
+	ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv6_dentry,
+				(u32 *)&ecm_sfe_ipv6_pending_accel_count);
+	ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv6_dentry,
+				(u32 *)&ecm_sfe_ipv6_pending_decel_count);
 
-	if (!ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_pending_accel_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 pending_accel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_sfe_ipv6_dentry,
-					(u32 *)&ecm_sfe_ipv6_pending_decel_count)) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv6 pending_decel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv6_dentry,
+	if (!ecm_debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv6_dentry,
 					NULL, &ecm_sfe_ipv6_accel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 accel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv6_dentry,
+	if (!ecm_debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_sfe_ipv6_dentry,
 					NULL, &ecm_sfe_ipv6_decel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 decel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!ecm_sfe_ported_ipv6_debugfs_init(ecm_sfe_ipv6_dentry)) {
-		DEBUG_ERROR("Failed to create ecm ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_sfe_ported_ipv6_init(ecm_sfe_ipv6_dentry);
 
-	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv6_dentry,
+	if (!ecm_debugfs_create_file("stats_request_counter", S_IRUGO, ecm_sfe_ipv6_dentry,
 					NULL, &ecm_sfe_ipv6_stats_request_counter_fops)) {
 		DEBUG_ERROR("Failed to create ecm sfe ipv6 stats_request_counter file in debugfs\n");
 		goto task_cleanup;
 	}
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_sfe_non_ported_ipv6_debugfs_init(ecm_sfe_ipv6_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_sfe_non_ported_ipv6_init(ecm_sfe_ipv6_dentry);
 #endif
 
-	ecm_stats_dentry = debugfs_lookup("stats", dentry);
-	if (!ecm_stats_dentry) {
+	if (!ecm_debugfs_lookup("stats", dentry, &ecm_stats_dentry)) {
 		DEBUG_ERROR("Stats dentry not created\n");
 		goto task_cleanup;
 	}
@@ -1258,7 +1239,7 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 
 task_cleanup:
 
-	debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
+	ecm_debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
 	unregister_sysctl_table(ecm_sfe_ipv6_ctl_table_header);
 	return -1;
 }
@@ -1292,7 +1273,7 @@ void ecm_sfe_ipv6_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_sfe_ipv6_dentry) {
-		debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
+		ecm_debugfs_remove_recursive(ecm_sfe_ipv6_dentry);
 	}
 
 	/*

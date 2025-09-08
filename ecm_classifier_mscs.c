@@ -1504,27 +1504,26 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_classifier_mscs_dentry = debugfs_create_dir("ecm_classifier_mscs", dentry);
-	if (!ecm_classifier_mscs_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_mscs", dentry, &ecm_classifier_mscs_dentry)) {
 		DEBUG_ERROR("Failed to create ecm mscs directory in debugfs\n");
 		unregister_sysctl_table(ecm_classifier_mscs_ctl_table_header);
 		return -1;
 	}
 
-	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+	if (!ecm_debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_mscs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm mscs classifier enabled file in debugfs\n");
 		goto init_cleanup;
 	}
 
-	if (!debugfs_create_file("multi_ap_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+	if (!ecm_debugfs_create_file("multi_ap_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 			NULL, &ecm_classifier_mscs_scs_multi_ap_enabled_fops)) {
 		DEBUG_ERROR("Failed to create multi ap enabled file in debugfs\n");
 		goto init_cleanup;
 	}
 
 #ifdef ECM_CLASSIFIER_MSCS_SCS_ENABLE
-	if (!debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
+	if (!ecm_debugfs_create_file("scs_enabled", S_IRUGO | S_IWUSR, ecm_classifier_mscs_dentry,
 				NULL, &ecm_classifier_scs_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm scs classifier enabled file in debugfs\n");
 		goto init_cleanup;
@@ -1539,7 +1538,7 @@ int ecm_classifier_mscs_init(struct dentry *dentry)
 
 init_cleanup:
 
-	debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+	ecm_debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 	unregister_sysctl_table(ecm_classifier_mscs_ctl_table_header);
 	return -1;
 }
@@ -1560,7 +1559,7 @@ void ecm_classifier_mscs_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_mscs_dentry) {
-		debugfs_remove_recursive(ecm_classifier_mscs_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_mscs_dentry);
 	}
 
 	/*
