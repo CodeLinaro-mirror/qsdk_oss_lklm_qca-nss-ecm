@@ -1922,8 +1922,6 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		if (flow_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP
 			&& return_output_params.rule_id == ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP) {
 
-			struct nf_ct_dscpremark_ext *dscpcte;
-
 			/*
 			 * We support only SAWF for multicast traffic.
 			 * Hence we will mark classifier as no relevance.
@@ -1941,19 +1939,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			if (!ecm_classifier_3link_mlo_enabled)
 				goto check_emesh_classifier;
 
-			/*
-			 * We then use sawf_meta stored in the dscp extension if sawf_meta is valid.
-			 * Sawf_meta is stored in the dscp extentension when the update callback is called.
-			 */
-			dscpcte = nf_ct_dscpremark_ext_find(ct);
-			if (dscpcte && (dscpcte->flow_set_flags & NF_CT_DSCPREMARK_EXT_SAWF)) {
-				spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-				cemi->process_response.flow_sawf_metadata = dscpcte->flow_sawf_meta;
-				cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
-				cemi->flow_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_DSCPCTE_VALID;
-				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-				DEBUG_TRACE("%px: use dscpcte's flow_sawf_meta=%x\n", cemi, cemi->process_response.flow_sawf_metadata);
-			} else if (dest_dev && ecm_emesh.update_service_id_get_msduq) {
+			if (dest_dev && ecm_emesh.update_service_id_get_msduq) {
 				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 					ecm_classifier_emesh_sawf_query_msduq(aci, &flow_input_params, dest_dev, dmac, 1);
 					spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
@@ -1973,14 +1959,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			}
 
 
-			if (dscpcte && (dscpcte->return_set_flags & NF_CT_DSCPREMARK_EXT_SAWF)) {
-				spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
-				cemi->process_response.return_sawf_metadata = dscpcte->return_sawf_meta;
-				cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG;
-				cemi->return_valid_flag |= ECM_CLASSIFIER_EMESH_SAWF_DSCPCTE_VALID;
-				spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
-				DEBUG_TRACE("%px: use dscpcte's return_sawf_meta=%x\n", cemi, cemi->process_response.return_sawf_metadata);
-			} else if (src_dev && ecm_emesh.update_service_id_get_msduq) {
+			if (src_dev && ecm_emesh.update_service_id_get_msduq) {
 				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 					ecm_classifier_emesh_sawf_query_msduq(aci, &return_input_params, src_dev, smac, 0);
 				} else {
@@ -3231,11 +3210,6 @@ end:
  */
 void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum ecm_rule_update_type type, void *arg)
 {
-	struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
-	struct nf_conn *ct;
-	struct nf_conntrack_tuple tuple;
-	struct nf_conntrack_tuple_hash *h;
-	struct nf_ct_dscpremark_ext *dscpcte;
 
 	if (type != ECM_RULE_UPDATE_TYPE_SAWFMARK && type != ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM) {
 		DEBUG_WARN("%px: unsupported update type: %d\n", aci, type);
@@ -3246,67 +3220,6 @@ void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum 
 		ecm_classifier_emesh_sawf_update_flowmark_wifi(aci, arg);
 		return;
 	}
-
-	/*
-	 * Create a tuple so as to be able to look up a conntrack connection
-	 */
-	memset(&tuple, 0, sizeof(tuple));
-	tuple.src.u.all = msg->flow_src_port;
-	tuple.dst.u.all = msg->flow_dest_port;
-	tuple.dst.protonum = (uint8_t)msg->protocol;
-	tuple.dst.dir = IP_CT_DIR_ORIGINAL;
-	if (msg->ip_version == 4) {
-		tuple.src.l3num = AF_INET;
-		tuple.src.u3.ip = msg->flow_src_ip[0];
-		tuple.dst.u3.ip = msg->flow_dest_ip[0];
-		DEBUG_TRACE("%px: Lookup ct using Protocol=%d src_addr=%pI4:%d dest_addr=%pI4:%d\n",
-				aci, (int)tuple.dst.protonum,
-				tuple.src.u3.all, (int)(ntohs(tuple.src.u.all)),
-				tuple.dst.u3.all, (int)(ntohs(tuple.dst.u.all)));
-	} else {
-		tuple.src.l3num = AF_INET6;
-		ECM_IP_ADDR_COPY(tuple.src.u3.ip6, msg->flow_src_ip);
-		ECM_IP_ADDR_COPY(tuple.dst.u3.ip6, msg->flow_dest_ip);
-		DEBUG_TRACE("%px: Lookup ct using Protocol=%d src_addr=%pI6c@%d dest_addr=%pI6c@%d\n",
-				aci, (int)tuple.dst.protonum,
-				tuple.src.u3.all, (int)(ntohs(tuple.src.u.all)),
-				tuple.dst.u3.all, (int)(ntohs(tuple.dst.u.all)));
-	}
-	h = nf_conntrack_find_get(&init_net, &nf_ct_zone_dflt, &tuple);
-	if (!h) {
-		DEBUG_WARN("%px: no ct\n", aci);
-		return;
-	}
-
-	ct = nf_ct_tuplehash_to_ctrack(h);
-
-	spin_lock_bh(&ct->lock);
-	dscpcte = nf_ct_dscpremark_ext_find(ct);
-	if (!dscpcte) {
-		spin_unlock_bh(&ct->lock);
-		DEBUG_WARN("%px: ct=%px: no dscpcte\n", aci, ct);
-		nf_ct_put(ct);
-		return;
-	}
-
-	if (ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(msg->flow_mark) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) {
-		dscpcte->flow_sawf_meta = msg->flow_mark;
-		dscpcte->flow_set_flags |= NF_CT_DSCPREMARK_EXT_SAWF;
-	} else {
-		dscpcte->flow_set_flags &= ~NF_CT_DSCPREMARK_EXT_SAWF;
-	}
-	if (ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(msg->return_mark) == ECM_CLASSIFIER_EMESH_SAWF_VALID_TAG) {
-		dscpcte->return_sawf_meta = msg->return_mark;
-		dscpcte->return_set_flags |= NF_CT_DSCPREMARK_EXT_SAWF;
-	} else {
-		dscpcte->return_set_flags &= ~NF_CT_DSCPREMARK_EXT_SAWF;
-	}
-	spin_unlock_bh(&ct->lock);
-
-	/*
-	 * Release connection
-	 */
-	nf_ct_put(ct);
 
 #ifdef ECM_FRONT_END_FSE_ENABLE
 	ecm_classifier_emesh_sawf_update_fse_flow(aci, ECM_CLASSIFIER_EMESH_SAWF_FSE_UPDATE);
