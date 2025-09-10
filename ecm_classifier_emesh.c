@@ -1019,14 +1019,14 @@ uint8_t ecm_classifier_emesh_sawf_get_iface_names_ipv6(struct nf_conn *ct, char 
 		return 0;
 	}
 	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
-	memcpy(from_buff, src_dev->name, IFNAMSIZ);
-	memcpy(to_buff, dest_dev->name, IFNAMSIZ);
 
 	if (src_dev) {
+		memcpy(from_buff, src_dev->name, IFNAMSIZ);
 		dev_put(src_dev);
 	}
 
 	if (dest_dev) {
+		memcpy(to_buff, dest_dev->name, IFNAMSIZ);
 		dev_put(dest_dev);
 	}
 	ecm_db_connection_deref(ci);
