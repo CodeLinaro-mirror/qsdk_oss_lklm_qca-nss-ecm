@@ -136,9 +136,9 @@ static int ecm_front_end_ipv6_stop_handler(struct ctl_table *ctl, int write, voi
 		return ret;
 	}
 
-	if ((!ecm_front_end_ipv6_stopped != 0) && (ecm_front_end_ipv6_stopped != 1)) {
-		DEBUG_ERROR("Invalid input, valid input\n");
-		current_val = ecm_front_end_ipv6_stopped;
+	if ((ecm_front_end_ipv6_stopped != 0) && (ecm_front_end_ipv6_stopped != 1)) {
+		DEBUG_ERROR("Invalid input, valid input 0/1\n");
+		ecm_front_end_ipv6_stopped = current_val;
 		return -EINVAL;
 	}
 

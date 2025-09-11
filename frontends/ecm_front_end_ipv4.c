@@ -137,6 +137,7 @@ static int ecm_front_end_ipv4_stop_handler(struct ctl_table *ctl, int write, voi
 
 	if ((ecm_front_end_ipv4_stopped != 0) && (ecm_front_end_ipv4_stopped != 1)) {
 		DEBUG_ERROR("Invalid input, Valid input 0/1\n");
+		ecm_front_end_ipv4_stopped = current_val;
 		return -EINVAL;
 	}
 
