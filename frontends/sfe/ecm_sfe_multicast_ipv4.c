@@ -754,7 +754,15 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 
 				ecm_db_iface_dsa_address_get(ii, to_sfe_iface_address);
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-				DEBUG_TRACE("%px: DSA - mac: %pM, mtu %d\n", feci, to_sfe_iface_address, to_mtu);
+				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (to_sfe_iface_id < 0) {
+					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
+					rule_invalid = true;
+					break;
+			        }
+
+				DEBUG_TRACE("%px: DSA - mac: %pM, mtu %d to_sfe_iface_id: %d\n", feci, to_sfe_iface_address, to_mtu, to_sfe_iface_id);
 #else
 				rule_invalid = true;
 				DEBUG_TRACE("%px: DSA interface is not supported\n", feci);
@@ -1628,7 +1636,15 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 				ecm_db_iface_dsa_address_get(ii, to_sfe_iface_address);
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
-				DEBUG_TRACE("%px: DSA - mac: %pM, mtu %d\n", feci, to_sfe_iface_address, to_mtu);
+				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
+				if (to_sfe_iface_id < 0) {
+					ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
+					rule_invalid = true;
+					break;
+			        }
+
+				DEBUG_TRACE("%px: DSA - mac: %pM, mtu %d to_sfe_iface_id: %d\n", feci, to_sfe_iface_address, to_mtu, to_sfe_iface_id);
 #else
 				rule_invalid = true;
 				ecm_sfe_stats_v4_inc(ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_DSA_UNSUPPORTED);
