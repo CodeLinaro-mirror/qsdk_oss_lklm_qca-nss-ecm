@@ -454,9 +454,7 @@ void ecm_sdx_stats_update_all_host_stats(void)
 	ip_addr_t host_ip;
 	u32 key;
 
-	DEBUG_TRACE("update stats for all hosts \n");
 	if(ecm_sdx_stats_instance->packet_stats_iface_type != ECM_DB_IFACE_TYPE_RAWIP) {
-		DEBUG_ERROR("Packet stats is not supported for non-wwan backhaul\n");
 		return;
 	}
 
@@ -535,7 +533,7 @@ void ecm_sdx_stats_update_host_stats(ip_addr_t host_ip, uint64_t host_rx,
 	u32 key;
 
 	if(ecm_sdx_stats_instance->packet_stats_iface_type != ECM_DB_IFACE_TYPE_RAWIP) {
-		DEBUG_ERROR("Packet stats is not supported for non-wwan backhaul\n");
+		DEBUG_TRACE("Packet stats is not supported for non-wwan backhaul\n");
 		return;
 	}
 
