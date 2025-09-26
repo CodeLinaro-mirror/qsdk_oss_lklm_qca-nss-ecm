@@ -38,7 +38,6 @@
 #include <linux/wireless.h>
 #include <net/genetlink.h>
 #include <net/netevent.h>
-#include <linux/nl80211.h>
 #include <net/gre.h>
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
 #include <linux/jhash.h>
@@ -99,10 +98,6 @@
 #endif
 #include <linux/hex.h>
 
-#ifdef ECM_OPEN_PROFILE_ENABLE
-#include <qca-vendor.h>
-#endif
-
 /*
  * Debug output levels
  * 0 = OFF
@@ -138,38 +133,6 @@
 #endif
 #include "ecm_front_end_common.h"
 
-/*
- * TODO:
- * The following NL80211_ macros should be removed once the
- * WLAN driver side changes (nl80211.h changes) are merged
- */
-#define NL80211_QM_DESC_ATTR_MAX 7
-#define NL80211_QM_ATTR_MAX 4
-#define NL80211_QM_ATTR_MAC_ADDR 1
-#define NL80211_QM_ATTR_QM_TYPE 2
-#define NL80211_QM_ATTR_DESCRIPTOR_PARAMS 4
-
-#define NL80211_QM_DESC_ATTR_QM_ID 1
-#define NL80211_QM_DESC_ATTR_REQUEST_TYPE 2
-
-#define NL80211_ATTR_QOS_MGMT 357
-#define NL80211_CMD_QOS_MGMT 165
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
-#define ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID	-1
-#define ECM_INTERFACE_GENEL_MESSAGE_SIZE		4096
-#endif
-
-#define ECM_INTERFACE_WIFI_QM_TYPE_SCS_REQUEST		0
-
-#define ECM_INTERFACE_WIFI_QM_SCS_REQ_REMOVE		1
-#define ECM_INTERFACE_WIFI_QM_SCS_REQ_CHANGE		2
-
-/*
- * Peer authorization event coming from WLAN driver.
- */
-#define ECM_INTERFACE_WIFI_EVENT_NODE_AUTH	30
-
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
 /*
  * Hash table for skip accel based on interaface name
@@ -202,28 +165,6 @@ static uint8_t ecm_interface_defunct_mac[ETH_ALEN];
  * Store iface name that is marked for defunct
  */
 static char ecm_interface_defunct_iface[IFNAMSIZ];
-
-/*
- * Wi-Fi event node authorized information structure.
- */
-struct ecm_interface_wifi_event_node_authorized {
-	u_int8_t  mac_addr[ETH_ALEN];	/* MAC address */
-	u_int8_t  channel_num;		/* Operating channel number */
-	u_int16_t assoc_id;		/* Assoc id */
-	u_int16_t phymode;		/* Phymode(11ac/abgn) */
-	u_int8_t  nss;			/* TX/RX chains */
-	u_int8_t  is_256qam;		/* TX/RX chains */
-};
-
-/*
- * Wifi event handler structure.
- */
-struct ecm_interface_wifi_event {
-	struct task_struct *thread;
-	struct socket *sock;
-};
-
-static struct ecm_interface_wifi_event __ewn;
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 /*
@@ -366,7 +307,7 @@ int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
  * ecm_interface_wlan_egress_netdev_hookfn()
  *	Process the SCS and MSCS tagged packets
  */
-static unsigned int ecm_interface_wlan_egress_netdev_hookfn(void *priv,
+static inline unsigned int ecm_interface_wlan_egress_netdev_hookfn(void *priv,
 							    struct sk_buff *skb,
 							    const struct nf_hook_state *state)
 {
@@ -387,21 +328,19 @@ static unsigned int ecm_interface_wlan_egress_netdev_hookfn(void *priv,
  * ecm_interface_pop_netdev_hook_reg_list()
  *	Pop a hook entry from the global list ecm_interface_netdev_hook_reg_list
  */
-static struct ecm_interface_netdev_hook_entry *
+static inline struct ecm_interface_netdev_hook_entry *
 ecm_interface_pop_netdev_hook_reg_list(void)
 {
 	struct ecm_interface_netdev_hook_entry *hook_entry = NULL;
 
 	spin_lock_bh(&ecm_interface_lock);
 
-	if (list_empty(&ecm_interface_netdev_hook_reg_list)) {
-		goto end;
-	} else {
-		hook_entry = list_first_entry(&ecm_interface_netdev_hook_reg_list, struct ecm_interface_netdev_hook_entry, list);
+	hook_entry = list_first_entry_or_null(&ecm_interface_netdev_hook_reg_list,
+					      struct ecm_interface_netdev_hook_entry, list);
+	if (hook_entry) {
 		list_del(&hook_entry->list);
 	}
 
-end:
 	spin_unlock_bh(&ecm_interface_lock);
 	return hook_entry;
 }
@@ -410,7 +349,7 @@ end:
  * ecm_interface_unregister_nf_hook()
  *	Unregister nf hook
  */
-void ecm_interface_unregister_nf_hook(struct ecm_interface_netdev_hook_entry *hook_entry)
+static inline void ecm_interface_unregister_nf_hook(struct ecm_interface_netdev_hook_entry *hook_entry)
 {
 	DEBUG_TRACE("unregister nf hook :%s ", hook_entry->nfho.dev->name);
 	nf_unregister_net_hook(&init_net, &hook_entry->nfho);
@@ -420,7 +359,7 @@ void ecm_interface_unregister_nf_hook(struct ecm_interface_netdev_hook_entry *ho
  *ecm_interface_unregister_nf_hook_wlan_device()
  *	Unregister nf hook for wlan devices
  */
-static void ecm_interface_unregister_nf_hook_wlan_device(void)
+static inline void ecm_interface_unregister_nf_hook_wlan_device(void)
 {
 	struct ecm_interface_netdev_hook_entry *hook_entry;
 
@@ -431,33 +370,11 @@ static void ecm_interface_unregister_nf_hook_wlan_device(void)
 }
 
 /*
- * ecm_interface_is_nf_hookfn_entry_present()
- *	Check whether the hookfn entry is present in the global list
- */
-static bool ecm_interface_is_nf_hookfn_entry_present(struct net_device *dev, nf_hookfn *hookfn)
-{
-	struct ecm_interface_netdev_hook_entry *hook_entry;
-
-	spin_lock_bh(&ecm_interface_lock);
-
-	list_for_each_entry(hook_entry, &ecm_interface_netdev_hook_reg_list, list) {
-		if (hook_entry->nfho.dev == dev && hook_entry->nfho.hook == hookfn) {
-			spin_unlock_bh(&ecm_interface_lock);
-			return true;
-		}
-	}
-
-	spin_unlock_bh(&ecm_interface_lock);
-
-	return false;
-}
-
-/*
  * ecm_interface_check_dup_and_add_nf_hookfn_entry()
  *	Check whether the hookfn entry is present in the global list.
  *	If not, add it in the global list
  */
-static bool ecm_interface_check_dup_and_add_nf_hookfn_entry(struct ecm_interface_netdev_hook_entry *new_hook_entry)
+static inline bool ecm_interface_check_dup_and_add_nf_hookfn_entry(struct ecm_interface_netdev_hook_entry *new_hook_entry)
 {
 	struct ecm_interface_netdev_hook_entry *hook_entry;
 
@@ -478,10 +395,35 @@ static bool ecm_interface_check_dup_and_add_nf_hookfn_entry(struct ecm_interface
 }
 
 /*
- * ecm_interface_add_nf_hookfn_entry()
+ * ecm_interface_remove_nf_hookfn_entry()
+ *	Remove the hook_entry that matches dev and hookfn from ecm_interface_netdev_hook_reg_list
+ */
+static inline struct ecm_interface_netdev_hook_entry *
+ecm_interface_remove_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn)
+{
+	struct ecm_interface_netdev_hook_entry *hook_entry;
+	struct ecm_interface_netdev_hook_entry *temp;
+
+	spin_lock_bh(&ecm_interface_lock);
+
+	list_for_each_entry_safe(hook_entry, temp, &ecm_interface_netdev_hook_reg_list, list) {
+		if (hook_entry->nfho.dev == dev && hook_entry->nfho.hook == hookfn) {
+			list_del(&hook_entry->list);
+			spin_unlock_bh(&ecm_interface_lock);
+			return hook_entry;
+		}
+	}
+
+	spin_unlock_bh(&ecm_interface_lock);
+
+	return NULL;
+}
+
+/*
+ * ecm_interface_add_nf_hookfn_entry_and_register()
  *	Register nf hook and add the hook entry to the global hook entry list
  */
-void ecm_interface_add_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn)
+static inline void ecm_interface_add_nf_hookfn_entry_and_register(struct net_device *dev, nf_hookfn *hookfn)
 {
 	struct ecm_interface_netdev_hook_entry *hook_entry;
 	int ret;
@@ -498,46 +440,35 @@ void ecm_interface_add_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn
 	hook_entry->nfho.priority = NF_IP_PRI_LAST;
 	hook_entry->nfho.dev = dev;
 
-	ret = nf_register_net_hook(&init_net, &hook_entry->nfho);
+	ret = ecm_interface_check_dup_and_add_nf_hookfn_entry(hook_entry);
 	if (ret) {
-		DEBUG_WARN("Failed to register netdev hook on %s err : %d\n", dev->name, ret);
+		DEBUG_TRACE("hook entry already present, iface %s", dev->name);
 		kfree(hook_entry);
 		return;
 	}
 
-	ret = ecm_interface_check_dup_and_add_nf_hookfn_entry(hook_entry);
+	ret = nf_register_net_hook(&init_net, &hook_entry->nfho);
 	if (ret) {
-		DEBUG_TRACE("hook entry already present, iface %s", dev->name);
-		nf_unregister_net_hook(&init_net, &hook_entry->nfho);
+		DEBUG_WARN("Failed to register netdev hook on %s err : %d\n", dev->name, ret);
+		hook_entry = ecm_interface_remove_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
 		kfree(hook_entry);
+		return;
 	}
 
 	DEBUG_TRACE("Netdev egress hook register for iface %s success", dev->name);
 }
 
 /*
- * ecm_interface_remove_nf_hookfn_entry()
+ * ecm_interface_remove_nf_hookfn_entry_and_unregister()
  *	Remove hook entry from the global hook entry list and unregister the nf hook
  */
-void ecm_interface_remove_nf_hookfn_entry(struct net_device *dev, nf_hookfn *hookfn)
+static inline void ecm_interface_remove_nf_hookfn_entry_and_unregister(struct net_device *dev, nf_hookfn *hookfn)
 {
 	struct ecm_interface_netdev_hook_entry *hook_entry;
-	struct ecm_interface_netdev_hook_entry *temp;
-	bool match_found = false;
 
-	spin_lock_bh(&ecm_interface_lock);
+	hook_entry = ecm_interface_remove_nf_hookfn_entry(dev, hookfn);
 
-	list_for_each_entry_safe(hook_entry, temp, &ecm_interface_netdev_hook_reg_list, list) {
-		if (hook_entry->nfho.dev == dev && hook_entry->nfho.hook == hookfn) {
-			list_del(&hook_entry->list);
-			match_found = true;
-			break;
-		}
-	}
-
-	spin_unlock_bh(&ecm_interface_lock);
-
-	if (!match_found) {
+	if (!hook_entry) {
 		DEBUG_TRACE("No hook entry match found for iface %s", dev->name);
 		return;
 	}
@@ -8324,9 +8255,8 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 
 	case NETDEV_UNREGISTER:
 		DEBUG_INFO("Net device: %px, NETDEV_UNREGISTER %s \n", dev, dev->name);
-		if (dev->ieee80211_ptr &&
-		    ecm_interface_is_nf_hookfn_entry_present(dev, ecm_interface_wlan_egress_netdev_hookfn)) {
-			ecm_interface_remove_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+		if (dev->ieee80211_ptr) {
+			ecm_interface_remove_nf_hookfn_entry_and_unregister(dev, ecm_interface_wlan_egress_netdev_hookfn);
 		}
 
 #ifdef ECM_INTERFACE_VXLAN_ENABLE
@@ -8365,7 +8295,7 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 	case NETDEV_REGISTER:
 		DEBUG_INFO("Net device: %px, NETDEV_UP %s \n", dev, dev->name);
 		if (dev->ieee80211_ptr) {
-			ecm_interface_add_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+			ecm_interface_add_nf_hookfn_entry_and_register(dev, ecm_interface_wlan_egress_netdev_hookfn);
 		}
 		break;
 	default:
@@ -8437,6 +8367,27 @@ void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version
 	ecm_front_end_ipv6_stop_temp(0);
 #endif
 }
+EXPORT_SYMBOL(ecm_interface_node_connections_defunct_by_type);
+
+/*
+ * ecm_interface_node_connections_defunct_by_type_sta_join()
+ *	Defunct by the type -  station join
+ */
+void ecm_interface_node_connections_defunct_by_type_sta_join(uint8_t *mac)
+{
+	ecm_interface_node_connections_defunct_by_type(mac, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
+}
+EXPORT_SYMBOL(ecm_interface_node_connections_defunct_by_type_sta_join);
+
+/*
+ * ecm_interface_defunct_qm_connections()
+ *	Defunct the connections with qm type and qm id
+ */
+void ecm_interface_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint8_t wifi_qm_id)
+{
+	ecm_db_node_defunct_qm_connections(mac, wifi_qm_type, wifi_qm_id);
+}
+EXPORT_SYMBOL(ecm_interface_defunct_qm_connections);
 
 /*
  * ecm_interface_node_connections_defunct()
@@ -8446,6 +8397,17 @@ void ecm_interface_node_connections_defunct(uint8_t *mac, int ip_version)
 {
 	ecm_interface_node_connections_defunct_by_type(mac, ip_version, ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE);
 }
+EXPORT_SYMBOL(ecm_interface_node_connections_defunct);
+
+/*
+ * ecm_interface_node_connections_defunct_by_mac_addr()
+ *	Defunct the connections on this node by mac addr.
+ */
+void ecm_interface_node_connections_defunct_by_mac_addr(uint8_t *mac)
+{
+	ecm_interface_node_connections_defunct_by_type(mac, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_IGNORE);
+}
+EXPORT_SYMBOL(ecm_interface_node_connections_defunct_by_mac_addr);
 
 /*
  * struct notifier_block ecm_interface_netdev_notifier
@@ -8867,849 +8829,6 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
 	.notifier_call = ecm_interface_neigh_mac_update_notify_event,
 };
 #endif
-
-/*
- * ecm_interface_wifi_event_rx()
- *	Receive netlink message from socket
- */
-static int ecm_interface_wifi_event_rx(struct socket *sock, struct sockaddr_nl *addr, unsigned char *buf, int len)
-{
-	struct msghdr msg;
-	struct kvec iov;
-
-	iov.iov_base = buf;
-	iov.iov_len  = len;
-
-	msg.msg_flags = 0;
-	msg.msg_name  = addr;
-	msg.msg_namelen = sizeof(struct sockaddr_nl);
-	msg.msg_control = NULL;
-	msg.msg_controllen = 0;
-
-	return kernel_recvmsg(sock, &msg, &iov, 1, len, msg.msg_flags);
-}
-
-/*
- * ecm_interface_wifi_process_qos_mgmt_event()
- *	Parse and process qos mgmt events received from Wi-Fi.
- */
-void ecm_interface_wifi_process_qos_mgmt_event(struct nlmsghdr *nlh, int cmd)
-{
-	u8 peer_mac[ETH_ALEN];
-	u8 wifi_qm_type;
-	int rem_qm_desc;
-	struct genlmsghdr *gnlh;
-	struct nlattr *tb_qos_mgmt_desc;
-	struct nlattr *tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_MAX + 1];
-	struct nlattr **attrs = NULL;
-	int err;
-	uint8_t wifi_qm_id;
-	uint8_t request_type;
-	struct nlattr **tb_qos_mgmt = NULL;
-
-	gnlh = nlmsg_data(nlh);
-
-	DEBUG_TRACE("Received NL80211_CMD_QOS_MGMT");
-
-	attrs = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
-	if (!attrs) {
-		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
-		return;
-	}
-
-	tb_qos_mgmt = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
-	if (!tb_qos_mgmt) {
-		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
-		kfree(attrs);
-		return;
-	}
-
-	/*
-	 * Parse the top-level nl80211 attributes into attrs
-	 */
-	err = nla_parse(attrs, NL80211_ATTR_MAX,
-			nlmsg_attrdata(nlh, GENL_HDRLEN),
-			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL,
-			NULL);
-
-	if (err) {
-		DEBUG_WARN("nla_parse failed: %d\n", err);
-		goto end;
-	}
-
-	if (!attrs[NL80211_ATTR_QOS_MGMT]) {
-		DEBUG_WARN("attrs[NL80211_ATTR_QOS_MGMT] is NULL: %d\n", err);
-		goto end;
-	}
-
-	nla_parse_nested(tb_qos_mgmt, NL80211_QM_ATTR_MAX,
-			 attrs[NL80211_ATTR_QOS_MGMT],
-			 NULL, NULL);
-
-	if (!tb_qos_mgmt[NL80211_QM_ATTR_MAC_ADDR] ||
-	    !tb_qos_mgmt[NL80211_QM_ATTR_QM_TYPE] ||
-	    !tb_qos_mgmt[NL80211_QM_ATTR_DESCRIPTOR_PARAMS]) {
-		DEBUG_WARN("error parsing mac addr, qm_type and descriptor params\n");
-		goto end;
-	}
-
-	ether_addr_copy(peer_mac, nla_data(tb_qos_mgmt[NL80211_QM_ATTR_MAC_ADDR]));
-
-	wifi_qm_type = nla_get_u8(tb_qos_mgmt[NL80211_QM_ATTR_QM_TYPE]);
-
-	DEBUG_TRACE("peer mac : %pM qm_type : %d\n", peer_mac, wifi_qm_type);
-
-	if (wifi_qm_type == ECM_INTERFACE_WIFI_QM_TYPE_SCS_REQUEST) {
-		nla_for_each_nested(tb_qos_mgmt_desc, tb_qos_mgmt[NL80211_QM_ATTR_DESCRIPTOR_PARAMS], rem_qm_desc) {
-			nla_parse_nested(tb_qos_mgmt_desc_entry, NL80211_QM_DESC_ATTR_MAX, tb_qos_mgmt_desc, NULL, NULL);
-			/*
-			 * Extract QM desc attributes
-			 */
-			request_type = nla_get_u8(tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_REQUEST_TYPE]);
-			if (request_type == ECM_INTERFACE_WIFI_QM_SCS_REQ_REMOVE ||
-			    request_type == ECM_INTERFACE_WIFI_QM_SCS_REQ_CHANGE) {
-				wifi_qm_id = nla_get_u8(tb_qos_mgmt_desc_entry[NL80211_QM_DESC_ATTR_QM_ID]);
-				DEBUG_TRACE("Defunct connections mac : %pM wifi_qm_type : %d wifi_qm_id : %d\n", peer_mac, wifi_qm_type, wifi_qm_id);
-				ecm_db_node_defunct_qm_connections(&peer_mac[0], wifi_qm_type, wifi_qm_id);
-			}
-		}
-	}
-
-end:
-	kfree(tb_qos_mgmt);
-	kfree(attrs);
-}
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
-#ifdef ECM_OPEN_PROFILE_ENABLE
-/*
- * ecm_interface_wifi_vendor_cmd_handle()
- *	Parse and process events within the vendor cmd received from Wi-Fi.
- */
-void ecm_interface_wifi_vendor_cmd_handle(struct nlmsghdr *nlh)
-{
-	struct nlattr **tb = NULL, **tb2 = NULL;
-	uint8_t mac[ETH_ALEN], newlink;
-	int *subcmd;
-	int res, len;
-	struct nlattr *data;
-
-	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
-		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
-		return;
-	}
-
-	tb = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
-	if (!tb) {
-		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
-		return;
-	}
-
-	/*
-	 * Parse the event coming from Wi-Fi.
-	 */
-	res = nla_parse(tb, NL80211_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
-			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
-
-	if (res < 0) {
-		DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
-		kfree(tb);
-		return;
-	}
-
-	tb2 = (struct nlattr **) kzalloc((sizeof(struct nlattr *) * (QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
-	if (!tb2) {
-		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
-		kfree(tb);
-		return;
-	}
-
-	subcmd = (int *) nla_data(tb[NL80211_ATTR_VENDOR_SUBCMD]);
-	DEBUG_INFO("Netlink parsed sub command: %u\n", *subcmd);
-	switch (*subcmd) {
-	/*
-	 * Get the mac addr of last primary link and defunct all the connections by mac addr.
-	 */
-	case QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE:
-		if (tb[NL80211_ATTR_VENDOR_DATA]) {
-			data = nla_data(tb[NL80211_ATTR_VENDOR_DATA]);
-			len = nla_len(tb[NL80211_ATTR_VENDOR_DATA]);
-			if (nla_parse(tb2, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX, (struct nlattr *) data, len, NULL, NULL)) {
-				DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
-				goto free_mem;
-			}
-
-			newlink = nla_get_u8(tb2[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
-			memcpy(mac, nla_data(tb2[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]), ETH_ALEN);
-			ecm_interface_node_connections_defunct((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE);
-			DEBUG_INFO("Deleted all entries corresponding to mac: %pM new link id: %u\n", mac, newlink);
-		} else {
-			DEBUG_WARN("%px: Not able to parse vendor data attribute.\n", nlh);
-		}
-
-		break;
-	default:
-		DEBUG_INFO("Netlink parsed sub command: %u\n", *subcmd);
-		break;
-	}
-free_mem:
-	kfree(tb);
-	kfree(tb2);
-}
-#endif
-
-/*
- * ecm_interface_wifi_process_link_events()
- *	Parse and process link add / delete events received from Wi-Fi.
- */
-void ecm_interface_wifi_process_link_events(struct nlmsghdr *nlh, int cmd)
-{
-	struct nlattr **tb = NULL;
-	uint8_t mac[ETH_ALEN];
-	int res;
-
-	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
-		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
-		return;
-	}
-
-	tb = (struct nlattr **)kzalloc((sizeof(struct nlattr *) * (NL80211_ATTR_MAX + 1)), GFP_ATOMIC | __GFP_NOWARN);
-	if (!tb) {
-		DEBUG_WARN("%px: Not able to allocate array to parse the events \n", nlh);
-		return;
-	}
-
-	/*
-	 * Parse the event coming from Wi-Fi.
-	 */
-	res = nla_parse(tb, NL80211_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
-			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
-
-	if (res < 0) {
-		DEBUG_WARN("%px: Error in parsing the Wi-Fi event \n", nlh);
-		kfree(tb);
-		return;
-	}
-
-	/*
-	 * Get the MAC address of the peer and process the event.
-	 */
-	if (tb[NL80211_ATTR_MAC]) {
-		memcpy(mac, nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
-
-		if (cmd == NL80211_CMD_NEW_STATION) {
-			DEBUG_INFO("STA %pM joining\n", (uint8_t *)mac);
-			ecm_interface_node_connections_defunct_by_type((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE,
-									ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
-		}
-
-		if (cmd == NL80211_CMD_DEL_STATION) {
-			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)mac);
-			ecm_interface_node_connections_defunct((uint8_t *)mac, ECM_DB_IP_VERSION_IGNORE);
-		}
-	}
-
-	kfree(tb);
-}
-
-/*
- * ecm_interface_wifi_event_handler()
- *	Netlink event handler
- */
-static int ecm_interface_wifi_event_handler(void *buf, int len)
-{
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *hdr;
-	int left;
-
-	nlh = (struct nlmsghdr *) buf;
-	left = len;
-
-	/*
-	 * Check the command type and parse the message accordingly.
-	 */
-	while (NLMSG_OK(nlh, left)) {
-		hdr = NLMSG_DATA(nlh);
-
-		switch (hdr->cmd) {
-		case NL80211_CMD_NEW_STATION:
-		case NL80211_CMD_DEL_STATION:
-			ecm_interface_wifi_process_link_events(nlh, hdr->cmd);
-			break;
-		case NL80211_CMD_QOS_MGMT:
-			ecm_interface_wifi_process_qos_mgmt_event(nlh, hdr->cmd);
-			break;
-		case NL80211_CMD_VENDOR:
-#ifdef ECM_OPEN_PROFILE_ENABLE
-			ecm_interface_wifi_vendor_cmd_handle(nlh);
-#endif
-			break;
-		}
-
-		nlh = NLMSG_NEXT(nlh, left);
-	}
-
-	return 0;
-}
-
-/*
- * ecm_interface_process_genl_ctrl_response()
- *	Parse and process the generic control family response message,
- *	get the mcast id of MLME/Vendor mcast group of nl80211 family and
- *	set the membership of the mcast group to the given socket.
- */
-bool ecm_interface_process_genl_ctrl_response(struct nlmsghdr *nlh, struct socket *sock)
-{
-	struct nlattr *tb[CTRL_ATTR_MAX+1];
-	struct nlattr *mcgrp;
-	char data[16];
-	int mcast_id = ECM_INTERFACE_NL80211_MC_GROUP_INVALID_ID;
-	int family_id;
-	int res = -1;
-	int i;
-
-	if (nlh->nlmsg_len < nlmsg_msg_size(GENL_HDRLEN)) {
-		DEBUG_WARN("%px: Invalid NL response message header length \n", nlh);
-		return false;
-	}
-
-	res = nla_parse(tb, CTRL_ATTR_MAX, nlmsg_attrdata(nlh, GENL_HDRLEN),
-			nlmsg_attrlen(nlh, GENL_HDRLEN), NULL, NULL);
-	if (res < 0) {
-		DEBUG_WARN("%px: Error in parsing NL message %d err\n", nlh, res);
-		return false;
-	}
-
-	/*
-	 * Get the family ID for nl80211 family.
-	 */
-	if (!tb[CTRL_ATTR_FAMILY_ID]) {
-		DEBUG_INFO("%px: Failed to get the family ID of nl80211 \n", nlh);
-		return false;
-	}
-
-	if (!tb[CTRL_ATTR_MCAST_GROUPS]) {
-		DEBUG_WARN("%px: Failed to fetch the multicast groups \n", nlh);
-		return false;
-	}
-
-	/*
-	 * Parse the multicast groups and get the ID of MLME/Vendor group.
-	 */
-	family_id = nla_get_u16(tb[CTRL_ATTR_FAMILY_ID]);
-	nla_for_each_nested(mcgrp, tb[CTRL_ATTR_MCAST_GROUPS], i) {
-		struct nlattr *tb2[CTRL_ATTR_MCAST_GRP_MAX + 1];
-
-		res = nla_parse(tb2, CTRL_ATTR_MCAST_GRP_MAX, (struct nlattr *)nla_data(mcgrp), nla_len(mcgrp), NULL, NULL);
-		if (res < 0) {
-			DEBUG_WARN("%px: Error in parsing NL message multicast group %d res\n", nlh, res);
-			return false;
-		}
-
-		if (tb2[CTRL_ATTR_MCAST_GRP_NAME]) {
-			nla_strscpy(data, tb2[CTRL_ATTR_MCAST_GRP_NAME], sizeof(data));
-		} else {
-			DEBUG_INFO("%px: Multicast group name not resolved.\n", nlh);
-			continue;
-		}
-
-		/*
-		 * Look for given multicast group type and set their membership to socket.
-		 */
-		if (strcmp(data, "vendor") == 0 || strcmp(data, "mlme") == 0) {
-			if (tb2[CTRL_ATTR_MCAST_GRP_ID]) {
-				mcast_id = nla_get_u32(tb2[CTRL_ATTR_MCAST_GRP_ID]);
-				/*
-				 * Add this socket as a memeber to the MLME or Vendor multicast group of the
-				 * nl80211 family.
-				 */
-				res = sock->ops->setsockopt(sock, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, KERNEL_SOCKPTR((void *)&mcast_id), sizeof(mcast_id));
-				if (res < 0) {
-					DEBUG_WARN("%px: Failed to set the multicast membership %s(%d) res %d\n", sock, data, mcast_id, res);
-					return false;
-				}
-
-				DEBUG_INFO("%px: Added the socket as a member to nl80211 %s(%d) multicast group \n", sock, data, mcast_id);
-			} else {
-				DEBUG_WARN("%px: Parsed mcast id is invalid.\n", sock);
-			}
-		}
-	};
-
-	return true;
-}
-
-/*
- * ecm_interface_construct_nl_message()
- *	Construct a message to generic control family to resolve the
- *	nl80211 multicast groups.
- */
-struct nlmsghdr *ecm_interface_construct_nl_message(void)
-{
-	int flags = GFP_ATOMIC;
-	struct sk_buff *skb;
-	struct nlmsghdr *nlh;
-	struct genlmsghdr *ghdr;
-	int res = 0;
-
-	/*
-	 * Allocate a genl message structure to send a resolution
-	 * request to generic control family.
-	 */
-	skb = genlmsg_new(NLMSG_DEFAULT_SIZE, flags);
-	if (!skb) {
-		DEBUG_WARN("Not enough space to allocate genl message !\n");
-		return NULL;
-	}
-
-	/*
-	 * Construct the nl header with command addressing to control
-	 * family.
-	 */
-	nlh = nlmsg_put(skb, 0, 0, GENL_ID_CTRL, GENL_HDRLEN, 0);
-	if (!nlh) {
-		DEBUG_WARN("%px: Error in constructing nl header !\n", skb);
-		nlmsg_free(skb);
-		return NULL;
-	}
-
-	/*
-	 * Construct the genl header.
-	 */
-	nlh->nlmsg_flags |= NLM_F_REQUEST;
-
-	ghdr = nlmsg_data(nlh);
-	ghdr->cmd = CTRL_CMD_GETFAMILY;
-	ghdr->version = 1;
-	ghdr->reserved = 0;
-
-	/*
-	 * Add the family name attribute that ECM wants to resolve.
-	 */
-	res = nla_put_string(skb, CTRL_ATTR_FAMILY_NAME, "nl80211");
-	if (res) {
-		DEBUG_WARN("%px: Failed to put family name attribute \n", skb);
-		goto err;
-	}
-
-	nlh->nlmsg_len = skb->len;
-
-	return nlh;
-err:
-	genlmsg_cancel(skb, ghdr);
-	nlmsg_free(skb);
-
-	return NULL;
-}
-
-/*
- * ecm_interface_resolve_nl80211_family()
- *	Resolve the nl80211 family multicast groups to
- *	receive Wi-Fi specific events.
- */
-int ecm_interface_resolve_nl80211_family(struct socket *sock, struct sockaddr_nl *addr)
-{
-	struct nlmsghdr *nlh;
-	struct kvec iov = {0};
-	struct msghdr mhdr = {0};
-	unsigned char *buf;
-	int len = ECM_INTERFACE_GENEL_MESSAGE_SIZE;
-	int ret = -1;
-	int size = 0;
-
-	/*
-	 * Construct the NL message to generic control family to resolve the
-	 * nl80211 multicast groups.
-	 */
-	nlh = (struct nlmsghdr *)ecm_interface_construct_nl_message();
-	if (!nlh) {
-		DEBUG_WARN("%px: Failed to construct the NL message\n", sock);
-		return ret;
-	}
-
-	/*
-	 * Fill the message buffer and send the control message.
-	 */
-	iov.iov_base = (void *) nlh;
-	iov.iov_len = nlh->nlmsg_len;
-
-	mhdr.msg_name = 0;
-	mhdr.msg_namelen = 0;
-
-	iov_iter_kvec(&mhdr.msg_iter, WRITE, &iov, 1, iov.iov_len);
-
-	ret = sock_sendmsg(sock, &mhdr);
-	if (ret < 0) {
-		DEBUG_WARN("%px: Failed to send the NL ctrl message\n", sock);
-		return ret;
-	}
-
-	/*
-	 * Allocate a buffer to receive the reply message from
-	 * generic control family having information about the
-	 * multicast groups of nl80211.
-	 */
-	buf = (char *)kzalloc(len, GFP_ATOMIC | __GFP_NOWARN);
-	if (!buf) {
-		DEBUG_WARN("%px: Failed to allocate a buffer to receive message!\n", sock);
-		return -1;
-	}
-
-	size = ecm_interface_wifi_event_rx(sock, addr, buf, len);
-	if (size < 0) {
-		DEBUG_WARN("%px: Netlink RX error !\n", sock);
-		kfree(buf);
-		return size;
-	}
-
-	/*
-	 * Parse and process the NL message response received from kernel.
-	 * This has all the information about the family, its multicast groups,
-	 * callbacks etc.
-	 */
-	nlh = (struct nlmsghdr *)buf;
-	while (NLMSG_OK(nlh, size)) {
-		DEBUG_INFO("%px: Received an NL response, length %d type %d\n", nlh, nlh->nlmsg_len, nlh->nlmsg_type);
-
-		if (!ecm_interface_process_genl_ctrl_response(nlh, sock)) {
-			DEBUG_WARN("%px: Failed to parse and process the multicast group message.\n", sock);
-			kfree(buf);
-			return -1;
-		}
-
-		nlh = NLMSG_NEXT(nlh, size);
-	}
-
-	/*
-	 * Release the buffer allocated for receiving the message.
-	 */
-	kfree(buf);
-	return 0;
-}
-
-/*
- * ecm_interface_wifi_event_thread()
- */
-static void ecm_interface_wifi_event_thread(void)
-{
-	int err;
-	int size;
-	struct sockaddr_nl saddr;
-	unsigned char *buf;
-	int len = ECM_INTERFACE_GENEL_MESSAGE_SIZE;
-
-	kernel_sigaction(SIGKILL, SIG_DFL);
-
-	/*
-	 * Create a socket to listen to the events coming from nl80211 family.
-	 */
-	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC, &__ewn.sock);
-	if (err < 0) {
-		DEBUG_ERROR("failed to create sock err %d\n", err);
-		goto exit1;
-	}
-
-	memset(&saddr, 0, sizeof(saddr));
-	saddr.nl_family = AF_NETLINK;
-	saddr.nl_pid    = current->pid;
-
-	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
-	if (err < 0) {
-		DEBUG_ERROR("failed to bind sock err %d\n", err);
-		goto exit2;
-	}
-
-	/*
-	 * ECM is supposed to listen to the multicast events sent from the nl80211 family.
-	 * So resolve the family and the multicast event.
-	 */
-	err = ecm_interface_resolve_nl80211_family(__ewn.sock, &saddr);
-	if (err < 0) {
-		DEBUG_ERROR("Failed to resolve the nl80211 generic netlink family err %d\n", err);
-		goto exit2;
-	}
-
-	buf = (char *)kzalloc(len, GFP_ATOMIC | __GFP_NOWARN);
-	if (!buf) {
-		DEBUG_ERROR("Failed to allocate the buffer %d\n", err);
-		goto exit2;
-	}
-
-	/*
-	 * Start listening to the Wi-Fi events.
-	 */
-	DEBUG_INFO("ecm_interface_wifi_event thread started\n");
-	while (!kthread_should_stop()) {
-		size = ecm_interface_wifi_event_rx(__ewn.sock, &saddr, buf, len);
-		DEBUG_TRACE("got a netlink msg with len %d\n", size);
-
-		if (signal_pending(current))
-			break;
-
-		if (size < 0) {
-			DEBUG_WARN("netlink rx error\n");
-		} else {
-			ecm_interface_wifi_event_handler((void *)buf, size);
-		}
-	}
-
-	kfree(buf);
-	DEBUG_INFO("ecm_interface_wifi_event thread stopped\n");
-exit2:
-	sock_release(__ewn.sock);
-exit1:
-	__ewn.sock = NULL;
-}
-
-#else
-/*
- * ecm_interface_wifi_event_iwevent()
- *	wireless event handler
- */
-static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, size_t len)
-{
-	struct iw_event iwe_buf, *iwe = &iwe_buf;
-	char *pos, *end, *custom, *dpos;
-	int dlen;
-	void *dbuf;
-	struct ecm_interface_wifi_event_node_authorized *wifi_ev_au;
-
-	pos = buf;
-	end = buf + len;
-	while (pos + IW_EV_LCP_LEN <= end) {
-
-		/*
-		 * Copy the base data structure to get iwe->len
-		 */
-		memcpy(&iwe_buf, pos, IW_EV_LCP_LEN);
-
-		/*
-		 * Check that len is valid and that we have that much in the buffer.
-		 */
-		if (iwe->len < IW_EV_LCP_LEN) {
-			return -1;
-		}
-
-		/*
-		 * Check for any custom events like STA authorized.
-		 */
-		custom = pos + IW_EV_POINT_LEN;
-		if (iwe->cmd == IWEVCUSTOM) {
-			dpos = (char *)&iwe_buf.u.data.length;
-			dlen = dpos - (char *)&iwe_buf;
-
-			memcpy(dpos, pos + IW_EV_LCP_LEN, sizeof(struct iw_event) - dlen);
-
-			if (custom + iwe->u.data.length > end) {
-				DEBUG_WARN("Invalid buffer length received in the event iwe->u.data.length %d\n", iwe->u.data.length);
-				return -1;
-			}
-
-			/*
-			 * Check the flags of iw event if it indicates the IW authorized signal.
-			 */
-			if (iwe->u.data.flags == ECM_INTERFACE_WIFI_EVENT_NODE_AUTH) {
-				dbuf = kzalloc((iwe->u.data.length + 1), GFP_KERNEL);
-				if (!dbuf) {
-					DEBUG_WARN("Failed to allocated a buffer to process the custom event");
-					return -1;
-				}
-
-				/*
-				 * Copy the user content of custom event to extract information.
-				 */
-				memset(dbuf, 0, iwe->u.data.length);
-				memcpy(dbuf, custom, iwe->u.data.length);
-
-				wifi_ev_au = (struct ecm_interface_wifi_event_node_authorized *)dbuf;
-
-				DEBUG_INFO("STA %pM is authorized \n", (uint8_t *)wifi_ev_au->mac_addr);
-				ecm_interface_node_connections_defunct_by_type((uint8_t *)wifi_ev_au->mac_addr, ECM_DB_IP_VERSION_IGNORE, ECM_DB_CONNECTION_DEFUNCT_TYPE_STA_JOIN);
-
-				kfree(dbuf);
-			}
-
-			return 0;
-		}
-
-		if ((iwe->len > sizeof(struct iw_event)) || (iwe->len + pos) > end) {
-			return -1;
-		}
-
-		/*
-		 * Do the copy again with the full length.
-		 */
-		memcpy(&iwe_buf, pos, iwe->len);
-
-		if (iwe->cmd == IWEVEXPIRED) {
-			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);
-		} else {
-			DEBUG_INFO("iwe->cmd is %d for STA %pM\n", iwe->cmd, (unsigned char *) iwe->u.addr.sa_data);
-		}
-
-		pos += iwe->len;
-	}
-
-	return 0;
-}
-
-/*
- * ecm_interface_wifi_event_newlink()
- *	Link event handler
- */
-static int ecm_interface_wifi_event_newlink(struct ifinfomsg *ifi, unsigned char *buf, size_t len)
-{
-	struct rtattr *attr;
-	int attrlen, rta_len;
-
-	DEBUG_TRACE("Event from interface %d\n", ifi->ifi_index);
-
-	attrlen = len;
-	attr = (struct rtattr *) buf;
-	rta_len = RTA_ALIGN(sizeof(struct rtattr));
-
-	while (RTA_OK(attr, attrlen)) {
-		if (attr->rta_type == IFLA_WIRELESS) {
-			ecm_interface_wifi_event_iwevent(ifi->ifi_index, ((char *) attr) + rta_len, attr->rta_len - rta_len);
-		}
-		attr = RTA_NEXT(attr, attrlen);
-	}
-
-	return 0;
-}
-
-/*
- * ecm_interface_wifi_event_handler()
- *	Netlink event handler
- */
-static int ecm_interface_wifi_event_handler(void *buf, int len)
-{
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int left;
-
-	nlh = (struct nlmsghdr *) buf;
-	left = len;
-
-	while (NLMSG_OK(nlh, left)) {
-		switch (nlh->nlmsg_type) {
-		case RTM_NEWLINK:
-		case RTM_DELLINK:
-			if (NLMSG_PAYLOAD(nlh, 0) < sizeof(struct ifinfomsg)) {
-				DEBUG_INFO("invalid netlink message\n");
-				break;
-			}
-
-			ifi = NLMSG_DATA(nlh);
-			DEBUG_INFO("ifi->ifi_family: %d\n", ifi->ifi_family);
-			if (ifi->ifi_family != AF_BRIDGE) {
-				ecm_interface_wifi_event_newlink(ifi, (u8 *)ifi + NLMSG_ALIGN(sizeof(struct ifinfomsg)),
-					NLMSG_PAYLOAD(nlh, sizeof(struct ifinfomsg)));
-			}
-			break;
-		}
-
-		nlh = NLMSG_NEXT(nlh, left);
-	}
-
-	return 0;
-}
-
-/*
- * ecm_interface_wifi_event_thread()
- */
-static void ecm_interface_wifi_event_thread(void)
-{
-	int err;
-	int size;
-	struct sockaddr_nl saddr;
-	unsigned char buf[512];
-	int len = sizeof(buf);
-
-	kernel_sigaction(SIGKILL, SIG_DFL);
-	err = sock_create(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE, &__ewn.sock);
-	if (err < 0) {
-		DEBUG_ERROR("failed to create sock\n");
-		goto exit1;
-	}
-
-	memset(&saddr, 0, sizeof(saddr));
-	saddr.nl_family = AF_NETLINK;
-	saddr.nl_groups = RTNLGRP_LINK;
-	saddr.nl_pid    = current->pid;
-
-	err = __ewn.sock->ops->bind(__ewn.sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr));
-	if (err < 0) {
-		DEBUG_ERROR("failed to bind sock\n");
-		goto exit2;
-	}
-
-	DEBUG_INFO("ecm_interface_wifi_event thread started\n");
-	while (!kthread_should_stop()) {
-		size = ecm_interface_wifi_event_rx(__ewn.sock, &saddr, buf, len);
-		DEBUG_TRACE("got a netlink msg with len %d\n", size);
-
-		if (signal_pending(current))
-			break;
-
-		if (size < 0) {
-			DEBUG_WARN("netlink rx error\n");
-		} else {
-			ecm_interface_wifi_event_handler((void *)buf, size);
-		}
-	}
-
-	DEBUG_INFO("ecm_interface_wifi_event thread stopped\n");
-exit2:
-	sock_release(__ewn.sock);
-exit1:
-	__ewn.sock = NULL;
-}
-#endif
-
-/*
- * ecm_interface_wifi_event_start()
- */
-int ecm_interface_wifi_event_start(void)
-{
-	if (__ewn.thread) {
-		return 0;
-	}
-
-	__ewn.thread = kthread_run((void *)ecm_interface_wifi_event_thread, NULL, "ECM_wifi_event");
-	if (IS_ERR(__ewn.thread)) {
-		DEBUG_ERROR("Unable to start kernel thread\n");
-		return -ENOMEM;
-	}
-
-	return 0;
-}
-
-/*
- * ecm_interface_wifi_event_stop()
- */
-int ecm_interface_wifi_event_stop(void)
-{
-	int err;
-
-	if (__ewn.thread == NULL || __ewn.sock == NULL) {
-		return 0;
-	}
-
-	DEBUG_INFO("kill ecm_interface_wifi_event thread\n");
-
-	send_sig(SIGKILL, __ewn.thread, 1);
-	 if(__ewn.sock != NULL) {
-		DEBUG_INFO("Stopping kthread.\n");
-		err = kthread_stop(__ewn.thread);
-		__ewn.thread = NULL;
-		DEBUG_INFO("Stopped kthread.\n");
-	}
-
-	DEBUG_INFO("killing ecm_interface_wifi_event thread succeeded.\n");
-	return err;
-}
 
 #if defined(CONFIG_NET_CLS_ACT) && defined(ECM_CLASSIFIER_DSCP_IGS)
 /*
@@ -10838,7 +9957,7 @@ static struct notifier_block ecm_interface_netevent_notifier = {
  * ecm_interface_register_nf_hook_wlan_device()
  *	Register nf hook for wlan interfaces
  */
-void ecm_interface_register_nf_hook_wlan_device(void)
+static inline void ecm_interface_register_nf_hook_wlan_device(void)
 {
 	struct net_device *dev;
 
@@ -10846,7 +9965,7 @@ void ecm_interface_register_nf_hook_wlan_device(void)
 
 	for_each_netdev(&init_net, dev) {
 		if (dev->ieee80211_ptr) {
-			ecm_interface_add_nf_hookfn_entry(dev, ecm_interface_wlan_egress_netdev_hookfn);
+			ecm_interface_add_nf_hookfn_entry_and_register(dev, ecm_interface_wlan_egress_netdev_hookfn);
 		}
 	}
 
@@ -10897,7 +10016,6 @@ int ecm_interface_init(void)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_notifier_register(&ecm_interface_ovs_notifier);
 #endif
-	ecm_interface_wifi_event_start();
 
 	ecm_interface_register_nf_hook_wlan_device();
 
@@ -10935,7 +10053,6 @@ void ecm_interface_exit(void)
 		br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 	}
 #endif
-	ecm_interface_wifi_event_stop();
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_notifier_unregister(&ecm_interface_ovs_notifier);

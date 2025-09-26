@@ -205,11 +205,6 @@ ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
-# Define ECM_OPEN_PROFILE_ENABLE=y for OPEN profile.
-# #############################################################################
-ccflags-$(ECM_OPEN_PROFILE_ENABLE) += -DECM_OPEN_PROFILE_ENABLE
-
-# #############################################################################
 # Define ECM_MULTICAST_ENABLE=y in order to enable support for ECM Multicast
 # NSS is enabled, using NSS multicast acceleration, otherwise using SFE
 # multicast acceleration.
