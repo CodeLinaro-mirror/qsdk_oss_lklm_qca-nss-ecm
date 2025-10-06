@@ -8153,6 +8153,63 @@ void ecm_interface_dev_defunct_connections(struct net_device *dev)
 }
 
 /*
+ * ecm_interface_defunct_connections_by_bridge_port()
+ *	Cause defunct of connections for the specified bridge port dev.
+ */
+void ecm_interface_defunct_connections_by_bridge_port(struct net_device *dev)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_TRACE("%px: name=%s, ifindex=%d\n", dev, dev->name, dev->ifindex);
+
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		struct ecm_db_iface_instance *ii;
+		char name[IFNAMSIZ];
+		int32_t iface_identifier;
+		int32_t ifaces_first;
+		struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+		int32_t list_index;
+
+		/*
+		 * Defunct connection instance if interface in interface heirarchy matches given dev iface
+		 */
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_FROM);
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			ii = ifaces[list_index];
+			ecm_db_iface_interface_name_get(ii, name);
+			iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (iface_identifier == dev->ifindex) {
+				ecm_db_connection_make_defunct(ci);
+				DEBUG_TRACE("%px: Defunct for ci=%px COMPLETE, dir=%s, name=%s, iface_identifier=%d\n",
+					    ii, ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_FROM], name, iface_identifier);
+				break;
+			}
+		}
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_TO);
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			ii = ifaces[list_index];
+			ecm_db_iface_interface_name_get(ii, name);
+			iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (iface_identifier == dev->ifindex) {
+				ecm_db_connection_make_defunct(ci);
+				DEBUG_TRACE("%px: Defunct for ci=%px COMPLETE, dir=%s, name=%s, iface_identifier=%d\n",
+					    ii, ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_TO], name, iface_identifier);
+				break;
+			}
+		}
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+}
+
+/*
  * ecm_interface_mtu_change()
  *	MTU of interface has changed
  */
@@ -8222,7 +8279,16 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 			ecm_interface_dev_defunct_connections(master);
 			dev_put(master);
 		} else {
-			ecm_interface_dev_defunct_connections(dev);
+			/*
+			 * When a bridge port goes down, it triggers FDB delete events
+			 * for the MAC addresses connected to that port.
+			 * FDB delete event handles the destruction of the connections created on this port.
+			 */
+			if (ecm_front_end_is_bridge_port(dev)) {
+				DEBUG_TRACE("Net device: %px is bridge_port\n", dev);
+			} else {
+				ecm_interface_dev_defunct_connections(dev);
+			}
 		}
 		break;
 
