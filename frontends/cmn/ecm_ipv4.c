@@ -178,6 +178,34 @@ static bool ecm_ipv4_is_bridge_pkt(struct net_device *in,
 }
 
 /*
+ * ecm_ipv4_is_arp_allowed()
+ *	Check if ARP is allowed for a given tunnel interface.
+ */
+static bool ecm_ipv4_is_arp_allowed(struct net_device *dev, struct sk_buff *skb)
+{
+	struct iphdr *iph;
+	uint8_t proto;
+
+	iph = ip_hdr(skb);
+	proto = iph->protocol;
+
+	/*
+	 * For tunnels, sending an ARP request while the
+	 * packet is being transmitted can lead to a deadlock.
+	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
+	 */
+	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
+		return false;
+	}
+
+	if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && (proto == IPPROTO_GRE)) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * ecm_ipv4_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
@@ -590,7 +618,9 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 					on_link = false;
 				}
 
-				ecm_interface_send_arp_request(mac_dev, addr, on_link, gw_addr);
+				if (ecm_ipv4_is_arp_allowed(dev, skb)) {
+					ecm_interface_send_arp_request(mac_dev, addr, on_link, gw_addr);
+				}
 
 				DEBUG_WARN("%px: failed to obtain any node address for host " ECM_IP_ADDR_DOT_FMT "\n", feci, ECM_IP_ADDR_TO_DOT(addr));
 				dev_put(mac_dev);
