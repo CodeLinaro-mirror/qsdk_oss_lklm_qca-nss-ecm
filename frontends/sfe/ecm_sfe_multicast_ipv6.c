@@ -750,7 +750,7 @@ static int ecm_sfe_multicast_ipv6_connection_update_accelerate(struct ecm_front_
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
 				if (to_sfe_iface_id < 0) {
-					ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_MULTICAST, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
 					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					rule_invalid = true;
 					break;
@@ -1634,7 +1634,7 @@ static void ecm_sfe_multicast_ipv6_connection_accelerate(struct ecm_front_end_co
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
 				if (to_sfe_iface_id < 0) {
-					ecm_sfe_stats_v6_inc(ECM_SFE_STATS_V6_EXCEPTION_MULTICAST, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST, ECM_SFE_STATS_V6_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
 					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					rule_invalid = true;
 					break;
