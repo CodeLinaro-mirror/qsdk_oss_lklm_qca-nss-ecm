@@ -8410,11 +8410,6 @@ void ecm_interface_node_connections_defunct_by_type(uint8_t *mac, int ip_version
 					ecm_db_traverse_node_connection_list_and_defunct(ni, dir, ip_version, type);
 				}
 			}
-			/*
-			 * node was found and connections are destroyed, we are done.
-			 */
-			ecm_db_node_deref(ni);
-			break;
 		}
 
 		/*
