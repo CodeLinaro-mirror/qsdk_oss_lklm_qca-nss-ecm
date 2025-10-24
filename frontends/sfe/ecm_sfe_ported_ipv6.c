@@ -1969,6 +1969,13 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		result_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
 	}
 
+	/*
+	 * If connection is now defunct then set mode to ensure no further accel attempts occur
+	 */
+	if (feci->is_defunct) {
+		result_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DEFUNCT;
+	}
+
 	spin_lock_bh(&ecm_sfe_ipv6_lock);
 	_ecm_sfe_ipv6_accel_pending_clear(feci, result_mode);
 	spin_unlock_bh(&ecm_sfe_ipv6_lock);
@@ -2279,6 +2286,8 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate(struct ecm_front_end_conne
 bool ecm_sfe_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
 {
 	bool ret;
+	bool is_defunct __maybe_unused;
+	bool decel_pending __maybe_unused;
 	struct ecm_front_end_connection_instance *feci = (struct ecm_front_end_connection_instance *)arg;
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
@@ -2289,7 +2298,11 @@ bool ecm_sfe_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
 	 */
 	if (!ecm_front_end_common_connection_defunct_check(feci)) {
 		*accel_mode = feci->accel_mode;
+		is_defunct = feci->is_defunct;
+		decel_pending = feci->stats.decelerate_pending;
 		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: Cannot defunct connection, accel_mode: %d, is_defunct: %d,  decel_pending: %d \n",
+				feci, *accel_mode, is_defunct, decel_pending);
 		return false;
 	}
 
@@ -2300,9 +2313,14 @@ bool ecm_sfe_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
 	 */
 	if (!ecm_front_end_common_connection_decelerate_accel_mode_check(feci)) {
 		*accel_mode = feci->accel_mode;
+		is_defunct = feci->is_defunct;
+		decel_pending = feci->stats.decelerate_pending;
 		spin_unlock_bh(&feci->lock);
+		DEBUG_TRACE("%px: Cannot decelerate connection, accel_mode: %d, is_defunct: %d, decel_pending: %d \n",
+				feci, *accel_mode, is_defunct, decel_pending);
 		return false;
 	}
+
 	feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL_PENDING;
 	spin_unlock_bh(&feci->lock);
 
