@@ -1247,6 +1247,10 @@ void ecm_db_traverse_node_connection_list_and_defunct_by_qm(struct ecm_db_node_i
 				ecm_db_connection_make_defunct(ci);
 			}
 		}
+		/*
+		 * Release the classifier reference
+		 */
+		aci->deref(aci);
 next_conn:
 		cin = ecm_db_node_connection_get_and_ref_next(ci, dir);
 		ecm_db_connection_deref(ci);
