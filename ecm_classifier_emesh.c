@@ -2018,11 +2018,11 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 			 */
 			if (is_mc_flow) {
 				if (unlikely(!ecm_db_multicast_connection_to_interfaces_set_check(ci))) {
+					ecm_db_connection_deref(ci);
 					spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 					cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DROP;
 					cemi->process_response.drop = true;
 					DEBUG_WARN("%px: No multicast 'to' interface found\n", ci);
-					ecm_db_connection_deref(ci);
 					goto sawf_emesh_classifier_out;
 				}
 			}
