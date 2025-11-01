@@ -2541,7 +2541,7 @@ static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 			int i;
 			struct in6_addr ip_src;
 			struct in6_addr ip_grp;
-			uint32_t dst_if_cnt;
+			int dst_if_cnt;
 			uint32_t dst_dev[ECM_DB_MULTICAST_IF_MAX];
 
 			/*
