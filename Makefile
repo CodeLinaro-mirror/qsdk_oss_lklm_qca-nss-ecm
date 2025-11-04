@@ -120,7 +120,6 @@ ccflags-$(ECM_INTERFACE_BOND_ENABLE) += -DECM_INTERFACE_BOND_ENABLE
 # Define ECM_INTERFACE_PPPOE_ENABLE=y in order
 # to enable support for PPPoE acceleration.
 # #############################################################################
-ECM_INTERFACE_PPPOE_ENABLE=y
 ccflags-$(ECM_INTERFACE_PPPOE_ENABLE) += -DECM_INTERFACE_PPPOE_ENABLE
 
 # #############################################################################
@@ -142,17 +141,9 @@ ccflags-$(ECM_INTERFACE_L2TPV3_ENABLE) += -DECM_INTERFACE_L2TPV3_ENABLE
 ccflags-$(ECM_INTERFACE_PPTP_ENABLE) += -DECM_INTERFACE_PPTP_ENABLE
 
 # #############################################################################
-# if pppoe, l2tpv2, pptp acceleration is enabled, ppp should
-# be enabled automatically
+# Define ECM_INTERFACE_PPP_ENABLE=y in order
+# to enable PPP-dependent interfaces such as PPPoE, PPTP, L2TP
 # #############################################################################
-ECM_INTERFACE_PPP_ENABLE=y
-ifeq "$(ECM_INTERFACE_PPPOE_ENABLE)" "n"
-ifeq "$(ECM_INTERFACE_L2TPV2_ENABLE)" "n"
-ifeq "$(ECM_INTERFACE_PPTP_ENABLE)" "n"
-ECM_INTERFACE_PPP_ENABLE=n
-endif
-endif
-endif
 ccflags-$(ECM_INTERFACE_PPP_ENABLE) += -DECM_INTERFACE_PPP_ENABLE
 
 # #############################################################################
