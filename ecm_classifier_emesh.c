@@ -429,7 +429,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 					    in->dst_port);
 	if (unlikely(!ci)) {
 		DEBUG_WARN("%px: no ci\n", r);
-		return;
+		goto failed;
 	}
 
 	/*
@@ -770,21 +770,6 @@ update_rule:
 		 */
 		if (!msg->status) {
 			DEBUG_WARN("%px : failed to update mark", cemi);
-			del_params.rule_id = r->id;
-			del_params.key = r->key;
-			if (msg->ip_version == 4) {
-				del_params.src_ip[0] = in->src_ipv4_addr;
-				del_params.dest_ip[0] = in->dst_ipv4_addr;
-			} else {
-				memcpy(del_params.src_ip, in->src_ipv6_addr, sizeof(uint32_t) * 4);
-				memcpy(del_params.dest_ip, in->dst_ipv6_addr, sizeof(uint32_t) * 4);
-			}
-
-			del_params.src_port = in->src_port;
-			del_params.dest_port = in->dst_port;
-			del_params.protocol = in->protocol_number;
-			del_params.ip_version = msg->ip_version;
-			sp_mapdb_ifli_rule_flush(&del_params);
 			goto end;
 		}
 	}
@@ -806,6 +791,32 @@ end:
 
 	ecm_front_end_connection_deref(feci);
 	ecm_db_connection_deref(ci);
+
+failed:
+	if (r->classifier_type == SP_RULE_TYPE_SAWF_IFLI && !msg->status) {
+		DEBUG_WARN("Notifying SPM to delete the rule: %px\n", r);
+		DEBUG_WARN("src_mac: %pM, dst_mac: %pM, src_port: %d, dst_port: %d, ip_version_type: %d\n",
+				r->inner.sa, r->inner.da, r->inner.src_port,
+				r->inner.dst_port, r->inner.ip_version_type);
+		DEBUG_WARN("protocol number: %d\n", r->inner.protocol_number);
+		DEBUG_WARN("src_ipv4: %pI4, dst_ipv4: %pI4\n", &r->inner.src_ipv4_addr, &r->inner.dst_ipv4_addr);
+		DEBUG_WARN("Source Interface: %s Destination Interface: %s \n", r->inner.src_iface, r->inner.dst_iface);
+		del_params.rule_id = r->id;
+		del_params.key = r->key;
+		if (msg->ip_version == 4) {
+			del_params.src_ip[0] = in->src_ipv4_addr;
+			del_params.dest_ip[0] = in->dst_ipv4_addr;
+		} else {
+			memcpy(del_params.src_ip, in->src_ipv6_addr, sizeof(uint32_t) * 4);
+			memcpy(del_params.dest_ip, in->dst_ipv6_addr, sizeof(uint32_t) * 4);
+		}
+
+		del_params.src_port = in->src_port;
+		del_params.dest_port = in->dst_port;
+		del_params.protocol = in->protocol_number;
+		del_params.ip_version = msg->ip_version;
+		sp_mapdb_ifli_rule_flush(&del_params);
+	}
 
 	return;
 }
