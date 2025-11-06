@@ -913,9 +913,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 
 	/*
 	 * Check if the PPE offload is enabled for the rule's Tx/Rx interfaces or not
+	 * WiFi flows are allowed to bypass the offload enabled check.
 	 */
-	if (!ppe_drv_iface_check_flow_offload_enabled(pd6rc->conn_rule.rx_if,
-						pd6rc->conn_rule.tx_if)) {
+	if (!(ppe_drv_iface_check_wifi_flow(pd6rc->conn_rule.rx_if, pd6rc->conn_rule.tx_if)) &&
+			(!ppe_drv_iface_check_flow_offload_enabled(pd6rc->conn_rule.rx_if,pd6rc->conn_rule.tx_if))) {
 		ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_PPE_OFFLOAD_DISABLED);
 		DEBUG_TRACE("%px: PPE offload is disabled for rx if: %d, tx: %d\n",
 				feci, pd6rc->conn_rule.rx_if, pd6rc->conn_rule.tx_if);
