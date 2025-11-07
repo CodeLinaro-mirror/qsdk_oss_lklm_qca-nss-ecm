@@ -7,9 +7,6 @@ endif
 obj-m +=examples/ecm_ae_select.o
 
 obj-m += ecm.o
-ifeq ($(BUILD_ECM_WIFI_PLUGIN),y)
-obj-m += ecm_wifi_plugins/
-endif
 
 # #####################################################
 # Example builds.
