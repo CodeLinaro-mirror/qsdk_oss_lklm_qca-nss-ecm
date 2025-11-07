@@ -809,20 +809,14 @@ int ecm_classifier_mark_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_classifier_mark_dentry = debugfs_create_dir("ecm_classifier_mark", dentry);
-	if (!ecm_classifier_mark_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_mark", dentry, &ecm_classifier_mark_dentry)) {
 		DEBUG_ERROR("Failed to create ecm mark directory in debugfs\n");
 		unregister_sysctl_table(ecm_classifier_mark_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mark_dentry,
-					(u32 *)&ecm_classifier_mark_enabled)) {
-		DEBUG_ERROR("Failed to create mark enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_mark_dentry);
-		unregister_sysctl_table(ecm_classifier_mark_ctl_table_header);
-		return -1;
-	}
+	ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_mark_dentry,
+				(u32 *)&ecm_classifier_mark_enabled);
 
 	return 0;
 }
@@ -843,7 +837,7 @@ void ecm_classifier_mark_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_mark_dentry) {
-		debugfs_remove_recursive(ecm_classifier_mark_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_mark_dentry);
 	}
 
 	/*

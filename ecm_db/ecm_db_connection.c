@@ -2639,7 +2639,7 @@ struct net_device *ecm_db_connection_first_iface_dev_get_and_ref(struct ecm_db_c
 	spin_unlock_bh(&ecm_db_lock);
 
 	/*
-	 * Dev pointer may get removed from inet array when wifi interface is unregistered 
+	 * Dev pointer may get removed from inet array when wifi interface is unregistered
 	 * And dev_get_by_index() will return null then.
 	 * To avoid this store dev pointer in ii during interface establishment
 	 * And get it from ii if iface_type is ECM_DB_IFACE_TYPE_ETHERNET.
@@ -5286,13 +5286,9 @@ static struct file_operations ecm_db_connection_count_simple_fops = {
  */
 bool ecm_db_connection_init(struct dentry *dentry)
 {
-	if (!ecm_debugfs_create_u32("connection_count", S_IRUGO, dentry,
-					(u32 *)&ecm_db_connection_count)) {
-		DEBUG_ERROR("Failed to create ecm db connection count file in debugfs\n");
-		return false;
-	}
+	ecm_debugfs_create_u32("connection_count", S_IRUGO, dentry, (u32 *)&ecm_db_connection_count);
 
-	if (!debugfs_create_file("connection_count_simple", S_IRUGO, dentry,
+	if (!ecm_debugfs_create_file("connection_count_simple", S_IRUGO, dentry,
 					NULL, &ecm_db_connection_count_simple_fops)) {
 		DEBUG_ERROR("Failed to create ecm db connection count simple file in debugfs\n");
 		return false;

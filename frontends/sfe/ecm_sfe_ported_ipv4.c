@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -2555,21 +2544,12 @@ struct ecm_front_end_connection_instance *ecm_sfe_ported_ipv4_connection_instanc
 }
 
 /*
- * ecm_sfe_ported_ipv4_debugfs_init()
+ * ecm_sfe_ported_ipv4_init()
  */
-bool ecm_sfe_ported_ipv4_debugfs_init(struct dentry *dentry)
+void ecm_sfe_ported_ipv4_init(struct dentry *dentry)
 {
-	if (!ecm_debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
-				    &ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP])) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 udp_accelerated_count file in debugfs\n");
-		return false;
-	}
-
-	if (!ecm_debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
-					&ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_TCP])) {
-		DEBUG_ERROR("Failed to create ecm sfe ipv4 tcp_accelerated_count file in debugfs\n");
-		return false;
-	}
-
-	return true;
+	ecm_debugfs_create_u32("udp_accelerated_count", S_IRUGO, dentry,
+			&ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_UDP]);
+	ecm_debugfs_create_u32("tcp_accelerated_count", S_IRUGO, dentry,
+			&ecm_sfe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_TCP]);
 }

@@ -1325,11 +1325,7 @@ void ecm_db_node_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint
  */
 bool ecm_db_node_init(struct dentry *dentry)
 {
-	if (!ecm_debugfs_create_u32("node_count", S_IRUGO, dentry,
-					(u32 *)&ecm_db_node_count)) {
-		DEBUG_ERROR("Failed to create ecm db node count file in debugfs\n");
-		return false;
-	}
+	ecm_debugfs_create_u32("node_count", S_IRUGO, dentry, (u32 *)&ecm_db_node_count);
 
 	ecm_db_node_table = vzalloc(sizeof(struct ecm_db_node_instance *) * ECM_DB_NODE_HASH_SLOTS);
 	if (!ecm_db_node_table) {

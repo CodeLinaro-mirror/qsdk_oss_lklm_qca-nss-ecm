@@ -989,18 +989,14 @@ int ecm_state_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_state_dentry = debugfs_create_dir("ecm_state", dentry);
-	if (!ecm_state_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_state", dentry, &ecm_state_dentry)) {
 		DEBUG_ERROR("Failed to create ecm state directory in debugfs\n");
 		unregister_sysctl_table(ecm_state_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("state_file_output_mask", S_IRUGO | S_IWUSR, ecm_state_dentry,
-					(u32 *)&ecm_state_file_output_mask)) {
-		DEBUG_ERROR("Failed to create ecm state output mask file in debugfs\n");
-		goto init_cleanup;
-	}
+	ecm_debugfs_create_u32("state_file_output_mask", S_IRUGO | S_IWUSR, ecm_state_dentry,
+				(u32 *)&ecm_state_file_output_mask);
 
 	/*
 	 * Register a char device that we will use to provide a dump of our state
@@ -1017,7 +1013,7 @@ int ecm_state_init(struct dentry *dentry)
 
 init_cleanup:
 
-	debugfs_remove_recursive(ecm_state_dentry);
+	ecm_debugfs_remove_recursive(ecm_state_dentry);
 	unregister_sysctl_table(ecm_state_ctl_table_header);
 	return result;
 }
@@ -1035,7 +1031,7 @@ void ecm_state_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_state_dentry) {
-		debugfs_remove_recursive(ecm_state_dentry);
+		ecm_debugfs_remove_recursive(ecm_state_dentry);
 	}
 
 	/*

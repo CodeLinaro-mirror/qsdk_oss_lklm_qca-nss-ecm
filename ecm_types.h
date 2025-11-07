@@ -446,22 +446,89 @@ static inline bool ecm_string_to_ip_addr(ip_addr_t addr, char *ip_str)
 }
 
 /*
+ * ecm_debugs_create_dir()
+ * 	Wrapper for creating a debugfs directory within ECM
+ * 	Returns success, regardless of whether debugfs is enabled
+ * 	Return failure, when directory creation is failed in case of debugfs enable
+ */
+static inline bool ecm_debugfs_create_dir(const char *name, struct dentry *parent, struct dentry **child)
+{
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *dir;
+	dir = debugfs_create_dir(name, parent);
+	if (!dir) {
+		return false;
+	}
+
+	*child = dir;
+#else
+	*child = NULL;
+#endif
+	return true;
+}
+
+/*
+ * ecm_debugfs_create_file()
+ * 	Wrapper for creating a debugfs file under the specified parent
+ * 	Returns success, regardless of whether debugfs is enabled
+ * 	Return failure, when file creation is failed in case of debugfs enable
+ */
+static inline bool ecm_debugfs_create_file(const char *name, umode_t mode, struct dentry *parent, void *data, const struct file_operations *fops)
+{
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *child;
+	child = debugfs_create_file(name, mode, parent, data, fops);
+	if (!child) {
+		return false;
+	}
+#endif
+	return true;
+}
+
+/*
  * ecm_debugfs_create_u32()
  *	Create a debugfs node for unsigned 32-bits config variable.
  *
  * debugfs_create_u32 API doesn't have return value in the latest kernel version.
- * So, a common function is created for all the supported kernel versions.
  */
-static inline bool ecm_debugfs_create_u32(const char *name, umode_t mode,
+static inline void ecm_debugfs_create_u32(const char *name, umode_t mode,
 					  struct dentry *parent, u32 *value)
 {
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	struct dentry *d = debugfs_create_u32(name, mode, parent, value);
-	if (!d) {
+#ifdef CONFIG_DEBUG_FS
+	debugfs_create_u32(name, mode, parent, value);
+#endif
+}
+
+/*
+ * ecm_debugfs_remove_recursive()
+ * 	Wrapper for recurivley removing a directory
+ */
+static inline void ecm_debugfs_remove_recursive(struct dentry *dentry)
+{
+#ifdef CONFIG_DEBUG_FS
+	debugfs_remove_recursive(dentry);
+#endif
+}
+
+/*
+ * ecm_debugfs_lookup()
+ * 	Wrapper to lookup existing debugfs file
+ * 	Return true if debugfs is enabled and file exist
+ * 	Return true if debugfs is not enabled
+ * 	Otherwise return false
+ */
+static inline bool ecm_debugfs_lookup(const char *name, struct dentry *parent, struct dentry **child)
+{
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *dir;
+	dir = debugfs_lookup(name, parent);
+	if (!dir) {
 		return false;
 	}
+
+	*child = dir;
 #else
-	debugfs_create_u32(name, mode, parent, value);
+	*child = NULL;
 #endif
 	return true;
 }

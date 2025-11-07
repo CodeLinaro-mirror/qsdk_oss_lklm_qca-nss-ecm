@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -1002,96 +991,56 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 
 	DEBUG_INFO("ECM NSS IPv4 init\n");
 
-	ecm_nss_ipv4_dentry = debugfs_create_dir("ecm_nss_ipv4", dentry);
-	if (!ecm_nss_ipv4_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_nss_ipv4", dentry, &ecm_nss_ipv4_dentry)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv4 directory in debugfs\n");
-		return result;
+		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_no_action_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 no_action_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_no_action_limit_default);
+	ecm_debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_driver_fail_limit_default);
+	ecm_debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_nack_limit_default);
+	ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_accelerated_count);
+	ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_pending_accel_count);
+	ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_pending_decel_count);
+	ecm_debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+				(u32 *)&ecm_nss_ipv4_vlan_passthrough_enable);
 
-	if (!ecm_debugfs_create_u32("driver_fail_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_driver_fail_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 driver_fail_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("nack_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_nack_limit_default)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 nack_limit_default file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("accelerated_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_accelerated_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 accelerated_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("pending_accel_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_pending_accel_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 pending_accel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!ecm_debugfs_create_u32("pending_decel_count", S_IRUGO, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_pending_decel_count)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 pending_decel_count file in debugfs\n");
-		goto task_cleanup;
-	}
-
-	if (!debugfs_create_file("accel_limit_mode", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					NULL, &ecm_nss_ipv4_accel_limit_mode_fops)) {
+	if (!ecm_debugfs_create_file("accel_limit_mode", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+				NULL, &ecm_nss_ipv4_accel_limit_mode_fops)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv4 accel_limit_mode file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
+	if (!ecm_debugfs_create_file("accel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
 					NULL, &ecm_nss_ipv4_accel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv4 accel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
+	if (!ecm_debugfs_create_file("decel_cmd_avg_millis", S_IRUGO, ecm_nss_ipv4_dentry,
 					NULL, &ecm_nss_ipv4_decel_cmd_avg_millis_fops)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv4 decel_cmd_avg_millis file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!ecm_nss_ported_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_nss_ported_ipv4_init(ecm_nss_ipv4_dentry);
 
-	if (!debugfs_create_file("stats_request_counter", S_IRUGO, ecm_nss_ipv4_dentry,
+	if (!ecm_debugfs_create_file("stats_request_counter", S_IRUGO, ecm_nss_ipv4_dentry,
 					NULL, &ecm_nss_ipv4_stats_request_counter_fops)) {
 		DEBUG_ERROR("Failed to create ecm nss ipv4 stats request counter file in debugfs\n");
 		goto task_cleanup;
 	}
 
-	if (!ecm_debugfs_create_u32("vlan_passthrough_set", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
-					(u32 *)&ecm_nss_ipv4_vlan_passthrough_enable)) {
-		DEBUG_ERROR("Failed to create ecm nss ipv4 vlan passthrough file in debugfs\n");
-		goto task_cleanup;
-	}
-
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
-	if (!ecm_nss_non_ported_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm non-ported files in debugfs\n");
-		goto task_cleanup;
-	}
+	ecm_nss_non_ported_ipv4_init(ecm_nss_ipv4_dentry);
 #endif
 
-#ifdef ECM_MULTICAST_ENABLE
-	if (!ecm_nss_multicast_ipv4_debugfs_init(ecm_nss_ipv4_dentry)) {
-		DEBUG_ERROR("Failed to create ecm multicast files in debugfs\n");
-		goto task_cleanup;
-	}
-#endif
 	/*
 	 * Register this module with the Linux NSS Network driver.
 	 * Notify manager should be registered before the netfilter hooks. Because there
@@ -1123,7 +1072,7 @@ task_cleanup_1:
 	nss_ipv4_notify_unregister();
 
 task_cleanup:
-	debugfs_remove_recursive(ecm_nss_ipv4_dentry);
+	ecm_debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	return result;
 }
 
@@ -1148,7 +1097,7 @@ void ecm_nss_ipv4_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_nss_ipv4_dentry) {
-		debugfs_remove_recursive(ecm_nss_ipv4_dentry);
+		ecm_debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	}
 
 #ifdef ECM_MULTICAST_ENABLE

@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015-2018, 2021, The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 #include <linux/module.h>
@@ -35,7 +24,10 @@
 #include <linux/in.h>
 #include <linux/etherdevice.h>
 
+#define DEBUG_LEVEL ECM_CLASSIFIER_PCC_DEBUG_LEVEL
+
 #include "ecm_classifier_pcc_public.h"
+#include "ecm_types.h"
 
 #define MAC_FMT "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx"
 
@@ -1314,23 +1306,22 @@ static int __init ecm_pcc_test_init(void)
 	/*
 	 * Create entries in DebugFS for control functions
 	 */
-	ecm_pcc_test_dentry = debugfs_create_dir("ecm_pcc_test", NULL);
-	if (!ecm_pcc_test_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_pcc_test", NULL, &ecm_pcc_test_dentry)) {
 		pr_info("Failed to create PCC directory entry\n");
 		return -1;
 	}
-	if (!debugfs_create_file("unregister",
+	if (!ecm_debugfs_create_file("unregister",
 			S_IRUGO | S_IWUSR, ecm_pcc_test_dentry,
 			NULL, &ecm_pcc_test_unregister_fops)) {
 		pr_info("Failed to create ecm_pcc_test_unregister_fops\n");
-		debugfs_remove_recursive(ecm_pcc_test_dentry);
+		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
 		return -2;
 	}
-	if (!debugfs_create_file("rule",
+	if (!ecm_debugfs_create_file("rule",
 			S_IRUGO | S_IWUSR, ecm_pcc_test_dentry,
 			NULL, &ecm_pcc_test_rule_fops)) {
 		pr_info("Failed to create ecm_pcc_test_rule_fops\n");
-		debugfs_remove_recursive(ecm_pcc_test_dentry);
+		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
 		return -3;
 	}
 
@@ -1342,7 +1333,7 @@ static int __init ecm_pcc_test_init(void)
 				GFP_ATOMIC | __GFP_NOWARN);
 	if (!ecm_pcc_test_registrant) {
 		pr_info("ECM PCC Failed to alloc registrant\n");
-		debugfs_remove_recursive(ecm_pcc_test_dentry);
+		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
 		return -4;
 	}
 	ecm_pcc_test_registrant->version = 1;
@@ -1376,7 +1367,7 @@ static int __init ecm_pcc_test_init(void)
 	if (result != 0) {
 		pr_info("ECM PCC registrant failed to register: %d\n", result);
 		kfree(ecm_pcc_test_registrant);
-		debugfs_remove_recursive(ecm_pcc_test_dentry);
+		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
 		return -5;
 	}
 
@@ -1391,7 +1382,7 @@ static int __init ecm_pcc_test_init(void)
 static void __exit ecm_pcc_test_exit(void)
 {
 	pr_info("ECM PCC Test EXIT\n");
-	debugfs_remove_recursive(ecm_pcc_test_dentry);
+	ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
 }
 
 module_init(ecm_pcc_test_init)

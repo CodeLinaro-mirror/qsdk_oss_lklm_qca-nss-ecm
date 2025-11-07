@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -1421,33 +1410,30 @@ static void ecm_classifier_nl_unregister_genl(void)
  */
 int ecm_classifier_nl_rules_init(struct dentry *dentry)
 {
-	int result;
+	int result = -EINVAL;
 	DEBUG_INFO("Netlink classifier Module init\n");
 
-	ecm_classifier_nl_dentry = debugfs_create_dir("ecm_classifier_nl", dentry);
-	if (!ecm_classifier_nl_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_nl", dentry, &ecm_classifier_nl_dentry)) {
 		DEBUG_ERROR("Failed to create ecm nl classifier directory in debugfs\n");
 		return -1;
 	}
 
-	if (!debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_nl_dentry,
-					NULL, &ecm_classifier_nl_enabled_fops)) {
+	if (!ecm_debugfs_create_file("enabled", S_IRUGO | S_IWUSR, ecm_classifier_nl_dentry,
+				NULL, &ecm_classifier_nl_enabled_fops)) {
 		DEBUG_ERROR("Failed to create ecm nl classifier enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_nl_dentry);
-		return -1;
+		goto fail;
 	}
 
-	if (!debugfs_create_file("cmd", S_IRUGO | S_IWUSR, ecm_classifier_nl_dentry,
-					NULL, &ecm_classifier_nl_cmd_fops)) {
+	if (!ecm_debugfs_create_file("cmd", S_IRUGO | S_IWUSR, ecm_classifier_nl_dentry,
+				NULL, &ecm_classifier_nl_cmd_fops)) {
 		DEBUG_ERROR("Failed to create ecm nl classifier cmd file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_nl_dentry);
-		return -1;
+		goto fail;
 	}
 
 	result = ecm_classifier_nl_register_genl();
 	if (result) {
 		DEBUG_ERROR("Failed to register genl sockets\n");
-		return result;
+		goto fail;
 	}
 
 	/*
@@ -1456,7 +1442,7 @@ int ecm_classifier_nl_rules_init(struct dentry *dentry)
 	ecm_classifier_nl_li = ecm_db_listener_alloc();
 	if (!ecm_classifier_nl_li) {
 		DEBUG_ERROR("Failed to allocate listener\n");
-		return -1;
+		goto fail;
 	}
 
 	/*
@@ -1478,6 +1464,10 @@ int ecm_classifier_nl_rules_init(struct dentry *dentry)
 			ecm_classifier_nl_li);
 
 	return 0;
+
+fail:
+	ecm_debugfs_remove_recursive(ecm_classifier_nl_dentry);
+	return result;
 }
 EXPORT_SYMBOL(ecm_classifier_nl_rules_init);
 
@@ -1508,7 +1498,7 @@ void ecm_classifier_nl_rules_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_nl_dentry) {
-		debugfs_remove_recursive(ecm_classifier_nl_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_nl_dentry);
 	}
 }
 EXPORT_SYMBOL(ecm_classifier_nl_rules_exit);

@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 #include <linux/version.h>
@@ -4003,14 +3992,9 @@ EXPORT_SYMBOL(ecm_db_iface_alloc);
 
 /*
  * ecm_db_iface_init()
+ * 	Initialize ECM DB interface debugfs entry
  */
-bool ecm_db_iface_init(struct dentry *dentry)
+void ecm_db_iface_init(struct dentry *dentry)
 {
-	if (!ecm_debugfs_create_u32("iface_count", S_IRUGO, dentry,
-					(u32 *)&ecm_db_iface_count)) {
-		DEBUG_ERROR("Failed to create ecm db iface count file in debugfs\n");
-		return false;
-	}
-
-	return true;
+	ecm_debugfs_create_u32("iface_count", S_IRUGO, dentry, (u32 *)&ecm_db_iface_count);
 }

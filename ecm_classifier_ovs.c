@@ -2368,20 +2368,14 @@ int ecm_classifier_ovs_init(struct dentry *dentry)
 		return -1;
 	}
 
-	ecm_classifier_ovs_dentry = debugfs_create_dir("ecm_classifier_ovs", dentry);
-	if (!ecm_classifier_ovs_dentry) {
+	if (!ecm_debugfs_create_dir("ecm_classifier_ovs", dentry, &ecm_classifier_ovs_dentry)) {
 		DEBUG_ERROR("Failed to create ecm ovs directory in debugfs\n");
 		unregister_sysctl_table(ecm_classifier_ovs_ctl_table_header);
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_ovs_dentry,
-					(u32 *)&ecm_classifier_ovs_enabled)) {
-		DEBUG_ERROR("Failed to create ovs enabled file in debugfs\n");
-		debugfs_remove_recursive(ecm_classifier_ovs_dentry);
-		unregister_sysctl_table(ecm_classifier_ovs_ctl_table_header);
-		return -1;
-	}
+	ecm_debugfs_create_u32("enabled", S_IRUGO | S_IWUSR, ecm_classifier_ovs_dentry,
+					(u32 *)&ecm_classifier_ovs_enabled);
 
 	return 0;
 }
@@ -2402,7 +2396,7 @@ void ecm_classifier_ovs_exit(void)
 	 * Remove the debugfs files recursively.
 	 */
 	if (ecm_classifier_ovs_dentry) {
-		debugfs_remove_recursive(ecm_classifier_ovs_dentry);
+		ecm_debugfs_remove_recursive(ecm_classifier_ovs_dentry);
 	}
 
 	/*
