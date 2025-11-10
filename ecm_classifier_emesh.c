@@ -3176,6 +3176,7 @@ void ecm_classifier_emesh_sawf_update_flowmark_wifi(struct ecm_classifier_instan
 	struct ecm_front_end_flowsawf_msg *arg_msg = (struct ecm_front_end_flowsawf_msg *)arg;
 	struct net_device *src_dev = NULL;
 	struct net_device *dest_dev = NULL;
+	struct net_device *parent_dest_dev = NULL;
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
@@ -3233,6 +3234,40 @@ void ecm_classifier_emesh_sawf_update_flowmark_wifi(struct ecm_classifier_instan
 		goto end;
 	}
 
+	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
+
+	if (dest_dev) {
+		if (is_vlan_dev(dest_dev))
+			parent_dest_dev = vlan_dev_real_dev(dest_dev);
+		else
+			parent_dest_dev = dest_dev;
+	}
+
+	/*
+	 * Acceleration for pass-through ESP flows and UDP-encapsulated IPsec flows
+	 * with SCS prioritization is not supported.
+	 *
+	 * Context:
+	 * - SCS flowmark updates occur later in the Egress Netdev hook.
+	 * - If acceleration has already happened in the Post Routing hook, we must
+	 *   explicitly decelerate to ensure these flows are denied acceleration.
+	 *
+	 * Action:
+	 * - Decelerate the existing feci instance.
+	 * - Set acceleration mode to FAIL_DENIED.
+	 */
+
+	if (parent_dest_dev && parent_dest_dev->ieee80211_ptr &&
+	    ((arg_msg->protocol == IPPROTO_ESP) ||
+	    ((arg_msg->protocol == IPPROTO_UDP) &&
+	    (ntohs(arg_msg->flow_dest_port) == ecm_classifier_sawf_emesh_udp_ipsec_port)))) {
+		feci->decelerate(feci);
+		spin_lock_bh(&feci->lock);
+		feci->accel_mode = ECM_FRONT_END_ACCELERATION_MODE_FAIL_DENIED;
+		spin_unlock_bh(&feci->lock);
+		goto done;
+	}
+
 	/*
 	 * Get the direction in which this rule is to be applied.
 	 */
@@ -3279,8 +3314,6 @@ void ecm_classifier_emesh_sawf_update_flowmark_wifi(struct ecm_classifier_instan
 			    msg->flow_src_ip, ntohs(msg->flow_src_port),
 			    msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
 	}
-
-	ecm_db_netdevs_get_and_hold(ci, ECM_TRACKER_SENDER_TYPE_SRC, &src_dev, &dest_dev);
 
 	/*
 	 * Get the bidirectional msduq by calling wlan driver API

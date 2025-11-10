@@ -287,6 +287,17 @@ int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 	msg.ip_version = ip_version;
 	msg.protocol = proto;
 
+	if (proto == IPPROTO_UDP) {
+		msg.flow_src_port = orig_tuple.src.u.udp.port;
+		msg.flow_dest_port = orig_tuple.dst.u.udp.port;
+	} else if (proto == IPPROTO_TCP) {
+		msg.flow_src_port = orig_tuple.src.u.tcp.port;
+		msg.flow_dest_port = orig_tuple.dst.u.tcp.port;
+	} else {
+		msg.flow_src_port = 0;
+		msg.flow_dest_port = 0;
+	}
+
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
 
 	for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
