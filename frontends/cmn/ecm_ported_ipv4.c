@@ -854,17 +854,6 @@ done:
 	}
 
 	/*
-	 * Unconfirmed connection may be dropped by Linux at the final step,
-	 * So we don't allow acceleration for the unconfirmed connections.
-	 */
-	if (protocol == IPPROTO_UDP && likely(ct) && !nf_ct_is_confirmed(ct)) {
-		DEBUG_WARN("%px: Unconfirmed UDP connection\n", ct);
-		ecm_db_connection_deref(ci);
-		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_UDP_CONN_NOT_CONFIRM);
-		return NF_ACCEPT;
-	}
-
-	/*
 	 * Check if AE switch is needed.
 	 */
 	if (ecm_front_end_connection_check_and_switch_to_next_ae(ci->feci)) {
@@ -1310,6 +1299,17 @@ done:
 	 */
 	skb->priority = prevalent_pr.flow_qos_tag;
 	DEBUG_TRACE("%px: skb priority: %u\n", ci, skb->priority);
+
+	/*
+	 * Unconfirmed connection may be dropped by Linux at the final step,
+	 * So we don't allow acceleration for the unconfirmed connections.
+	 */
+	if (protocol == IPPROTO_UDP && likely(ct) && !nf_ct_is_confirmed(ct)) {
+		DEBUG_WARN("%px: Unconfirmed UDP connection\n", ct);
+		ecm_db_connection_deref(ci);
+		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_UDP_CONN_NOT_CONFIRM);
+		return NF_ACCEPT;
+	}
 
 	/*
 	 * Accelerate?
