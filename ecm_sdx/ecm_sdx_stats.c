@@ -42,6 +42,11 @@ DEFINE_SPINLOCK(ecm_sdx_stats_db_lock);			/* Protect the hash table using lock *
 #define ECM_SDX_STATS_MSG_SIZE 600
 
 /*
+ * Max per_client message size
+ */
+#define ECM_SDX_STATS_PER_CLIENT_MSG_SIZE 128
+
+/*
  * Max interface type size
  */
 #define ECM_SDX_STATS_MAX_INTERFACE_SIZE 50
@@ -632,27 +637,28 @@ int ecm_sdx_stats_handler_read(void *buffer, size_t *lenp, loff_t *ppos)
 	int bytes = 0;
 	int len;
 
-	read_buf = kzalloc(ECM_SDX_STATS_HASH_SIZE * ECM_SDX_STATS_MSG_SIZE * sizeof(char),
-					GFP_KERNEL);
+	read_buf = vmalloc(ECM_SDX_STATS_HASH_SIZE * ECM_SDX_STATS_PER_CLIENT_MSG_SIZE *
+			sizeof(char));
 	if(!read_buf) {
-		DEBUG_ERROR("read_buf memory allocation failed \n");
+		DEBUG_ERROR("read_buf memory allocation via vmalloc failed \n");
 		return -ENOMEM;
 	}
 
-	memset(read_buf, 0, ECM_SDX_STATS_HASH_SIZE * ECM_SDX_STATS_MSG_SIZE * sizeof(char));
+	memset(read_buf, 0, ECM_SDX_STATS_HASH_SIZE * ECM_SDX_STATS_PER_CLIENT_MSG_SIZE *
+	 	sizeof(char));
 	num_connections_v4 = ecm_sdx_stats_instance->num_of_pack_stat_nodes_v4;
 	num_connections_v6 = ecm_sdx_stats_instance->num_of_pack_stat_nodes_v6;
-	len = snprintf(read_buf, ECM_SDX_STATS_MSG_SIZE,
+	len = snprintf(read_buf, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE,
 			"<?xml version = '1.0' encoding = 'UTF-8'?>\n");
 	bytes += len;
-	len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE, "\t<packet_stats>\n");
+	len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE, "\t<packet_stats>\n");
 	bytes += len;
-	len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE, "\t\t<stats "
+	len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE, "\t\t<stats "
 			"num_connections_v4=\"%u\" num_connections_v6=\"%u\" />\n",
 			num_connections_v4,
 			num_connections_v6);
 	bytes += len;
-	len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE, "\t\t<connections>\n");
+	len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE, "\t\t<connections>\n");
 	bytes += len;
 
 	if (num_connections_v4 == 0 && num_connections_v6 == 0) {
@@ -668,7 +674,7 @@ int ecm_sdx_stats_handler_read(void *buffer, size_t *lenp, loff_t *ppos)
 			rx_bytes = curr->host_instance.packet_stat_rx_byte_count;
 			tx_bytes = curr->host_instance.packet_stat_tx_byte_count;
 			if (ECM_IP_ADDR_IS_V4(curr->host_instance.client_src_addr)) {
-				len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE,
+				len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE,
 				"\t\t\t<ipv4 "
 				"client_addr=\"%pI4\" "
 				"rx_bytes=\"%llu\" tx_bytes=\"%llu\" />\n",
@@ -677,7 +683,7 @@ int ecm_sdx_stats_handler_read(void *buffer, size_t *lenp, loff_t *ppos)
 			} else {
 				ECM_IP_ADDR_TO_NET_IPV6_ADDR(ip6,
 					curr->host_instance.client_src_addr);
-				len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE,
+				len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE,
 				"\t\t\t<ipv6 "
 				"client_addr=\"%pI6\" "
 				"rx_bytes=\"%llu\" tx_bytes=\"%llu\" />\n",
@@ -689,15 +695,15 @@ int ecm_sdx_stats_handler_read(void *buffer, size_t *lenp, loff_t *ppos)
 	}
 
 no_connections:
-	len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE, "\t\t</connections>\n");
+	len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE, "\t\t</connections>\n");
 	bytes += len;
-	len = snprintf(read_buf + bytes, ECM_SDX_STATS_MSG_SIZE, "\t</packet_stats>\n");
+	len = snprintf(read_buf + bytes, ECM_SDX_STATS_PER_CLIENT_MSG_SIZE, "\t</packet_stats>\n");
 	bytes += len;
 
 	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
 	*lenp = bytes;
 
-	kfree(read_buf);
+	vfree(read_buf);
 	return 0;
 }
 
