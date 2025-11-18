@@ -21,19 +21,29 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 
-#define DEBUG_LEVEL ECM_AE_CLASSIFIER_DEBUG_LEVEL
-
 #include "ecm_ae_classifier_public.h"
-#include "ecm_types.h"
 
+#define MAX_RULE_SIZE 256
 #define RULE_FIELDS 7
 #define IPV4 4
 #define IPV6 6
 
 /*
+ * Default path for sysctl
+ */
+#define ECM_AE_SELECT_PROCFS_PATH "net/ecm_ae_select_test"
+
+/*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_ae_select_test_ctl_table_header;
+
+#ifdef CONFIG_DEBUG_FS
+/*
  * DebugFS entry object.
  */
 static struct dentry *ecm_ae_select_test_dentry;
+#endif
 
 /*
  * The rule and AE storage table.
@@ -270,21 +280,20 @@ static unsigned int ecm_ae_select_test_str_to_ip(char *ip_str, struct in6_addr *
 }
 
 /*
- * ecm_ae_select_test_rule_write()
- *	Write a rule
+ * ecm_ae_select_test_rule_buffer()
+ * 	Parse and Process a rule specification buffer to add or delete a rule
  */
-static ssize_t ecm_ae_select_test_rule_write(struct file *file,
-		const char __user *user_buf, size_t count, loff_t *ppos)
+static bool ecm_ae_select_test_rule_buffer(char *buf)
 {
-	char *rule_buf;
 	int field_count;
-	char *field_ptr;
-	char *fields[RULE_FIELDS];
-	unsigned int oper;
-	ecm_ae_classifier_result_t accel;
-	unsigned int proto;
 	int src_port;
 	int dest_port;
+	char *field_ptr = buf;
+	char *fields[RULE_FIELDS];
+	unsigned int oper;
+	unsigned int proto;
+	unsigned int ip_version;
+	ecm_ae_classifier_result_t accel;
 	union {
 		__be32 v4_addr;
 		struct in6_addr v6_addr;
@@ -293,9 +302,150 @@ static ssize_t ecm_ae_select_test_rule_write(struct file *file,
 		__be32 v4_addr;
 		struct in6_addr v6_addr;
 	} dest_addr;
-	unsigned int ip_version;
 	__be32 src;
 	__be32 dest;
+
+	/*
+	 * buf is formed as:
+	 * [0]           [1]     [2]        [3]        [4]         [5]         [6]
+	 * <0=del,1=add>/<proto>/<src_addr>/<src_port>/<dest_addr>/<dest_port>/<2= ECM_AE_CLASSIFIER_RESULT_SFE, 3= ECM_AE_CLASSIFIER_RESULT_PPE_VP, 4= ECM_AE_CLASSIFIER_RESULT_PPE_DS, 5= ECM_AE_CLASSIFIER_RESULT_NONE 7= ECM_AE_CLASSIFIER_RESULT_DONT_CARE>
+	 *
+	 * Buffer example:
+	 * "1/17/192.168.1.254/1235/192.168.1.251/1234/2"
+	 *
+	 * NOTE:
+	 * 	If called via procfs, the interface is:
+	 * 	echo "1/17/192.168.1.254/1235/192.168.1.251/1234/2" > /proc/sys/net/ecm_ae_select_test/rule
+	 * 	cat /proc/sys/net/ecm_ae_select_test/rule (show all rules)
+	 *
+	 * 	If called via debugfs, the interface is:
+	 * 	echo "1/17/192.168.1.254/1235/192.168.1.251/1234/2" > /sys/kernel/debug/ecm_ae_select_test/rule
+	 * 	cat /sys/kernel/debug/ecm_ae_select_test/rule (shows all rules)
+	 */
+	field_count = 0;
+	fields[field_count] = strsep(&field_ptr, "/");
+	while (fields[field_count] != NULL) {
+		pr_info("Field %d: %s\n", field_count, fields[field_count]);
+		field_count++;
+		if (field_count == RULE_FIELDS)
+			break;
+		fields[field_count] = strsep(&field_ptr, "/ \n");
+	}
+
+	if (field_count != RULE_FIELDS) {
+		pr_info("Invalid field count %d\n", field_count);
+		return false;
+	}
+
+	/*
+	 * Convert fields
+	 */
+	if (sscanf(fields[0], "%u", &oper) != 1)
+		goto sscanf_read_error;
+
+	if (sscanf(fields[6], "%d", (int *)&accel) != 1)
+		goto sscanf_read_error;
+
+	switch(accel) {
+	case ECM_AE_CLASSIFIER_RESULT_SFE:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
+	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
+	case ECM_AE_CLASSIFIER_RESULT_NONE:
+	case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
+		break;
+	default:
+		pr_info("Unsupported selection: %u\n", accel);
+		return false;
+	}
+
+	if (sscanf(fields[1], "%u", &proto) != 1)
+		goto sscanf_read_error;
+
+	if (sscanf(fields[3], "%d", &src_port) != 1)
+		goto sscanf_read_error;
+
+	if (sscanf(fields[5], "%d", &dest_port) != 1)
+		goto sscanf_read_error;
+
+	ip_version = ecm_ae_select_test_str_to_ip(fields[2], &src_addr.v6_addr, &src);
+	if (ip_version != ecm_ae_select_test_str_to_ip(fields[4], &dest_addr.v6_addr, &dest)) {
+		pr_info("Conflicting IP address types\n");
+		return false;
+	}
+
+	if (ip_version == IPV4) {
+		src_addr.v4_addr = src;
+		dest_addr.v4_addr = dest;
+	}
+
+	pr_info("oper: %u\n"
+			"accel: %d\n"
+			"proto: %u\n"
+			"src_port: %d\n"
+			"dest_port: %d\n"
+			"ip_version: %u\n",
+			oper,
+			(int)accel,
+			proto,
+			src_port,
+			dest_port,
+			ip_version
+	       );
+	if (ip_version == IPV4) {
+		pr_info("src_addr: %pI4\n", &src_addr.v4_addr);
+		pr_info("dest_addr: %pI4\n", &dest_addr.v4_addr);
+	} else {
+		pr_info("src_addr: %pI6\n", &src_addr.v6_addr);
+		pr_info("dest_addr: %pI6\n", &dest_addr.v6_addr);
+	}
+
+	if (oper == 0) {
+		pr_info("Delete\n");
+		if (ip_version == IPV6) {
+			if (!ecm_ae_select_test_delete_rule(proto, &src_addr.v6_addr,
+								&dest_addr.v6_addr, src_port, dest_port,
+								NULL, NULL, ip_version))
+				return false;
+		} else {
+			if (!ecm_ae_select_test_delete_rule(proto, NULL, NULL,
+								src_port, dest_port, &src_addr.v4_addr,
+								&dest_addr.v4_addr, ip_version))
+				return false;
+		}
+	} else if (oper == 1) {
+		pr_info("Add\n");
+		if (ip_version == IPV6) {
+			if (!ecm_ae_select_test_add_rule(accel, proto, &src_addr.v6_addr,
+								&dest_addr.v6_addr, src_port, dest_port,
+								NULL, NULL, ip_version))
+				return false;
+		} else {
+			if (!ecm_ae_select_test_add_rule(accel, proto, NULL, NULL,
+								src_port, dest_port, &src_addr.v4_addr,
+								&dest_addr.v4_addr, ip_version))
+				return false;
+		}
+	} else {
+		pr_info("Unknown operation: %u\n", oper);
+		return false;
+	}
+
+	return true;
+
+sscanf_read_error:
+	pr_info("sscanf read error\n");
+	return false;
+}
+
+#ifdef CONFIG_DEBUG_FS
+/*
+ * ecm_ae_select_test_rule_write()
+ *	Write a rule
+ */
+static ssize_t ecm_ae_select_test_rule_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	char *rule_buf;
 
 	/*
 	 * buf is formed as:
@@ -315,129 +465,14 @@ static ssize_t ecm_ae_select_test_rule_write(struct file *file,
 		return -EFAULT;
 	}
 
-	/*
-	 * Split the buffer into its fields
-	 */
-	field_count = 0;
-	field_ptr = rule_buf;
-	fields[field_count] = strsep(&field_ptr, "/");
-	while (fields[field_count] != NULL) {
-		pr_info("Field %d: %s\n", field_count, fields[field_count]);
-		field_count++;
-		if (field_count == RULE_FIELDS)
-			break;
-		fields[field_count] = strsep(&field_ptr, "/ \n");
-	}
-
-	if (field_count != RULE_FIELDS) {
-		pr_info("Invalid field count %d\n", field_count);
+	if (!ecm_ae_select_test_rule_buffer(rule_buf)) {
+		pr_info("Unable to ADD/DEL/UPD the rule\n");
 		kfree(rule_buf);
 		return -EINVAL;
-	}
-
-	/*
-	 * Convert fields
-	 */
-	if (sscanf(fields[0], "%u", &oper) != 1)
-		goto sscanf_read_error;
-
-	if (sscanf(fields[6], "%d", (int *)&accel) != 1)
-		goto sscanf_read_error;
-
-	switch (accel) {
-	case ECM_AE_CLASSIFIER_RESULT_SFE:
-	case ECM_AE_CLASSIFIER_RESULT_PPE_VP:
-	case ECM_AE_CLASSIFIER_RESULT_PPE_DS:
-	case ECM_AE_CLASSIFIER_RESULT_NONE:
-	case ECM_AE_CLASSIFIER_RESULT_DONT_CARE:
-		break;
-	default:
-		pr_info("Unsupported selection: %u\n", accel);
-		kfree(rule_buf);
-		return -EINVAL;
-	}
-
-	if (sscanf(fields[1], "%u", &proto) != 1)
-		goto sscanf_read_error;
-
-	if (sscanf(fields[3], "%d", &src_port) != 1)
-		goto sscanf_read_error;
-
-	if (sscanf(fields[5], "%d", &dest_port) != 1)
-		goto sscanf_read_error;
-
-	ip_version = ecm_ae_select_test_str_to_ip(fields[2], &src_addr.v6_addr, &src);
-	if (ip_version != ecm_ae_select_test_str_to_ip(fields[4], &dest_addr.v6_addr, &dest)) {
-		pr_info("Conflicting IP address types\n");
-		kfree(rule_buf);
-		return -EINVAL;
-	}
-
-	if (ip_version == IPV4) {
-		src_addr.v4_addr = src;
-		dest_addr.v4_addr = dest;
 	}
 
 	kfree(rule_buf);
-
-	pr_info("oper: %u\n"
-			"accel: %d\n"
-			"proto: %u\n"
-			"src_port: %d\n"
-			"dest_port: %d\n"
-			"ip_version: %u\n",
-			oper,
-			(int)accel,
-			proto,
-			src_port,
-			dest_port,
-			ip_version
-			);
-	if (ip_version == IPV4) {
-		pr_info("src_addr: %pI4\n", &src_addr.v4_addr);
-		pr_info("dest_addr: %pI4\n", &dest_addr.v4_addr);
-	} else {
-		pr_info("src_addr: %pI6\n", &src_addr.v6_addr);
-		pr_info("dest_addr: %pI6\n", &dest_addr.v6_addr);
-	}
-
-	if (oper == 0) {
-		pr_info("Delete\n");
-		if (ip_version == IPV6) {
-			if (!ecm_ae_select_test_delete_rule(proto, &src_addr.v6_addr,
-								&dest_addr.v6_addr, src_port, dest_port,
-								NULL, NULL, ip_version))
-				return -EINVAL;
-		} else {
-			if (!ecm_ae_select_test_delete_rule(proto, NULL, NULL,
-								src_port, dest_port, &src_addr.v4_addr,
-								&dest_addr.v4_addr, ip_version))
-			return -EINVAL;
-		}
-	} else if (oper == 1) {
-		pr_info("Add\n");
-		if (ip_version == IPV6) {
-			if (!ecm_ae_select_test_add_rule(accel, proto, &src_addr.v6_addr,
-								&dest_addr.v6_addr, src_port, dest_port,
-								NULL, NULL, ip_version))
-				return -EINVAL;
-		} else {
-			if (!ecm_ae_select_test_add_rule(accel, proto, NULL, NULL,
-								src_port, dest_port, &src_addr.v4_addr,
-								&dest_addr.v4_addr, ip_version))
-			    return -EINVAL;
-		}
-	} else {
-		pr_info("Unknown operation: %u\n", oper);
-		return -EINVAL;
-	}
-
 	return count;
-
-sscanf_read_error:
-	pr_info("sscanf read error\n");
-	kfree(rule_buf);
-	return -EINVAL;
 }
 
 /*
@@ -538,6 +573,136 @@ static const struct file_operations ecm_ae_select_test_rule_fops = {
 	.llseek		= seq_lseek,
 	.release	= ecm_ae_select_test_rule_release,
 };
+#endif
+
+/*
+ * ecm_ae_select_test_rule_read_handler()
+ * 	Read handler for the sysctl rule
+ */
+static int ecm_ae_select_test_rule_read_handler(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+	int pos = 0;
+	struct ecm_ae_select_test_rule *rule;
+
+	if (*ppos != 0) {
+		*lenp = 0;
+		return 0;
+	}
+
+	buf = kzalloc(PAGE_SIZE, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	spin_lock_bh(&ecm_ae_select_test_rules_lock);
+	list_for_each_entry(rule, &ecm_ae_select_test_rules, list) {
+		int written = 0;
+
+		written = scnprintf(buf + pos, PAGE_SIZE - pos,
+				"RULE:\n"
+				"\taccel: %d\n"
+				"\tproto: %u\n"
+				"\tsrc_port: %d\n"
+				"\tdest_port: %d\n"
+				"\tipv: %u\n",
+				(int)(rule->accel),
+				rule->proto,
+				rule->src_port,
+				rule->dest_port,
+				rule->ip_version
+				);
+		pos += written;
+
+		if (rule->ip_version == IPV4) {
+			written = scnprintf(buf + pos, PAGE_SIZE - pos,
+					"\tsrc_addr: %pI4\n"
+					"\tdest_addr: %pI4\n",
+					&rule->src_addr.v4_addr,
+					&rule->dest_addr.v4_addr);
+		} else {
+			written = scnprintf(buf + pos, PAGE_SIZE - pos,
+					"\tsrc_addr: %pI6\n"
+					"\tdest_addr: %pI6\n",
+					&rule->src_addr.v6_addr,
+					&rule->dest_addr.v6_addr);
+		}
+		pos += written;
+	}
+
+	spin_unlock_bh(&ecm_ae_select_test_rules_lock);
+
+	if (pos > 0)
+		buf[pos - 1] = '\n';
+	count = memory_read_from_buffer(buffer, *lenp, ppos, buf, pos);
+	*lenp = count;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_ae_select_test_rule_handler()
+ * 	Sysctl handler for AE select test rule ops
+ */
+static int ecm_ae_select_test_rule_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * Read operation - call the read handler
+	 */
+	if (!write) {
+		return ecm_ae_select_test_rule_read_handler(buffer, lenp, ppos);
+	}
+
+	/*
+	 * Validate input size before processing
+	 * Maximum allowed range is 256 bytes
+	 */
+	count = *lenp;
+	if (count > MAX_RULE_SIZE || count == 0) {
+		pr_err("Invalid input size: %d\n", count);
+		return -EINVAL;
+	}
+
+	/*
+	 * Allocate memory for the rule buffer
+	 */
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Failed to allocate the memory\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_ae_select_test_rule_buffer(buf)) {
+		pr_info("Failed to update the rule buffer\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	*lenp = count;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * Sysctl table entried
+ */
+static struct ctl_table ecm_ae_select_test_ctl_table[] = {
+	{
+		.procname	= "rule",
+		.data		= NULL,
+		.maxlen		= MAX_RULE_SIZE,
+		.mode		= 0644,
+		.proc_handler	= &ecm_ae_select_test_rule_handler,
+	},
+	{ }
+};
 
 /*
  * ecm_ae_select_init()
@@ -548,20 +713,35 @@ static int __init ecm_ae_select_init(void)
 	pr_info("ECM AE Select INIT\n");
 
 	/*
+	 * Register sysctl table for procfs interface
+	 */
+	ecm_ae_select_test_ctl_table_header = register_sysctl(ECM_AE_SELECT_PROCFS_PATH,
+					ecm_ae_select_test_ctl_table);
+	if (!ecm_ae_select_test_ctl_table_header) {
+		pr_info("Failed to register sysctl table\n");
+		return -ENOMEM;
+	}
+
+#ifdef CONFIG_DEBUG_FS
+	/*
 	 * Create entries in DebugFS for control functions
 	 */
-	if (!ecm_debugfs_create_dir("ecm_ae_select_test", NULL, &ecm_ae_select_test_dentry)) {
+	ecm_ae_select_test_dentry = debugfs_create_dir("ecm_ae_select_test", NULL);
+	if (!ecm_ae_select_test_dentry) {
 		pr_info("Failed to create ecm-ae-select-test directory entry\n");
+		unregister_sysctl_table(ecm_ae_select_test_ctl_table_header);
 		return -EPERM;
 	}
 
-	if (!ecm_debugfs_create_file("rule",
+	if (!debugfs_create_file("rule",
 			S_IRUGO | S_IWUSR, ecm_ae_select_test_dentry,
 			NULL, &ecm_ae_select_test_rule_fops)) {
 		pr_info("Failed to create ecm_ae_select_test_rule_fops\n");
-		ecm_debugfs_remove_recursive(ecm_ae_select_test_dentry);
+		debugfs_remove_recursive(ecm_ae_select_test_dentry);
+		unregister_sysctl_table(ecm_ae_select_test_ctl_table_header);
 		return -ENOENT;
 	}
+#endif
 
 	/*
 	 * Register the callbacks.
@@ -582,7 +762,20 @@ static void __exit ecm_ae_select_exit(void)
 	 * Unregister the callbacks.
 	 */
 	ecm_ae_classifier_ops_unregister();
-	ecm_debugfs_remove_recursive(ecm_ae_select_test_dentry);
+
+#ifdef CONFIG_DEBUG_FS
+	/*
+	 * Remove debugfs entry
+	 */
+	debugfs_remove_recursive(ecm_ae_select_test_dentry);
+#endif
+
+	/*
+	 * Unregister sysctl table
+	 */
+	if (ecm_ae_select_test_ctl_table_header) {
+		unregister_sysctl_table(ecm_ae_select_test_ctl_table_header);
+	}
 }
 
 module_init(ecm_ae_select_init)
