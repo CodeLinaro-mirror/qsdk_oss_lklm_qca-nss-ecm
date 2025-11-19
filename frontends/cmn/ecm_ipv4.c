@@ -1,20 +1,9 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- **************************************************************************
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
+ ***************************************************************************
  */
 
 #include <linux/version.h>
@@ -936,26 +925,35 @@ void ecm_ipv4_connection_regenerate(struct ecm_db_connection_instance *ci, ecm_t
 	struct ecm_front_end_ovs_params *to_ovs_params = NULL;
 	struct ecm_front_end_ovs_params *from_nat_ovs_params = NULL;
 	struct ecm_front_end_ovs_params *to_nat_ovs_params = NULL;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
 
 	DEBUG_INFO("%px: re-gen needed\n", ci);
 
 	/*
-	 * We may need to swap the devices around depending on who the sender of the packet that triggered the re-gen is
+	 * If packet is in the reverse direction relative to the established ECM connection,
+	 * we cannot re-construct the interface with this packet. We need a packet in the same
+	 * direction of connection instance.
 	 */
 	if (sender == ECM_TRACKER_SENDER_TYPE_DEST) {
-		struct net_device *tmp_dev;
+		DEBUG_TRACE("%px: Re-gen can be done with the same ci direction packet\n", ci);
+		ecm_db_connection_regeneration_failed(ci);
+		return ;
+	}
 
-		/*
-		 * This is a packet sent by the destination of the connection, i.e. it is a packet issued by the 'from' side of the connection.
-		 */
-		DEBUG_TRACE("%px: Re-gen swap devs\n", ci);
-		tmp_dev = out_dev;
-		out_dev = in_dev;
-		in_dev = tmp_dev;
-
-		tmp_dev = out_dev_nat;
-		out_dev_nat = in_dev_nat;
-		in_dev_nat = tmp_dev;
+	/*
+	 * This regenerate function is called after the connection is established. At that time,
+	 * sender is normalized relative to the connection direction. Here, we use sender in the
+	 * ecm_front_end_ipv4_interface_construct_set_and_hold() function to set the input interfaces
+	 * for the hierarchy re-construct function. So, we need to use the sender value relative to the
+	 * conntarck direction as we used it while creating the new ECM database connection.
+	 */
+	ct = nf_ct_get(skb, &ctinfo);
+	if (likely(ct) && likely(ctinfo != IP_CT_UNTRACKED)) {
+		if (IP_CT_DIR_ORIGINAL != CTINFO2DIR(ctinfo)) {
+			DEBUG_TRACE("%px: Normalize the sender to DEST relative to conntrack\n", ci);
+			sender = ECM_TRACKER_SENDER_TYPE_DEST;
+		}
 	}
 
 	/*
@@ -1257,8 +1255,10 @@ unsigned int ecm_ipv4_ip_process(struct net_device *out_dev, struct net_device *
 		orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 		reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
 		if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
+			DEBUG_TRACE("%px: sender is SRC relative to conntrack\n", skb);
 			sender = ECM_TRACKER_SENDER_TYPE_SRC;
 		} else {
+			DEBUG_TRACE("%px: sender is DEST relative to conntrack\n", skb);
 			sender = ECM_TRACKER_SENDER_TYPE_DEST;
 		}
 
