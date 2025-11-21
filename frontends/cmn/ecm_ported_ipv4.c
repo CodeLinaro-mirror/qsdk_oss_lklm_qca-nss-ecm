@@ -920,8 +920,10 @@ done:
 	 */
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
 	if (ECM_IP_ADDR_MATCH(ip_src_addr, match_addr)) {
+		DEBUG_TRACE("%px: sender is SRC relative to ci direction\n", ci);
 		sender = ECM_TRACKER_SENDER_TYPE_SRC;
 	} else {
+		DEBUG_TRACE("%px: sender is DEST relative to ci direction\n", ci);
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 	}
 
