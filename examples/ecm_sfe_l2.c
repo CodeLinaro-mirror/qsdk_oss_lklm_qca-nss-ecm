@@ -14,10 +14,12 @@
 #include <linux/etherdevice.h>
 #include <linux/inet.h>
 
-#define DEBUG_LEVEL 1
-
 #include "exports/ecm_sfe_common_public.h"
-#include "ecm_types.h"
+
+/*
+ * Default path for sysctl
+ */
+#define ECM_SFE_L2_PROCFS_PATH "net/ecm_sfe_l2"
 
 /*
  * Global WAN interface name parameter.
@@ -26,9 +28,16 @@ char wan_name[IFNAMSIZ];
 int wan_name_len;
 
 /*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_sfe_l2_ctl_table_header;
+
+#ifdef CONFIG_DEBUG_FS
+/*
  * DebugFS entry object.
  */
 static struct dentry *ecm_sfe_l2_dentry;
+#endif
 
 /*
  * Policy rule directions.
@@ -336,6 +345,264 @@ static bool ecm_sfe_l2_add_policy_rule(int ip_ver, uint32_t *sip_addr, int sport
 }
 
 /*
+ * ecm_sfe_l2_defunct_by_port_buffer()
+ * 	Parse port option from the buffer and defunct the rule
+ */
+static bool ecm_sfe_l2_defunct_by_port_buffer(char *buf)
+{
+	char *fields;
+	char *option, *value;
+	int port;
+	int direction;
+
+	/*
+	 * NOTE:
+	 * 	With procfs interface: To mark a connection defunct by port:
+	 * 	echo “sport=443” > /proc/sys/net/ecm_sfe_l2/defunct_by_port
+	 * 	echo “dport=443” > /proc/sys/net/ecm_sfe_l2/defunct_by_port
+	 *
+	 * 	With debugfs interface: To mark a connection defunct by port:
+	 * 	echo “sport=443” > /sys/kernel/debug/ecm_sfe_l2/defunct_by_port
+	 * 	echo “dport=443” > /sys/kernel/debug/ecm_sfe_l2/defunct_by_port
+	 */
+
+	/*
+	 * Split the buffer into its fields
+	 */
+	fields = buf;
+	option = strsep(&fields, "=");
+	if (!strcmp(option, "sport")) {
+		direction = 0;
+	} else if (!strcmp(option, "dport")) {
+		direction = 1;
+	} else {
+		pr_err("invalid option name: %s\n", option);
+		return false;
+	}
+
+	value = fields;
+	if (!sscanf(value, "%d", &port)) {
+		pr_err("Unable to read port value %s\n", value);
+		return false;
+	}
+	pr_debug("option: %s value: %d\n", option, port);
+
+	/*
+	 * Call port based defunct function.
+	 */
+	ecm_sfe_common_defunct_by_port(port, direction, wan_name);
+	return true;
+}
+
+/*
+ * ecm_sfe_l2_defunct_by_protocol_buffer()
+ * 	Parse protocol option from buffer and defunct based on protocol
+ */
+static bool ecm_sfe_l2_defunct_by_protocol_buffer(char *buf)
+{
+	char *fields;
+	char *option;
+	char *value;
+	int protocol;
+
+	/*
+	 * NOTE:
+	 * 	For procfs interface, the command is:
+	 * 	echo “protocol=6” > /proc/sys/net/ecm_sfe_l2/defunct_by_protocol
+	 *
+	 * 	For debugfs interface, the command is:
+	 * 	echo “protocol=6” > /sys/kernel/debug/ecm_sfe_l2/defunct_by_protocol
+	 */
+
+	fields = buf;
+	option = strsep(&fields, "=");
+	if (strcmp(option, "protocol")) {
+		pr_err("invalid option name: %s\n", option);
+		return false;
+	}
+
+	value = fields;
+	if (!sscanf(value, "%d", &protocol)) {
+		pr_err("Unable to read protocol value %s\n", value);
+		return false;
+	}
+	pr_debug("option: %s value: %d\n", option, protocol);
+
+	/*
+	 * Defunct the connections which has this protocol number
+	 */
+	ecm_sfe_common_defunct_by_protocol(protocol);
+	return true;
+}
+
+/*
+ * ecm_sfe_l2_policy_rule_buffer()
+ * 	Parse L2 policy rule from buffer, then execute add/delete/flush action
+ */
+static bool ecm_sfe_l2_policy_rule_buffer(char *buf)
+{
+	char *fields;
+	char *token;
+	char *option, *value;
+	int cmd = 0;            /* must be present in the rule */
+	int ip_ver = 0; /* must be present in the rule */
+	uint32_t sip_addr[4] = {0};
+	uint32_t dip_addr[4] = {0};
+	int sport = 0;
+	int dport = 0;
+	int protocol = 0;
+	int direction = 0;
+
+	/*
+	 * NOTE:
+	 * 	Command format for L2 policy rule:
+	 * 	For procfs interface, the command is:
+	 * 	echo "cmd=1 ip_ver=4 dport=443 protocol=6 direction=1" > /proc/sys/net/ecm_sfe_l2/policy_rules
+	 *
+	 * 	For debugfs interface, the command is:
+	 * 	echo "cmd=1 ip_ver=4 dport=443 protocol=6 direction=1" > /sys/kernel/debug/ecm_sfe_l2/policy_rules
+	 *
+	 * cmd: 1 is to add, 2 is to delete a rule, 3 is to flush all rule.
+	 * direction: 1 is egress, 2 is ingress, 3 is both
+	 */
+
+	fields = buf;
+	while ((token = strsep(&fields, " "))) {
+		pr_info("\ntoken: %s\n", token);
+
+		option = strsep(&token, "=");
+		value = token;
+
+		pr_info("\t\toption: %s\n", option);
+		pr_info("\t\tvalue: %s\n", value);
+
+		if (!strcmp(option, "cmd")) {
+			if (sscanf(value, "%d", &cmd)) {
+				if (cmd != ECM_SFE_L2_POLICY_RULE_ADD && cmd != ECM_SFE_L2_POLICY_RULE_DEL &&
+					cmd != ECM_SFE_L2_POLICY_RULE_FLUSH_ALL) {
+					pr_err("invalid cmd value: %d\n", cmd);
+					return false;
+				}
+				continue;
+			}
+			pr_warn("cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "ip_ver")) {
+			if (sscanf(value, "%d", &ip_ver)) {
+				if (ip_ver != 4 && ip_ver != 6) {
+					pr_err("invalid ip_ver: %d\n", ip_ver);
+					return false;
+				}
+				continue;
+			}
+			pr_warn("cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "protocol")) {
+			if (sscanf(value, "%d", &protocol)) {
+				continue;
+			}
+			pr_warn("Cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "sport")) {
+			if (sscanf(value, "%d", &sport)) {
+				continue;
+			}
+			pr_warn("cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "dport")) {
+			if (sscanf(value, "%d", &dport)) {
+				continue;
+			}
+			pr_warn("cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "direction")) {
+			if (cmd == ECM_SFE_L2_POLICY_RULE_DEL) {
+				pr_err("direction is not allowed in delete command\n");
+				return false;
+			}
+
+			if (sscanf(value, "%d", &direction)) {
+				if (direction != ECM_SFE_L2_POLICY_RULE_EGRESS
+					&& direction != ECM_SFE_L2_POLICY_RULE_INGRESS
+					&& direction != ECM_SFE_L2_POLICY_RULE_EGRESS_INGRESS) {
+					pr_err("invalid direction: %d\n", direction);
+					return false;
+				}
+				continue;
+			}
+			pr_warn("cannot read value\n");
+			return false;
+		}
+
+		if (!strcmp(option, "sip")) {
+			if (ip_ver == 4) {
+				if (!in4_pton(value, -1, (uint8_t *)&sip_addr[0], -1, NULL)) {
+					pr_err("invalid source IP V4 value: %s\n", value);
+					return false;
+				}
+			} else if (ip_ver ==6) {
+				if (!in6_pton(value, -1, (uint8_t *)sip_addr, -1, NULL)) {
+					pr_err("invalid source IP V6 value: %s\n", value);
+					return false;
+				}
+			} else {
+				pr_err("ip_ver hasn't been set yet\n");
+				return false;
+			}
+			continue;
+		}
+
+		if (!strcmp(option, "dip")) {
+			if (ip_ver == 4) {
+				if (!in4_pton(value, -1, (uint8_t *)&dip_addr[0], -1, NULL)) {
+					pr_err("invalid destination IP V4 value: %s\n", value);
+					return false;
+				}
+			} else if (ip_ver == 6) {
+				if (!in6_pton(value, -1, (uint8_t *)dip_addr, -1, NULL)) {
+					pr_err("invalid destination IP V6 value: %s\n", value);
+					return false;
+				}
+			} else {
+				pr_err("ip_ver hasn't been set yet\n");
+				return false;
+			}
+			continue;
+		}
+
+		pr_warn("unrecognized option: %s\n", option);
+		return false;
+	}
+
+	if (cmd == ECM_SFE_L2_POLICY_RULE_ADD) {
+		if (!ecm_sfe_l2_add_policy_rule(ip_ver, sip_addr, sport, dip_addr, dport, protocol, direction)) {
+			pr_err("Add policy rule failed\n");
+			return false;
+		}
+	} else if (cmd == ECM_SFE_L2_POLICY_RULE_DEL) {
+		if (!ecm_sfe_l2_delete_policy_rule(ip_ver, sip_addr, sport, dip_addr, dport, protocol)) {
+			pr_err("Delete policy rule failed\n");
+			return false;
+		}
+	} else if (cmd == ECM_SFE_L2_POLICY_RULE_FLUSH_ALL) {
+		ecm_sfe_l2_flush_policy_rules();
+	}
+
+	return true;
+}
+
+#ifdef CONFIG_DEBUG_FS
+/*
  * ecm_sfe_l2_policy_rule_write()
  *	Adds a policy rule to the rule table.
  *
@@ -346,17 +613,6 @@ static ssize_t ecm_sfe_l2_policy_rule_write(struct file *file,
 		const char __user *user_buf, size_t count, loff_t *offset)
 {
 	char *cmd_buf;
-	char *fields;
-	char *token;
-	char *option, *value;
-	int cmd = 0;		/* must be present in the rule */
-	int ip_ver = 0;	/* must be present in the rule */
-	uint32_t sip_addr[4] = {0};
-	uint32_t dip_addr[4] = {0};
-	int sport = 0;
-	int dport = 0;
-	int protocol = 0;
-	int direction = 0;	/* must be present in the rule */
 
 	/*
 	 * Command is formed as:
@@ -372,149 +628,14 @@ static ssize_t ecm_sfe_l2_policy_rule_write(struct file *file,
 	}
 
 	count = simple_write_to_buffer(cmd_buf, count, offset, user_buf, count);
-
-	/*
-	 * Split the buffer into tokens
-	 */
-	fields = cmd_buf;
-	while ((token = strsep(&fields, " "))) {
-		pr_info("\ntoken: %s\n", token);
-
-		option = strsep(&token, "=");
-		value = token;
-
-		pr_info("\t\toption: %s\n", option);
-		pr_info("\t\tvalue: %s\n", value);
-
-		if (!strcmp(option, "cmd")) {
-			if (sscanf(value, "%d", &cmd)) {
-				if (cmd != ECM_SFE_L2_POLICY_RULE_ADD && cmd != ECM_SFE_L2_POLICY_RULE_DEL &&
-					cmd != ECM_SFE_L2_POLICY_RULE_FLUSH_ALL) {
-					pr_err("invalid cmd value: %d\n", cmd);
-					goto fail;
-				}
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "ip_ver")) {
-			if (sscanf(value, "%d", &ip_ver)) {
-				if (ip_ver != 4 && ip_ver != 6) {
-					pr_err("invalid ip_ver: %d\n", ip_ver);
-					goto fail;
-				}
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "protocol")) {
-			if (sscanf(value, "%d", &protocol)) {
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "sport")) {
-			if (sscanf(value, "%d", &sport)) {
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "dport")) {
-			if (sscanf(value, "%d", &dport)) {
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "direction")) {
-			if (cmd == ECM_SFE_L2_POLICY_RULE_DEL) {
-				pr_err("direction is not allowed in delete command\n");
-				goto fail;
-			}
-
-			if (sscanf(value, "%d", &direction)) {
-				if (direction != ECM_SFE_L2_POLICY_RULE_EGRESS
-					&& direction != ECM_SFE_L2_POLICY_RULE_INGRESS
-					&& direction != ECM_SFE_L2_POLICY_RULE_EGRESS_INGRESS) {
-
-					pr_err("invalid direction: %d\n", direction);
-					goto fail;
-				}
-				continue;
-			}
-			pr_warn("cannot read value\n");
-			goto fail;
-		}
-
-		if (!strcmp(option, "sip")) {
-			if (ip_ver == 4) {
-				if (!in4_pton(value, -1, (uint8_t *)&sip_addr[0], -1, NULL)) {
-					pr_err("invalid source IP V4 value: %s\n", value);
-					goto fail;
-				}
-			} else if (ip_ver ==6) {
-				if (!in6_pton(value, -1, (uint8_t *)sip_addr, -1, NULL)) {
-					pr_err("invalid source IP V6 value: %s\n", value);
-					goto fail;
-				}
-			} else {
-				pr_err("ip_ver hasn't been set yet\n");
-				goto fail;
-			}
-			continue;
-		}
-
-		if (!strcmp(option, "dip")) {
-			if (ip_ver == 4) {
-				if (!in4_pton(value, -1, (uint8_t *)&dip_addr[0], -1, NULL)) {
-					pr_err("invalid destination IP V4 value: %s\n", value);
-					goto fail;
-				}
-			} else if (ip_ver == 6) {
-				if (!in6_pton(value, -1, (uint8_t *)dip_addr, -1, NULL)) {
-					pr_err("invalid destination IP V6 value: %s\n", value);
-					goto fail;
-				}
-			} else {
-				pr_err("ip_ver hasn't been set yet\n");
-				goto fail;
-			}
-			continue;
-		}
-
-		pr_warn("unrecognized option: %s\n", option);
-		goto fail;
+	if (!ecm_sfe_l2_policy_rule_buffer(cmd_buf)) {
+		pr_err("Unable to process the rule\n");
+		kfree(cmd_buf);
+		return -EINVAL;
 	}
 
 	kfree(cmd_buf);
-
-	if (cmd == ECM_SFE_L2_POLICY_RULE_ADD) {
-		if (!ecm_sfe_l2_add_policy_rule(ip_ver, sip_addr, sport, dip_addr, dport, protocol, direction)) {
-			pr_err("Add policy rule failed\n");
-			return -ENOMEM;
-		}
-	} else if (cmd == ECM_SFE_L2_POLICY_RULE_DEL) {
-		if (!ecm_sfe_l2_delete_policy_rule(ip_ver, sip_addr, sport, dip_addr, dport, protocol)) {
-			pr_err("Delete policy rule failed\n");
-			return -ENOMEM;
-		}
-	} else if (cmd == ECM_SFE_L2_POLICY_RULE_FLUSH_ALL) {
-		ecm_sfe_l2_flush_policy_rules();
-	}
-
 	return count;
-fail:
-	kfree(cmd_buf);
-	return -EINVAL;
 }
 
 /*
@@ -670,10 +791,6 @@ static ssize_t ecm_sfe_l2_defunct_by_port_write(struct file *f, const char *user
 					  size_t count, loff_t *offset)
 {
 	char *cmd_buf;
-	char *fields;
-	char *option, *value;
-	int port;
-	int direction;
 
 	/*
 	 * Command is formed as:
@@ -688,37 +805,13 @@ static ssize_t ecm_sfe_l2_defunct_by_port_write(struct file *f, const char *user
 	}
 
 	count = simple_write_to_buffer(cmd_buf, count, offset, user_buf, count);
-
-	/*
-	 * Split the buffer into its fields
-	 */
-	fields = cmd_buf;
-	option = strsep(&fields, "=");
-	if (!strcmp(option, "sport")) {
-		direction = 0;
-	} else if (!strcmp(option, "dport")) {
-		direction = 1;
-	} else {
-		pr_err("invalid option name: %s\n", option);
+	if (!ecm_sfe_l2_defunct_by_port_buffer(cmd_buf)) {
+		pr_warn("Unable to defunct ecm rules based on given port\n");
 		kfree(cmd_buf);
 		return -EINVAL;
 	}
-
-	value = fields;
-	if (!sscanf(value, "%d", &port)) {
-		pr_err("Unable to read port value %s\n", value);
-		kfree(cmd_buf);
-		return -EINVAL;
-	}
-	pr_debug("option: %s value: %d\n", option, port);
 
 	kfree(cmd_buf);
-
-	/*
-	 * Call port based defunct function.
-	 */
-	ecm_sfe_common_defunct_by_port(port, direction, wan_name);
-
 	return count;
 }
 
@@ -738,9 +831,6 @@ static ssize_t ecm_sfe_l2_defunct_by_protocol_write(struct file *f, const char *
 					  size_t count, loff_t *offset)
 {
 	char *cmd_buf;
-	char *fields;
-	char *option, *value;
-	int protocol;
 
 	/*
 	 * Command is formed as:
@@ -754,33 +844,13 @@ static ssize_t ecm_sfe_l2_defunct_by_protocol_write(struct file *f, const char *
 	}
 
 	count = simple_write_to_buffer(cmd_buf, count, offset, user_buf, count);
-
-	/*
-	 * Split the buffer into its fields
-	 */
-	fields = cmd_buf;
-	option = strsep(&fields, "=");
-	if (strcmp(option, "protocol")) {
-		pr_err("invalid option name: %s\n", option);
+	if (!ecm_sfe_l2_defunct_by_protocol_buffer(cmd_buf)) {
+		pr_warn("Unable to defunct the rule for the given protocol\n");
 		kfree(cmd_buf);
 		return -EINVAL;
 	}
-
-	value = fields;
-	if (!sscanf(value, "%d", &protocol)) {
-		pr_err("Unable to read protocol value %s\n", value);
-		kfree(cmd_buf);
-		return -EINVAL;
-	}
-	pr_debug("option: %s value: %d\n", option, protocol);
 
 	kfree(cmd_buf);
-
-	/*
-	 * Defunct the connections which has this protocol number.
-	 */
-	ecm_sfe_common_defunct_by_protocol(protocol);
-
 	return count;
 }
 
@@ -840,6 +910,309 @@ static struct file_operations ecm_sfe_l2_wan_name_fops = {
 struct ecm_sfe_common_callbacks sfe_cbs = {
 	.l2_accel_check = ecm_sfe_l2_accel_check_callback,	/**< Callback to decide if L2 acceleration is wanted for the flow. */
 };
+#endif
+
+/*
+ * ecm_sfe_l2_defunct_by_port_handler()
+ * 	Proc handler to defunct the ecm rules by giving port numnber
+ */
+static int ecm_sfe_l2_defunct_by_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * return if operation is read
+	 * We are not storing the value when it is written
+	 */
+	if (!write) {
+		pr_warn("Values are not stored for this read operation\n");
+		*lenp = 0;
+		return 0;
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate the memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_sfe_l2_defunct_by_port_buffer(buf)) {
+		pr_warn("Unable to defunct ecm rules based on given port\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_sfe_l2_defunct_by_5tuple_handler()
+ * 	Proc handler to defunct the ecm rules by giving 5 tuple
+ */
+static int ecm_sfe_l2_defunct_by_5tuple_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * Usage:
+	 * To mark a 5 tuple as defunct with procfs interface:
+	 * echo "ip_ver=4 sip=192.168.1.100 sport=443 dip=192.168.2.100 dport=1000 protocol=6" > /proc/sys/net/ecm_sfe_l2/defunct_by_5tuple
+	 *
+	 * Only one 5 tuple can be processed per defunct by 5tuple
+	 */
+
+	/*
+	 * return if operation is read
+	 * We are not storing the value when it is written
+	 */
+	if (!write) {
+		pr_warn("Values are not stored for this read operation\n");
+		*lenp = 0;
+		return 0;
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate the memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_sfe_common_defunct_5tuple_connection(buf)) {
+		pr_warn("Unable to defunct ecm rules based on given 5 tuple\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_sfe_l2_defunct_by_protocol_handler()
+ * 	Proc handler to defunct connections based on protocol
+ */
+static int ecm_sfe_l2_defunct_by_protocol_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * return if operation is read since we are not storing any values
+	 */
+	if (!write) {
+		pr_warn("Values are not stored for this read operation\n");
+		*lenp = 0;
+		return 0;
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate the memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_sfe_l2_defunct_by_protocol_buffer(buf)) {
+		pr_info("Unable to defunct the rule for the given protocol\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_sfe_l2_policy_rule_read_handler()
+ * 	Read handler for the procfs policy rules
+ */
+static int ecm_sfe_l2_policy_rule_read_handler(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ecm_sfe_l2_policy_rule *rule;
+	int pos = 0;
+	ssize_t copied;
+	char *buf;
+
+	buf =  kzalloc(PAGE_SIZE, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	spin_lock_bh(&ecm_sfe_l2_policy_rules_lock);
+	list_for_each_entry(rule, &ecm_sfe_l2_policy_rules, list) {
+		int written = 0;
+
+		if (rule->ip_ver == 4) {
+			written = scnprintf(buf + pos, PAGE_SIZE - pos,
+				"ip_ver: %d\tprotocol: %d\tsip_addr: %pI4\tdip_addr: %pI4\tsport: %d\tdport: %d\tdirection: %d\n",
+				rule->ip_ver,
+				rule->protocol,
+				&rule->src_addr[0],
+				&rule->dest_addr[0],
+				rule->src_port,
+				rule->dest_port,
+				rule->direction);
+		} else {
+			struct in6_addr saddr;
+			struct in6_addr daddr;
+
+			memcpy(&saddr.s6_addr32, rule->src_addr, sizeof(uint32_t) * 4);
+			memcpy(&daddr.s6_addr32, rule->dest_addr, sizeof(uint32_t) * 4);
+
+			written = scnprintf(buf + pos, PAGE_SIZE - pos,
+				"ip_ver: %d\tprotocol: %d\tsip_addr: %pI6\tdip_addr: %pI6\tsport: %d\tdport: %d\tdirection: %d\n",
+				rule->ip_ver,
+				rule->protocol,
+				&saddr,
+				&daddr,
+				rule->src_port,
+				rule->dest_port,
+				rule->direction);
+		}
+		pos += written;
+	}
+
+	spin_unlock_bh(&ecm_sfe_l2_policy_rules_lock);
+	if (pos > 0)
+		buf[pos - 1] = '\n';
+	copied = memory_read_from_buffer(buffer, *lenp, ppos, buf, pos);
+	*lenp = copied;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_sfe_l2_policy_rule_handler()
+ * 	Adds a policy rule to the rule table
+ *
+ * Policy rule must include cmd, ip_ver and direction. It can also include src/dest IP and ports, protocol.
+ * cmd and ip_ver MUST be the first 2 options in the command.
+ */
+static int ecm_sfe_l2_policy_rule_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * Read operation - call the read handler
+	 */
+	if (!write) {
+		return ecm_sfe_l2_policy_rule_read_handler(buffer, lenp, ppos);
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate the memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_sfe_l2_policy_rule_buffer(buf)) {
+		pr_info("Failed to update the rule buffer\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	*lenp = count;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_sfe_l2_wan_name_handler()
+ * 	Writes the WAN interface name to the sysctl node wan_name
+ */
+static int ecm_sfe_l2_wan_name_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int count;
+
+	/*
+	 * Usage:
+	 * To write wan name:
+	 * echo "eth0" > /proc/sys/net/ecm_sfe_l2/wan_name
+	 *
+	 * To read wan name:
+	 * cat /proc/sys/net/ecm_sfe_l2/wan_name
+	 */
+
+	/*
+	 * Read operation - read wan name
+	 */
+	if (!write) {
+		count = memory_read_from_buffer(buffer, *lenp, ppos, wan_name, wan_name_len);
+		if (count < 0) {
+			pr_err("Failed to read WAN interface name\n");
+			return -EINVAL;
+		}
+
+		*lenp = count;
+		return 0;
+	}
+
+	count = *lenp;
+	if (count > IFNAMSIZ) {
+		pr_err("Wan interface name is too long\n");
+		return -EINVAL;
+	}
+
+	memcpy(wan_name, buffer, count);
+	wan_name[count - 1] = '\n';
+	wan_name_len = count;
+	return 0;
+}
+
+static struct ctl_table ecm_sfe_l2_ctl_table[] = {
+	{
+		.procname	= "wan_name",
+		.data		= NULL,
+		.maxlen		= IFNAMSIZ,
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_l2_wan_name_handler,
+	},
+	{
+		.procname	= "policy_rules",
+		.data		= NULL,
+		.maxlen		= 1024,
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_l2_policy_rule_handler,
+	},
+	{
+		.procname	= "defunct_by_protocol",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_l2_defunct_by_protocol_handler,
+	},
+	{
+		.procname	= "defunct_by_5tuple",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_l2_defunct_by_5tuple_handler,
+	},
+	{
+		.procname	= "defunct_by_port",
+		.data		= NULL,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_sfe_l2_defunct_by_port_handler,
+	},
+	{ }
+};
 
 /*
  * ecm_sfe_l2_init()
@@ -849,42 +1222,55 @@ static int __init ecm_sfe_l2_init(void)
 	pr_debug("ECM SFE L2 module INIT\n");
 
 	/*
-	 * Create entries in DebugFS for control functions
+	 * Register sysctl table for procfs interface
 	 */
-	if (!ecm_debugfs_create_dir("ecm_sfe_l2", NULL, &ecm_sfe_l2_dentry)) {
-		pr_info("Failed to create SFE L2 directory entry\n");
+	ecm_sfe_l2_ctl_table_header = register_sysctl(ECM_SFE_L2_PROCFS_PATH, ecm_sfe_l2_ctl_table);
+	if (!ecm_sfe_l2_ctl_table_header) {
+		pr_info("Failed to register sysctl table\n");
 		return -1;
 	}
 
-	if (!ecm_debugfs_create_file("wan_name", S_IWUSR, ecm_sfe_l2_dentry,
+#ifdef CONFIG_DEBUG_FS
+	/*
+	 * Create entries in DebugFS for control functions
+	 */
+	ecm_sfe_l2_dentry = debugfs_create_dir("ecm_sfe_l2", NULL);
+	if (!ecm_sfe_l2_dentry) {
+		pr_info("Failed to create SFE L2 directory entry\n");
+		unregister_sysctl_table(ecm_sfe_l2_ctl_table_header);
+		return -1;
+	}
+
+	if (!debugfs_create_file("wan_name", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_wan_name_fops)) {
 		pr_debug("Failed to create ecm wan interface file in debugfs\n");
 		goto init_cleanup;
 	}
 
-	if (!ecm_debugfs_create_file("policy_rules", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!debugfs_create_file("policy_rules", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_policy_rule_fops)) {
 		pr_debug("Failed to create ecm SFE L2 policy rules file in debugfs\n");
 		goto init_cleanup;
 	}
 
-	if (!ecm_debugfs_create_file("defunct_by_protocol", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!debugfs_create_file("defunct_by_protocol", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_protocol_fops)) {
 		pr_debug("Failed to create ecm defunct by protocol file in debugfs\n");
 		goto init_cleanup;
 	}
 
-	if (!ecm_debugfs_create_file("defunct_by_5tuple", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!debugfs_create_file("defunct_by_5tuple", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_5tuple_fops)) {
 		pr_debug("Failed to create ecm defunct by 5tuple file in debugfs\n");
 		goto init_cleanup;
 	}
 
-	if (!ecm_debugfs_create_file("defunct_by_port", S_IWUSR, ecm_sfe_l2_dentry,
+	if (!debugfs_create_file("defunct_by_port", S_IWUSR, ecm_sfe_l2_dentry,
 					NULL, &ecm_sfe_l2_defunct_by_port_fops)) {
 		pr_debug("Failed to create ecm defunct by port file in debugfs\n");
 		goto init_cleanup;
 	}
+#endif
 
 	if (ecm_sfe_common_callbacks_register(&sfe_cbs)) {
 		pr_debug("Failed to register callbacks\n");
@@ -893,7 +1279,10 @@ static int __init ecm_sfe_l2_init(void)
 	return 0;
 
 init_cleanup:
-	ecm_debugfs_remove_recursive(ecm_sfe_l2_dentry);
+#ifdef CONFIG_DEBUG_FS
+	debugfs_remove_recursive(ecm_sfe_l2_dentry);
+#endif
+	unregister_sysctl_table(ecm_sfe_l2_ctl_table_header);
 	return -1;
 }
 
@@ -906,10 +1295,19 @@ static void __exit ecm_sfe_l2_exit(void)
 
 	ecm_sfe_common_callbacks_unregister();
 
+#ifdef CONFIG_DEBUG_FS
 	/*
 	 * Remove the debugfs files recursively.
 	 */
-	ecm_debugfs_remove_recursive(ecm_sfe_l2_dentry);
+	debugfs_remove_recursive(ecm_sfe_l2_dentry);
+#endif
+
+	/*
+	 * Unregister sysctl table
+	 */
+	if (ecm_sfe_l2_ctl_table_header) {
+		unregister_sysctl_table(ecm_sfe_l2_ctl_table_header);
+	}
 }
 
 module_init(ecm_sfe_l2_init)

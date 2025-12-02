@@ -24,14 +24,17 @@
 #include <linux/in.h>
 #include <linux/etherdevice.h>
 
-#define DEBUG_LEVEL ECM_CLASSIFIER_PCC_DEBUG_LEVEL
 
 #include "ecm_classifier_pcc_public.h"
-#include "ecm_types.h"
 
 #define MAC_FMT "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx"
 
 #define RULE_FIELDS 15
+
+/*
+ * Default path for sysctl
+ */
+#define ECM_PCC_TEST_PROCFS_PATH "net/ecm_pcc_test"
 
 /*
  * With feature_flags_support parameter enabled, registrant can provide
@@ -46,9 +49,16 @@ module_param(feature_flags_support, int, S_IRUGO);
 MODULE_PARM_DESC(feature_flags_support, "Enable feature flags support");
 
 /*
+ * Sysctl table header
+ */
+static struct ctl_table_header *ecm_pcc_test_ctl_table_header;
+
+#ifdef CONFIG_DEBUG_FS
+/*
  * DebugFS entry object.
  */
 static struct dentry *ecm_pcc_test_dentry;
+#endif
 
 /*
  * Registration
@@ -542,6 +552,7 @@ ecm_pcc_test_okay_to_accel_v6(struct ecm_classifier_pcc_registrant *r,
 	return accel;
 }
 
+#ifdef CONFIG_DEBUG_FS
 /*
  * ecm_pcc_test_unregister_get_unregister()
  */
@@ -563,6 +574,7 @@ static int ecm_pcc_test_unregister_set_unregister(void *data, u64 val)
 	}
 	return 0;
 }
+#endif
 
 /*
  * ecm_pcc_test_str_to_ip()
@@ -942,15 +954,16 @@ static unsigned int ecm_pcc_test_add_rule(char *name,
 }
 
 /*
- * ecm_pcc_test_rule_write()
- *	Write a rule
+ * ecm_pcc_test_rule_buffer()
  */
-static ssize_t ecm_pcc_test_rule_write(struct file *file,
-		const char __user *user_buf, size_t count, loff_t *ppos)
+static bool ecm_pcc_test_rule_buffer(char *buf)
 {
-	char *rule_buf;
 	int field_count;
-	char *field_ptr;
+	int src_port;
+	int dest_port;
+	int flow_ap_index = 0;
+	int return_ap_index = 0;
+	char *field_ptr = buf;
 	char *fields[RULE_FIELDS];
 	char name[50];
 	char tuple_mirror_dev[IFNAMSIZ] = {0};
@@ -961,23 +974,25 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 	unsigned int feature_flags;
 	ecm_classifier_pcc_result_t accel;
 	unsigned int proto;
-	int src_port;
-	int dest_port;
+	unsigned int ipv;
 	struct in6_addr src_addr = IN6ADDR_ANY_INIT;
 	struct in6_addr dest_addr = IN6ADDR_ANY_INIT;
-	unsigned int ipv;
-	int flow_ap_index = 0;
-	int return_ap_index = 0;
 
 	/*
 	 * buf is formed as:
 	 * [0]    [1]                 [2]                           [3]     [4]       [5]        [6]        [7]        [8]         [9]         [10]            [11]               [12]
 	 * <name>/<0=del,1=add,2=upd>/<1=denied, 2=accel_permitted>/<proto>/<src_mac>/<src_addr>/<src_port>/<dest mac>/<dest_addr>/<dest_port>/<feature_flags>/<tuple_mirror_dev>/<tuple_ret_mirror_dev/flow_ap_index/return_ap_index>
-	 * e.g.:
-	 * echo "my_rule/1/2/6/00:12:12:34:56:78/192.168.1.33/1234/00:12:12:34:56:22/10.10.10.10/80/1/mirror.0/mirror.1/flow_ap_index/return_ap_index" > /sys/kernel/debug/ecm_pcc_test/rule
-	 * cat /sys/kernel/debug/ecm_pcc_test/rule (shows all rules)
 	 *
-	 * NOTE : feature_flags supported are,
+	 * NOTE :
+	 * 	If called via procfs, the command is:
+	 * 	echo "my_rule/1/2/6/00:12:12:34:56:78/192.168.1.33/1234/00:12:12:34:56:22/10.10.10.10/80/1/mirror.0/mirror.1/flow_ap_index/return_ap_index" > /proc/sys/net/ecm_pcc_test/rule
+	 * 	cat /proc/sys/net/ecm_pcc_test/rule (shows all rules)
+	 *
+	 * 	If called via debugfs, the command is:
+	 * 	echo "my_rule/1/2/6/00:12:12:34:56:78/192.168.1.33/1234/00:12:12:34:56:22/10.10.10.10/80/1/mirror.0/mirror.1/flow_ap_index/return_ap_index" > /sys/kernel/debug/ecm_pcc_test/rule
+	 * 	cat /sys/kernel/debug/ecm_pcc_test/rule (shows all rules)
+	 *
+	 * 	feature_flags supported are,
 	 *	0x1 : Mirroring support
 	 *	0x2 : ACL based processing support
 	 *	0x4 : Policer support
@@ -986,17 +1001,7 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 	 *
 	 * In the above rule, flow_ap_index and return_ap_index are either both represented as ACL indexes or Policer indexes based on the usecase.
 	 */
-	rule_buf = kzalloc(count + 100, GFP_ATOMIC);
-	if (!rule_buf)
-		return -EINVAL;
-
-	count = simple_write_to_buffer(rule_buf, count, ppos, user_buf, count);
-
-	/*
-	 * Split the buffer into its fields
-	 */
 	field_count = 0;
-	field_ptr = rule_buf;
 	fields[field_count] = strsep(&field_ptr, "/");
 	while (fields[field_count] != NULL) {
 		pr_info("Field %d:\n", field_count);
@@ -1009,8 +1014,7 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 
 	if (field_count != RULE_FIELDS) {
 		pr_info("Invalid field count %d\n", field_count);
-		kfree(rule_buf);
-		return -EINVAL;
+		return false;
 	}
 
 	/*
@@ -1029,10 +1033,10 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 	case ECM_CLASSIFIER_PCC_RESULT_DENIED:
 	case ECM_CLASSIFIER_PCC_RESULT_PERMITTED:
 		break;
+
 	default:
 		pr_info("Bad accel: %u\n", accel);
-		kfree(rule_buf);
-		return -EINVAL;
+		return false;
 	}
 
 	if (sscanf(fields[10], "%u", &feature_flags) != 1) {
@@ -1044,8 +1048,8 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 
 	if (sscanf(fields[6], "%d", &src_port) != 1)
 		goto sscanf_read_error;
-	src_port = htons(src_port);
 
+	src_port = htons(src_port);
 	if (sscanf(fields[9], "%d", &dest_port) != 1)
 		goto sscanf_read_error;
 
@@ -1060,12 +1064,10 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 		|| ((feature_flags & ECM_CLASSIFIER_PCC_FEATURE_ACL_EGRESS_DEV) &&
 			(feature_flags & ECM_CLASSIFIER_PCC_FEATURE_POLICER))) {
 		pr_info("Multiple feature flags are enabled 0x%x\n", feature_flags);
-		kfree(rule_buf);
-		return -EINVAL;
+		return false;
 	}
 
 	strlcpy(tuple_mirror_dev, fields[11], IFNAMSIZ);
-
 	strlcpy(tuple_ret_mirror_dev, fields[12], IFNAMSIZ);
 
 	if (sscanf(fields[13], "%d", &flow_ap_index) != 1)
@@ -1076,27 +1078,24 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 
 	if (flow_ap_index == 0 && return_ap_index == 0) {
 		pr_info("Flow and return AP index both are 0\n");
-		kfree(rule_buf);
-		return -EINVAL;
+		return false;
 	}
 
 	dest_port = htons(dest_port);
 
 	if (sscanf(fields[4], MAC_FMT, src_mac, src_mac + 1, src_mac + 2,
-		src_mac + 3, src_mac + 4, src_mac + 5) != 6)
+				src_mac + 3, src_mac + 4, src_mac + 5) != 6)
 		goto sscanf_read_error;
 
 	if (sscanf(fields[7], MAC_FMT, dest_mac, dest_mac + 1, dest_mac + 2,
-			dest_mac + 3, dest_mac + 4, dest_mac + 5) != 6)
+				dest_mac + 3, dest_mac + 4, dest_mac + 5) != 6)
 		goto sscanf_read_error;
 
 	ipv = ecm_pcc_test_str_to_ip(fields[5], &src_addr);
 	if (ipv != ecm_pcc_test_str_to_ip(fields[8], &dest_addr)) {
 		pr_info("Conflicting IP address types\n");
-		kfree(rule_buf);
-		return -EINVAL;
+		return false;
 	}
-	kfree(rule_buf);
 
 	pr_info("name: %s\n"
 			"oper: %u\n"
@@ -1131,41 +1130,73 @@ static ssize_t ecm_pcc_test_rule_write(struct file *file,
 
 	if (oper == 0) {
 		pr_info("Delete\n");
-		if (!ecm_pcc_test_delete_rule(name, accel, proto, src_mac,
-						dest_mac, &src_addr, &dest_addr,
-						src_port, dest_port, tuple_mirror_dev, tuple_ret_mirror_dev, flow_ap_index, return_ap_index, feature_flags))
-			return -EINVAL;
-
+		if (!ecm_pcc_test_delete_rule(name, accel, proto, src_mac, dest_mac, &src_addr, &dest_addr,
+					src_port, dest_port, tuple_mirror_dev, tuple_ret_mirror_dev, flow_ap_index, return_ap_index, feature_flags))
+			return false;
 	} else if (oper == 1) {
 		pr_info("Add\n");
-		if (!ecm_pcc_test_add_rule(name, accel, proto, src_mac,
-						dest_mac, &src_addr, &dest_addr,
-						src_port, dest_port, ipv,
-						feature_flags, tuple_mirror_dev,
-						tuple_ret_mirror_dev, flow_ap_index,
-						return_ap_index))
-			return -EINVAL;
-
+		if (!ecm_pcc_test_add_rule(name, accel, proto, src_mac, dest_mac, &src_addr, &dest_addr,
+						src_port, dest_port, ipv, feature_flags, tuple_mirror_dev,
+						tuple_ret_mirror_dev, flow_ap_index, return_ap_index))
+			return false;
 	} else if (oper == 2) {
 		pr_info("Update\n");
-		if (!ecm_pcc_test_update_rule(name, accel, proto, src_mac,
-						dest_mac, &src_addr, &dest_addr,
-						src_port, dest_port, feature_flags,
-						tuple_mirror_dev, tuple_ret_mirror_dev,
-						flow_ap_index, return_ap_index))
-			return -EINVAL;
-
+		if (!ecm_pcc_test_update_rule(name, accel, proto, src_mac, dest_mac, &src_addr, &dest_addr,
+						src_port, dest_port, feature_flags, tuple_mirror_dev,
+						tuple_ret_mirror_dev, flow_ap_index, return_ap_index))
+			return false;
 	} else {
 		pr_info("Unknown operation: %u\n", oper);
-		return -EINVAL;
+		return false;
 	}
 
-	return count;
+	return true;
 
 sscanf_read_error:
 	pr_info("sscanf read error\n");
+	return false;
+}
+
+#ifdef CONFIG_DEBUG_FS
+/*
+ * ecm_pcc_test_rule_write()
+ *	Write a rule
+ */
+static ssize_t ecm_pcc_test_rule_write(struct file *file,
+		const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	char *rule_buf;
+
+	/*
+	 * buf is formed as:
+	 * [0]    [1]                 [2]                           [3]     [4]       [5]        [6]        [7]        [8]         [9]         [10]            [11]               [12]
+	 * <name>/<0=del,1=add,2=upd>/<1=denied, 2=accel_permitted>/<proto>/<src_mac>/<src_addr>/<src_port>/<dest mac>/<dest_addr>/<dest_port>/<feature_flags>/<tuple_mirror_dev>/<tuple_ret_mirror_dev/flow_ap_index/return_ap_index>
+	 * e.g.:
+	 * echo "my_rule/1/2/6/00:12:12:34:56:78/192.168.1.33/1234/00:12:12:34:56:22/10.10.10.10/80/1/mirror.0/mirror.1/flow_ap_index/return_ap_index" > /sys/kernel/debug/ecm_pcc_test/rule
+	 * cat /sys/kernel/debug/ecm_pcc_test/rule (shows all rules)
+	 *
+	 * NOTE : feature_flags supported are,
+	 *	0x1 : Mirroring support
+	 *	0x2 : ACL based processing support
+	 *	0x4 : Policer support
+	 *	0x8 : ACL processing support on specific egress device (in this case only flow_ap_index is considered given for egress dev mirror.0
+	 *		in above sample command - all the other 5 tuple parameters, mirror.1 etc are ignored)
+	 *
+	 * In the above rule, flow_ap_index and return_ap_index are either both represented as ACL indexes or Policer indexes based on the usecase.
+	 */
+	rule_buf = kzalloc(count + 100, GFP_ATOMIC);
+	if (!rule_buf)
+		return -EINVAL;
+
+	count = simple_write_to_buffer(rule_buf, count, ppos, user_buf, count);
+	if (!ecm_pcc_test_rule_buffer(rule_buf)) {
+		pr_info("Unable to ADD/DEL//UPDATE the rule\n");
+		kfree(rule_buf);
+		return -EINVAL;
+	}
+
 	kfree(rule_buf);
-	return -EINVAL;
+	return count;
 }
 
 /*
@@ -1293,6 +1324,169 @@ static const struct file_operations ecm_pcc_test_rule_fops = {
 	.llseek		= seq_lseek,
 	.release	= ecm_pcc_test_rule_release,
 };
+#endif
+
+/*
+ * ecm_pcc_test_rule_read_handler()
+ * 	Read handler for sysctl PCC rule
+ */
+static int ecm_pcc_test_rule_read_handler(void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int pos = 0;
+	char *buf;
+	struct ecm_pcc_test_rule *rule;
+
+	buf = kzalloc(PAGE_SIZE, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	spin_lock_bh(&ecm_pcc_test_rules_lock);
+	list_for_each_entry(rule, &ecm_pcc_test_rules, list) {
+		pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+				"RULE:\n"
+				"\tname: %s\n"
+				"\taccel: %d\n"
+				"\tproto: %u\n"
+				"\t%pM\n"
+				"\t%pI6:%u\n"
+				"\t%pM\n"
+				"\t%pI6:%d\n"
+				"\tipv: %u\n"
+				"\tfeature_flags: %u\n",
+				rule->name,
+				(int)(rule->accel),
+				rule->proto,
+				rule->src_mac,
+				&rule->src_addr,
+				ntohs(rule->src_port),
+				rule->dest_mac,
+				&rule->dest_addr,
+				ntohs(rule->dest_port),
+				rule->ipv,
+				rule->feature_flags
+			);
+
+		if (feature_flags_support) {
+			if (rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_MIRROR) {
+				if (strlen(rule->mirror_info.tuple_mirror_dev)) {
+					pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+							"\tmirror_tuple_dev: %s\n",
+							rule->mirror_info.tuple_mirror_dev);
+				}
+				if (strlen(rule->mirror_info.tuple_ret_mirror_dev)) {
+					pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+							"\tmirror_ret_tuple_dev: %s\n",
+							rule->mirror_info.tuple_ret_mirror_dev);
+				}
+			}
+
+			if ((rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_ACL) ||
+				(rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_POLICER) ||
+				(rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_ACL_EGRESS_DEV)) {
+					if (rule->ap_info.flow_ap_index) {
+						pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+								"\tflow_ap_index: %d\n",
+								rule->ap_info.flow_ap_index);
+					}
+
+					if (rule->ap_info.return_ap_index) {
+						pos += scnprintf(buf + pos, PAGE_SIZE - pos,
+								"\treturn_ap_index: %d\n",
+								rule->ap_info.return_ap_index);
+					}
+			}
+		}
+	}
+
+	spin_unlock_bh(&ecm_pcc_test_rules_lock);
+	if (pos > 0)
+		buf[pos - 1] = '\n';
+	ret = memory_read_from_buffer(buffer, *lenp, ppos, buf, pos);
+	*lenp = ret;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_pcc_test_rule_handler()
+ * 	Sysctl handler for PCC test rule operations
+ */
+static int ecm_pcc_test_rule_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	char *buf;
+	int count;
+
+	/*
+	 * Read operation - call the read handler
+	 */
+	if (!write) {
+		return ecm_pcc_test_rule_read_handler(buffer, lenp, ppos);
+	}
+
+	count = *lenp;
+	buf = kzalloc(count + 1, GFP_ATOMIC);
+	if (!buf) {
+		pr_info("Unable to allocate memory for parsing buffer\n");
+		return -ENOMEM;
+	}
+
+	memcpy(buf, buffer, count);
+	buf[count] = '\0';
+	if (!ecm_pcc_test_rule_buffer(buf)) {
+		pr_info("Failed to update the rule buffer\n");
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	*lenp = count;
+	kfree(buf);
+	return 0;
+}
+
+/*
+ * ecm_pcc_test_unregister_handler()
+ * 	Sysctl handler to unregister PCC test classifer
+ */
+static int ecm_pcc_test_unregister_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	/*
+	 * return if the operation is read(cat /proc/sys/net/ecm_pcc_test/unregister)
+	 * We are not storing the value
+	 */
+	if (!write) {
+		pr_warn("Values are not stored for this read operation\n");
+		*lenp = 0;
+		return 0;
+	}
+
+	if (ecm_pcc_test_registrant) {
+		pr_info("ECM PCC Test unregister\n");
+		ecm_classifier_pcc_unregister_begin(ecm_pcc_test_registrant);
+		ecm_pcc_test_registrant = NULL;
+	}
+	return 0;
+}
+
+static struct ctl_table ecm_pcc_test_ctl_table[] = {
+	{
+		.procname	= "unregister",
+		.data		= NULL,
+		.maxlen		= 0,
+		.mode		= 0644,
+		.proc_handler	= &ecm_pcc_test_unregister_handler,
+	},
+	{
+		.procname	= "rule",
+		.data		= NULL,
+		.maxlen		= 0,
+		.mode		= 0644,
+		.proc_handler	= &ecm_pcc_test_rule_handler,
+	},
+	{ }
+};
 
 /*
  * ecm_pcc_test_init()
@@ -1304,26 +1498,37 @@ static int __init ecm_pcc_test_init(void)
 	pr_info("ECM PCC Test INIT\n");
 
 	/*
+	 * Register sysctl table for PCC test module
+	 */
+	ecm_pcc_test_ctl_table_header = register_sysctl(ECM_PCC_TEST_PROCFS_PATH, ecm_pcc_test_ctl_table);
+	if (!ecm_pcc_test_ctl_table_header) {
+		pr_info("Failed to create ecm pcc test directory in sysctl\n");
+		return -ENOMEM;
+	}
+
+#ifdef CONFIG_DEBUG_FS
+	/*
 	 * Create entries in DebugFS for control functions
 	 */
-	if (!ecm_debugfs_create_dir("ecm_pcc_test", NULL, &ecm_pcc_test_dentry)) {
+	ecm_pcc_test_dentry = debugfs_create_dir("ecm_pcc_test", NULL);
+	if (!ecm_pcc_test_dentry) {
 		pr_info("Failed to create PCC directory entry\n");
+		unregister_sysctl_table(ecm_pcc_test_ctl_table_header);
 		return -1;
 	}
-	if (!ecm_debugfs_create_file("unregister",
+	if (!debugfs_create_file("unregister",
 			S_IRUGO | S_IWUSR, ecm_pcc_test_dentry,
 			NULL, &ecm_pcc_test_unregister_fops)) {
 		pr_info("Failed to create ecm_pcc_test_unregister_fops\n");
-		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
-		return -2;
+		goto init_cleanup;
 	}
-	if (!ecm_debugfs_create_file("rule",
+	if (!debugfs_create_file("rule",
 			S_IRUGO | S_IWUSR, ecm_pcc_test_dentry,
 			NULL, &ecm_pcc_test_rule_fops)) {
 		pr_info("Failed to create ecm_pcc_test_rule_fops\n");
-		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
-		return -3;
+		goto init_cleanup;
 	}
+#endif
 
 	/*
 	 * Create our registrant structure
@@ -1333,8 +1538,7 @@ static int __init ecm_pcc_test_init(void)
 				GFP_ATOMIC | __GFP_NOWARN);
 	if (!ecm_pcc_test_registrant) {
 		pr_info("ECM PCC Failed to alloc registrant\n");
-		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
-		return -4;
+		goto init_cleanup;
 	}
 	ecm_pcc_test_registrant->version = 1;
 	ecm_pcc_test_registrant->this_module = THIS_MODULE;
@@ -1367,13 +1571,19 @@ static int __init ecm_pcc_test_init(void)
 	if (result != 0) {
 		pr_info("ECM PCC registrant failed to register: %d\n", result);
 		kfree(ecm_pcc_test_registrant);
-		ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
-		return -5;
+		goto init_cleanup;
 	}
 
 	pr_info("ECM PCC registrant REGISTERED\n");
 
 	return 0;
+
+init_cleanup:
+#ifdef CONFIG_DEBUG_FS
+	debugfs_remove_recursive(ecm_pcc_test_dentry);
+#endif
+	unregister_sysctl_table(ecm_pcc_test_ctl_table_header);
+	return -1;
 }
 
 /*
@@ -1382,7 +1592,20 @@ static int __init ecm_pcc_test_init(void)
 static void __exit ecm_pcc_test_exit(void)
 {
 	pr_info("ECM PCC Test EXIT\n");
-	ecm_debugfs_remove_recursive(ecm_pcc_test_dentry);
+
+#ifdef CONFIG_DEBUG_FS
+	/*
+	 * Remove the debugfs files recursively
+	 */
+	debugfs_remove_recursive(ecm_pcc_test_dentry);
+#endif
+
+	/*
+	 * Unregister sysctl entry
+	 */
+	if (ecm_pcc_test_ctl_table_header) {
+		unregister_sysctl_table(ecm_pcc_test_ctl_table_header);
+	}
 }
 
 module_init(ecm_pcc_test_init)
