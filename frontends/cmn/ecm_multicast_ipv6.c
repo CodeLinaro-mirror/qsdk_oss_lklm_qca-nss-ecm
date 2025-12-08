@@ -664,7 +664,7 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 
 #if defined(ECM_ATH_MCAST_ENABLE)
 			rcu_read_lock();
-			mc_if_cnt_bridge = ecm_ath_mc_bridge_ipv6_get_if(in_dev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			mc_if_cnt_bridge = ecm_ipv6_ath_mc_bridge_get_if(in_dev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
 			rcu_read_unlock();
 #else
 			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6,
@@ -702,7 +702,7 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 
 #if defined(ECM_ATH_MCAST_ENABLE)
 	rcu_read_lock();
-	mc_if_cnt = ecm_ath_mc_bridge_ipv6_get_if(out_dev_master, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
+	mc_if_cnt = ecm_ipv6_ath_mc_bridge_get_if(out_dev_master, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
 	rcu_read_unlock();
 #else
 	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6,

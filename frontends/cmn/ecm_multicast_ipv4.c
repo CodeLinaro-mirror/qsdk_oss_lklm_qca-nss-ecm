@@ -691,7 +691,7 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 
 #if defined(ECM_ATH_MCAST_ENABLE)
 			rcu_read_lock();
-			if_cnt_bridge = ecm_ath_mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			if_cnt_bridge = ecm_ipv4_ath_mc_bridge_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
 			rcu_read_unlock();
 #else
 			if_cnt_bridge = mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX,
@@ -732,7 +732,7 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 
 #if defined(ECM_ATH_MCAST_ENABLE)
 	rcu_read_lock();
-	if_cnt = ecm_ath_mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
+	if_cnt = ecm_ipv4_ath_mc_bridge_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
 	rcu_read_unlock();
 #else
 	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev, mcuc_addr);

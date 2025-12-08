@@ -5099,7 +5099,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
 #if defined(ECM_ATH_MCAST_ENABLE)
 				rcu_read_lock();
-				if_num = ecm_ath_mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
+				if_num = ecm_ipv4_ath_mc_bridge_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
 				rcu_read_unlock();
 #else
 				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])),
@@ -5113,7 +5113,7 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
 #if defined(ECM_ATH_MCAST_ENABLE)
 				rcu_read_lock();
-				if_num = ecm_ath_mc_bridge_ipv6_get_if(dest_dev, origin6, group6, mc_max_dst, mc_dst_if_index);
+				if_num = ecm_ipv6_ath_mc_bridge_get_if(dest_dev, origin6, group6, mc_max_dst, mc_dst_if_index);
 				rcu_read_unlock();
 #else
 				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst,
@@ -8570,12 +8570,18 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 	struct net_device *dev;
 	ip_addr_t dest_ip;
 
+	if (!fe) {
+		DEBUG_WARN("Fetched Invalid pointer to the event data\n");
+		return NOTIFY_DONE;
+	}
+
 	if (!fe->dev) {
 		DEBUG_WARN("%px: Invalid Netdevide obtained\n", fe);
 		return NOTIFY_DONE;
 	}
 
 	dev = fe->dev;
+	dev_hold(dev);
 	DEBUG_TRACE("%px: Bridge MDB notify event: net_dev:%s, event:%ld, proto:%d\n", fe, dev->name, event, htons(fe->proto));
 
 	switch (fe->proto) {
@@ -8589,6 +8595,7 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 #endif
 	default:
 		DEBUG_WARN("%px:Invalid Protocol fetched from the Bridge MDB notifer\n", fe);
+		dev_put(dev);
 		return NOTIFY_DONE;
 	}
 
@@ -8598,6 +8605,7 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
 	if (!ti) {
 		DEBUG_WARN("%px: no multicast tuple entry found\n", dev);
+		dev_put(dev);
 		return NOTIFY_DONE;
 	}
 
@@ -8615,6 +8623,7 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 
 	ecm_front_end_connection_deref(feci);
 	ecm_db_multicast_connection_deref(ti);
+	dev_put(dev);
 	return NOTIFY_DONE;
 }
 

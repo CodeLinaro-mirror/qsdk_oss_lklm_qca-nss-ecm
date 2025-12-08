@@ -203,7 +203,11 @@ bool ecm_ipv6_dev_has_ipaddr(struct net_device *dev)
 }
 
 #if defined(ECM_ATH_MCAST_ENABLE)
-int ecm_ath_mc_bridge_ipv6_get_if(struct net_device *brdev, struct in6_addr origin, struct in6_addr group, uint32_t max_dst, uint32_t dst_dev[])
+/*
+ * ecm_ipv6_ath_mc_bridge_get_if()
+ *      Fetch the active listeners for the multicast group.
+ */
+int ecm_ipv6_ath_mc_bridge_get_if(struct net_device *brdev, struct in6_addr origin, struct in6_addr group, uint32_t max_dst, uint32_t *dst_dev)
 {
 	struct net_bridge_mdb_entry *mdst = NULL;
 	struct net_bridge_mcast *brmctx = NULL;
@@ -216,7 +220,15 @@ int ecm_ath_mc_bridge_ipv6_get_if(struct net_device *brdev, struct in6_addr orig
 	u16 vid = 0;
 
 	/*
-	 * Fetch the Net Bridge pointer.
+	 * Check whether the dst_dev pointer is valid.
+	 */
+	if (!dst_dev) {
+		DEBUG_WARN("%px:Invalid pointer to the (dst_dev) array passed\n", brdev);
+		return 0;
+	}
+
+	/*
+	 * Fetch the Bridge Netdev pointer.
 	 */
 	br = netdev_priv(brdev);
 	if (!br) {
@@ -229,6 +241,7 @@ int ecm_ath_mc_bridge_ipv6_get_if(struct net_device *brdev, struct in6_addr orig
 	 */
 	brmctx = &br->multicast_ctx;
 	rp = rcu_dereference(hlist_first_rcu(&brmctx->ip6_mc_router_list));
+	memset(&eth, 0, sizeof(eth));
 
 	/*
 	 * Fetch the Bridge MDB entry.
@@ -265,11 +278,12 @@ int ecm_ath_mc_bridge_ipv6_get_if(struct net_device *brdev, struct in6_addr orig
 			port = lport;
 
 			/*
-			 * Exclude the following inteface if Linux MCUC
-			 * is enabled.
+			 * Reject offloading the multicast flows in ECM if Linux MCUC
+			 * is enabled on any of the Tx ports.
 			 */
 			if (port->flags & BR_MULTICAST_TO_UNICAST) {
-				goto skip_port;
+				memset(dst_dev, 0, (sizeof(*dst_dev) * ECM_DB_MULTICAST_IF_MAX));
+				return 0;
 			}
 
 			/*

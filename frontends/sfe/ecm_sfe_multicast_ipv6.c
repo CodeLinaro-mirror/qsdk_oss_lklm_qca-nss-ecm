@@ -2397,7 +2397,7 @@ static int ecm_sfe_multicast_ipv6_connection_state_get(struct ecm_front_end_conn
  * ecm_sfe_multicast_ipv6_bridge_update_connections()
  * 	Update SFE with new multicast egress ports.
  */
-void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
+static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct net_device *brdev)
 {
 	struct ecm_front_end_connection_instance *feci;
 	struct ecm_db_multicast_tuple_instance *ti;
@@ -2457,7 +2457,7 @@ void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, struct 
 		 */
 #if defined(ECM_ATH_MCAST_ENABLE)
 		rcu_read_lock();
-		if_num = ecm_ath_mc_bridge_ipv6_get_if(brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = ecm_ipv6_ath_mc_bridge_get_if(brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
 		rcu_read_unlock();
 #else
 		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6,

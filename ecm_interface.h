@@ -94,8 +94,8 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_instance *ci, uint32_t *mc_dst_if_index);
 
 #if defined(ECM_ATH_MCAST_ENABLE)
-int ecm_ath_mc_bridge_ipv6_get_if(struct net_device *brdev, struct in6_addr origin, struct in6_addr group, uint32_t max_dst, uint32_t dst_dev[]);
-int ecm_ath_mc_bridge_ipv4_get_if(struct net_device *brdev, __be32 origin, __be32 group, uint32_t max_dst, uint32_t dst_dev[]);
+int ecm_ipv6_ath_mc_bridge_get_if(struct net_device *brdev, struct in6_addr origin, struct in6_addr group, uint32_t max_dst, uint32_t *dst_dev);
+int ecm_ipv4_ath_mc_bridge_get_if(struct net_device *brdev, __be32 origin, __be32 group, uint32_t max_dst, uint32_t *dst_dev);
 #endif
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE

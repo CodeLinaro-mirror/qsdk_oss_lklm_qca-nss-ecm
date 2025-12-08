@@ -1931,7 +1931,7 @@ static void ecm_nss_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num > 0   An interface leave/Join the group. Process the leave/join interface request.
 		 */
 #if defined(ECM_ATH_MCAST_ENABLE)
-		if_num = ecm_ath_mc_bridge_ipv6_get_if (brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = ecm_ipv6_ath_mc_bridge_get_if (brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
 #else
 		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6, ECM_DB_MULTICAST_IF_MAX,
 				mc_dst_dev, dest_mac_addr);
