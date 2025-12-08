@@ -19,7 +19,7 @@
 extern int ecm_front_end_ipv6_stopped;	/* When non-zero further traffic will not be processed */
 extern int ecm_front_end_ipv6_stopped_temp;	/* When non-zero further traffic/process will not be processed where it is checked */
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 extern int ecm_front_end_ipv6_mc_stopped;	/* When non-zero further traffic will not be processed */
 #endif
 

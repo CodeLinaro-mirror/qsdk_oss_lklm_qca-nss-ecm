@@ -1316,7 +1316,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		return refs;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * For multicast connections, we need to deref the
 	 * associated tuple instance as well
@@ -1574,7 +1574,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		}
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Remove references to the multicast interfaces of this connection.
 	 */
@@ -3428,7 +3428,7 @@ void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 	ci->final = final;
 	ci->arg = arg;
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	ci->ti = NULL;
 #endif
 
@@ -3841,7 +3841,7 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 	ni = ci->node[ECM_DB_OBJ_DIR_TO_NAT];
 	snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ni->address);
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	if (!is_zero_ether_addr(ci->mcuc_addr)) {
 		snprintf(dnode_address_nat, sizeof(dnode_address_nat), "%pM", ci->mcuc_addr);
 	}
@@ -4003,7 +4003,7 @@ int ecm_db_connection_state_get(struct ecm_state_file_instance *sfi, struct ecm_
 		return result;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, group_ip);
 	if (ecm_ip_addr_is_multicast(group_ip)) {
 		if ((result = ecm_state_prefix_add(sfi, "to_mc_interfaces"))) {
@@ -4250,7 +4250,7 @@ struct ecm_db_connection_instance *ecm_db_connection_alloc(void)
 	ci->interface_first[ECM_DB_OBJ_DIR_FROM_NAT] = ECM_DB_IFACE_HEIRARCHY_MAX;
 	ci->interface_first[ECM_DB_OBJ_DIR_TO_NAT] = ECM_DB_IFACE_HEIRARCHY_MAX;
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; ++i) {
 		ci->to_mcast_interface_first[i] = ECM_DB_IFACE_HEIRARCHY_MAX;
 	}

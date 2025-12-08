@@ -393,7 +393,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	uint8_t dmac[ETH_ALEN];
 	uint8_t smac[ETH_ALEN];
 	bool update_rule = false;
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	bool is_mc_flow = false;
 #endif
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
@@ -441,7 +441,7 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 	else
 		sender = ECM_TRACKER_SENDER_TYPE_DEST;
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Return here if the flow is multicast type.
 	 * We do not support multicast traffic in smart classifier type.
@@ -1866,7 +1866,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
         is_mc_flow = ecm_db_multicast_connection_to_interfaces_set_check(ci);
 #endif
 
@@ -2009,7 +2009,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * Hence, we check if the flow is multicast for the given dest_dev is NULL.
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 			/*
 			 * Before calling msduq query, check if multicast flow have valid interfaces.
 			 * if not then drop the connection.
@@ -2414,7 +2414,7 @@ void ecm_classifier_emesh_sawf_update_fse_flow(struct ecm_classifier_instance *a
 		return;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Return if the flow is multicast type.
 	 * We will have dest_dev as NULL for multicast, hence will
@@ -2503,7 +2503,7 @@ end:
 }
 #endif
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_classifier_emesh_sawf_fill_multicast_sync_params()
  *      For multicast traffic, fetch the list of src and dest ifindex..
@@ -2641,7 +2641,7 @@ static void ecm_classifier_emesh_sawf_params_sync_common(struct ecm_classifier_i
 		}
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	if (ecm_db_multicast_connection_to_interfaces_set_check(ci)) {
 
 		struct ecm_classifier_emesh_sawf_multicast_sync_params params = {0};
@@ -2787,7 +2787,7 @@ void ecm_classifier_emesh_sawf_update_latency_param_on_conn_decel(struct ecm_cla
 		return;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Return if the flow is multicast type.
 	 * We will have dest_dev as NULL for multicast, hence will
@@ -2901,7 +2901,7 @@ static void ecm_classifier_emesh_sawf_update_wlan_latency_params_on_conn_accel(s
 		return;
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Return if the flow is multicast type.
 	 * We will have dest_dev as NULL for multicast, hence will

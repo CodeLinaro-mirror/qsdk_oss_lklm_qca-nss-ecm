@@ -36,6 +36,9 @@
 #include <linux/rtnetlink.h>
 #include <linux/socket.h>
 #include <linux/wireless.h>
+#if defined(ECM_ATH_MCAST_ENABLE)
+#include <linux/if_bridge.h>
+#endif
 #include <net/genetlink.h>
 #include <net/netevent.h>
 #include <net/gre.h>
@@ -1256,7 +1259,7 @@ bool ecm_interface_mac_addr_get_no_route(struct net_device *dev, ip_addr_t addr,
 }
 EXPORT_SYMBOL(ecm_interface_mac_addr_get_no_route);
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 
 /*
  * ecm_interface_multicast_dest_list_find_if()
@@ -2211,7 +2214,7 @@ static struct ecm_db_iface_instance *ecm_interface_macvlan_interface_establish(s
 }
 #endif
 
-#if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MULTICAST_ENABLE)
+#if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && (defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE))
 /*
  * ecm_interface_multicast_ovs_to_interface_get_and_ref()
  *	Populate ov_ ports/bridge device from multicast 'to' list.
@@ -4558,7 +4561,7 @@ identifier_update:
 }
 EXPORT_SYMBOL(ecm_interface_establish_and_ref);
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_interface_multicast_heirarchy_construct_single()
  *	Create and return an interface heirarchy for a single interface for a multicast connection
@@ -5094,16 +5097,28 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			uint8_t mac_addr[ETH_ALEN] = {0};
 
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
+#if defined(ECM_ATH_MCAST_ENABLE)
+				rcu_read_lock();
+				if_num = ecm_ath_mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
+				rcu_read_unlock();
+#else
 				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])),
 						htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index, mac_addr);
+#endif
 			} else {
 #ifdef ECM_IPV6_ENABLE
 				struct in6_addr origin6;
 				struct in6_addr group6;
 				ECM_IP_ADDR_TO_NIN6_ADDR(origin6, packet_src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
+#if defined(ECM_ATH_MCAST_ENABLE)
+				rcu_read_lock();
+				if_num = ecm_ath_mc_bridge_ipv6_get_if(dest_dev, origin6, group6, mc_max_dst, mc_dst_if_index);
+				rcu_read_unlock();
+#else
 				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst,
 						mc_dst_if_index, mac_addr);
+#endif
 #else
 				DEBUG_WARN("IPv6 support not enabled\n");
 				if_num = -1;
@@ -6543,7 +6558,7 @@ done:
 }
 EXPORT_SYMBOL(ecm_interface_heirarchy_construct);
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_interface_multicast_from_heirarchy_construct()
  *	Construct an interface heirarchy.
@@ -7536,7 +7551,7 @@ skip_bridge_refresh:
 			stats.rx_bytes = rx_bytes;
 			stats.tx_packets = tx_packets;
 			stats.tx_bytes = tx_bytes;
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 			/*
 			 * Update multicast rx statistics only for
 			 * 'from' interface.
@@ -7883,7 +7898,7 @@ void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *c
 }
 #endif
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_interface_multicast_stats_update()
  *	Using the interface lists for the given connection, update the interface statistics for each.
@@ -8006,7 +8021,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
 		}
 	}
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 	/*
 	 * Multicasts would not have recorded in the lists above.
 	 * Our only way to re-gen those is to iterate all multicasts.
@@ -8541,7 +8556,74 @@ static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
 };
 #endif
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_ATH_MCAST_ENABLE)
+/*
+ * ecm_br_mdb_notify_event()
+ *	Notifier event to Update MDB changes
+ */
+static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long event, void *data)
+{
+	struct br_mdb_event *fe = (struct br_mdb_event *)data;
+	struct ecm_db_connection_instance *ci;
+	struct ecm_db_multicast_tuple_instance *ti;
+	struct ecm_front_end_connection_instance *feci;
+	struct net_device *dev;
+	ip_addr_t dest_ip;
+
+	if (!fe->dev) {
+		DEBUG_WARN("%px: Invalid Netdevide obtained\n", fe);
+		return NOTIFY_DONE;
+	}
+
+	dev = fe->dev;
+	DEBUG_TRACE("%px: Bridge MDB notify event: net_dev:%s, event:%ld, proto:%d\n", fe, dev->name, event, htons(fe->proto));
+
+	switch (fe->proto) {
+	case htons(ETH_P_IP):
+		ECM_HIN4_ADDR_TO_IP_ADDR(dest_ip, htonl(fe->group.ip));
+		break;
+#if IS_ENABLED(CONFIG_IPV6)
+	case htons(ETH_P_IPV6):
+		ECM_NIN6_ADDR_TO_IP_ADDR(dest_ip, fe->group.in6);
+		break;
+#endif
+	default:
+		DEBUG_WARN("%px:Invalid Protocol fetched from the Bridge MDB notifer\n", fe);
+		return NOTIFY_DONE;
+	}
+
+	/*
+	 * Get the first entry for the group in the tuple_instance table,
+	 */
+	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
+	if (!ti) {
+		DEBUG_WARN("%px: no multicast tuple entry found\n", dev);
+		return NOTIFY_DONE;
+	}
+
+	ci = ecm_db_multicast_connection_get_from_tuple(ti);
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	/*
+	 * The source IP address to us is always found to be NULL
+	 * as this notification is triggered for (*,G) MDB entry.
+	 * So, update the all multicast connections for this group address.
+	 */
+	if (feci->multicast_update) {
+		feci->multicast_update(dest_ip, dev);
+	}
+
+	ecm_front_end_connection_deref(feci);
+	ecm_db_multicast_connection_deref(ti);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block ecm_br_mdb_update_nb = {
+	.notifier_call = ecm_br_mdb_notify_event,
+};
+#endif
+
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_interface_multicast_find_outdated_iface_instances()
  *
@@ -9746,7 +9828,7 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 	 * destination ip
 	 */
 	if (ecm_ip_addr_is_multicast(dest_ip)) {
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 		ip_addr_t grp_ip;
 		struct ecm_db_connection_instance *ci;
 		struct ecm_db_multicast_tuple_instance *ti;
@@ -9860,7 +9942,7 @@ defunct_by_masked_tuple:
 	ecm_interface_ovs_defunct_masked_tuple(flow);
 }
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 /*
  * ecm_interface_multicast_ovs_flow_update_connections()
  *	Update the connections based on the OVS flow information.
@@ -9966,7 +10048,7 @@ static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsign
 		ecm_db_connection_defunct_all();
 		break;
 	case OVSMGR_DP_FLOW_CHANGE:
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 		ecm_interface_multicast_ovs_flow_update_connections(ovs_info->flow);
 #endif
 		break;
@@ -10077,7 +10159,9 @@ int ecm_interface_init(void)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_notifier_register(&ecm_interface_ovs_notifier);
 #endif
-
+#if defined(ECM_ATH_MCAST_ENABLE)
+	br_mcast_offload_mdb_register_notify(&ecm_br_mdb_update_nb);
+#endif
 	ecm_interface_register_nf_hook_wlan_device();
 
 	return 0;
@@ -10114,7 +10198,9 @@ void ecm_interface_exit(void)
 		br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 	}
 #endif
-
+#if defined(ECM_ATH_MCAST_ENABLE)
+	br_mcast_offload_mdb_unregister_notify(&ecm_br_mdb_update_nb);
+#endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_notifier_unregister(&ecm_interface_ovs_notifier);
 #endif
