@@ -6869,7 +6869,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 		 */
 		if (!(dest_dev->flags & IFF_UP)) {
 			DEBUG_WARN("%px: dest interface(%s) is not up\n", feci, dest_dev->name);
-			break;
+			goto done;
 		}
 
 #ifdef ECM_INTERFACE_SKIP_ACCEL_ENABLE
@@ -7404,6 +7404,7 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 
 	DEBUG_WARN("Too many interfaces: %d\n", current_interface_index);
 	DEBUG_ASSERT(current_interface_index == 0, "Bad logic handling current_interface_index: %d\n", current_interface_index);
+done:
 	dev_put(src_dev);
 	dev_put(dest_dev);
 
