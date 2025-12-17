@@ -159,6 +159,158 @@ static bool ecm_ppe_ported_ipv4_accelerate_done(struct ecm_front_end_connection_
 }
 
 /*
+ * ecm_ppe_ported_ipv4_unidir_rule_update()
+ *	Update the direction which was not accelerated
+ */
+bool ecm_ppe_ported_ipv4_unidir_rule_update(
+		struct ecm_db_connection_instance *ci, struct ecm_classifier_process_response *pr,
+		ecm_tracker_sender_type_t sender, uint8_t rule_type)
+{
+	struct ppe_drv_v4_rule_update_msg update_msg = {0};
+	uint32_t flow_ip, return_ip, flow_ident, return_ident;
+	struct ecm_front_end_connection_instance *feci;
+	ppe_drv_ret_t status;
+	ip_addr_t addr;
+
+	if (sender == ecm_db_connection_accel_sender_get(ci)) {
+		DEBUG_WARN("%px: This direction packet is already accelerated.\n", ci);
+		return true;
+	}
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	if (feci->udp_flow_dir_accel && feci->udp_return_dir_accel) {
+		DEBUG_WARN("%px: Both the directions are accelerated.\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return true;
+	}
+
+	/*
+	 * Extract Tuple information from ecm connection.
+	 */
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, addr);
+	ECM_IP_ADDR_TO_HIN4_ADDR(flow_ip, addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
+	ECM_IP_ADDR_TO_HIN4_ADDR(return_ip, addr);
+	flow_ident = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
+	return_ident = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT);
+
+	/*
+	 * Fill the PPE rule mark information.
+	 */
+	update_msg.rule_type = rule_type;
+
+	update_msg.tuple.protocol = (int32_t)ci->protocol;
+	update_msg.tuple.flow_ident = flow_ident;
+	update_msg.tuple.return_ident = return_ident;
+	update_msg.tuple.flow_ip = flow_ip;
+	update_msg.tuple.return_ip = return_ip;
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		update_msg.info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_FLOW;
+	} else {
+		update_msg.info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_RETURN;
+	}
+
+	if ((pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) && (rule_type & PPE_DRV_UPDATE_RULE_TYPE_QOS)) {
+		update_msg.info.unidir.valid_flags |= PPE_DRV_V4_VALID_FLAG_QOS;
+		update_msg.info.unidir.qos.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		update_msg.info.unidir.qos.return_qos_tag =  (uint32_t)pr->return_qos_tag;
+		update_msg.info.unidir.qos.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		update_msg.info.unidir.qos.return_int_pri = (uint8_t)pr->return_int_pri;
+		update_msg.info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		update_msg.info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
+	}
+
+	/*
+	 * DSCP information?
+	 */
+	if ((pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) && (rule_type & PPE_DRV_UPDATE_RULE_TYPE_DSCP)) {
+		update_msg.info.unidir.valid_flags |= PPE_DRV_V4_VALID_FLAG_DSCP_MARKING;
+		update_msg.info.unidir.dscp.flow_dscp = pr->flow_dscp;
+		update_msg.info.unidir.dscp.return_dscp = pr->return_dscp;
+	}
+
+	status = ppe_drv_v4_rule_update(&update_msg);
+
+	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(status));
+	if (status != PPE_DRV_RET_SUCCESS) {
+		DEBUG_WARN("Uni-directional update of flow entry failed in PPE with %u.\n", status);
+		ecm_front_end_connection_deref(feci);
+		return false;
+	}
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		feci->udp_flow_dir_accel = true;
+	} else {
+		feci->udp_return_dir_accel = true;
+	}
+
+	DEBUG_TRACE("Uni-directional update of flow entry sucessfull in PPE.\n"
+				"Rule updated in %s direction\n"
+				"flow_dscp = %x\n"
+				"return_dscp = %x\n",
+				(update_msg.info.unidir.dir ? "return" : "flow"),
+				update_msg.info.unidir.dscp.flow_dscp,
+				update_msg.info.unidir.dscp.return_dscp);
+
+	ecm_front_end_connection_deref(feci);
+	return true;
+}
+
+/*
+ * ecm_ppe_ported_ipv4_bidir_sawf_rule_update()
+ *	Update the bi-direction rule
+ */
+bool ecm_ppe_ported_ipv4_bidir_sawf_rule_update(
+		struct ecm_db_connection_instance *ci, struct ecm_front_end_flowsawf_msg *msg,
+		uint8_t rule_type)
+{
+	struct ppe_drv_v4_rule_update_msg update_msg = {0};
+	struct ecm_front_end_connection_instance *feci;
+	ppe_drv_ret_t ppe_status;
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	update_msg.rule_type = rule_type;
+	update_msg.info.sawf.flow_mark = msg->flow_mark;
+	update_msg.info.sawf.flow_service_class = msg->flow_service_class_id;
+	if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
+		update_msg.info.sawf.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
+	}
+
+	update_msg.info.sawf.return_mark = msg->return_mark;
+	update_msg.info.sawf.return_service_class = msg->return_service_class_id;
+	if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
+		update_msg.info.sawf.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
+	}
+
+	update_msg.tuple.protocol = msg->protocol;
+	update_msg.tuple.flow_ident = ntohs(msg->flow_src_port);
+	update_msg.tuple.return_ident = ntohs(msg->flow_dest_port);
+	update_msg.tuple.flow_ip = ntohl(msg->flow_src_ip[0]);
+	update_msg.tuple.return_ip = ntohl(msg->flow_dest_ip[0]);
+
+	ppe_status = ppe_drv_v4_rule_update(&update_msg);
+
+	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(ppe_status));
+	if (ppe_status != PPE_DRV_RET_SUCCESS) {
+		DEBUG_WARN("%px: Failed to update mark value in PPE\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return false;
+	}
+
+	DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
+			ci, update_msg.info.sawf.flow_mark, update_msg.info.sawf.return_mark,
+			&update_msg.tuple.flow_ip, update_msg.tuple.flow_ident,
+			&update_msg.tuple.return_ip, update_msg.tuple.return_ident,
+			update_msg.tuple.protocol);
+
+	ecm_front_end_connection_deref(feci);
+	return true;
+}
+
+/*
  * ecm_ppe_ported_ipv4_connection_accelerate()
  *	Accelerate a connection
  *	Note: Caller has already taken reference for feci, before calling this function.
@@ -180,6 +332,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *from_ppe_iface;
 	struct ecm_db_iface_instance *to_ppe_iface;
+	struct ecm_db_connection_instance *ci = feci->ci;
 	uint8_t from_ppe_iface_address[ETH_ALEN];
 	uint8_t to_ppe_iface_address[ETH_ALEN];
 	ip_addr_t addr;
@@ -230,6 +383,12 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		return;
 	}
 #endif
+	/*
+	 * Setting the acceleration sender for uni-direction flows
+	 */
+	spin_lock_bh(&feci->lock);
+	ci->accel_sender = sender;
+	spin_unlock_bh(&feci->lock);
 
 	pd4rc = (struct ppe_drv_v4_rule_create *)kzalloc(sizeof(struct ppe_drv_v4_rule_create), GFP_ATOMIC | __GFP_NOWARN);
 	if (!pd4rc) {
@@ -1466,6 +1625,24 @@ process_next_iface_return:
 		 */
 		if (!err) {
 			pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_RETURN_HOST_QDISC_VALID;
+		}
+	}
+
+	/*
+	 * In case of unidirection acceleration, update only one flow first
+	 */
+	if (ci->unidir_accel_en) {
+		pd4rc->valid_flags |= PPE_DRV_V4_VALID_FLAG_UNIDIR_RULE;
+		if (ecm_db_connection_accel_sender_get(ci) == ECM_TRACKER_SENDER_TYPE_SRC) {
+			pd4rc->rule_dir.flow_accel = true;
+			feci->udp_flow_dir_accel = true;
+			pd4rc->rule_dir.return_accel = false;
+			feci->udp_return_dir_accel = false;
+		} else {
+			pd4rc->rule_dir.flow_accel = false;
+			feci->udp_flow_dir_accel = false;
+			pd4rc->rule_dir.return_accel = true;
+			feci->udp_return_dir_accel = true;
 		}
 	}
 

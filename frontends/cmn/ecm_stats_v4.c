@@ -119,6 +119,7 @@ static const char* ecm_stats_v4_exception_ported_name_str[] = {
 	"v4_ported_touch_timer_not_set",
 	"v4_ported_db_conn_timer_expired",
 	"v4_ported_drop_by_classifier",
+	"v4_ported_accel_delay",
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE

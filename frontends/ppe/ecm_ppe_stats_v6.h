@@ -112,6 +112,10 @@ enum ecm_ppe_stats_v6_exception_ported_events {
     /* Number of IPv6 packets ignored in ported flow as the ppe_drv_v6_create() failed */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_BRIDGE_VLAN_FILTER_UNSUPPORTED,
     /* Number of IPv6 packets ignored in ported flow as bridge vlan filtering not supported in PPE */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL,
+    /* Number of IPv6 packets failed in unidirection update in unidirectional acceleration */
+    ECM_PPE_STATS_V6_EXCEPTION_PORTED_BIDIR_UPDATE_FAIL,
+    /* Number of IPv6 packets failed in bidirection update in unidirectional acceleration */
     ECM_PPE_STATS_V6_EXCEPTION_PORTED_MAX
 };
 

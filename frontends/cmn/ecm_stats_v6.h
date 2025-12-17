@@ -1,17 +1,6 @@
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  */
 
 #ifndef __ECM_STATS_V6_H
@@ -201,6 +190,8 @@ enum ecm_stats_v6_exception_ported_events {
 			/* Number of IPv6 packets ignored in ported flow as bridge DB connection timer expired */
 	ECM_STATS_V6_EXCEPTION_PORTED_DROP_BY_CLASSIFIER,
 			/* Number of IPv6 packets ignored in ported flow as dropped by classifier */
+	ECM_STATS_V6_EXCEPTION_PORTED_ACCEL_DELAY,
+			/* Number of IPv6 packets ignored in ported flow as accel delay is enabled */
 	ECM_STATS_V6_EXCEPTION_PORTED_MAX
 			/*Maximum ported exceptions for IPv6 flows*/
 };

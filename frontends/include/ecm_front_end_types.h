@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -208,7 +197,8 @@ typedef void (*ecm_front_end_connection_multicast_update_method_t)(ip_addr_t ip_
 
 typedef void (*ecm_front_end_connection_set_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir, uint8_t bit);
 typedef uint32_t (*ecm_front_end_connection_get_stats_bitmap_t)(struct ecm_front_end_connection_instance *feci, ecm_db_obj_dir_t dir);
-typedef void (*ecm_front_end_connection_update_rule_t)(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg);
+typedef void (*ecm_front_end_connection_update_rule_t)(struct ecm_front_end_connection_instance *feci,
+		enum ecm_rule_update_type type, void *arg);
 
 typedef bool (*ecm_front_end_connection_defunct_method_t)(void *arg, int *accel_mode);       /* Defunct callback */
 
@@ -313,6 +303,9 @@ struct ecm_front_end_connection_instance {
 	bool can_accel;						/* RO: True when the connection can be accelerated */
 	bool is_defunct;					/* True if the connection has become defunct */
 	bool destroy_fail_handle_pending;			/* Set while handling the connection destroy failure */
+	bool udp_flow_dir_accel;				/* If the UDP flow is accelerated in flow direction. */
+	bool udp_return_dir_accel;				/* If the UDP flow is accelerated in return direction. */
+	atomic64_t unidir_accel_fail_reason;				/* Unidirection accel fail reason */
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	atomic64_t ppe_accel_fail_reason;			/* PPE accel fail reason */
 #endif

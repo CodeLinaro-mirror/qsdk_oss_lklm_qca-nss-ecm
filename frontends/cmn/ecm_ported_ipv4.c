@@ -134,7 +134,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 	int aci_index;
 	int assignment_count;
 	ecm_db_timer_group_t ci_orig_timer_group;
-	struct ecm_classifier_process_response prevalent_pr;
+	struct ecm_classifier_process_response prevalent_pr = {0};
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
@@ -818,6 +818,19 @@ feci_alloc_done:
 					NULL /* final callback */,
 					tg, is_routed, nci);
 
+			/*
+			 * Setting an invalid value for accel_sender initially.
+			 */
+			nci->accel_sender = ECM_TRACKER_SENDER_UNKNOWN;
+
+			/*
+			 * If its UDP flow, then we can accerate this connection in a single direction
+			 * unidirection acceleration is enabled
+			 */
+			if (nci->protocol == IPPROTO_UDP && ecm_front_end_unidir_accel_en && !(nci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
+				nci->unidir_accel_en = true;
+			}
+
 			spin_unlock_bh(&ecm_ipv4_lock);
 
 			ci = nci;
@@ -1007,10 +1020,24 @@ done:
 	DEBUG_TRACE("%px: process begin, skb: %px\n", ci, skb);
 	prevalent_pr.process_actions = 0;
 	prevalent_pr.drop = false;
-	prevalent_pr.flow_qos_tag = skb->priority;
-	prevalent_pr.return_qos_tag = skb->priority;
-	prevalent_pr.flow_int_pri = skb->int_pri;
-	prevalent_pr.return_int_pri = skb->int_pri;
+
+	/*
+	 * In case of uni-direction acceleration, assign priority per direction
+	 */
+	if (ci->unidir_accel_en) {
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			prevalent_pr.flow_qos_tag = skb->priority;
+			prevalent_pr.flow_int_pri = skb->int_pri;
+		} else {
+			prevalent_pr.return_qos_tag = skb->priority;
+			prevalent_pr.return_int_pri = skb->int_pri;
+		}
+	} else {
+		prevalent_pr.flow_qos_tag = skb->priority;
+		prevalent_pr.return_qos_tag = skb->priority;
+		prevalent_pr.flow_int_pri = skb->int_pri;
+		prevalent_pr.return_int_pri = skb->int_pri;
+	}
 	prevalent_pr.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	prevalent_pr.timer_group = ci_orig_timer_group = ecm_db_connection_timer_group_get(ci);
 
@@ -1329,14 +1356,44 @@ done:
 	}
 
 	/*
-	 * Accelerate?
+	 * Should we delay the acceleration?
+	 */
+	if (ci->unidir_accel_en && ecm_front_end_unidir_accel_delay) {
+		spin_lock_bh(&ecm_ipv4_lock);
+		if (!ecm_db_connection_unidir_ready_for_accel(ci, sender)) {
+			DEBUG_INFO("%px: Unidirection connection is not ready for acceleration\n", ci);
+			spin_unlock_bh(&ecm_ipv4_lock);
+			ecm_db_connection_deref(ci);
+			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_ACCEL_DELAY);
+			return NF_ACCEPT;
+		}
+
+		DEBUG_INFO("%px: connection is ready for acceleration\n", ci);
+		spin_unlock_bh(&ecm_ipv4_lock);
+	}
+
+
+	/*
+	 * Accelerate or Update?
+	 * In case of uni-direction acceleration first one flow is accelerated
+	 * later when the update comes for second flow then that flow is accelerated
+	 * This is done to update the Qos and SAWF fields for the other direction
 	 */
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb, sender);
+		if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL && ci->unidir_accel_en && feci->update_rule) {
+			struct ecm_cmn_unidir_update_info update_info;
+			update_info.sender = sender;
+			update_info.pr = &prevalent_pr;
+			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_UNI_DI_QOS, (void *) &update_info);
+		} else {
+			feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb, sender);
+		}
+
 		ecm_front_end_connection_deref(feci);
 	}
+
 	ecm_db_connection_deref(ci);
 
 	return NF_ACCEPT;

@@ -394,6 +394,93 @@ release:
 }
 
 /*
+ * ecm_sfe_ported_ipv4_unidir_rule_update()
+ *	Updates the frontend specifc data.
+ */
+bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *ci,
+		struct ecm_classifier_process_response *pr, ecm_tracker_sender_type_t sender, struct sfe_ipv4_msg *msg)
+{
+	struct sfe_rule_update_msg *update_msg = &msg->msg.rule_update;
+	struct ecm_front_end_connection_instance *feci;
+	sfe_tx_status_t sfe_tx_status;
+	uint32_t src_addr, dest_addr;
+	ip_addr_t addr;
+
+	if (sender == ecm_db_connection_accel_sender_get(ci)) {
+		DEBUG_WARN("%px: This direction packet is already accelerated.\n", ci);
+		return true;
+	}
+
+	feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+	if (feci->udp_flow_dir_accel && feci->udp_return_dir_accel) {
+		DEBUG_WARN("%px: Both the directions are accelerated.\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return true;
+	}
+
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(src_addr, addr);
+	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, addr);
+	ECM_IP_ADDR_TO_NIN4_ADDR(dest_addr, addr);
+
+	update_msg->type = SFE_CONNECTION_MARK_TYPE_UNIDIR_MARK;
+	update_msg->src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+	update_msg->dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
+	update_msg->protocol = (int32_t) ecm_db_connection_protocol_get(ci);
+	update_msg->src_ip[0] = src_addr;
+	update_msg->dest_ip[0] = dest_addr;
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		update_msg->info.unidir.update_dir = SFE_FLOW_RULE_DIRECTION_FLOW;
+	} else {
+		update_msg->info.unidir.update_dir = SFE_FLOW_RULE_DIRECTION_RETURN;
+	}
+
+	/*
+	 * Set up the flow and return qos tags
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
+		update_msg->info.unidir.qos.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		update_msg->info.unidir.qos.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		update_msg->flags |= SFE_UPDATE_RULE_QOS_VALID;
+	}
+
+	/*
+	 * DSCP information?
+	 */
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) {
+		update_msg->info.unidir.dscp.flow_dscp = pr->flow_dscp;
+		update_msg->info.unidir.dscp.return_dscp =  pr->return_dscp;
+		update_msg->flags |= SFE_UPDATE_RULE_DSCP_VALID;
+	}
+
+	sfe_tx_status = sfe_ipv4_tx(NULL, msg);
+
+	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+	if (sfe_tx_status != SFE_TX_SUCCESS) {
+		DEBUG_WARN("%p: Failed to update rule in SFE.\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return false;
+	}
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		feci->udp_flow_dir_accel = true;
+	} else {
+		feci->udp_return_dir_accel = true;
+	}
+
+	DEBUG_TRACE("%px: flow/return qos_tag=0x%08x/0x%08x, dscp=0x%08x/0x%08x, %pI4:%u -> %pI4:%u protocol=%u\n",
+			ci, update_msg->info.unidir.qos.flow_qos_tag, update_msg->info.unidir.qos.return_qos_tag,
+			update_msg->info.unidir.dscp.flow_dscp, update_msg->info.unidir.dscp.return_dscp,
+			update_msg->src_ip, ntohs(update_msg->src_port),
+			update_msg->dest_ip, ntohs(update_msg->dest_port),
+			update_msg->protocol);
+	ecm_front_end_connection_deref(feci);
+	return true;
+}
+
+/*
  * ecm_sfe_ported_ipv4_connection_accelerate()
  *	Accelerate a connection
  */
@@ -410,6 +497,7 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *from_sfe_iface;
 	struct ecm_db_iface_instance *to_sfe_iface;
+	struct ecm_db_connection_instance *ci = feci->ci;
 	int32_t from_sfe_iface_id;
 	int32_t to_sfe_iface_id;
 	uint8_t from_sfe_iface_address[ETH_ALEN];
@@ -455,6 +543,13 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		DEBUG_TRACE("%px: Acceleration not permitted: %px skb=%px\n", feci, feci->ci, skb);
 		return;
 	}
+
+	/*
+	 * Setting the acceleration sender for uni-direction flows
+	 */
+	spin_lock_bh(&feci->lock);
+	ci->accel_sender = sender;
+	spin_unlock_bh(&feci->lock);
 
 	nim = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
 	if (!nim) {
@@ -1734,6 +1829,21 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	 */
 	if (sfe_is_l2_feature_enabled()) {
 		ecm_sfe_common_fast_xmit_set(&nircm->rule_flags, &nircm->valid_flags, &nircm->qdisc_rule, from_ifaces, to_ifaces, from_ifaces_first, to_ifaces_first);
+	}
+
+	if  (ci->unidir_accel_en) {
+		nircm->valid_flags |= SFE_RULE_CREATE_DIRECTION_VALID;
+		if (ecm_db_connection_accel_sender_get(ci) == ECM_TRACKER_SENDER_TYPE_SRC) {
+			nircm->direction_rule.flow_accel = true;
+			feci->udp_flow_dir_accel = true;
+			nircm->direction_rule.return_accel = false;
+			feci->udp_return_dir_accel = false;
+		} else {
+			nircm->direction_rule.flow_accel = false;
+			feci->udp_flow_dir_accel = false;
+			nircm->direction_rule.return_accel = true;
+			feci->udp_return_dir_accel = true;
+		}
 	}
 
 	/*

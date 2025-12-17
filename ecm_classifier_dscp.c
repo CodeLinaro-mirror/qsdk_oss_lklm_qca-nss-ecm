@@ -507,26 +507,26 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
 			/*
-			 * If UDP bi-di traffic is being run, it is possible that other direction's
-			 * QoS and DSCP values are also set by the subsequent packets before we push
-			 * the rule to NSS. So, let's update them, if they are not set.
+			 * If uni-direction acceleration is enabled, flow and return values will be
+			 * filled seperately otherwise fill both direction if they are not set
 			 */
-			if (cdscpi->process_response.return_int_pri == 0) {
-				cdscpi->process_response.return_int_pri = skb->int_pri;
-			}
+			if (!ci->unidir_accel_en) {
+				if (cdscpi->process_response.return_int_pri == 0) {
+					cdscpi->process_response.return_int_pri = skb->int_pri;
+				}
 
-			if (cdscpi->process_response.return_qos_tag == 0) {
-				cdscpi->process_response.return_qos_tag = skb->priority;
-			}
+				if (cdscpi->process_response.return_qos_tag == 0) {
+					cdscpi->process_response.return_qos_tag = skb->priority;
+				}
 
-			if (cdscpi->process_response.return_mark == 0) {
-				cdscpi->process_response.return_mark = skb->mark;
-			}
+				if (cdscpi->process_response.return_mark == 0) {
+					cdscpi->process_response.return_mark = skb->mark;
+				}
 
-			if (cdscpi->process_response.return_dscp == 0) {
-				cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				if (cdscpi->process_response.return_dscp == 0) {
+					cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				}
 			}
-
 		} else {
 			cdscpi->process_response.return_qos_tag = skb->priority;
 			cdscpi->process_response.return_int_pri = skb->int_pri;
@@ -534,25 +534,25 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
 			/*
-			 * If UDP bi-di traffic is being run, it is possible that other direction's
-			 * QoS and DSCP values are also set by the subsequent packets before we push
-			 * the rule to NSS. So, let's update them, if they are not set.
+			 * If uni-direction acceleration is enabled, flow and return values will be
+			 * filled seperately otherwise fill both direction if they are not set
 			 */
+			if (!ci->unidir_accel_en) {
+				if (cdscpi->process_response.flow_int_pri == 0) {
+					cdscpi->process_response.flow_int_pri = skb->int_pri;
+				}
 
-			if (cdscpi->process_response.flow_int_pri == 0) {
-				cdscpi->process_response.flow_int_pri = skb->int_pri;
-			}
+				if (cdscpi->process_response.flow_qos_tag == 0) {
+					cdscpi->process_response.flow_qos_tag = skb->priority;
+				}
 
-			if (cdscpi->process_response.flow_qos_tag == 0) {
-				cdscpi->process_response.flow_qos_tag = skb->priority;
-			}
+				if (cdscpi->process_response.flow_mark == 0) {
+					cdscpi->process_response.flow_mark = skb->mark;
+				}
 
-			if (cdscpi->process_response.flow_mark == 0) {
-				cdscpi->process_response.flow_mark = skb->mark;
-			}
-
-			if (cdscpi->process_response.flow_dscp == 0) {
-				cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				if (cdscpi->process_response.flow_dscp == 0) {
+					cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				}
 			}
 		}
 
