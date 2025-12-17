@@ -571,6 +571,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
 			 */
 			memcpy(from_ppe_iface_address, vlan_info.address, ETH_ALEN);
+			if (is_valid_ether_addr(from_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd6rc->src_mac_rule.flow_src_mac, from_ppe_iface_address);
+				pd6rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_FLOW;
+			}
 			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
@@ -856,6 +860,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			 * If we have not yet got an ethernet mac then take this one (very unlikely as mac should have been propagated to the slave (outer) device
 			 */
 			memcpy(to_ppe_iface_address, vlan_info.address, ETH_ALEN);
+			if (is_valid_ether_addr(to_ppe_iface_address)) {
+				ether_addr_copy((uint8_t *)pd6rc->src_mac_rule.return_src_mac, to_ppe_iface_address);
+				pd6rc->src_mac_rule.mac_valid_flags |= PPE_DRV_VALID_TUN_SRC_MAC_RETURN;
+			}
 			DEBUG_TRACE("%px: vlan tag: %x\n", feci, vlan_value);
 #else
 			rule_invalid = true;
