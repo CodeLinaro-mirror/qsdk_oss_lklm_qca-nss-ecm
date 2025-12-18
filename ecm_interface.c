@@ -8040,7 +8040,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 				wifi_ev_au = (struct ecm_interface_wifi_event_node_authorized *)dbuf;
 
 				DEBUG_INFO("STA %pM is authorized \n", (uint8_t *)wifi_ev_au->mac_addr);
-                ecm_db_connection_defunct_all();
+				ecm_db_connection_defunct_all();
 
 				kfree(dbuf);
 			}
@@ -8059,7 +8059,7 @@ static int ecm_interface_wifi_event_iwevent(int ifindex, unsigned char *buf, siz
 
 		if (iwe->cmd == IWEVEXPIRED) {
 			DEBUG_INFO("STA %pM leaving\n", (uint8_t *)iwe->u.addr.sa_data);
-			ecm_interface_node_connections_defunct((uint8_t *)iwe->u.addr.sa_data, ECM_DB_IP_VERSION_IGNORE);
+			ecm_db_connection_defunct_all();
 		} else {
 			DEBUG_INFO("iwe->cmd is %d for STA %pM\n", iwe->cmd, (unsigned char *) iwe->u.addr.sa_data);
 		}
