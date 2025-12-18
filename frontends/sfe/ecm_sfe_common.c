@@ -948,9 +948,12 @@ bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *fe
 	}
 
 	/*
-	 * MHT port is found on the from interface
+	 * MHT port is found on the from interface.
+	 * DSA interfaces are also marked as mht_dev in multiple TX rings enabled case, to automically switch to
+	 * SFE acceleration to avoid HOLB issue. While DSA interfaces mark the skb->mark at the DSA TX datapath,
+	 * here it doesn't need to query the switch FDB to get the skb->mark.
 	 */
-	if (ppe_drv_is_mht_dev(dev)) {
+	if (ppe_drv_is_mht_dev(dev) && (ecm_db_iface_type_get(from_sfe_iface) != ECM_DB_IFACE_TYPE_DSA)) {
 		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, mht_mac);
 		port_info = ppe_drv_mht_port_from_fdb(mht_mac, 0);
 
@@ -992,9 +995,12 @@ bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *fe
 	}
 
 	/*
-	 * MHT port is found on the To interface
+	 * MHT port is found on the To interface.
+	 * DSA interfaces are also marked as mht_dev in multiple TX rings enabled case, to automically switch to
+	 * SFE acceleration to avoid HOLB issue. While DSA interfaces mark the skb->mark at the DSA TX datapath,
+	 * here it doesn't need to query the switch FDB to get the skb->mark.
 	 */
-	if (ppe_drv_is_mht_dev(dev)) {
+	if (ppe_drv_is_mht_dev(dev) && (ecm_db_iface_type_get(to_sfe_iface) != ECM_DB_IFACE_TYPE_DSA)) {
 		ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, mht_mac);
 		port_info = ppe_drv_mht_port_from_fdb(mht_mac, 0);
 
