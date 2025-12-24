@@ -518,7 +518,7 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 	ip_addr_t match_addr;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
-	int32_t mc_if_cnt;
+	int mc_if_cnt;
 	int assignment_count;
 	ecm_db_timer_group_t ci_orig_timer_group;
 	struct ecm_classifier_process_response prevalent_pr;
@@ -617,6 +617,16 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 			DEBUG_WARN("Not found a valid vif count %d\n", mc_if_cnt);
 			return NF_ACCEPT;
 		}
+
+#if defined (ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+		/*
+		 * if MFC table has ovs ports in its list, ECM cannot offload.
+		 */
+		if (ecm_interface_multicast_check_for_ovs_br_dev(mc_dest_if, (uint8_t)mc_if_cnt)) {
+			DEBUG_WARN("MFC routing table containing ovs bridge ports cannot be offloaded\n");
+			return NF_ACCEPT;
+		}
+#endif
 	}
 
 	/*
