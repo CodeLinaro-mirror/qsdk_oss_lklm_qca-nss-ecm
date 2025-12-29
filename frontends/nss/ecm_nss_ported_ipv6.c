@@ -447,6 +447,13 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	nircm->conn_rule.return_interface_num = to_nss_iface_id;
 
 	/*
+	 * Set the mtu values. These values will be overwritten if the flow is
+	 * a specific tunnel type.
+	 */
+	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
+	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
+
+	/*
 	 * We know that each outward facing interface is known to the NSS and so this connection could be accelerated.
 	 * However the lists may also specify other interesting details that must be included in the creation command,
 	 * for example, ethernet MAC, VLAN tagging or PPPoE session information.
@@ -722,6 +729,11 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
+			/*
+			 * Override the MTU for packets coming to IPsec interface to avoid the pre-fragmentation
+			 * of packet in NSS. Fragmentation to be handled post IPsec processing.
+			 */
+			nircm->conn_rule.flow_mtu = ECM_DB_IFACE_MTU_MAX;
 			nircm->conn_rule.flow_interface_num = ecm_nss_common_ipsec_get_ifnum(from_nss_iface_id);
 			nircm->nexthop_rule.flow_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.flow_nexthop);
 #else
@@ -1051,6 +1063,11 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 				break;
 			}
 
+			/*
+			 * Override the MTU for packets coming to IPsec interface to avoid the pre-fragmentation
+			 * of plain text packet in NSS. Fragmentation to be handled post IPsec processing.
+			 */
+			nircm->conn_rule.return_mtu = ECM_DB_IFACE_MTU_MAX;
 			nircm->conn_rule.return_interface_num = ecm_nss_common_ipsec_get_ifnum(to_nss_iface_id);
 			nircm->nexthop_rule.return_nexthop = ecm_nss_common_ipsec_get_ifnum(nircm->nexthop_rule.return_nexthop);
 #else
@@ -1233,12 +1250,6 @@ static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 * Essentially it is the MAC of node associated with create.dest_ip and this is "to nat" side.
 	 */
 	ecm_db_connection_node_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, (uint8_t *)nircm->conn_rule.return_mac);
-
-	/*
-	 * Get MTU information
-	 */
-	nircm->conn_rule.flow_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_FROM);
-	nircm->conn_rule.return_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 
 	if (protocol == IPPROTO_TCP) {
 		/*
