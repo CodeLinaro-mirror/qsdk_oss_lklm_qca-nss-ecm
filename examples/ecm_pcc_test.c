@@ -263,10 +263,15 @@ try_reverse:
  * ecm_pcc_test_fill_ap_info()
  *	Fill policing feature related information.
  */
-static void ecm_pcc_test_fill_ap_info(struct ecm_pcc_test_rule *rule, struct ecm_classifier_pcc_info *cinfo)
+static void ecm_pcc_test_fill_ap_info(struct ecm_pcc_test_rule *rule, struct ecm_classifier_pcc_info *cinfo, bool is_reverse)
 {
-	cinfo->output_params.ap_info.flow_ap_index = rule->ap_info.flow_ap_index;
-	cinfo->output_params.ap_info.return_ap_index = rule->ap_info.return_ap_index;
+	if (is_reverse) {
+		cinfo->output_params.ap_info.flow_ap_index = rule->ap_info.return_ap_index;
+		cinfo->output_params.ap_info.return_ap_index = rule->ap_info.flow_ap_index;
+	} else {
+		cinfo->output_params.ap_info.flow_ap_index = rule->ap_info.flow_ap_index;
+		cinfo->output_params.ap_info.return_ap_index = rule->ap_info.return_ap_index;
+	}
 }
 
 /*
@@ -420,7 +425,7 @@ ecm_pcc_test_get_accel_info_v4(struct ecm_classifier_pcc_registrant *r,
 	}
 
 	if ((rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_ACL) || (rule->feature_flags & ECM_CLASSIFIER_PCC_FEATURE_POLICER)) {
-		ecm_pcc_test_fill_ap_info(rule, cinfo);
+		ecm_pcc_test_fill_ap_info(rule, cinfo, is_reverse);
 	}
 
 	spin_unlock_bh(&ecm_pcc_test_rules_lock);
@@ -484,7 +489,7 @@ ecm_pcc_test_get_accel_info_v6(struct ecm_classifier_pcc_registrant *r,
 	}
 
 	if ((feature_flags & ECM_CLASSIFIER_PCC_FEATURE_ACL) || (feature_flags & ECM_CLASSIFIER_PCC_FEATURE_POLICER))  {
-		ecm_pcc_test_fill_ap_info(rule, cinfo);
+		ecm_pcc_test_fill_ap_info(rule, cinfo, is_reverse);
 	}
 
 	spin_unlock_bh(&ecm_pcc_test_rules_lock);
@@ -1615,4 +1620,3 @@ MODULE_DESCRIPTION("ECM PCC Test");
 #ifdef MODULE_LICENSE
 MODULE_LICENSE("Dual BSD/GPL");
 #endif
-
