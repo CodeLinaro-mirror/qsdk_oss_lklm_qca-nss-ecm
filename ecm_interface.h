@@ -141,3 +141,8 @@ __be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *d
 #endif
 
 bool ecm_interface_ported_hiearachy_is_tun_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev, int protocol);
+
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+extern int ecm_interface_br_isolation_enable;
+bool ecm_interface_validate_bridge_sub_ids(struct net_device *in, struct net_device *out, struct sk_buff *skb);
+#endif

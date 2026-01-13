@@ -72,6 +72,7 @@ static const char* ecm_stats_v6_exception_name_str[] = {
 	"v6_bridge_out_iff_offload_disabled",
 	"v6_unsupported_l2tpv3_protocol",
 	"v6_unsupported_IPsec_ESP_passthrough",
+	"v6_bridge_sub_id_mismatch",
 };
 
 static const char* ecm_stats_v6_exception_ported_name_str[] = {
