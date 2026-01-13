@@ -25,7 +25,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -73,6 +72,7 @@
 #ifdef ECM_CLASSIFIER_NL_ENABLE
 #include "ecm_classifier_nl.h"
 #endif
+#include "ecm_conntrack_notifier.h"
 
 /*
  * Default path for sysctl
@@ -383,7 +383,7 @@ static int ecm_conntrack_event(unsigned int events, const struct nf_ct_event *it
  * ecm_conntrack_notifier_stop_handler()
  * 	Proc handler to stop conntrack notifier
  */
-static int ecm_conntrack_notifier_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_conntrack_notifier_stop_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -450,7 +450,6 @@ static struct ctl_table ecm_conntrack_notifier_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_conntrack_notifier_stop_handler,
 	},
-	{ }
 };
 
 /*

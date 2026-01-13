@@ -24,7 +24,6 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/addrconf.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <linux/inet.h>
 #include <linux/in6.h>
@@ -294,7 +293,7 @@ bool ecm_interface_hierarchy_is_tunnel_flow(struct net_device *in_dev, struct ne
  * ecm_interface_handle_wlan_egress_packet()
  *	Process the packets that need WLAN QoS handling
  */
-int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
+static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 {
 	u8 proto;
 	int ip_version;
@@ -1741,7 +1740,12 @@ __be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *d
 		__be32 daddr;
 
 		daddr = netif_is_vxlan(indev) ? ip_hdr(skb)->saddr : ip_hdr(skb)->daddr;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		rt = ip_route_output(&init_net, daddr, 0, 0, 0, RT_SCOPE_UNIVERSE);
+#else
 		rt = ip_route_output(&init_net, daddr, 0, 0, 0);
+#endif
+
 		if (IS_ERR_OR_NULL(rt)) {
 			DEBUG_WARN("%px: VXLAN-GPE failed to get IPv4 route to: %pI4\n", dev, &daddr);
 			goto rt_error;
@@ -2064,7 +2068,11 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
 	__be32 ipv4_addr;
 
 	ECM_IP_ADDR_TO_NIN4_ADDR(ipv4_addr, addr);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	rt = ip_route_output(&init_net, ipv4_addr, 0, 0, 0, RT_SCOPE_UNIVERSE);
+#else
 	rt = ip_route_output(&init_net, ipv4_addr, 0, 0, 0);
+#endif
 	if (IS_ERR_OR_NULL(rt)) {
 		return NULL;
 	}
@@ -8632,6 +8640,7 @@ void ecm_interface_node_connections_defunct_by_type_sta_join(uint8_t *mac)
 }
 EXPORT_SYMBOL(ecm_interface_node_connections_defunct_by_type_sta_join);
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
 /*
  * ecm_interface_defunct_qm_connections()
  *	Defunct the connections with qm type and qm id
@@ -8641,6 +8650,7 @@ void ecm_interface_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, ui
 	ecm_db_node_defunct_qm_connections(mac, wifi_qm_type, wifi_qm_id);
 }
 EXPORT_SYMBOL(ecm_interface_defunct_qm_connections);
+#endif
 
 /*
  * ecm_interface_node_connections_defunct()
@@ -9164,7 +9174,7 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
  * ecm_interface_igs_enabled_handler()
  *	IGS enabled check sysctl node handler.
  */
-static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, void __user *buffer,
+static int ecm_interface_igs_enabled_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer,
 		 size_t *lenp, loff_t *ppos)
 {
 	int ret;
@@ -9205,7 +9215,7 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
  * ecm_interface_src_check_handler()
  *	Source interface check sysctl node handler.
  */
-static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_src_check_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_value;
@@ -9246,7 +9256,7 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
  * ecm_interface_src_check_no_flush_handler()
  *	Source interface check no flush sysctl node handler.
  */
-static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_src_check_no_flush_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -9270,7 +9280,7 @@ static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int w
  * ecm_interface_mwan3_enable_handler()
  *	 mwan3 enable check sysctl node handler.
  */
-static int ecm_interface_mwan3_enable_handler(struct ctl_table *ctl, int write, void __user *buffer,
+static int ecm_interface_mwan3_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer,
 		 size_t *lenp, loff_t *ppos)
 {
 	int ret;
@@ -9496,7 +9506,7 @@ static int ecm_interface_accel_denied_handler(int write, void *buffer, size_t *l
  * ecm_interface_accel_denied_list_handler()
  * 	Proc handler function for denied interface read/write operation
  */
-static int ecm_interface_accel_denied_list_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_accel_denied_list_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -9683,7 +9693,7 @@ static int ecm_interface_defunct_by_iface(int write, void *buffer, size_t *lenp,
  * ecm_interface_defunct_by_mac_addr_handler()
  * 	Proc handler function for defunct the ecm rules by mac address
  */
-static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_defunct_by_mac_address_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * To mark a MAC address as defunct:
@@ -9698,7 +9708,7 @@ static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, i
  * ecm_interface_defunct_by_iface_handler()
  * 	Proc handler function for defunct the ecm rules by iface
  */
-static int ecm_interface_defunct_by_iface_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_defunct_by_iface_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * To mark a iface name as defunct:
@@ -9800,7 +9810,6 @@ static struct ctl_table ecm_interface_table[] = {
 		.extra2         = SYSCTL_ONE,
 	},
 #endif
-	{ }
 };
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE

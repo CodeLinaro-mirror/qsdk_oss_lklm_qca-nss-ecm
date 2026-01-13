@@ -16,7 +16,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -1225,7 +1224,7 @@ static int ecm_classifier_mscs_scs_set_udp_ipsec_port(void *data, u64 val)
  * ecm_classifier_mscs_enable_handler()
  *  Proc handler to enable or disable mscs classifier
  */
-static int ecm_classifier_mscs_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_mscs_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1268,7 +1267,7 @@ static int ecm_classifier_mscs_enable_handler(struct ctl_table *ctl, int write, 
  * ecm_classifier_scs_enable_handler()
  * 	Proc handler to enable or disable scs classifier
  */
-static int ecm_classifier_scs_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_scs_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1311,7 +1310,7 @@ static int ecm_classifier_scs_enable_handler(struct ctl_table *ctl, int write, v
  * ecm_classifier_mscs_scs_multi_ap_enable_handler()
  * 	Proc handler to enable/disable Multi AP for MSCS classifier
  */
-static int ecm_classifier_mscs_scs_multi_ap_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_mscs_scs_multi_ap_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1355,7 +1354,7 @@ static int ecm_classifier_mscs_scs_multi_ap_enable_handler(struct ctl_table *ctl
  * ecm_classifier_mscs_scs_udp_ipsec_port_handler()
  * 	Proc handler to update UDP IPsec port
  */
-static int ecm_classifier_mscs_scs_udp_ipsec_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_mscs_scs_udp_ipsec_port_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1420,7 +1419,6 @@ static struct ctl_table ecm_classifier_mscs_ctl_table[] = {
 		.proc_handler	= &ecm_classifier_mscs_scs_udp_ipsec_port_handler,
 	},
 #endif
-	{ }
 };
 
 /*

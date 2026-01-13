@@ -22,7 +22,6 @@
 #include <net/addrconf.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>

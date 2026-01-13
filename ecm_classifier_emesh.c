@@ -4133,7 +4133,7 @@ defunct_by_priority:
  * ecm_classifier_emesh_enable_handler()
  * 	Proc handler to enable or disable emesh classifier
  */
-static int ecm_classifier_emesh_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_emesh_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4180,7 +4180,7 @@ static int ecm_classifier_emesh_enable_handler(struct ctl_table *ctl, int write,
  * ecm_classifier_emesh_latency_config_enable_handler()
  * 	Proc handler to enable or disable mesh latency
  */
-static int ecm_classifier_emesh_latency_config_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_emesh_latency_config_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4227,7 +4227,7 @@ static int ecm_classifier_emesh_latency_config_enable_handler(struct ctl_table *
  * ecm_classifier_sawf_enable_handler()
  * 	Proc handler to enable or disable SAWF
  */
-static int ecm_classifier_sawf_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4273,7 +4273,7 @@ static int ecm_classifier_sawf_enable_handler(struct ctl_table *ctl, int write, 
  * ecm_classifier_sawf_cake_enable_handler()
  * 	Proc handler to enable or disable CAKE Qdisc flag
  */
-static int ecm_classifier_sawf_cake_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_cake_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4317,7 +4317,7 @@ static int ecm_classifier_sawf_cake_enable_handler(struct ctl_table *ctl, int wr
  * ecm_classifier_3link_mlo_enable_handler()
  * 	Proc handler to enable or disable 3 link mlo
  */
-static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_3link_mlo_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4361,7 +4361,7 @@ static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int wr
  * ecm_classifier_sawf_emesh_udp_ipsec_port_handler()
  * 	Proc handler to update UDP ipsec port
  */
-static int ecm_classifier_sawf_emesh_udp_ipsec_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_emesh_udp_ipsec_port_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4440,7 +4440,6 @@ static struct ctl_table ecm_classifier_emesh_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_sawf_emesh_udp_ipsec_port_handler,
 	},
-	{ }
 };
 
 /*

@@ -20,7 +20,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
@@ -1205,11 +1204,12 @@ keep_sni_conn:
 #endif
 #endif
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
 /*
  * ecm_db_traverse_node_connection_list_and_defunct_by_qm()
  *	Defunc connections based on mac addr, qm id and qm type
  */
-void ecm_db_traverse_node_connection_list_and_defunct_by_qm(struct ecm_db_node_instance *node,
+static void ecm_db_traverse_node_connection_list_and_defunct_by_qm(struct ecm_db_node_instance *node,
 							    ecm_db_obj_dir_t dir, int ip_version,
 							    ecm_db_connection_defunct_type_t type,
 							    uint8_t wifi_qm_type, uint8_t wifi_qm_id)
@@ -1319,6 +1319,7 @@ void ecm_db_node_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint
 	ecm_front_end_ipv6_stop_temp(0);
 #endif
 }
+#endif
 
 /*
  * ecm_db_node_init()

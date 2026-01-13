@@ -23,7 +23,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/addrconf.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -3185,7 +3184,7 @@ find_next_tuple:
  * ecm_front_end_ipv4_mc_stop_handler()
  * 	Proc handler to enable/disable multicast traffic via SFE
  */
-static int ecm_front_end_ipv4_mc_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_ipv4_mc_stop_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -3232,7 +3231,6 @@ static struct ctl_table ecm_sfe_multicast_ipv4_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_ipv4_mc_stop_handler,
 	},
-	{ }
 };
 
 /*

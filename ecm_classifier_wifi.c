@@ -675,7 +675,7 @@ static void ecm_classifier_wifi_should_keep_connection(struct ecm_classifier_ins
  * ecm_classifier_wifi_enable_handler
  * 	Proc handler to enable or disable WIFI classifier
  */
-static int ecm_classifier_wifi_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_wifi_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -722,7 +722,6 @@ static struct ctl_table ecm_classifier_wifi_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_wifi_enable_handler,
 	},
-	{ }
 };
 
 /*

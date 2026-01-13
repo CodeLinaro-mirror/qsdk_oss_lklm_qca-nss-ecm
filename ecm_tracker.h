@@ -226,4 +226,3 @@ uint32_t ecm_tracker_data_buffer_total_get(void);
 bool ecm_tracker_data_total_increase(uint32_t n, uint32_t data_bufer_size);
 void ecm_tracker_data_total_decrease(uint32_t n, uint32_t data_bufer_size);
 #endif
-

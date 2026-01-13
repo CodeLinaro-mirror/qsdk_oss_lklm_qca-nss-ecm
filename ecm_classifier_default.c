@@ -21,7 +21,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -655,7 +654,8 @@ static int ecm_classifier_default_state_get(struct ecm_classifier_instance *ci, 
  * ecm_classifier_default_enable_handler()
  * 	Default classifier enable/disable sysctl node handler
  */
-static int ecm_classifier_default_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_default_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+
 {
 	/*
 	 * Usage:
@@ -699,7 +699,7 @@ static int ecm_classifier_default_enable_handler(struct ctl_table *ctl, int writ
  * ecm_classifier_default_accel_mode_handler()
  * 	Proc handler to change acceleration mode
  */
-static int ecm_classifier_default_accel_mode_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_default_accel_mode_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -754,7 +754,7 @@ static int ecm_classifier_default_accel_mode_handler(struct ctl_table *ctl, int 
  * 	Proc handler to handle slow path packets allowed
  * 	before acceleration
  */
-static int ecm_classifier_accel_delay_pkts_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_accel_delay_pkts_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -819,7 +819,6 @@ static struct ctl_table ecm_classifier_default_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_accel_delay_pkts_handler,
 	},
-	{ }
 };
 
 /*

@@ -1,18 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2015, 2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -32,7 +22,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -348,7 +337,7 @@ static void ecm_tracker_udp_datagram_discard(struct ecm_tracker_udp_internal_ins
  * ecm_tracker_udp_discard_all()
  *	Discard all tracked data
  */
-void ecm_tracker_udp_discard_all(struct ecm_tracker_udp_internal_instance *utii)
+static void ecm_tracker_udp_discard_all(struct ecm_tracker_udp_internal_instance *utii)
 {
 	DEBUG_CHECK_MAGIC(utii, ECM_TRACKER_UDP_INSTANCE_MAGIC, "%px: magic failed", utii);
 
@@ -390,7 +379,7 @@ static void ecm_tracker_udp_ref(struct ecm_tracker_udp_internal_instance *utii)
 /*
  * ecm_tracker_udp_ref_callback()
  */
-void ecm_tracker_udp_ref_callback(struct ecm_tracker_instance *ti)
+static void ecm_tracker_udp_ref_callback(struct ecm_tracker_instance *ti)
 {
 	struct ecm_tracker_udp_internal_instance *utii = (struct ecm_tracker_udp_internal_instance *)ti;
 	ecm_tracker_udp_ref(utii);
@@ -441,7 +430,7 @@ static int ecm_tracker_udp_deref(struct ecm_tracker_udp_internal_instance *utii)
 /*
  * _ecm_tracker_udp_deref_callback()
  */
-int ecm_tracker_udp_deref_callback(struct ecm_tracker_instance *ti)
+static int ecm_tracker_udp_deref_callback(struct ecm_tracker_instance *ti)
 {
 	struct ecm_tracker_udp_internal_instance *utii = (struct ecm_tracker_udp_internal_instance *)ti;
 	return ecm_tracker_udp_deref(utii);
@@ -499,7 +488,7 @@ static void ecm_tracker_udp_datagram_discard_callback(struct ecm_tracker_instanc
  * ecm_tracker_udp_datagram_size_get()
  *	Return size in bytes of datagram at index i that was sent to the target
  */
-int32_t ecm_tracker_udp_datagram_size_get(struct ecm_tracker_udp_instance *uti, ecm_tracker_sender_type_t sender, int32_t i)
+static int32_t ecm_tracker_udp_datagram_size_get(struct ecm_tracker_udp_instance *uti, ecm_tracker_sender_type_t sender, int32_t i)
 {
 	struct ecm_tracker_udp_internal_instance *utii = (struct ecm_tracker_udp_internal_instance *)uti;
 	int32_t size;
@@ -547,7 +536,7 @@ static int32_t ecm_tracker_udp_datagram_size_get_callback(struct ecm_tracker_ins
  * ecm_tracker_udp_datagram_read()
  *	Read size bytes from datagram at index i into the buffer
  */
-int ecm_tracker_udp_datagram_read(struct ecm_tracker_udp_instance *uti, ecm_tracker_sender_type_t sender, int32_t i, int32_t offset, int32_t size, void *buffer)
+static int ecm_tracker_udp_datagram_read(struct ecm_tracker_udp_instance *uti, ecm_tracker_sender_type_t sender, int32_t i, int32_t offset, int32_t size, void *buffer)
 {
 	struct ecm_tracker_udp_internal_instance *utii = (struct ecm_tracker_udp_internal_instance *)uti;
 	int res;
@@ -1160,7 +1149,7 @@ static int ecm_tracker_rtp_payload_types_handler(int write, void *buffer, size_t
  * ecm_tracker_udp_rtp_payload_types_handler()
  *	Proc handler function for RTP payload types read/write operation.
  */
-static int ecm_tracker_udp_rtp_payload_types_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_tracker_udp_rtp_payload_types_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1180,7 +1169,7 @@ static int ecm_tracker_udp_rtp_payload_types_handler(struct ctl_table *ctl, int 
  * ecm_tracker_udp_clf_enabled_handler()
  *	Sysctl to enable/disable UDP classifier flag.
  */
-int ecm_tracker_udp_clf_enabled_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_tracker_udp_clf_enabled_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -1219,7 +1208,6 @@ static struct ctl_table ecm_tracker_udp_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_tracker_udp_rtp_payload_types_handler,
 	},
-	{}
 };
 
 /*

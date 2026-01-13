@@ -106,7 +106,7 @@ static void ecm_front_end_ipv4_interface_construct_netdev_set(struct ecm_front_e
  * ecm_front_end_ipv4_stop_handler()
  * 	Proc handler to enable or disable ipv4 frontend
  */
-static int ecm_front_end_ipv4_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_ipv4_stop_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -152,7 +152,6 @@ static struct ctl_table ecm_front_end_ipv4_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_ipv4_stop_handler,
 	},
-	{ }
 };
 
 /*

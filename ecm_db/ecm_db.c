@@ -21,7 +21,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
@@ -476,7 +475,7 @@ static struct notifier_block ecm_db_ip6route_table_update_nb = {
  * ecm_db_defunct_all_handler()
  * 	Proc handler to defunct ecm db
  */
-static int ecm_db_defunct_all_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_defunct_all_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -525,7 +524,7 @@ static int ecm_db_defunct_all_handler(struct ctl_table *ctl, int write, void *bu
  * ecm_db_ipv4_route_handler()
  * 	Proc handler to disable IPV4 route table events
  */
-static int ecm_db_ipv4_route_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_ipv4_route_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -586,7 +585,7 @@ static int ecm_db_ipv4_route_handler(struct ctl_table *ctl, int write, void *buf
  * 	Proc handler to disable IPV6 route table events
  */
 #ifdef ECM_IPV6_ENABLE
-static int ecm_db_ipv6_route_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_ipv6_route_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -668,8 +667,6 @@ static struct ctl_table ecm_db_ctl_table[] = {
 		.proc_handler	= &ecm_db_ipv6_route_handler,
 	},
 #endif
-
-	{ }
 };
 
 /*

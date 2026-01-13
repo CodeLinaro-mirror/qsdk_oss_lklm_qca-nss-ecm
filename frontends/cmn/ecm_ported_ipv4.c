@@ -21,7 +21,6 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/addrconf.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -102,6 +101,7 @@
 #include "ecm_ae_classifier_public.h"
 #include "ecm_ae_classifier.h"
 #include "ecm_stats_v4.h"
+#include "ecm_ported_ipv4.h"
 
 /*
  * ecm_ported_ipv4_process()

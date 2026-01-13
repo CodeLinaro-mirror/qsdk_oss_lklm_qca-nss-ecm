@@ -343,7 +343,7 @@ void ecm_sfe_common_fast_xmit_set(uint32_t *rule_flags, uint32_t *valid_flags, s
  * ecm_sfe_fast_xmit_enable_handler()
  *	Fast transmit sysctl node handler.
  */
-int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_fast_xmit_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -367,7 +367,7 @@ int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __us
  * ecm_sfe_fse_enable_handler()
  *	Sysctl to enable/disable FSE programming through ECM SFE frontend.
  */
-int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_fse_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_val;
@@ -398,7 +398,7 @@ int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *bu
  * ecm_sfe_mht_enable_handler()
  *	Sysctl to enable/disable MHT feature through ECM SFE frontend.
  */
-int ecm_sfe_mht_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_mht_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_val;
@@ -429,7 +429,7 @@ int ecm_sfe_mht_enable_handler(struct ctl_table *ctl, int write, void __user *bu
  * ecm_sfe_tun_fast_xmit_enable_handler()
  *	Tunnel fast transmit enable sysctl node handler.
  */
-int ecm_sfe_tun_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_tun_fast_xmit_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -533,7 +533,6 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_sfe_tun_fast_xmit_enable_handler,
 	},
-	{}
 };
 
 /*

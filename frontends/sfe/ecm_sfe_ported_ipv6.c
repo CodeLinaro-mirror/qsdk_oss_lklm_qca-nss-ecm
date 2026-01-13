@@ -22,7 +22,6 @@
 #include <net/addrconf.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -2394,7 +2393,7 @@ static bool ecm_sfe_ported_ipv6_connection_decelerate(struct ecm_front_end_conne
  * ecm_sfe_ported_ipv6_connection_defunct_callback()
  *	Callback to be called when a ported connection has become defunct.
  */
-bool ecm_sfe_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
+static bool ecm_sfe_ported_ipv6_connection_defunct_callback(void *arg, int *accel_mode)
 {
 	bool ret;
 	bool is_defunct __maybe_unused;

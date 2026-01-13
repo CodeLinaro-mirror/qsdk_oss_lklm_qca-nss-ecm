@@ -73,7 +73,7 @@ static void ecm_sdx_host_removed(void *arg, struct ecm_db_host_instance *hi)
  * ecm_sdx_stats_handler()
  *	Proc handler function for stats read/write operation.
  */
-static int ecm_sdx_stats_handler(struct ctl_table *ctl, int write, void *buffer,
+static int ecm_sdx_stats_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer,
 				size_t *lenp, loff_t *ppos)
 {
 	/*
@@ -101,7 +101,7 @@ static int ecm_sdx_stats_handler(struct ctl_table *ctl, int write, void *buffer,
  * ecm_sdx_per_client_stats_handler()
  *	Proc handler function for packet_stats read/write operation.
  */
-static int ecm_sdx_per_client_stats_handler(struct ctl_table *ctl, int write, void *buffer,
+static int ecm_sdx_per_client_stats_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer,
 					size_t *lenp, loff_t *ppos)
 {
 	/*
@@ -141,7 +141,7 @@ static int ecm_sdx_per_client_stats_handler(struct ctl_table *ctl, int write, vo
  * ecm_sdx_iface_type_handler()
  *	Proc handler function for packet_stats_interface read/write operation.
  */
-static int ecm_sdx_iface_type_handler(struct ctl_table *ctl, int write, void *buffer,
+static int ecm_sdx_iface_type_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer,
 					size_t *lenp, loff_t *ppos)
 {
 	/*
@@ -167,7 +167,7 @@ static int ecm_sdx_iface_type_handler(struct ctl_table *ctl, int write, void *bu
  * ecm_sdx_lan_prefix_handler()
  *	Proc handler function for lan_prefixes read/write operation.
  */
-static int ecm_sdx_lan_prefix_handler(struct ctl_table *ctl, int write, void *buffer,
+static int ecm_sdx_lan_prefix_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer,
 					size_t *lenp, loff_t *ppos)
 {
 	/*
@@ -218,7 +218,6 @@ static struct ctl_table ecm_sdx_sysctl_tbl[] = {
 		.mode		= 0666,
 		.proc_handler	= &ecm_sdx_lan_prefix_handler,
 	},
-	{}
 };
 
 /*

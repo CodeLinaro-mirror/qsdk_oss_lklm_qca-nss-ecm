@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: ISC
  **************************************************************************
  */
+#include <linux/version.h>
 #include <net/ipv6.h>
 #include <linux/inet.h>
 #include <linux/etherdevice.h>
 
+#define DEBUG_LEVEL ECM_SDX_PCC_DEBUG_LEVEL
+
 #include "ecm_classifier_pcc_public.h"
+#include "ecm_types.h"
 
 /*
  * This is a SDX PCC external module for the ECM's PCC Classifier.
@@ -570,7 +574,7 @@ static bool ecm_sdx_pcc_delete_rule(char *name)
 	ether_addr_copy(mac_addr, rule->mac_addr);
 	ip_addr_start = rule->ip_addr_start;
 	ip_addr_end = rule->ip_addr_end;
-	strlcpy(iface, rule->iface, sizeof(iface));
+	strscpy(iface, rule->iface, sizeof(iface));
 
 	list_del(&rule->list);
 	spin_unlock_bh(&ecm_sdx_pcc_rules_lock);
@@ -604,12 +608,12 @@ static bool ecm_sdx_pcc_add_rule(char *name,
 	if (!new_rule)
 		return false;
 
-	strlcpy(new_rule->name, name, sizeof(new_rule->name));
+	strscpy(new_rule->name, name, sizeof(new_rule->name));
 	new_rule->accel = accel;
 	ether_addr_copy(new_rule->mac_addr, mac_addr);
 	new_rule->ip_addr_start = *ip_addr_start;
 	new_rule->ip_addr_end = *ip_addr_end;
-	strlcpy(new_rule->iface, iface, IFNAMSIZ);
+	strscpy(new_rule->iface, iface, IFNAMSIZ);
 	INIT_LIST_HEAD(&new_rule->list);
 
 	spin_lock_bh(&ecm_sdx_pcc_rules_lock);
@@ -645,7 +649,7 @@ static bool ecm_sdx_pcc_clear_rules(void)
 		ether_addr_copy(mac_addr, rule->mac_addr);
 		ip_addr_start = rule->ip_addr_start;
 		ip_addr_end = rule->ip_addr_end;
-		strlcpy(iface, rule->iface, sizeof(iface));
+		strscpy(iface, rule->iface, sizeof(iface));
 
 		list_del(&rule->list);
 		spin_unlock_bh(&ecm_sdx_pcc_rules_lock);
@@ -696,7 +700,7 @@ static int ecm_sdx_pcc_rule_write(void *buffer, size_t *lenp, loff_t *ppos)
 	 * mac_addr: echo "my_rule/1/1/00:1b:22:32:27:2b///" > /proc/sys/net/ecm/ecm_sdx_pcc_rule
 	 * ip segment range: echo "my_rule2/1/1/00:00:00:00:00:00/192.168.224.100/192.168.224.110/" > /proc/sys/net/ecm/ecm_sdx_pcc_rule
 	 * iface: echo "my_rule3/1/1/00:00:00:00:00:00///eth0" > /proc/sys/net/ecm/ecm_sdx_pcc_rule
-	 * cat /proc/sys/net/ecm/ecm_sdx_pcc (shows all rules)
+	 * cat /proc/sys/net/ecm/ecm_sdx_pcc_rule (shows all rules)
 	 *
 	 * Deleting Rules (delete by rule name - provide the correct rule name)
 	 * mac_addr: echo "my_rule/0/1/00:1b:22:32:27:2b/0/0/0" > /proc/sys/net/ecm/ecm_sdx_pcc_rule
@@ -736,7 +740,7 @@ static int ecm_sdx_pcc_rule_write(void *buffer, size_t *lenp, loff_t *ppos)
 	/*
 	 * Convert fields
 	 */
-	strlcpy(name, fields[0], sizeof(name));
+	strscpy(name, fields[0], sizeof(name));
 
 	if (sscanf(fields[1], "%u", &action) != 1) {
 		pr_warn("sscanf read error\n");
@@ -769,7 +773,7 @@ static int ecm_sdx_pcc_rule_write(void *buffer, size_t *lenp, loff_t *ppos)
 		goto fail;
 	}
 
-	strlcpy(iface, fields[6], sizeof(iface));
+	strscpy(iface, fields[6], sizeof(iface));
 
 	kfree(rule_buf);
 
@@ -869,7 +873,7 @@ static int ecm_sdx_pcc_rule_read(void *buffer, size_t *lenp, loff_t *ppos)
  * ecm_sdx_pcc_rule_handler()
  *	Handle rule proc entry
  */
-static int ecm_sdx_pcc_rule_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sdx_pcc_rule_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	if (write) {
 		return ecm_sdx_pcc_rule_write(buffer, lenp, ppos);
@@ -884,7 +888,7 @@ static int ecm_sdx_pcc_rule_handler(struct ctl_table *ctl, int write, void *buff
  *	Handle unregister proc entry
  *	return 0 for success
  */
-static int ecm_sdx_pcc_unregister_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sdx_pcc_unregister_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_value;
@@ -936,7 +940,6 @@ static struct ctl_table ecm_sdx_pcc_sysctl_tbl[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_sdx_pcc_unregister_handler,
 	},
-	{ }
 };
 
 /*

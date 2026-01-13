@@ -22,7 +22,6 @@
 #include <net/addrconf.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -3178,7 +3177,7 @@ static void ecm_sfe_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
  * ecm_front_end_ipv6_mc_stop_handler()
  * 	Proc handler to enable/disable IPv6 Mulitcast via SFE
  */
-static int ecm_front_end_ipv6_mc_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_ipv6_mc_stop_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -3225,7 +3224,6 @@ static struct ctl_table ecm_sfe_multicast_ipv6_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_ipv6_mc_stop_handler,
 	},
-	{ }
 };
 
 /*

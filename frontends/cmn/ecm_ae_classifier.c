@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2021 The Linux Foundation.  All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -51,6 +40,7 @@
 #include "ecm_interface.h"
 #include "ecm_ipv4.h"
 #include "ecm_ipv6.h"
+#include "ecm_ae_classifier.h"
 
 DEFINE_SPINLOCK(ecm_ae_classifier_lock);
 
@@ -58,7 +48,7 @@ DEFINE_SPINLOCK(ecm_ae_classifier_lock);
  * ecm_ae_classifier_dummy_get()
  *	Dummy acceleration engine get function.
  */
-ecm_ae_classifier_result_t ecm_ae_classifier_dummy_get(struct ecm_ae_classifier_info *info)
+static ecm_ae_classifier_result_t ecm_ae_classifier_dummy_get(struct ecm_ae_classifier_info *info)
 {
 	DEBUG_TRACE("%px: Dummy acceleration engine get is called\n", info);
 

@@ -13,6 +13,7 @@
 #include <linux/inet.h>
 #include <linux/in.h>
 #include <linux/etherdevice.h>
+#include <linux/vmalloc.h>
 
 /*
  * Debug output levels
@@ -30,6 +31,7 @@
 #include "ecm_tracker.h"
 #include "ecm_classifier.h"
 #include "ecm_db.h"
+#include "ecm_sdx_stats.h"
 
 /*
  * Locking of the host_stats database - concurrency control

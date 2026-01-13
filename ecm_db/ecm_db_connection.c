@@ -21,7 +21,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
@@ -786,7 +785,7 @@ EXPORT_SYMBOL(ecm_db_connection_node_address_get);
 void ecm_db_connection_iface_name_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, char *name_buffer)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
-	strlcpy(name_buffer, ci->node[dir]->iface->name, IFNAMSIZ);
+	strscpy(name_buffer, ci->node[dir]->iface->name, IFNAMSIZ);
 }
 EXPORT_SYMBOL(ecm_db_connection_iface_name_get);
 
@@ -2744,7 +2743,7 @@ EXPORT_SYMBOL(ecm_db_connection_interfaces_reset);
  * 	#3: Do fdb lookup in the bridge to get the vlan tag(say x).
  * 	#4: Assign this vlan tag(x) to all the bridge vlan filter interfaces in that particular dir ECM_DB_OBJ_DIR_XXX.
  */
-bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, struct sk_buff *skb, ecm_db_obj_dir_t dir,
+static bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, struct sk_buff *skb, ecm_db_obj_dir_t dir,
 		uint8_t *src_mac_addr, uint8_t *dest_mac_addr, enum ecm_db_connection_vlan_filter_dir vlan_filter_dir, bool is_routed, uint16_t *vid)
 {
 	int ret;
@@ -3672,7 +3671,7 @@ static int ecm_db_connection_vlan_filter_rule_state_get(struct ecm_state_file_in
  * ecm_db_connection_heirarchy_vlan_filter_state_get()
  *	Output state for Bridge VLAN Filter configuration.
  */
-int ecm_db_connection_heirarchy_vlan_filter_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_connection_instance *ci)
+static int ecm_db_connection_heirarchy_vlan_filter_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_connection_instance *ci)
 {
 	int result;
 	int i;
@@ -4996,7 +4995,7 @@ next_v0:
  * ecm_db_connection_defunct_by_5tuple_mask_handler()
  * 	Proc handler to defunct the ecm rules by giving 5 tuple mask
  */
-static int ecm_db_connection_defunct_by_5tuple_mask_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_connection_defunct_by_5tuple_mask_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	char *buf;
 	int count;
@@ -5218,7 +5217,7 @@ bool ecm_db_connection_defunct_5tuple_buffer(char *buf)
  * ecm_db_connection_defunct_by_5tuple_handler()
  * 	Proc handler to defunct the ecm rules by giving 5 tuple
  */
-static int ecm_db_connection_defunct_by_5tuple_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_connection_defunct_by_5tuple_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	char *buf;
 	int count;
@@ -5271,7 +5270,6 @@ static struct ctl_table ecm_db_connection_ctl_table[] = {
 		.mode		= 0666,
 		.proc_handler	= &ecm_db_connection_defunct_by_5tuple_mask_handler,
 	},
-	{ }
 };
 
 /*

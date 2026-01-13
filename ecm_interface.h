@@ -151,3 +151,8 @@ bool ecm_interface_is_arp_allowed(struct net_device *dev, struct sk_buff *skb);
 bool ecm_interface_is_ns_allowed(struct net_device *dev, struct sk_buff *skb);
 
 bool ecm_interface_hierarchy_is_tunnel_flow(struct net_device *in_dev, struct net_device *out_dev);
+void ecm_interface_node_connections_defunct_by_type_sta_join(uint8_t *mac);
+void ecm_interface_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint8_t wifi_qm_id);
+void ecm_interface_node_connections_defunct_by_mac_addr(uint8_t *mac);
+int ecm_interface_init(void);
+void ecm_interface_exit(void);

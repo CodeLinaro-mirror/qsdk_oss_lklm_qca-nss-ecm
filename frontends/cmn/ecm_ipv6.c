@@ -23,7 +23,6 @@
 #include <net/addrconf.h>
 #include <net/ipv6.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/xfrm.h>
@@ -99,6 +98,7 @@
 #endif
 #include "ecm_multicast_ipv6.h"
 #include "ecm_stats_v6.h"
+#include "ecm_ipv6.h"
 
 /*
  * Locking of the classifier - concurrency control for file global parameters.

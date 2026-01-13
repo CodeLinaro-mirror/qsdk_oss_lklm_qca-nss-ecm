@@ -525,6 +525,7 @@ ccflags-y += -DECM_STATS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_WIFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_STATS_DEBUG_LEVEL=1
 ccflags-y += -DECM_PPE_STATS_DEBUG_LEVEL=1
+ccflags-y += -DECM_SDX_PCC_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 
