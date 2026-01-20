@@ -390,6 +390,23 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		 */
 		DEBUG_INFO("%px: SFE Initiated final sync seen: %d\n", ci, sync->reason);
 
+		if (sync->reason == SFE_RULE_SYNC_REASON_FLUSH_SWITCH_AE) {
+			struct nf_conn *ct;
+
+			feci->decelerate(feci);
+			ct = ecm_classifier_get_and_ref_ct(ci);
+			if (ct) {
+				bool ct_update = ecm_classifier_update_ct_mark(ct);
+				if (!ct_update) {
+				 DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", ci);
+				} else {
+				 DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", ci);
+				}
+			} else {
+			 DEBUG_TRACE("Failed to get ct for ci: %px.\n", ci);
+			}
+		}
+
 		/*
 		 * SFE Decelerated the connection
 		 */
