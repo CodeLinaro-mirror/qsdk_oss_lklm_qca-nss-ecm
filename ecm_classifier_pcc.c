@@ -121,6 +121,8 @@ static struct dentry *ecm_classifier_pcc_dentry;
  */
 int ecm_classifier_pcc_register(struct ecm_classifier_pcc_registrant *r)
 {
+	struct module *module;
+
 	/*
 	 * Hold the module of the registrant
 	 */
@@ -137,8 +139,9 @@ int ecm_classifier_pcc_register(struct ecm_classifier_pcc_registrant *r)
 	if (ecm_classifier_registrant) {
 		spin_unlock_bh(&ecm_classifier_pcc_lock);
 		DEBUG_WARN("Registrant already\n");
-		module_put(r->this_module);
+		module = r->this_module;
 		r->deref(r);
+		module_put(module);
 		return -EALREADY;
 	}
 	ecm_classifier_registrant = r;
@@ -160,6 +163,7 @@ EXPORT_SYMBOL(ecm_classifier_pcc_register);
 void ecm_classifier_pcc_unregister_begin(struct ecm_classifier_pcc_registrant *r)
 {
 	struct ecm_classifier_pcc_registrant *reg;
+	struct module *module;
 
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	reg = ecm_classifier_registrant;
@@ -179,15 +183,24 @@ void ecm_classifier_pcc_unregister_begin(struct ecm_classifier_pcc_registrant *r
 	spin_unlock_bh(&ecm_classifier_pcc_lock);
 
 	/*
+	 * Save module pointer before dereferencing and potentially freeing reg.
+	 */
+	module = reg->this_module;
+
+	/*
 	 * Release our ref upon the registrant that we took when it was registered
 	 */
 	reg->deref(reg);
-	module_put(reg->this_module);
 
 	/*
 	 * Destroy all the connections
 	 */
 	ecm_db_connection_defunct_all();
+
+	/*
+	 * Release hold on registrant module
+	 */
+	module_put(module);
 }
 EXPORT_SYMBOL(ecm_classifier_pcc_unregister_begin);
 
@@ -579,6 +592,7 @@ EXPORT_SYMBOL(ecm_classifier_pcc_deny_accel_v6);
 static void ecm_classifier_pcc_unregister_force(struct ecm_classifier_pcc_instance *pcci)
 {
 	struct ecm_classifier_pcc_registrant *reg;
+	struct module *module;
 
 	spin_lock_bh(&ecm_classifier_pcc_lock);
 	reg = ecm_classifier_registrant;
@@ -594,17 +608,26 @@ static void ecm_classifier_pcc_unregister_force(struct ecm_classifier_pcc_instan
 	 * Release our ref upon the registrant that we took when it was registered
 	 */
 	DEBUG_INFO("Force unregistration of: %px\n", reg);
-	reg->deref(reg);
 
 	/*
-	 * Release hold on registrant module
+	 * Save module pointer before dereferencing and potentially freeing reg.
 	 */
-	module_put(reg->this_module);
+	module = reg->this_module;
+
+	/*
+	 * Release our ref upon the registrant that we took when it was registered
+	 */
+	reg->deref(reg);
 
 	/*
 	 * Destroy all the connections
 	 */
 	ecm_db_connection_defunct_all();
+
+	/*
+	 * Release hold on registrant module
+	 */
+	module_put(module);
 }
 
 /*
@@ -747,6 +770,7 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	int return_policer_index = 0;
 	struct net_device *in_dev = NULL;
 	struct net_device *out_dev = NULL;
+	struct module *module;
 
 	DEBUG_CHECK_MAGIC(pcci, ECM_CLASSIFIER_PCC_INSTANCE_MAGIC, "%px: invalid state magic\n", pcci);
 
@@ -948,6 +972,11 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 #endif
 
 	/*
+	 * Save module pointer before dereferencing and potentially freeing reg.
+	 */
+	module = registrant->this_module;
+
+	/*
 	 * Release the ref taken for this call
 	 */
 	registrant->deref(registrant);
@@ -955,7 +984,7 @@ static void ecm_classifier_pcc_process(struct ecm_classifier_instance *aci, ecm_
 	/*
 	 * Release the module ref taken.
 	 */
-	module_put(registrant->this_module);
+	module_put(module);
 
 	/*
 	 * Handle the features requested by registrants, if any.

@@ -396,6 +396,23 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		 */
 		DEBUG_INFO("%px: SFE Initiated final sync seen: %d cause:%d\n", ci, sync->reason, sync->cause);
 
+		if (sync->reason == SFE_RULE_SYNC_REASON_FLUSH_SWITCH_AE) {
+			struct nf_conn *ct;
+
+			feci->decelerate(feci);
+			ct = ecm_classifier_get_and_ref_ct(ci);
+			if (ct) {
+				bool ct_update = ecm_classifier_update_ct_mark(ct);
+				if (!ct_update) {
+				 DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", ci);
+				} else {
+				 DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", ci);
+				}
+			} else {
+			 DEBUG_TRACE("Failed to get ct for ci: %px.\n", ci);
+			}
+		}
+
 		/*
 		 * SFE Decelerated the connection
 		 */
@@ -558,7 +575,20 @@ sync_conntrack:
 		 */
 		if (!test_bit(IPS_ASSURED_BIT, &ct->status) && acct) {
 			u_int64_t reply_pkts = atomic64_read(&acct[IP_CT_DIR_REPLY].packets);
-
+#if 0
+                       /* SUNIL: Set IPS_HW_OFFLOAD_BIT */
+                       if (ct && !test_bit(IPS_HW_OFFLOAD_BIT, &ct->status)) {
+                               DEBUG_TRACE("%px: SUNIL: Pre-set UDP HW_OFFLOAD_BIT\n", ct);
+                               set_bit(IPS_HW_OFFLOAD_BIT, &ct->status);
+                               DEBUG_TRACE("%px: SUNIL: Post-set UDP HW_OFFLOAD_BIT\n", ct);
+                               ct->mark = 0x20;
+                               DEBUG_TRACE("%px: SUNIL: Post-set TCP mark\n", ct);
+                       }
+                       else
+                       {
+                               DEBUG_TRACE("%px: SUNIL: did NOT set UDP HW_OFFLOAD_BIT\n", ct);
+                       }
+#endif
 			if (reply_pkts != 0) {
 				struct nf_conntrack_l4proto *l4proto __maybe_unused;
 				unsigned int *timeouts;

@@ -398,7 +398,7 @@ unsigned int ecm_ported_ipv4_process(struct net_device *out_dev, struct net_devi
 			/*
 			 * As we are terminating we just allow the packet to pass - it's no longer our concern
 			 */
-			return NF_ACCEPT;
+			ECM_UPDATE_CT_MARK_FROM_TUPLE(ip_src_addr, ip_dest_addr, src_port, dest_port, protocol, 4);
 		}
 		spin_unlock_bh(&ecm_ipv4_lock);
 
@@ -570,7 +570,11 @@ feci_alloc_check:
 		if (!feci) {
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_PORTED, ECM_STATS_V4_EXCEPTION_PORTED_FRONTEND_ALLOC_FAIL);
 			DEBUG_WARN("Failed to allocate front end\n");
+#ifdef ECM_FRONT_END_SFE_ENABLE
+			ECM_UPDATE_CT_MARK_FROM_TUPLE(ip_src_addr, ip_dest_addr, src_port, dest_port, protocol, 4);
+#else
 			return NF_ACCEPT;
+#endif
 		}
 #endif
 
@@ -848,7 +852,7 @@ fail_2:
 fail_1:
 		ecm_front_end_connection_deref(feci);
 		ecm_db_connection_deref(nci);
-		return NF_ACCEPT;
+		ECM_UPDATE_CT_MARK_FROM_CI(ci);
 done:
 		;
 	}
@@ -1320,6 +1324,15 @@ done:
 		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
 		ecm_front_end_connection_deref(feci);
 	}
+
+#if 0
+       bool ct_update = ecm_classifier_nl_update_ct_mark(ci);
+       if (!ct_update)
+       {
+               DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", ci);
+       }
+       DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", ci);
+#endif
 	ecm_db_connection_deref(ci);
 
 	return NF_ACCEPT;

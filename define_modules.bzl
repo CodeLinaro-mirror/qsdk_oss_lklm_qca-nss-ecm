@@ -53,6 +53,7 @@ def define_modules(target, variant):
             "frontends/sfe/ecm_sfe_stats_v6.c",
 	    "ecm_sdx/ecm_sdx_stats.c",
 	    "ecm_sdx/ecm_sdx.c",
+            "ecm_classifier_emesh.c",
         ],
         kernel_build = "//msm-kernel:{}-defconfig".format(kernel_build_variant),
         copts = [
@@ -63,6 +64,7 @@ def define_modules(target, variant):
             "-DECM_INTERFACE_RAWIP_ENABLE=y",
             "-DECM_TRACKER_DPI_SUPPORT_ENABLE=y",
             "-DECM_CLASSIFIER_DSCP_ENABLE=y",
+            "-DECM_CLASSIFIER_EMESH_ENABLE=y",
             "-DECM_INTERFACE_VLAN_ENABLE=y",
             "-DECM_BRIDGE_VLAN_FILTERING_ENABLE=y",
             "-DECM_BAND_STEERING_ENABLE=y",
@@ -73,6 +75,7 @@ def define_modules(target, variant):
             "-DECM_STATE_OUTPUT_ENABLE=y",
             "-DECM_DB_XREF_ENABLE=y",
             "-DECM_IPV6_ENABLE=y",
+            "-DECM_PLATFORM_SDX=y",
             "-DECM_CLASSIFIER_DEBUG_LEVEL=1",
             "-DECM_CLASSIFIER_OVS_DEBUG_LEVEL=1",
             "-DECM_CLASSIFIER_MARK_DEBUG_LEVEL=1",
@@ -141,6 +144,8 @@ def define_modules(target, variant):
             ":ecm_headers",
             "//msm-kernel:all_headers",
             "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/qca-nss-sfe-1.0:{}-defconfig_qca_nss_sfe".format(kernel_build_variant),
+            "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:emesh_sp_headers",
+            "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:{}-defconfig_emesh_sp".format(kernel_build_variant),
         ],
     )
     mod_list.append("{}_ecm".format(kernel_build_variant))

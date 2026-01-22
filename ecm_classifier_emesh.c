@@ -253,6 +253,7 @@ static void ecm_classifier_sawf_fill_rm_sync_msg(struct ecm_classifier_emesh_saw
 	DEBUG_INFO("src_port: %u dst_port: %u protocol: %u ip_version: %u src_mac %pM dst_mac %pM flow_sid %u return_sid %u sync_type %d\n", ntohs(rm_msg->src_port), ntohs(rm_msg->dst_port), rm_msg->protocol, rm_msg->ip_version, rm_msg->src_mac, rm_msg->dst_mac, rm_msg->flow_sid, rm_msg->return_sid, rm_msg->sync_type);
 }
 
+#ifdef ECM_PLATFORM_SDX
 /*
  * ecm_classifier_emesh_sawf_mark_set()
  */
@@ -289,10 +290,159 @@ static void ecm_classifier_emesh_sawf_mark_set(
 		msg->return_mark = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 	}
 }
+#endif
 
 /*
  * ecm_classfier_emesh_stc_mark_set()
  */
+#ifdef ECM_PLATFORM_SDX
+static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
+{
+       struct sp_rule_inner *in = &r->inner;
+       struct ecm_db_connection_instance *ci;
+       struct nf_conn *ct;
+       ip_addr_t src_ip, dest_ip;
+       bool ct_update = false;
+
+      if (in->ip_version_type == 4) {
+               ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, in->src_ipv4_addr);
+               ECM_NIN4_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv4_addr);
+       } else {
+               ECM_NET_IPV6_ADDR_TO_IP_ADDR(src_ip, in->src_ipv6_addr);
+               ECM_NET_IPV6_ADDR_TO_IP_ADDR(dest_ip, in->dst_ipv6_addr);
+       }
+
+       /*
+        * Find the ECM connection based on the IP addresses got from the rule.
+        */
+       ci = ecm_db_connection_find_and_ref(src_ip,
+                                           dest_ip,
+                                           in->protocol_number,
+                                           in->src_port,
+                                           in->dst_port);
+       if (unlikely(!ci)) {
+               DEBUG_WARN("%px: no ci\n", r);
+               return;
+       }
+
+       ct = ecm_classifier_get_and_ref_ct(ci);
+       if (ct)
+       {
+         ct_update = ecm_classifier_update_ct_mark(ct);
+         if (!ct_update)
+         {
+           DEBUG_TRACE("Update mark failed for ecm db connection instance: %px.\n", ci);
+         }
+         else
+         {
+           DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px.\n", ci);
+         }
+       }
+       else
+       {
+         DEBUG_TRACE("Failed to get ct for ci: %px.\n", ci);
+       }
+
+        ip_addr_t match_addr, dest_ip_xlate;
+        struct ecm_front_end_flowsawf_msg flowsawfmsg = {0};
+        struct ecm_front_end_flowsawf_msg *msg = &flowsawfmsg;
+        uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+        uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
+        //struct ecm_db_connection_instance *ci;
+        struct ecm_front_end_connection_instance *feci;
+        struct ecm_classifier_instance *aci;
+        struct ecm_classifier_emesh_sawf_instance *cemi=NULL;
+        ecm_tracker_sender_type_t sender;
+
+        ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, match_addr);
+        if (ECM_IP_ADDR_MATCH(src_ip, match_addr))
+            sender = ECM_TRACKER_SENDER_TYPE_SRC;
+        else
+            sender = ECM_TRACKER_SENDER_TYPE_DEST;
+
+        feci = ecm_db_connection_front_end_get_and_ref(ci);
+        if (!feci->update_rule) {
+            DEBUG_WARN("%px: frontend update_rule callback is not registered\n", r);
+            goto end;
+        }
+
+        /*
+        * Check if emesh classifier is assigned.
+        */
+        aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+        if (!aci) {
+            DEBUG_WARN("%px: emesh classifier is not assigned. ci=%px %u\n", r, ci, ci->serial);
+            goto end;
+        }
+
+        cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
+
+        /*
+        * Construct the message to be sent to AEs for the 5 tuple information and the
+        * mark value.
+        *
+        * NOTE: While filling the message, get the IP / ports as per the ECM's 5 tuple
+        * database instead of the tuples specified in rule. This is to ensure that the right
+        * direction is updated in AEs, as AEs connections are created based on ECM's 5 tuple
+        * database.
+        *
+        * Following are the directions in which ECM's connection and AE's connections are
+        * created wrt ECM's directions:
+        *	ECM connection:		ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO
+        *	AE's connection:	ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO_NAT
+        *	AE's orig cme:		ECM_DB_OBJ_DIR_FROM - ECM_DB_OBJ_DIR_TO-NAT
+        *	AE's reply cme:		ECM_DB_OBJ_DIR_TO – ECM_DB_OBJ_DIR_FROM
+        *
+        * We are supposed to find the SFE connection which takes the from and to_nat
+        * IP addresses from the ECM database. So take these IPs to send the message to SFE.
+        */
+        ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+        ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip_xlate);
+        msg->flow_src_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
+        msg->flow_dest_port = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
+
+        msg->ip_version = in->ip_version_type;
+        msg->protocol = in->protocol_number;
+
+
+
+        /*
+        * Get the service class as per the rule direction.
+        */
+        if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+            msg->flow_service_class_id = in->service_class_id;
+            msg->return_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+        } else {
+            msg->flow_service_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_SERVICE_CLASS;
+            msg->return_service_class_id = in->service_class_id;
+        }
+
+        if (in->ip_version_type == 4) {
+            ECM_NIN4_ADDR_TO_IP_ADDR(msg->flow_src_ip, src_ip[0]);
+            ECM_NIN4_ADDR_TO_IP_ADDR(msg->flow_dest_ip, dest_ip_xlate[0]);
+            DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI4n:%u -> %pI4n:%u protocol=%d\n", r,
+                    msg->flow_service_class_id, msg->return_service_class_id,
+                    msg->flow_src_ip, ntohs(msg->flow_src_port),
+                    msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
+        } else {
+            ECM_NET_IPV6_ADDR_TO_IP_ADDR(msg->flow_src_ip, src_ip);
+            ECM_NET_IPV6_ADDR_TO_IP_ADDR(msg->flow_dest_ip, dest_ip_xlate);
+            DEBUG_TRACE("%px: flow/return service_class_id=%u/%u %pI6c@%u -> %pI6c@%u protocol=%d\n", r,
+                    msg->flow_service_class_id, msg->return_service_class_id,
+                    msg->flow_src_ip, ntohs(msg->flow_src_port),
+                    msg->flow_dest_ip, ntohs(msg->flow_dest_port), msg->protocol);
+        }
+
+        ecm_classifier_emesh_sawf_mark_set(msg->flow_service_class_id, msg->return_service_class_id,
+            msduq_forward, msduq_reverse, msg, cemi, r->key, r->id);
+        r->id = msg->return_service_class_id;
+        r->key = msg->flow_service_class_id;
+
+end:
+        ecm_front_end_connection_deref(feci);
+        ecm_db_connection_deref(ci);
+}
+#else
 static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 {
 	struct sp_rule_inner *in = &r->inner;
@@ -673,6 +823,7 @@ end:
 
 	return;
 }
+#endif
 
 /*
  * ecm_classifier_emesh_sawf_get_iface_names_ipv4
@@ -2304,7 +2455,7 @@ static void ecm_classifier_emesh_sawf_fill_del_params(struct ecm_db_connection_i
 							struct sp_rule_del_params *del_params, int dir)
 {
 	ip_addr_t sip, dip;
-	int src_dir, dst_dir;
+	int src_dir = 0, dst_dir = 0;
 
 	if (dir == ECM_DB_OBJ_DIR_FROM) {
 		src_dir = ECM_DB_OBJ_DIR_FROM;
@@ -3322,6 +3473,10 @@ static int ecm_classifier_emesh_sawf_spm_notifier_callback(struct notifier_block
 		ecm_classfier_emesh_stc_mark_set(r);
 		DEBUG_INFO("classifier type SP_RULE_TYPE_SAWF_IFLI\n");
 		return NOTIFY_DONE;
+	}
+
+	if (r->classifier_type == SP_RULE_TYPE_SAWF) {
+		ecm_classfier_emesh_stc_mark_set(r);
 	}
 
 	DEBUG_INFO("SP rule update notification received: event=%lu\n", event);
