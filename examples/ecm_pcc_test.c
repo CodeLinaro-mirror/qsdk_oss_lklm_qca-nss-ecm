@@ -49,6 +49,13 @@ module_param(feature_flags_support, int, S_IRUGO);
 MODULE_PARM_DESC(feature_flags_support, "Enable feature flags support");
 
 /*
+ * With pcc_mirror_en parameter enabled, when a rule is not found,
+ * return ECM_CLASSIFIER_PCC_RESULT_PERMITTED instead of ECM_CLASSIFIER_PCC_RESULT_NOT_YET.
+ * It is disabled by default.
+ */
+static int pcc_mirror_en;
+
+/*
  * Sysctl table header
  */
 static struct ctl_table_header *ecm_pcc_test_ctl_table_header;
@@ -407,8 +414,18 @@ ecm_pcc_test_get_accel_info_v4(struct ecm_classifier_pcc_registrant *r,
 		}
 
 		pr_debug("Rule not found\n");
+
+		/*
+		 * If pcc_mirror_en is set, return PERMITTED
+		 * instead of NOT_YET when rule is not found
+		 */
+		if (pcc_mirror_en) {
+			return ECM_CLASSIFIER_PCC_RESULT_PERMITTED;
+		}
+
 		return ECM_CLASSIFIER_PCC_RESULT_NOT_YET;
 	}
+
 	accel = rule->accel;
 	feature_flags= rule->feature_flags;
 
@@ -471,8 +488,19 @@ ecm_pcc_test_get_accel_info_v6(struct ecm_classifier_pcc_registrant *r,
 			return ecm_pcc_test_get_accel_info_egress_acl(r, cinfo);
 		}
 
+		pr_debug("Rule not found\n");
+
+		/*
+		 * If pcc_mirror_en is set, return PERMITTED
+		 * instead of NOT_YET when rule is not found
+		 */
+		if (pcc_mirror_en) {
+			return ECM_CLASSIFIER_PCC_RESULT_PERMITTED;
+		}
+
 		return ECM_CLASSIFIER_PCC_RESULT_NOT_YET;
 	}
+
 	accel = rule->accel;
 	feature_flags= rule->feature_flags;
 
@@ -1475,6 +1503,40 @@ static int ecm_pcc_test_unregister_handler(struct ctl_table *ctl, int write, voi
 	return 0;
 }
 
+/*
+ * ecm_pcc_test_pcc_mirror_en_handler()
+ * 	Sysctl handler for pcc_mirror_en with bounds checking
+ */
+static int ecm_pcc_test_pcc_mirror_en_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_val;
+
+	/*
+	 * Write the value with user input
+	 */
+	current_val = pcc_mirror_en;
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return if failure or read operation
+		 */
+		return ret;
+	}
+
+	/*
+	 * Validate the input: only 0 or 1 are valid
+	 */
+	if ((pcc_mirror_en != 0) && (pcc_mirror_en != 1)) {
+		pcc_mirror_en = current_val;
+		pr_err("Invalid input, valid values are 0 or 1\n");
+		return -EINVAL;
+	}
+
+	pr_info("pcc_mirror_en set to %d\n", pcc_mirror_en);
+	return ret;
+}
+
 static struct ctl_table ecm_pcc_test_ctl_table[] = {
 	{
 		.procname	= "unregister",
@@ -1489,6 +1551,13 @@ static struct ctl_table ecm_pcc_test_ctl_table[] = {
 		.maxlen		= 0,
 		.mode		= 0644,
 		.proc_handler	= &ecm_pcc_test_rule_handler,
+	},
+	{
+		.procname	= "pcc_mirror_en",
+		.data		= &pcc_mirror_en,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_pcc_test_pcc_mirror_en_handler,
 	},
 	{ }
 };
