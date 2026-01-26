@@ -325,6 +325,14 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
                return;
        }
 
+	if (in->ip_version_type == 4) {
+		DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+				&in->src_ipv4_addr, in->src_port, &in->dst_ipv4_addr, in->dst_port, in->protocol_number);
+	} else {
+		DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+				&in->src_ipv6_addr, in->src_port, &in->dst_ipv6_addr, in->dst_port, in->protocol_number);
+	}
+
        ct = ecm_classifier_get_and_ref_ct(ci);
        if (ct)
        {
