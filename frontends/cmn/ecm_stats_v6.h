@@ -109,6 +109,8 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of bridged IPv6 packet ignored as output interface marked with no-offload */
 	ECM_STATS_V6_EXCEPTION_UNSUPPORTED_L2TPV3_PROTOCOL,
 			/* Number of IPv6 packets ignored as unsupported L2TPv3 protocol */
+	ECM_STATS_V6_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH,
+			/* Number of IPv6 packets ignored as unsupported IPsec ESP passthrough */
 	ECM_STATS_V6_EXCEPTION_CMN_MAX
 			/*Maximum common exceptions for IPv6 flows*/
 };

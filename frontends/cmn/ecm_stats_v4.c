@@ -74,6 +74,7 @@ static const char* ecm_stats_v4_exception_cmn_name_str[] = {
 	"v4_bridge_in_iff_offload_disabled",
 	"v4_bridge_out_iff_offload_disabled",
 	"v4_unsupported_l2tpv3_protocol",
+	"v4_unsupported_IPsec_ESP_passthrough",
 };
 
 static const char* ecm_stats_v4_exception_ported_name_str[] = {

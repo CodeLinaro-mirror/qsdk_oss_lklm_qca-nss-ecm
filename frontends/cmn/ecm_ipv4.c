@@ -1466,6 +1466,18 @@ vxlan_done:
 	}
 
 	/*
+	 * Check if we can accelerate ESP porotcol.
+	 */
+	if (ip_hdr.protocol == IPPROTO_ESP) {
+		bool inner;
+		if (!ecm_front_end_is_xfrm_flow(skb, &ip_hdr, &inner)) {
+			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH);
+			DEBUG_TRACE("%px: IPsec ESP passthrough is not allowed\n", skb);
+			return NF_ACCEPT;
+		}
+	}
+
+	/*
 	 * Check for a multicast Destination address here.
 	 */
 	ECM_NIN4_ADDR_TO_IP_ADDR(ip_dest_addr, orig_tuple.dst.u3.ip);
