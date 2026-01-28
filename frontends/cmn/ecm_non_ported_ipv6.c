@@ -517,6 +517,11 @@ feci_alloc_done:
 			ti->deref(ti);
 
 			/*
+			 * For outer tunnel flow, mark the CI as a tunnel connection.
+			 */
+			ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
+
+			/*
 			 * Add the new connection we created into the database
 			 * NOTE: assign to a short timer group for now - it is the assigned classifiers responsibility to do this
 			 */

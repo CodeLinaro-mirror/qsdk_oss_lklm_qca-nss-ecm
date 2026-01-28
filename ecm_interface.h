@@ -139,3 +139,5 @@ void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *c
 uint32_t ecm_interface_vxlan_type_get(struct sk_buff *skb, struct vxlan_dev *vxlan_tun);
 __be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *dev, const struct sk_buff *skb, union vxlan_addr *remote_ip);
 #endif
+
+bool ecm_interface_ported_hiearachy_is_tun_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev, int protocol);

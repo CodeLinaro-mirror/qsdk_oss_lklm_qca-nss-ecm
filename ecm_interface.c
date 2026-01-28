@@ -10137,6 +10137,200 @@ static inline void ecm_interface_register_nf_hook_wlan_device(void)
 }
 
 /*
+ * ecm_interface_is_ipsec_tunnel_dev()
+ *	Check is given dev is a tunnel dev.
+ */
+static bool ecm_interface_is_ipsec_tunnel_dev(struct sk_buff *skb, struct net_device *dev, int protocol)
+{
+#ifdef ECM_XFRM_ENABLE
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE &&
+				(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+		return true;
+	}
+#else
+	if (protocol == IPPROTO_UDP && udp_hdr(skb)->dest == htons(4500)) {
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+/*
+ * ecm_interface_hieararchy_is_ipsec_outer()
+ *	Check if any of the src/dest dev is ipsec tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_ipsec_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev, int protocol)
+{
+	return ecm_interface_is_ipsec_tunnel_dev(skb, in_dev, protocol) || ecm_interface_is_ipsec_tunnel_dev(skb, out_dev, protocol);
+}
+
+/*
+ * ecm_interface_hieararchy_is_mapt_outer()
+ *	Check if any of the src/dest dev is mapt tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_mapt_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * For MAP-T tunnels, only check the device for IPv6 packets
+	 */
+	if (skb && skb->protocol == htons(ETH_P_IPV6)) {
+		if (in_dev->priv_flags_ext & IFF_EXT_MAPT) {
+			return true;
+		}
+
+		if (out_dev->priv_flags_ext & IFF_EXT_MAPT) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_interface_hieararchy_is_vxlan_outer()
+ *	Check if any of the src/dest dev is vxlan tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_vxlan_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * Check if any of the interface is vxlan tunnel endpoint
+	 */
+	if (netif_is_vxlan(in_dev)) {
+		struct vxlan_dev *vxlan_tun;
+
+		vxlan_tun = netdev_priv(in_dev);
+		if (ecm_interface_vxlan_type_get(skb, vxlan_tun) == 0) {
+			return true;
+		}
+	}
+
+	if (netif_is_vxlan(out_dev)) {
+		struct vxlan_dev *vxlan_tun;
+
+		vxlan_tun = netdev_priv(out_dev);
+		if (ecm_interface_vxlan_type_get(skb, vxlan_tun) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_interface_is_l2tp_tunnel_dev()
+ *	Check if dev is l2tp tunnel dev.
+ */
+static bool ecm_interface_is_l2tp_tunnel_dev(struct sk_buff *skb, struct net_device *dev)
+{
+	struct ppp_channel *ppp_chan[1];
+	int channel_count;
+	struct pppol2tp_common_addr info;
+	struct iphdr *iph;
+	struct udphdr *udph;
+
+	if ((dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
+		if (skb && (skb->skb_iif == dev->ifindex)) {
+			/*
+			 * Get the PPP channel to extract L2TP tunnel information
+			 */
+			if (__ppp_is_multilink(dev) > 0) {
+				DEBUG_TRACE("%px: Net device: %px is MULTILINK PPP - Not supported\n", skb, dev);
+				return false;
+			}
+
+			channel_count = __ppp_hold_channels(dev, ppp_chan, 1);
+			if (channel_count != 1) {
+				DEBUG_TRACE("%px: Net device: %px PPP has %d channels - Not supported\n", skb, dev, channel_count);
+				return false;
+			}
+
+			if (pppol2tp_channel_addressing_get(ppp_chan[0], &info)) {
+				ppp_release_channels(ppp_chan, 1);
+				return false;
+			}
+
+			/*
+			 * Now check if the packet's UDP ports match the L2TP tunnel ports
+			 */
+			if (skb->protocol == htons(ETH_P_IP)) {
+				iph = ip_hdr(skb);
+				if (iph->protocol == IPPROTO_UDP) {
+					udph = udp_hdr(skb);
+
+					/*
+					 * Check if UDP ports match L2TP tunnel ports
+					 * This confirms it's an outer header
+					 */
+					if ((udph->source == info.local_addr.sin_port && udph->dest == info.remote_addr.sin_port) ||
+						(udph->source == info.remote_addr.sin_port && udph->dest == info.local_addr.sin_port)) {
+						ppp_release_channels(ppp_chan, 1);
+						return true;
+					}
+				}
+			}
+
+			ppp_release_channels(ppp_chan, 1);
+		}
+	}
+
+	return false;
+}
+
+/*
+ * ecm_interface_hieararchy_is_l2tp_outer()
+ *	Check if any of the src/dest dev is l2tpv2 tunnel dev.
+ * Also checks if the packet contains L2TP outer header.
+ */
+static bool ecm_interface_hieararchy_is_l2tp_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * Check if any of the devices is an L2TP tunnel device
+	 */
+	if (ecm_interface_is_l2tp_tunnel_dev(skb, in_dev)) {
+		return true;
+	}
+
+	if (ecm_interface_is_l2tp_tunnel_dev(skb, out_dev)) {
+		return true;
+	}
+	return false;
+}
+#endif
+
+/*
+ * ecm_interface_ported_hiearachy_is_tun_outer
+ *	Checking ported tunnels for unidirection acceleration
+ */
+bool ecm_interface_ported_hiearachy_is_tun_outer(struct sk_buff *skb, struct net_device *in_dev,
+	struct net_device *out_dev, int protocol)
+{
+	if (ecm_interface_hieararchy_is_ipsec_outer(skb, in_dev, out_dev, protocol)) {
+		return true;
+	}
+
+	if (ecm_interface_hieararchy_is_mapt_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	if (ecm_interface_hieararchy_is_vxlan_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	if (ecm_interface_hieararchy_is_l2tp_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+/*
  * ecm_interface_init()
  */
 int ecm_interface_init(void)
