@@ -1674,7 +1674,7 @@ process_packet:
 	 */
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		feci->accelerate(feci, &prevalent_pr, false, NULL, skb);
+		feci->accelerate(feci, &prevalent_pr, false, NULL, skb, sender);
 		ecm_front_end_connection_deref(feci);
 	}
 

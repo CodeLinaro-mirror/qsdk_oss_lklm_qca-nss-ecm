@@ -148,7 +148,8 @@ static bool ecm_ppe_non_ported_ipv6_accelerate_done(struct ecm_front_end_connect
  */
 static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
 								struct ecm_classifier_process_response *pr, bool is_l2_encap,
-								struct nf_conn *ct, struct sk_buff *skb)
+								struct nf_conn *ct, struct sk_buff *skb,
+								ecm_tracker_sender_type_t sender)
 {
 	uint16_t regen_occurrances;
 	int32_t from_ifaces_first;

@@ -1334,7 +1334,7 @@ done:
 	if (prevalent_pr.accel_mode == ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL) {
 		DEBUG_TRACE("%px: accel\n", ci);
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
-		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb);
+		feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb, sender);
 		ecm_front_end_connection_deref(feci);
 	}
 	ecm_db_connection_deref(ci);

@@ -189,7 +189,8 @@ typedef enum ecm_front_end_acceleration_modes ecm_front_end_acceleration_mode_t;
 struct ecm_front_end_connection_instance;
 typedef void (*ecm_front_end_connection_accelerate_method_t)(struct ecm_front_end_connection_instance *feci,
 									struct ecm_classifier_process_response *pr, bool is_l2_encap,
-									struct nf_conn *ct, struct sk_buff *skb);
+									struct nf_conn *ct, struct sk_buff *skb,
+									ecm_tracker_sender_type_t sender);
 
 typedef bool (*ecm_front_end_connection_decelerate_method_t)(struct ecm_front_end_connection_instance *feci);
 typedef void (*ecm_front_end_connection_accel_ceased_method_t)(struct ecm_front_end_connection_instance *feci);
