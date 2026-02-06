@@ -140,7 +140,7 @@ def define_modules(target, variant):
         "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/qca-nss-sfe-1.0:{}-defconfig_qca_nss_sfe".format(kernel_build_variant),
     ]
 
-    if target != "sdxkova.cpe.tarang":
+    if target not in ("sdxkova.cpe.tarang", "sdxkova.cpe.min"):
         ecm_srcs.append("ecm_classifier_emesh.c")
         ecm_copts.append("-DECM_CLASSIFIER_EMESH_ENABLE=y")
         ecm_deps.extend([
