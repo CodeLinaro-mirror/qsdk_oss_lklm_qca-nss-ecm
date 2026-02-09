@@ -232,55 +232,104 @@ static LIST_HEAD(ecm_interface_netdev_hook_reg_list);
  */
 int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 {
-	__u8 proto;
+	u8 proto;
 	int ip_version;
 	ip_addr_t src_ip, dst_ip;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_flowsawf_msg msg;
 	struct ecm_classifier_instance *aci;
-	struct nf_conn *ct;
-	enum ip_conntrack_info ctinfo;
-	struct nf_conntrack_tuple orig_tuple;
-	struct nf_conntrack_tuple reply_tuple;
-	u8 l3proto;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
 	int assignment_count;
+	u16 sport = 0, dport = 0;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conntrack_tuple orig_tuple, reply_tuple;
+	int sender;
 
+	/*
+	 * Only process packets with valid conntrack information
+	 */
 	ct = nf_ct_get(skb, &ctinfo);
-	if (!ct) {
-		DEBUG_TRACE("%px: no ct\n", skb);
+	if (!ct || ctinfo == IP_CT_UNTRACKED) {
+		DEBUG_TRACE("No conntrack available, skipping packet\n");
 		return -1;
 	}
 
+	/*
+	 * Extract conntrack connection information
+	 */
 	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
 
-	l3proto = orig_tuple.src.l3num;
+	/*
+	 * Determine packet direction relative to conntrack
+	 */
+	if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
+		DEBUG_TRACE("Packet is in ORIGINAL direction (uplink)\n");
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else {
+		DEBUG_TRACE("Packet is in REPLY direction (downlink)\n");
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
+	 * Extract protocol (same in both directions)
+	 */
 	proto = orig_tuple.dst.protonum;
 
-	if (l3proto == NFPROTO_IPV4) {
-		ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
-		if (!ci) {
-			DEBUG_TRACE("%px: connection not found\n", ct);
-			return -1;
+	if (proto != IPPROTO_TCP && proto != IPPROTO_UDP) {
+		DEBUG_WARN("Unsupported protocol from conntrack: %d\n", proto);
+		return -1;
+	}
+
+	/*
+	 * Extract 5-tuple based on actual packet direction
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		if (orig_tuple.src.l3num == NFPROTO_IPV4) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.ip);
+			ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, orig_tuple.dst.u3.ip);
+			ip_version = 4;
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, orig_tuple.dst.u3.in6);
+			ip_version = 6;
 		}
 
-		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.ip);
-		ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.ip);
-		ip_version = 4;
-	} else if (l3proto == NFPROTO_IPV6) {
-		ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
-		if (!ci) {
-			DEBUG_TRACE("%px: connection not found\n", ct);
-			return -1;
+		if (proto == IPPROTO_TCP) {
+			sport = ntohs(orig_tuple.src.u.tcp.port);
+			dport = ntohs(orig_tuple.dst.u.tcp.port);
+		} else if (proto == IPPROTO_UDP) {
+			sport = ntohs(orig_tuple.src.u.udp.port);
+			dport = ntohs(orig_tuple.dst.u.udp.port);
 		}
-
-		ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.in6);
-		ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.in6);
-		ip_version = 6;
 	} else {
-		DEBUG_TRACE("%px: Unsupported protocol %d\n", ct, l3proto);
+		if (reply_tuple.src.l3num == NFPROTO_IPV4) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, reply_tuple.src.u3.ip);
+			ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.dst.u3.ip);
+			ip_version = 4;
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, reply_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.dst.u3.in6);
+			ip_version = 6;
+		}
+
+		if (proto == IPPROTO_TCP) {
+			sport = ntohs(reply_tuple.src.u.tcp.port);
+			dport = ntohs(reply_tuple.dst.u.tcp.port);
+		} else if (proto == IPPROTO_UDP) {
+			sport = ntohs(reply_tuple.src.u.udp.port);
+			dport = ntohs(reply_tuple.dst.u.udp.port);
+		}
+	}
+
+	/*
+	 * Find the ECM connection based on the conntrack-extracted 5-tuple
+	 */
+	ci = ecm_db_connection_find_and_ref(src_ip, dst_ip, proto, sport, dport);
+	if (unlikely(!ci)) {
+		DEBUG_WARN("Unable to find ci\n");
 		return -1;
 	}
 
@@ -289,17 +338,8 @@ int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 	msg.flow_mark = skb->mark;
 	msg.ip_version = ip_version;
 	msg.protocol = proto;
-
-	if (proto == IPPROTO_UDP) {
-		msg.flow_src_port = orig_tuple.src.u.udp.port;
-		msg.flow_dest_port = orig_tuple.dst.u.udp.port;
-	} else if (proto == IPPROTO_TCP) {
-		msg.flow_src_port = orig_tuple.src.u.tcp.port;
-		msg.flow_dest_port = orig_tuple.dst.u.tcp.port;
-	} else {
-		msg.flow_src_port = 0;
-		msg.flow_dest_port = 0;
-	}
+	msg.flow_src_port = sport;
+	msg.flow_dest_port = dport;
 
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
 
