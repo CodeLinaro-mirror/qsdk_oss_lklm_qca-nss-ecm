@@ -803,6 +803,13 @@ feci_alloc_done:
 			ti->deref(ti);
 
 			/*
+			 * Check if flow belongs to tunnel and it is tunnel outer flow.
+			 */
+			if (ecm_interface_ported_hiearachy_is_tun_outer(skb, in_dev, out_dev, protocol)) {
+				ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
+			}
+
+			/*
 			 * Add the new connection we created into the database
 			 * NOTE: assign to a short timer group for now - it is the assigned classifiers responsibility to do this
 			 */
