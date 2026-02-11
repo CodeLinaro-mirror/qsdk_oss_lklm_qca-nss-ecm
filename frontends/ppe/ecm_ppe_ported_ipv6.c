@@ -166,7 +166,7 @@ bool ecm_ppe_ported_ipv6_unidir_rule_update(
 		struct ecm_db_connection_instance *ci, struct ecm_classifier_process_response *pr,
 		ecm_tracker_sender_type_t sender, uint8_t rule_type)
 {
-	struct ppe_drv_v6_rule_update_msg update_msg = {0};
+	struct ppe_drv_v6_rule_update_msg *update_msg = NULL;
 	uint32_t flow_ident, return_ident;
 	struct in6_addr flow_ip, return_ip;
 	struct ecm_front_end_connection_instance *feci;
@@ -186,6 +186,13 @@ bool ecm_ppe_ported_ipv6_unidir_rule_update(
 		return true;
 	}
 
+	update_msg = (struct ppe_drv_v6_rule_update_msg *)kzalloc(sizeof(struct ppe_drv_v6_rule_update_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!update_msg) {
+		DEBUG_WARN("%px: no memory for ppe ipv6 rule update structure instance\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return false;
+	}
+
 	/*
 	 * Extract Tuple information from ecm connection.
 	 */
@@ -199,45 +206,46 @@ bool ecm_ppe_ported_ipv6_unidir_rule_update(
 	/*
 	 * Fill the PPE rule mark information.
 	 */
-	update_msg.rule_type = rule_type;
+	update_msg->rule_type = rule_type;
 
-	update_msg.tuple.protocol = (int32_t)ci->protocol;
-	update_msg.tuple.flow_ident = flow_ident;
-	update_msg.tuple.return_ident = return_ident;
-	memcpy(update_msg.tuple.flow_ip, &flow_ip, sizeof(update_msg.tuple.flow_ip));
-	memcpy(update_msg.tuple.return_ip, &return_ip, sizeof(update_msg.tuple.return_ip));
+	update_msg->tuple.protocol = (int32_t)ci->protocol;
+	update_msg->tuple.flow_ident = flow_ident;
+	update_msg->tuple.return_ident = return_ident;
+	memcpy(update_msg->tuple.flow_ip, &flow_ip, sizeof(update_msg->tuple.flow_ip));
+	memcpy(update_msg->tuple.return_ip, &return_ip, sizeof(update_msg->tuple.return_ip));
 
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
-		update_msg.info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_FLOW;
+		update_msg->info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_FLOW;
 	} else {
-		update_msg.info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_RETURN;
+		update_msg->info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_RETURN;
 	}
 
 	if ((pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) && (rule_type & PPE_DRV_UPDATE_RULE_TYPE_QOS)) {
-		update_msg.info.unidir.valid_flags |= PPE_DRV_V6_VALID_FLAG_QOS;
-		update_msg.info.unidir.qos.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
-		update_msg.info.unidir.qos.return_qos_tag =  (uint32_t)pr->return_qos_tag;
-		update_msg.info.unidir.qos.flow_int_pri = (uint8_t)pr->flow_int_pri;
-		update_msg.info.unidir.qos.return_int_pri = (uint8_t)pr->return_int_pri;
-		update_msg.info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
-		update_msg.info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
+		update_msg->info.unidir.valid_flags |= PPE_DRV_V6_VALID_FLAG_QOS;
+		update_msg->info.unidir.qos.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
+		update_msg->info.unidir.qos.return_qos_tag =  (uint32_t)pr->return_qos_tag;
+		update_msg->info.unidir.qos.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		update_msg->info.unidir.qos.return_int_pri = (uint8_t)pr->return_int_pri;
+		update_msg->info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_FLOW_PPE_QOS;
+		update_msg->info.unidir.qos.qos_valid_flags |= PPE_DRV_VALID_FLAG_RETURN_PPE_QOS;
 	}
 
 	/*
 	 * DSCP information?
 	 */
 	if ((pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_DSCP) && (rule_type & PPE_DRV_UPDATE_RULE_TYPE_DSCP)) {
-		update_msg.info.unidir.valid_flags |= PPE_DRV_V4_VALID_FLAG_DSCP_MARKING;
-		update_msg.info.unidir.dscp.flow_dscp = pr->flow_dscp;
-		update_msg.info.unidir.dscp.return_dscp = pr->return_dscp;
+		update_msg->info.unidir.valid_flags |= PPE_DRV_V4_VALID_FLAG_DSCP_MARKING;
+		update_msg->info.unidir.dscp.flow_dscp = pr->flow_dscp;
+		update_msg->info.unidir.dscp.return_dscp = pr->return_dscp;
 	}
 
-	status = ppe_drv_v6_rule_update(&update_msg);
+	status = ppe_drv_v6_rule_update(update_msg);
 
 	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(status));
 	if (status != PPE_DRV_RET_SUCCESS) {
 		DEBUG_WARN("Uni-directional update of flow entry failed in PPE with %u.\n", status);
 		ecm_front_end_connection_deref(feci);
+		kfree(update_msg);
 		return false;
 	}
 
@@ -251,10 +259,11 @@ bool ecm_ppe_ported_ipv6_unidir_rule_update(
 				"Rule updated in %s direction\n"
 				"flow_dscp = %x\n"
 				"return_dscp = %x\n",
-				(update_msg.info.unidir.dir ? "return" : "flow"),
-				update_msg.info.unidir.dscp.flow_dscp,
-				update_msg.info.unidir.dscp.return_dscp);
+				(update_msg->info.unidir.dir ? "return" : "flow"),
+				update_msg->info.unidir.dscp.flow_dscp,
+				update_msg->info.unidir.dscp.return_dscp);
 	ecm_front_end_connection_deref(feci);
+	kfree(update_msg);
 	return true;
 }
 
@@ -266,48 +275,57 @@ bool ecm_ppe_ported_ipv6_bidir_sawf_rule_update(
 		struct ecm_db_connection_instance *ci, struct ecm_front_end_flowsawf_msg *msg,
 		uint8_t rule_type)
 {
-	struct ppe_drv_v6_rule_update_msg update_msg = {0};
+	struct ppe_drv_v6_rule_update_msg *update_msg = NULL;
 	struct ecm_front_end_connection_instance *feci;
 	ppe_drv_ret_t ppe_status;
 
 	feci = ecm_db_connection_front_end_get_and_ref(ci);
 
-	update_msg.rule_type |= PPE_DRV_UPDATE_RULE_TYPE_SAWF;
+	update_msg = (struct ppe_drv_v6_rule_update_msg *)kzalloc(sizeof(struct ppe_drv_v6_rule_update_msg), GFP_ATOMIC | __GFP_NOWARN);
+	if (!update_msg) {
+		DEBUG_WARN("%px: no memory for ppe ipv6 rule update structure instance\n", ci);
+		ecm_front_end_connection_deref(feci);
+		return false;
+	}
 
-	update_msg.info.sawf.flow_mark = msg->flow_mark;
-	update_msg.info.sawf.flow_service_class = msg->flow_service_class_id;
+	update_msg->rule_type |= PPE_DRV_UPDATE_RULE_TYPE_SAWF;
+
+	update_msg->info.sawf.flow_mark = msg->flow_mark;
+	update_msg->info.sawf.flow_service_class = msg->flow_service_class_id;
 	if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW) {
-		update_msg.info.sawf.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
+		update_msg->info.sawf.valid_flags |= PPE_DRV_SAWF_MARK_FLOW_UPDATE;
 	}
 
-	update_msg.info.sawf.return_mark = msg->return_mark;
-	update_msg.info.sawf.return_service_class = msg->return_service_class_id;
+	update_msg->info.sawf.return_mark = msg->return_mark;
+	update_msg->info.sawf.return_service_class = msg->return_service_class_id;
 	if (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN) {
-		update_msg.info.unidir.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
+		update_msg->info.unidir.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
 	}
 
-	update_msg.tuple.protocol = msg->protocol;
-	update_msg.tuple.flow_ident = ntohs(msg->flow_src_port);
-	update_msg.tuple.return_ident = ntohs(msg->flow_dest_port);
-	ECM_IP_ADDR_TO_NET_IPV6_ADDR(update_msg.tuple.flow_ip, msg->flow_src_ip);
-	ECM_IP_ADDR_TO_NET_IPV6_ADDR(update_msg.tuple.return_ip, msg->flow_dest_ip);
+	update_msg->tuple.protocol = msg->protocol;
+	update_msg->tuple.flow_ident = ntohs(msg->flow_src_port);
+	update_msg->tuple.return_ident = ntohs(msg->flow_dest_port);
+	ECM_IP_ADDR_TO_NET_IPV6_ADDR(update_msg->tuple.flow_ip, msg->flow_src_ip);
+	ECM_IP_ADDR_TO_NET_IPV6_ADDR(update_msg->tuple.return_ip, msg->flow_dest_ip);
 
-	ppe_status = ppe_drv_v6_rule_update(&update_msg);
+	ppe_status = ppe_drv_v6_rule_update(update_msg);
 
 	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(ppe_status));
 	if (ppe_status != PPE_DRV_RET_SUCCESS) {
 		DEBUG_WARN("%px: Failed to update mark value in PPE\n", ci);
 		ecm_front_end_connection_deref(feci);
+		kfree(update_msg);
 		return false;
 	}
 
 	DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6:%u -> %pI6:%u protocol=%u\n",
-			ci, update_msg.info.sawf.flow_mark, update_msg.info.sawf.return_mark,
-			update_msg.tuple.flow_ip, update_msg.tuple.flow_ident,
-			update_msg.tuple.return_ip, update_msg.tuple.return_ident,
-					update_msg.tuple.protocol);
+			ci, update_msg->info.sawf.flow_mark, update_msg->info.sawf.return_mark,
+			update_msg->tuple.flow_ip, update_msg->tuple.flow_ident,
+			update_msg->tuple.return_ip, update_msg->tuple.return_ident,
+					update_msg->tuple.protocol);
 
 	ecm_front_end_connection_deref(feci);
+	kfree(update_msg);
 	return true;
 }
 

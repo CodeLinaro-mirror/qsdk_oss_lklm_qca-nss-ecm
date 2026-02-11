@@ -133,7 +133,7 @@ unsigned int ecm_ported_ipv6_process(struct net_device *out_dev, struct net_devi
 	int aci_index;
 	int assignment_count;
 	ecm_db_timer_group_t ci_orig_timer_group;
-	struct ecm_classifier_process_response prevalent_pr = {0};
+	struct ecm_classifier_process_response prevalent_pr;
 	int protocol = (int)orig_tuple->dst.protonum;
 	__be16 *layer4hdr = NULL;
 	uint32_t flags = can_accel ? ECM_FRONT_END_ENGINE_FLAG_CAN_ACCEL : 0;
@@ -1398,10 +1398,16 @@ done:
 		feci = ecm_db_connection_front_end_get_and_ref(ci);
 
 		if (feci->accel_mode == ECM_FRONT_END_ACCELERATION_MODE_ACCEL && ci->unidir_accel_en && feci->update_rule) {
-			struct ecm_cmn_unidir_update_info update_info;
-			update_info.sender = sender;
-			update_info.pr = &prevalent_pr;
-			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_UNI_DI_QOS, (void *) &update_info);
+			struct ecm_cmn_unidir_update_info *update_info;
+			update_info = kzalloc(sizeof(struct ecm_cmn_unidir_update_info), GFP_ATOMIC);
+			if (update_info) {
+				update_info->sender = sender;
+				update_info->pr = &prevalent_pr;
+				feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_UNI_DI_QOS, (void *) update_info);
+				kfree(update_info);
+			} else {
+				DEBUG_WARN("%px: Failed to allocate memory for update_info %d\n", feci, ci->serial);
+			}
 		} else {
 			feci->accelerate(feci, &prevalent_pr, is_l2_encap, ct, skb, sender);
 		}
