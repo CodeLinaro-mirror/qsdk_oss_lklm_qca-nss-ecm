@@ -522,6 +522,11 @@ feci_alloc_done:
 			ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
 
 			/*
+			 * Marking this as a tunnel flow in CI.
+			 */
+			ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW);
+
+			/*
 			 * Add the new connection we created into the database
 			 * NOTE: assign to a short timer group for now - it is the assigned classifiers responsibility to do this
 			 */

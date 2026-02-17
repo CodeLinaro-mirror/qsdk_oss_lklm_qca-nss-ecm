@@ -579,6 +579,20 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	nircm->rule_flags = 0;
 
 	/*
+	 * If connection is for Tunnel Outer packet, then mark same in sfe create valid flag.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER) {
+		nircm->valid_flags |= SFE_RULE_CREATE_TUNNEL_OUTER_FLOW_VALID;
+	}
+
+	/*
+	 * If connection is for Tunnel packet, either outer or inner, then mark same in sfe create valid flag.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW) {
+		nircm->valid_flags |= SFE_RULE_CREATE_TUNNEL_FLOW_VALID;
+	}
+
+	/*
 	 * Initialize VLAN tag information
 	 */
 	nircm->vlan_primary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;

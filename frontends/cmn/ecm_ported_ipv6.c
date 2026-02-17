@@ -837,6 +837,13 @@ feci_alloc_done:
 				ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
 			}
 
+				/*
+			 * If any of the in/out dev is a tunnel dev, then mark CI as a tunnel connection.
+			 */
+			if (ecm_interface_hierarchy_is_tunnel_flow(in_dev, out_dev)) {
+				ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW);
+			}
+
 			/*
 			 * Add the new connection we created into the database
 			 * NOTE: assign to a short timer group for now - it is the assigned classifiers responsibility to do this

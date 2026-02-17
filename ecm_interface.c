@@ -231,6 +231,66 @@ static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table 
 static LIST_HEAD(ecm_interface_netdev_hook_reg_list);
 
 /*
+ * ecm_interface_hierarchy_is_tunnel_dev()
+ *	Check is given dev is a tunnel dev.
+ */
+static inline bool ecm_interface_hierarchy_is_tunnel_dev(struct net_device *dev)
+{
+	const char *tunnel[] = {
+							"vxlan", "gretap", "gre", "ip6gre", "ipip", "sit",
+							"geneve", "erspan", "ip6tnl", "fou", "bareudp",
+							"mpls_gre", "mpls_ip", "tun", "xfrm", "ip6erspan"
+							};
+
+	if (!dev) {
+		return false;
+	}
+
+	uint8_t tunnel_num = sizeof(tunnel) / sizeof(tunnel[0]);
+	switch (dev->type) {
+	case ARPHRD_TUNNEL:
+	case ARPHRD_TUNNEL6:
+	case ARPHRD_SIT:
+	case ARPHRD_IPGRE:
+	case ECM_ARPHRD_IPSEC_TUNNEL_TYPE:
+		return true;
+	case ARPHRD_ETHER:
+	case ARPHRD_NONE:
+		if (dev->rtnl_link_ops && dev->rtnl_link_ops->kind) {
+			const char *kind = dev->rtnl_link_ops->kind;
+			for (uint8_t i = 0; i < tunnel_num; i++) {
+				if (!strcmp(kind, tunnel[i]))
+					return true;
+			}
+		}
+		break;
+	}
+
+	/*
+	 * Additional check to see if its a tunnel dev,
+	 * in case missed by above checks.
+	 */
+	if (dev->priv_flags_ext & (
+				IFF_EXT_TUN_TAP | IFF_EXT_PPP_L2TPV2|
+				IFF_EXT_PPP_L2TPV3 | IFF_EXT_PPP_PPTP |
+				IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP |
+				IFF_EXT_ETH_L2TPV3 | IFF_EXT_MAPT)) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * ecm_interface_hierarchy_is_tunnel_flow()
+ *	Check if any of the src/dest dev is tunnel dev.
+ */
+bool ecm_interface_hierarchy_is_tunnel_flow(struct net_device *in_dev, struct net_device *out_dev)
+{
+	return ecm_interface_hierarchy_is_tunnel_dev(in_dev) || ecm_interface_hierarchy_is_tunnel_dev(out_dev);
+}
+
+/*
  * ecm_interface_handle_wlan_egress_packet()
  *	Process the packets that need WLAN QoS handling
  */

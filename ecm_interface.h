@@ -149,3 +149,5 @@ bool ecm_interface_validate_bridge_sub_ids(struct net_device *in, struct net_dev
 
 bool ecm_interface_is_arp_allowed(struct net_device *dev, struct sk_buff *skb);
 bool ecm_interface_is_ns_allowed(struct net_device *dev, struct sk_buff *skb);
+
+bool ecm_interface_hierarchy_is_tunnel_flow(struct net_device *in_dev, struct net_device *out_dev);
