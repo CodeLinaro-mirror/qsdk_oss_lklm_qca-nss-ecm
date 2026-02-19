@@ -146,3 +146,6 @@ bool ecm_interface_ported_hiearachy_is_tun_outer(struct sk_buff *skb, struct net
 extern int ecm_interface_br_isolation_enable;
 bool ecm_interface_validate_bridge_sub_ids(struct net_device *in, struct net_device *out, struct sk_buff *skb);
 #endif
+
+bool ecm_interface_is_arp_allowed(struct net_device *dev, struct sk_buff *skb);
+bool ecm_interface_is_ns_allowed(struct net_device *dev, struct sk_buff *skb);

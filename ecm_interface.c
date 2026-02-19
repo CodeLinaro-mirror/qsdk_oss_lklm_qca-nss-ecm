@@ -5437,12 +5437,69 @@ static bool ecm_interface_multicast_get_next_node_mac_address(
 #endif
 
 /*
+ * ecm_interface_is_arp_allowed()
+ *	Check if ARP is allowed for a given tunnel interface.
+ */
+bool ecm_interface_is_arp_allowed(struct net_device *dev, struct sk_buff *skb)
+{
+	struct iphdr *iph;
+	uint8_t proto;
+
+	iph = ip_hdr(skb);
+	proto = iph->protocol;
+
+	/*
+	 * For tunnels, sending an ARP request while the
+	 * packet is being transmitted can lead to a deadlock.
+	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
+	 */
+	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
+		return false;
+	}
+
+	if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && (proto == IPPROTO_GRE)) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ecm_interface_is_ns_allowed()
+ *	Check if Neighbor Solicitation is allowed for a given tunnel interface.
+ */
+bool ecm_interface_is_ns_allowed(struct net_device *dev, struct sk_buff *skb)
+{
+	struct ipv6hdr *iph;
+	uint8_t proto;
+
+	iph = ipv6_hdr(skb);
+	proto = iph->nexthdr;
+
+	/*
+	 * For tunnels, sending a Neighbor Solicitation while the
+	 * packet is being transmitted can lead to a deadlock.
+	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
+	 */
+	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
+		return false;
+	}
+
+	if ((dev->priv_flags_ext & IFF_EXT_GRE_V6_TAP) && (proto == IPPROTO_GRE)) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * ecm_interface_get_next_node_mac_address()
  *	Get the MAC address of the next node
  */
 static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 					struct net_device *dest_dev,
-					int ip_version, uint8_t *mac_addr, uint32_t skb_mark)
+					int ip_version, uint8_t *mac_addr, uint32_t skb_mark,
+					struct net_device *src_dev, struct sk_buff *skb)
 {
 	ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 	bool on_link = true;
@@ -5472,14 +5529,18 @@ static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 	if (ip_version == 4) {
 		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT " send ARP request\n",
 				ECM_IP_ADDR_TO_DOT(dest_addr));
-		ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+		if (ecm_interface_is_arp_allowed(src_dev, skb)) {
+			ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+		}
 	}
 
 #ifdef ECM_IPV6_ENABLE
 	if (ip_version == 6) {
 		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT  " send solicitation request\n",
 				ECM_IP_ADDR_TO_OCTAL(dest_addr));
-		ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+		if (ecm_interface_is_ns_allowed(src_dev, skb)) {
+			ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+		}
 	}
 #endif
 
@@ -6122,7 +6183,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						}
 #endif
 
-						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr, skb->mark)) {
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr, skb->mark, given_src_dev, skb)) {
 							DEBUG_WARN("%px: Unable to find the host MAC address connected to the Linux bridge\n", feci);
 							goto done;
 						}
@@ -6170,7 +6231,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						dev_put(tmp_dev);
 					}
 
-					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr, skb->mark)) {
+					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr, skb->mark, given_src_dev, skb)) {
 						DEBUG_WARN("%px: Unable to find the host MAC address connected to the OVS bridge\n", feci);
 						goto done;
 					}

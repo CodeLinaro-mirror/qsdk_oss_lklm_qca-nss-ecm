@@ -328,34 +328,6 @@ skip_port:
 #endif
 
 /*
- * ecm_ipv4_is_arp_allowed()
- *	Check if ARP is allowed for a given tunnel interface.
- */
-static bool ecm_ipv4_is_arp_allowed(struct net_device *dev, struct sk_buff *skb)
-{
-	struct iphdr *iph;
-	uint8_t proto;
-
-	iph = ip_hdr(skb);
-	proto = iph->protocol;
-
-	/*
-	 * For tunnels, sending an ARP request while the
-	 * packet is being transmitted can lead to a deadlock.
-	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
-	 */
-	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
-		return false;
-	}
-
-	if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && (proto == IPPROTO_GRE)) {
-		return false;
-	}
-
-	return true;
-}
-
-/*
  * ecm_ipv4_node_establish_and_ref()
  *	Returns a reference to a node, possibly creating one if necessary.
  *
@@ -768,7 +740,7 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 					on_link = false;
 				}
 
-				if (ecm_ipv4_is_arp_allowed(dev, skb)) {
+				if (ecm_interface_is_arp_allowed(dev, skb)) {
 					ecm_interface_send_arp_request(mac_dev, addr, on_link, gw_addr);
 				}
 
