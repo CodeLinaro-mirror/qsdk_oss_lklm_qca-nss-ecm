@@ -453,6 +453,11 @@ ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
 ccflags-$(ECM_256M_PROFILE) += -DECM_256M_PROFILE
 
 # #############################################################################
+# Define ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE=y in order to enable Bridge Isolation.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE) += -DECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.

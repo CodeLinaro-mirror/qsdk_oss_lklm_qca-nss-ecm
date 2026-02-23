@@ -2235,6 +2235,16 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 		return NF_ACCEPT;
 	}
 
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+	if (!ecm_interface_validate_bridge_sub_ids(in, out, skb)) {
+		DEBUG_TRACE("skb: %px, Bridge sub-ID validation failed\n", skb);
+		dev_put(in);
+		dev_put(bridge);
+		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_BRIDGE_SUB_ID_MISMATCH);
+		return NF_ACCEPT;
+	}
+#endif
+
 	/*
 	 * This flag needs to be checked in slave port(eth0/ath0)
 	 * and not on master interface(br-lan). Hairpin flag can be

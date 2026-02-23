@@ -198,6 +198,10 @@ int ecm_interface_src_check;
  */
 int ecm_interface_mwan3_enable = 0;
 
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+int ecm_interface_br_isolation_enable;
+#endif
+
 /*
  * Source interface check no flush flag.
  * 	If this is enabled, the flows with a mismatch of source interface will not be flushed.
@@ -9585,6 +9589,31 @@ static int ecm_interface_defunct_by_iface_handler(struct ctl_table *ctl, int wri
 	return ecm_interface_defunct_by_iface(write, buffer, lenp, ppos);
 }
 
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+/*
+ * ecm_interface_validate_bridge_sub_ids()
+ *	Validate sub bridge ids of the bridge ports
+ */
+bool ecm_interface_validate_bridge_sub_ids(struct net_device *in, struct net_device *out, struct sk_buff *skb)
+{
+       if (ecm_interface_br_isolation_enable == 1) {
+               int from_sub_br_id = -1, to_sub_br_id = -1;
+
+               from_sub_br_id = br_port_get_sub_br_id(in);
+               to_sub_br_id = br_port_get_sub_br_id(out);
+
+               if (from_sub_br_id < 0 || to_sub_br_id < 0 || (from_sub_br_id != to_sub_br_id)) {
+                       DEBUG_TRACE("skb: %px, Invalid or incompatible from/to interface sub bridge ID, from id: %d, to id: %d\n",
+                                       skb, from_sub_br_id, to_sub_br_id);
+                       return false;
+               }
+       }
+
+       return true;
+}
+
+#endif
+
 static struct ctl_table ecm_interface_table[] = {
 	{
 		.procname		= "src_interface_check",
@@ -9639,6 +9668,17 @@ static struct ctl_table ecm_interface_table[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_defunct_by_iface_handler,
 	},
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+	{
+		.procname       = "br_isolation_enable",
+		.data           = &ecm_interface_br_isolation_enable,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 	{ }
 };
 

@@ -100,6 +100,8 @@ enum ecm_stats_v6_exception_cmn_events {
 			/* Number of IPv6 packets ignored as unsupported L2TPv3 protocol */
 	ECM_STATS_V6_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH,
 			/* Number of IPv6 packets ignored as unsupported IPsec ESP passthrough */
+	ECM_STATS_V6_EXCEPTION_BRIDGE_SUB_ID_MISMATCH,
+			/* Number of IPv6 packets ignored due to sub-bridge id mismatch */
 	ECM_STATS_V6_EXCEPTION_CMN_MAX
 			/*Maximum common exceptions for IPv6 flows*/
 };

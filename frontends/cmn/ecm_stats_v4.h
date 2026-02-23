@@ -100,6 +100,8 @@ enum ecm_stats_v4_exception_cmn_events {
 			/* Number of IPv4 packets ignored as unsupported L2TPv3 protocol */
 	ECM_STATS_V4_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH,
 			/* Number of IPv4 packets ignored as unsupported IPsec ESP passthrough */
+	ECM_STATS_V4_EXCEPTION_BRIDGE_SUB_ID_MISMATCH,
+			/* Number of packets ignored due to sub-bridge id mismatch */
 	ECM_STATS_V4_EXCEPTION_CMN_MAX
 		/*Maximum common exceptions for IPv4 flows*/
 
