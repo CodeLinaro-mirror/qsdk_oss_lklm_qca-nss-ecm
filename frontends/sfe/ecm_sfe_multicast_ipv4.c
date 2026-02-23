@@ -1085,6 +1085,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	 */
 	from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(feci->ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
 	if (from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_FROM_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no interfaces in from_interfaces list!\n", feci);
 		kfree(nim);
@@ -1094,6 +1095,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	from_sfe_iface = from_ifaces[from_ifaces_first];
 	from_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(from_sfe_iface);
 	if (from_sfe_iface_id < 0) {
+		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_FROM_IFACE_INVALID_BOTTOM_IFACE);
                 DEBUG_TRACE("%px: from_sfe_iface_id: %d\n", feci, from_sfe_iface_id);
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -1331,6 +1333,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 
 	ret = ecm_db_multicast_connection_to_interfaces_get_and_ref_all(feci->ci, &to_ifaces, &to_ifaces_first);
 	if (!ret) {
+		ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 		ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_NO_TO_INTERFACES);
 		DEBUG_WARN("%px: Accel attempt failed - no multicast interfaces in to_interfaces list!\n", feci);
 		kfree(nim);
@@ -1443,6 +1446,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 				to_mtu = (uint32_t)ecm_db_connection_iface_mtu_get(feci->ci, ECM_DB_OBJ_DIR_TO);
 				to_sfe_iface_id = ecm_db_iface_ae_interface_identifier_get(ii);
 				if (to_sfe_iface_id < 0) {
+					ecm_sfe_ipv4_accel_pending_clear(feci, ECM_FRONT_END_ACCELERATION_MODE_DECEL);
 					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST, ECM_SFE_STATS_V4_EXCEPTION_MULTICAST_TO_IFACE_INVALID_IFACE_ID);
 					DEBUG_TRACE("%px: to_sfe_iface_id: %d\n", feci, to_sfe_iface_id);
 					ecm_db_multicast_connection_to_interfaces_deref_all(to_ifaces, to_ifaces_first);
