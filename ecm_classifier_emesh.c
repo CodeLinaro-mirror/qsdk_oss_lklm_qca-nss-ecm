@@ -84,6 +84,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
 #define ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(sawf_meta)   ((sawf_meta >> 20) & 0x4)
 #define ECM_CLASSIFIER_EMESH_SCS_SAWF_RSVD_SERVICE_CLASS 127
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID  0
 
 /*
  * Default value to Enable emesh classifier and SAWF mode
@@ -1401,6 +1402,14 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK;
 	}
 
+	if (flow_output_params->out_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID){
+		cemi->process_response.flow_qos_tag = flow_output_params->out_class_id;
+	}
+
+	if (return_output_params->out_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID){
+		cemi->process_response.return_qos_tag = return_output_params->out_class_id;
+	}
+
 	cemi->type = ECM_CLASSIFIER_SAWF;
 	cemi->sawf_rule_stats |= ECM_CLASSIFIER_EMESH_SAWF_RULE_MATCH_SUCCESS;
 }
@@ -1916,6 +1925,9 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	flow_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	return_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
+	flow_output_params.out_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID;
+	return_output_params.out_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID;
+
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
@@ -2360,13 +2372,45 @@ done:
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	}
 
+	/*
+	 * We need to reset the value of appropriate qos_tag, if QDISC configured
+	 * 			set for valid class_id in ecm_classifier_emesh_sawf_fill_sawf_metadata
+	 * IF sender = SRC, flow_qos_tag takes class_id from flow_output_params -> RESET
+	 * 			return_qos_tag takes from return_output_params
+	 * IF sender = DEST, flow_qos_tag takes class_id from return_output_params
+	 * 			return_qos_tag takes class_id from flow_output_params -> RESET
+	 * ELSE if QDISC not configured, reset both qos_tags
+	 */
 	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
 			((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
-		cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
-		cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
+				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+			else
+				cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		} else {
+			cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+			cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		}
+
+		/*
+		 * Assign out_priority values via pcp to flow and return int_pri
+		 */
+		cemi->process_response.flow_int_pri = cemi->pcp[ECM_CONN_DIR_FLOW];
+		cemi->process_response.return_int_pri = cemi->pcp[ECM_CONN_DIR_RETURN];
 	} else {
-		cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
-		cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
+				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+			else
+				cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		} else {
+			cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+			cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		}
+
+		cemi->process_response.flow_int_pri = cemi->pcp[ECM_CONN_DIR_RETURN];
+		cemi->process_response.return_int_pri = cemi->pcp[ECM_CONN_DIR_FLOW];
 	}
 sawf_emesh_classifier_out:
 
