@@ -5405,6 +5405,22 @@ bool ecm_classifier_update_ct_mark(struct nf_conn *ct)
 			nf_conntrack_event(IPCT_MARK, ct);
 			mark_update = true;
 			DEBUG_TRACE("%px: Conntrack mark updated successfully\n", ct);
+
+			if (nf_ct_l3num(ct) == AF_INET) {
+				DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
+			} else {
+				DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.in6,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.in6,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
+			}
 	} else {
 			DEBUG_TRACE("%px: Bit 16 not set, no mark update needed\n", ct);
 	}
