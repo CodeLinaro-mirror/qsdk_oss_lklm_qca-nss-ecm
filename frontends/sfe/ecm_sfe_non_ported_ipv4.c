@@ -21,7 +21,6 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/addrconf.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -375,7 +374,8 @@ static void ecm_sfe_non_ported_ipv4_connection_callback(void *app_data, struct s
  */
 static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_connection_instance *feci,
                                                                         struct ecm_classifier_process_response *pr, bool is_l2_encap,
-                                                                        struct nf_conn *ct, struct sk_buff *skb)
+                                                                        struct nf_conn *ct, struct sk_buff *skb,
+									ecm_tracker_sender_type_t sender)
 {
 	uint16_t regen_occurrances;
 	int32_t from_ifaces_first;
@@ -450,6 +450,20 @@ static void ecm_sfe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 	nircm = &nim->msg.rule_create;
 	nircm->valid_flags = 0;
 	nircm->rule_flags = 0;
+
+	/*
+	 * If connection is for Tunnel Outer packet, then mark same in sfe create valid flag.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER) {
+		nircm->valid_flags |= SFE_RULE_CREATE_TUNNEL_OUTER_FLOW_VALID;
+	}
+
+	/*
+	 * If connection is for Tunnel packet, either outer or inner, then mark same in sfe create valid flag.
+	 */
+	if (feci->ci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW) {
+		nircm->valid_flags |= SFE_RULE_CREATE_TUNNEL_FLOW_VALID;
+	}
 
 	/*
 	 * Initialize VLAN tag information

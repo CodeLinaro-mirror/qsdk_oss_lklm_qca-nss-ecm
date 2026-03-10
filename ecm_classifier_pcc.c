@@ -28,7 +28,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -1320,7 +1319,7 @@ static int ecm_classifier_pcc_state_get(struct ecm_classifier_instance *ci, stru
  * ecm_classifier_pcc_enable_handler()
  * 	Proc handler to enable or disable PCC classifier
  */
-static int ecm_classifier_pcc_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_pcc_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1367,7 +1366,6 @@ static struct ctl_table ecm_classifier_pcc_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_pcc_enable_handler,
 	},
-	{ }
 };
 
 /*

@@ -114,7 +114,7 @@ static struct ecm_ae_select_test_rule *ecm_ae_select_test_rule_find(unsigned int
  * ecm_ae_select()
  *	 Selects the acceleration engine based on the given flow information.
  */
-ecm_ae_classifier_result_t ecm_ae_select(struct ecm_ae_classifier_info *info)
+static ecm_ae_classifier_result_t ecm_ae_select(struct ecm_ae_classifier_info *info)
 {
 	struct ecm_ae_select_test_rule *rule = NULL;
 	ecm_ae_classifier_result_t accel;

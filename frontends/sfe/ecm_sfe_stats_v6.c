@@ -93,7 +93,10 @@ static const char *ecm_sfe_stats_v6_exception_ported_name_str[] = {
 	"v6_exception_ported_to_iface_dsa_unsupported",
 	"v6_exception_ported_mht_port_failed",
 	"v6_exception_ported_regen_occurred",
-	"v6_exception_ported_tx_failed"
+	"v6_exception_ported_tx_failed",
+	"v6_exception_ported_unidir_update_fail",
+	"v6_exception_ported_bidir_update_fail",
+	"v6_exception_ported_unidir_update_no_mem"
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
@@ -153,8 +156,10 @@ void ecm_sfe_stats_v6_inc(struct ecm_front_end_connection_instance *feci, ecm_sf
 	/*
 	 * In ECM exceptions 0 means ACCEL_NOT_PERMITTED, it may overwrite the actual AE failure
 	 */
-	if (stat_idx)
+	if (stat_idx) {
 		atomic64_set(&feci->sfe_accel_fail_reason, stat_idx);
+		atomic64_set(&feci->unidir_accel_fail_reason, stat_idx);
+	}
 }
 
 static int ecm_sfe_stats_v6_exception_show(struct seq_file *m, void __attribute__((unused))*ptr)

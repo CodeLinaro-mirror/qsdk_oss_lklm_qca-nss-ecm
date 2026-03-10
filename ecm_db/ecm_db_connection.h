@@ -326,6 +326,11 @@ struct ecm_db_connection_instance {
 #if (DEBUG_LEVEL > 0)
 	uint16_t magic;
 #endif
+	bool unidir_accel_en;					/* Tells if this connection needs to be accelerated in one direction initially. */
+	ecm_tracker_sender_type_t accel_sender;			/* Stores the sender who accelerates the connection first  */
+	uint64_t slow_unidir_pkts[ECM_TRACKER_SENDER_MAX];	/* Count of unidirection slow packets for accel delay */
+	bool packet_seen[ECM_CONN_DIR_MAX];			/* Per-direction packet seen flag */
+
 };
 
 /*
@@ -334,6 +339,8 @@ struct ecm_db_connection_instance {
 #define ECM_DB_CONNECTION_FLAGS_INSERTED 0x1			/* Connection is inserted into connection database tables */
 #define ECM_DB_CONNECTION_FLAGS_PPPOE_BRIDGE 0x2		/* Connection is PPPoE bridge entry */
 #define ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED 0x4	/* Connection is defuncted because of conntarck Destroyed */
+#define ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER 0x8		/* Connection is for a tunnel connection outer */
+#define ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW 0x10		/* Connection is for a tunnel connection, either inner or outer tunnel */
 
 int _ecm_db_connection_count_get(void);
 
@@ -506,6 +513,9 @@ uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uint16_t src_port, ip_addr_t dest_addr,
 						uint16_t dest_port, int proto, bool is_routed, ecm_classifier_type_t ca_type);
 bool ecm_db_connection_defunct_5tuple_buffer(char *buf);
+
+bool ecm_db_connection_unidir_ready_for_accel(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender);
+ecm_tracker_sender_type_t ecm_db_connection_accel_sender_get(struct ecm_db_connection_instance *ci);
 
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);

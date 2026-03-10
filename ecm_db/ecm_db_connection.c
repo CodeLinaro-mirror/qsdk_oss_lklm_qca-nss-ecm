@@ -21,7 +21,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
@@ -786,7 +785,7 @@ EXPORT_SYMBOL(ecm_db_connection_node_address_get);
 void ecm_db_connection_iface_name_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, char *name_buffer)
 {
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
-	strlcpy(name_buffer, ci->node[dir]->iface->name, IFNAMSIZ);
+	strscpy(name_buffer, ci->node[dir]->iface->name, IFNAMSIZ);
 }
 EXPORT_SYMBOL(ecm_db_connection_iface_name_get);
 
@@ -2744,7 +2743,7 @@ EXPORT_SYMBOL(ecm_db_connection_interfaces_reset);
  * 	#3: Do fdb lookup in the bridge to get the vlan tag(say x).
  * 	#4: Assign this vlan tag(x) to all the bridge vlan filter interfaces in that particular dir ECM_DB_OBJ_DIR_XXX.
  */
-bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, struct sk_buff *skb, ecm_db_obj_dir_t dir,
+static bool ecm_db_connection_fill_vlan_filter(struct ecm_db_connection_instance *ci, struct sk_buff *skb, ecm_db_obj_dir_t dir,
 		uint8_t *src_mac_addr, uint8_t *dest_mac_addr, enum ecm_db_connection_vlan_filter_dir vlan_filter_dir, bool is_routed, uint16_t *vid)
 {
 	int ret;
@@ -3672,7 +3671,7 @@ static int ecm_db_connection_vlan_filter_rule_state_get(struct ecm_state_file_in
  * ecm_db_connection_heirarchy_vlan_filter_state_get()
  *	Output state for Bridge VLAN Filter configuration.
  */
-int ecm_db_connection_heirarchy_vlan_filter_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_connection_instance *ci)
+static int ecm_db_connection_heirarchy_vlan_filter_state_get(struct ecm_state_file_instance *sfi, struct ecm_db_connection_instance *ci)
 {
 	int result;
 	int i;
@@ -4996,7 +4995,7 @@ next_v0:
  * ecm_db_connection_defunct_by_5tuple_mask_handler()
  * 	Proc handler to defunct the ecm rules by giving 5 tuple mask
  */
-static int ecm_db_connection_defunct_by_5tuple_mask_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_connection_defunct_by_5tuple_mask_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	char *buf;
 	int count;
@@ -5218,7 +5217,7 @@ bool ecm_db_connection_defunct_5tuple_buffer(char *buf)
  * ecm_db_connection_defunct_by_5tuple_handler()
  * 	Proc handler to defunct the ecm rules by giving 5 tuple
  */
-static int ecm_db_connection_defunct_by_5tuple_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_db_connection_defunct_by_5tuple_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	char *buf;
 	int count;
@@ -5271,8 +5270,56 @@ static struct ctl_table ecm_db_connection_ctl_table[] = {
 		.mode		= 0666,
 		.proc_handler	= &ecm_db_connection_defunct_by_5tuple_mask_handler,
 	},
-	{ }
 };
+
+/*
+ * ecm_db_connection_unidir_ready_for_accel()
+ *	Check if flow/return connection is ready for acceleration
+ */
+bool ecm_db_connection_unidir_ready_for_accel(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender)
+{
+	/*
+	 * Get the packet count we have seen in the slow path so far.
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ci->slow_unidir_pkts[sender]++;
+	spin_unlock_bh(&ecm_db_lock);
+
+	/*
+	 * Check if we have seen slow path packets as the predefined count.
+	 */
+	if (ci->slow_unidir_pkts[sender] < ecm_front_end_unidir_accel_delay) {
+		DEBUG_TRACE("%px: delay the acceleration: slow packets: %llu default delay packet count: %d\n",
+				ci, ci->slow_unidir_pkts[sender], ecm_front_end_unidir_accel_delay);
+
+		/*
+		 * We haven't reached the slow path packet limit.
+		 * We can wait more to accelerate the connection.
+		 */
+		return false;
+	}
+
+	/*
+	 * We waited enough time for the acceleration, we can allow it now.
+	 */
+	DEBUG_INFO("%px: Let the flow accel, waited enough packet\n", ci);
+	return true;
+}
+
+/*
+ * ecm_db_connection_accel_sender_get()
+ *	Return the accel sender for unidirection acceleration
+ */
+ecm_tracker_sender_type_t ecm_db_connection_accel_sender_get(struct ecm_db_connection_instance *ci)
+{
+	ecm_tracker_sender_type_t accel_sender;
+
+	spin_lock_bh(&ecm_db_lock);
+	accel_sender = ci->accel_sender;
+	spin_unlock_bh(&ecm_db_lock);
+	return accel_sender;
+}
+EXPORT_SYMBOL(ecm_db_connection_accel_sender_get);
 
 /*
  * File operations for simple connection counts.

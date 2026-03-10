@@ -41,6 +41,8 @@
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
 #include "exports/ecm_sfe_common_public.h"
+#include "ecm_sfe_ported_ipv4.h"
+#include "ecm_sfe_ported_ipv6.h"
 
 #ifdef ECM_MHT_ENABLE
 #include "ppe_drv.h"
@@ -48,6 +50,9 @@
 #ifdef ECM_FRONT_END_PPE_ENABLE
 #include<ppe_tun.h>
 #endif
+
+#include "ecm_sfe_stats_v4.h"
+#include "ecm_sfe_stats_v6.h"
 
 /*
  * Callback object to support SFE frontend interaction with external code
@@ -338,7 +343,7 @@ void ecm_sfe_common_fast_xmit_set(uint32_t *rule_flags, uint32_t *valid_flags, s
  * ecm_sfe_fast_xmit_enable_handler()
  *	Fast transmit sysctl node handler.
  */
-int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_fast_xmit_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -362,7 +367,7 @@ int ecm_sfe_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __us
  * ecm_sfe_fse_enable_handler()
  *	Sysctl to enable/disable FSE programming through ECM SFE frontend.
  */
-int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_fse_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_val;
@@ -393,7 +398,7 @@ int ecm_sfe_fse_enable_handler(struct ctl_table *ctl, int write, void __user *bu
  * ecm_sfe_mht_enable_handler()
  *	Sysctl to enable/disable MHT feature through ECM SFE frontend.
  */
-int ecm_sfe_mht_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_mht_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_val;
@@ -424,7 +429,7 @@ int ecm_sfe_mht_enable_handler(struct ctl_table *ctl, int write, void __user *bu
  * ecm_sfe_tun_fast_xmit_enable_handler()
  *	Tunnel fast transmit enable sysctl node handler.
  */
-int ecm_sfe_tun_fast_xmit_enable_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_tun_fast_xmit_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -528,7 +533,6 @@ static struct ctl_table ecm_sfe_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_sfe_tun_fast_xmit_enable_handler,
 	},
-	{}
 };
 
 /*
@@ -670,156 +674,350 @@ no_rule:
 /*
  * ecm_sfe_common_update_rule()
  *	Updates the frontend specifc data.
- *
- * Currently, only updates the mark values of the connection and updates the SFE AE.
  */
-void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type, void *arg)
+void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, enum ecm_rule_update_type type,
+		void *arg)
 {
+	bool status;
 
 	switch (type) {
-	case ECM_RULE_UPDATE_TYPE_CONNMARK:
-	{
-		struct nf_conn *ct = (struct nf_conn *)arg;
-		struct sfe_connection_mark mark;
-		ip_addr_t src_addr;
-		ip_addr_t dest_addr;
-		int aci_index;
-		int assignment_count;
-		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+		case ECM_RULE_UPDATE_TYPE_UNI_DI_QOS:
+		{
+			if (feci->ip_version == 4) {
+				struct sfe_ipv4_msg *msg_v4;
+				struct ecm_cmn_unidir_update_info *update_info = (struct ecm_cmn_unidir_update_info *) arg;
 
-		if (ecm_front_end_connection_accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
-			DEBUG_WARN("%px: connection is not in accelerated mode\n", feci);
-			return;
-		}
+				msg_v4 = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v4) {
+					DEBUG_WARN("%px: no memory for sfe ipv4 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
 
-		/*
-		 * Get connection information
-		 */
-		mark.type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
-		mark.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
-		mark.src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
-		mark.dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
-		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_addr);
-		ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_addr);
-		mark.flow_mark = ct->mark;
-		mark.return_mark = ct->mark;
+				sfe_ipv4_msg_init(msg_v4, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_UPDATE_RULE_MSG,
+					sizeof(struct sfe_rule_update_msg), NULL, NULL);
 
-		DEBUG_INFO("%px: Update the mark value for the SFE connection\n", feci);
+				status = ecm_sfe_ported_ipv4_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, msg_v4);
+				if (!status) {
+						DEBUG_WARN("%p: Uni-directional v4 flow update failed in SFE.\n", feci);
+						ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL);
+				}
 
-		if (feci->ip_version == 4) {
-			ECM_IP_ADDR_TO_NIN4_ADDR(mark.src_ip[0], src_addr);
-			ECM_IP_ADDR_TO_NIN4_ADDR(mark.dest_ip[0], dest_addr);
-			sfe_ipv4_mark_rule_update(&mark);
-			DEBUG_INFO("%px: src_ip: %pI4 dest_ip: %pI4 src_port: %d dest_port: %d protocol: %d\n",
-				    feci, &mark.src_ip[0], &mark.dest_ip[0],
-				    ntohs(mark.src_port), ntohs(mark.dest_port), mark.protocol);
-		} else {
-			ECM_IP_ADDR_TO_SFE_IPV6_ADDR(mark.src_ip, src_addr);
-			ECM_IP_ADDR_TO_SFE_IPV6_ADDR(mark.dest_ip, dest_addr);
-			sfe_ipv6_mark_rule_update(&mark);
-			DEBUG_TRACE("%px: src_ip: " ECM_IP_ADDR_OCTAL_FMT "dest_ip: " ECM_IP_ADDR_OCTAL_FMT
-				    " src_port: %d dest_port: %d protocol: %d\n",
-				    feci, ECM_IP_ADDR_TO_OCTAL(src_addr), ECM_IP_ADDR_TO_OCTAL(dest_addr),
-				    ntohs(mark.src_port), ntohs(mark.dest_port), mark.protocol);
-		}
+				kfree(msg_v4);
+			} else {
+				struct sfe_ipv6_msg *msg_v6;
+				struct ecm_cmn_unidir_update_info *update_info = (struct ecm_cmn_unidir_update_info *) arg;
 
-		/*
-		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
-		 * update, they will handle the event.
-		 */
-		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
-		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-			struct ecm_classifier_instance *aci;
-			aci = assignments[aci_index];
-			if (aci->update) {
-				aci->update(aci, type, ct);
+				msg_v6 = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v6) {
+					DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
+
+				sfe_ipv6_msg_init(msg_v6, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_UPDATE_RULE_MSG,
+							sizeof(struct sfe_rule_update_msg), NULL, NULL);
+
+				status = ecm_sfe_ported_ipv6_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, msg_v6);
+				if (!status) {
+					DEBUG_WARN("%p: Uni-directional v6 flow update failed in SFE.\n", feci);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL);
+				}
+
+				kfree(msg_v6);
 			}
+			break;
 		}
-		ecm_db_connection_assignments_release(assignment_count, assignments);
+		case ECM_RULE_UPDATE_TYPE_CONNMARK:
+		{
+			struct nf_conn *ct = (struct nf_conn *)arg;
+			ip_addr_t src_addr;
+			ip_addr_t dest_addr;
+			int aci_index;
+			int assignment_count;
+			struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+			struct sfe_rule_update_msg *update_msg = NULL;
 
-		break;
-	}
+			if (feci->ip_version == 4) {
+				struct sfe_ipv4_msg *msg_v4;
 
-	case ECM_RULE_UPDATE_TYPE_SAWFMARK:
-	{
-		struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
-		struct sfe_connection_mark mark;
-		int aci_index;
-		int assignment_count;
-		struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+				msg_v4 = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v4) {
+					DEBUG_WARN("%px: no memory for sfe ipv4 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
 
-		DEBUG_INFO("control reached to deprio in update rule \n");
-		memset(&mark, 0, sizeof(mark));
-		mark.type = SFE_CONNECTION_MARK_TYPE_SAWFMARK;
-		mark.flow_mark = msg->flow_mark;
-		mark.flow_svc_id = msg->flow_service_class_id;
-		if (SFE_GET_SAWF_TAG(mark.flow_mark) == SFE_SAWF_VALID_TAG || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW)) {
-			mark.flags |= SFE_SAWF_MARK_FLOW_VALID;
-		}
-		mark.return_mark = msg->return_mark;
-		mark.return_svc_id = msg->return_service_class_id;
-		if (SFE_GET_SAWF_TAG(mark.return_mark) == SFE_SAWF_VALID_TAG || (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN)) {
-			mark.flags |= SFE_SAWF_MARK_RETURN_VALID;
-		}
-		mark.protocol = msg->protocol;
-		mark.src_port = msg->flow_src_port;
-		mark.dest_port = msg->flow_dest_port;
-		if (msg->flags & ECM_FRONT_END_DEPRIO) {
-			mark.flags |= SFE_SAWF_MARK_DEPRIO;
-		}
+				sfe_ipv4_msg_init(msg_v4, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_UPDATE_RULE_MSG,
+										sizeof(struct sfe_rule_update_msg), NULL, NULL);
+				update_msg = &msg_v4->msg.rule_update;
 
-		if (msg->ip_version == 4) {
-			mark.src_ip[0] = msg->flow_src_ip[0];
-			mark.dest_ip[0] = msg->flow_dest_ip[0];
+				if (ecm_front_end_connection_accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+					DEBUG_WARN("%px: connection is not in accelerated mode\n", feci);
+					kfree(msg_v4);
+					return;
+				}
 
-			msg->status = sfe_ipv4_mark_rule_update(&mark);
-			if (!msg->status) {
-				DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
-				return;
+				/*
+				 * Get connection information
+				 */
+				update_msg->type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
+				update_msg->protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+				update_msg->src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+				update_msg->dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_addr);
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_addr);
+				update_msg->info.connmark.flow_mark = ct->mark;
+				update_msg->info.connmark.return_mark = ct->mark;
+
+				DEBUG_INFO("%px: Update the mark value for the SFE connection\n", feci);
+
+				ECM_IP_ADDR_TO_NIN4_ADDR(update_msg->src_ip[0], src_addr);
+				ECM_IP_ADDR_TO_NIN4_ADDR(update_msg->dest_ip[0], dest_addr);
+
+				if (sfe_ipv4_tx(NULL, msg_v4) != SFE_TX_SUCCESS) {
+					DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+					kfree(msg_v4);
+					return;
+				}
+
+				DEBUG_INFO("%px: src_ip: %pI4 dest_ip: %pI4 src_port: %d dest_port: %d protocol: %d\n",
+						feci, &update_msg->src_ip[0], &update_msg->dest_ip[0],
+						ntohs(update_msg->src_port), ntohs(update_msg->dest_port), update_msg->protocol);
+
+				/*
+				 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+				 * update, they will handle the event.
+				 */
+				assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+				for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+					struct ecm_classifier_instance *aci;
+					aci = assignments[aci_index];
+					if (aci->update) {
+						aci->update(aci, type, ct);
+					}
+				}
+				ecm_db_connection_assignments_release(assignment_count, assignments);
+				kfree(msg_v4);
+			} else {
+				struct sfe_ipv6_msg *msg_v6;
+
+				msg_v6 = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v6) {
+					DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
+
+				sfe_ipv6_msg_init(msg_v6, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_UPDATE_RULE_MSG,
+							sizeof(struct sfe_rule_update_msg), NULL, NULL);
+				update_msg = &msg_v6->msg.rule_update;
+
+				if (ecm_front_end_connection_accel_state_get(feci) != ECM_FRONT_END_ACCELERATION_MODE_ACCEL) {
+					DEBUG_WARN("%px: connection is not in accelerated mode\n", feci);
+					kfree(msg_v6);
+					return;
+				}
+
+				/*
+				* Get connection information
+				*/
+				update_msg->type = SFE_CONNECTION_MARK_TYPE_CONNMARK;
+				update_msg->protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+				update_msg->src_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_FROM));
+				update_msg->dest_port = htons(ecm_db_connection_port_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT));
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, src_addr);
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO_NAT, dest_addr);
+				update_msg->info.connmark.flow_mark = ct->mark;
+				update_msg->info.connmark.return_mark = ct->mark;
+
+				DEBUG_INFO("%px: Update the mark value for the SFE connection\n", feci);
+
+				ECM_IP_ADDR_TO_SFE_IPV6_ADDR(update_msg->src_ip, src_addr);
+				ECM_IP_ADDR_TO_SFE_IPV6_ADDR(update_msg->dest_ip, dest_addr);
+
+				if (sfe_ipv6_tx(NULL, msg_v6) != SFE_TX_SUCCESS) {
+					DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+					kfree(msg_v6);
+					return;
+				}
+
+				DEBUG_TRACE("%px: src_ip: " ECM_IP_ADDR_OCTAL_FMT "dest_ip: " ECM_IP_ADDR_OCTAL_FMT
+						" src_port: %d dest_port: %d protocol: %d\n",
+						feci, ECM_IP_ADDR_TO_OCTAL(src_addr), ECM_IP_ADDR_TO_OCTAL(dest_addr),
+						ntohs(update_msg->src_port), ntohs(update_msg->dest_port), update_msg->protocol);
+
+				/*
+				 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+				 * update, they will handle the event.
+				 */
+				assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+				for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+					struct ecm_classifier_instance *aci;
+					aci = assignments[aci_index];
+					if (aci->update) {
+						aci->update(aci, type, ct);
+					}
+				}
+				ecm_db_connection_assignments_release(assignment_count, assignments);
+				kfree(msg_v6);
 			}
-
-			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
-					feci, mark.flow_mark, mark.return_mark,
-					mark.src_ip, ntohs(mark.src_port),
-					mark.dest_ip, ntohs(mark.dest_port),
-					mark.protocol);
-		} else {
-			ECM_IP_ADDR_COPY(mark.src_ip, msg->flow_src_ip);
-			ECM_IP_ADDR_COPY(mark.dest_ip, msg->flow_dest_ip);
-
-			msg->status = sfe_ipv6_mark_rule_update(&mark);
-			if (!msg->status) {
-				DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
-				return;
-			}
-
-			DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6c@%u -> %pI6c@%u protocol=%u\n",
-					feci, mark.flow_mark, mark.return_mark,
-					mark.src_ip, ntohs(mark.src_port),
-					mark.dest_ip, ntohs(mark.dest_port),
-					mark.protocol);
+			break;
 		}
+		case ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS:
+		{
+			struct ecm_front_end_flowsawf_msg *msg = (struct ecm_front_end_flowsawf_msg *)arg;
+			int aci_index;
+			int assignment_count;
+			struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
+			struct sfe_rule_update_msg *update_msg = NULL;
+			sfe_tx_status_t sfe_tx_status;
 
-		/*
-		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
-		 * update, they will handle the event.
-		 */
-		assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
-		for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
-			struct ecm_classifier_instance *aci;
-			aci = assignments[aci_index];
-			if (aci->update) {
-				aci->update(aci, type, msg);
+			if (feci->ip_version == 4) {
+				struct sfe_ipv4_msg *msg_v4;
+
+				msg_v4 = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v4) {
+					DEBUG_WARN("%px: no memory for sfe ipv4 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
+
+				sfe_ipv4_msg_init(msg_v4, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_UPDATE_RULE_MSG,
+										sizeof(struct sfe_rule_update_msg), NULL, NULL);
+				update_msg = &msg_v4->msg.rule_update;
+
+				DEBUG_INFO("control reached to deprio in update rule \n");
+
+				update_msg->type = SFE_CONNECTION_MARK_TYPE_BIDIR_SAWF_MARK;
+				update_msg->info.sawf.flow_mark = msg->flow_mark;
+				update_msg->info.sawf.flow_svc_id = msg->flow_service_class_id;
+
+				if (SFE_GET_SAWF_TAG(update_msg->info.sawf.flow_mark) == SFE_SAWF_VALID_TAG ||
+						(msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW)) {
+					update_msg->flags |= SFE_UPDATE_RULE_SAWF_FLOW_VALID;
+				}
+
+				update_msg->info.sawf.return_mark = msg->return_mark;
+				update_msg->info.sawf.return_svc_id = msg->return_service_class_id;
+
+				if (SFE_GET_SAWF_TAG(update_msg->info.sawf.return_mark) == SFE_SAWF_VALID_TAG
+						|| (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN)) {
+					update_msg->flags |= SFE_UPDATE_RULE_SAWF_RETURN_VALID;
+				}
+
+				update_msg->protocol = msg->protocol;
+				update_msg->src_port = msg->flow_src_port;
+				update_msg->dest_port = msg->flow_dest_port;
+				update_msg->src_ip[0] = msg->flow_src_ip[0];
+				update_msg->dest_ip[0] = msg->flow_dest_ip[0];
+
+				sfe_tx_status = sfe_ipv4_tx(NULL, msg_v4);
+
+				atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+				if (sfe_tx_status != SFE_TX_SUCCESS) {
+					DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+					kfree(msg_v4);
+					return;
+				}
+
+				DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
+						feci, update_msg->info.sawf.flow_mark, update_msg->info.sawf.return_mark,
+						update_msg->src_ip, ntohs(update_msg->src_port),
+						update_msg->dest_ip, ntohs(update_msg->dest_port),
+						update_msg->protocol);
+
+				/*
+				 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+				 * update, they will handle the event.
+				 */
+				assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+				for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+					struct ecm_classifier_instance *aci;
+					aci = assignments[aci_index];
+					if (aci->update) {
+						aci->update(aci, type, msg);
+					}
+				}
+				ecm_db_connection_assignments_release(assignment_count, assignments);
+				kfree(msg_v4);
+			} else {
+				struct sfe_ipv6_msg *msg_v6;
+
+				msg_v6 = (struct sfe_ipv6_msg *)kzalloc(sizeof(struct sfe_ipv6_msg), GFP_ATOMIC | __GFP_NOWARN);
+				if (!msg_v6) {
+					DEBUG_WARN("%px: no memory for sfe ipv6 message structure instance: %px\n", feci, feci->ci);
+					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM);
+					return;
+				}
+
+				sfe_ipv6_msg_init(msg_v6, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_UPDATE_RULE_MSG,
+							sizeof(struct sfe_rule_update_msg), NULL, NULL);
+				update_msg = &msg_v6->msg.rule_update;
+
+				DEBUG_INFO("control reached to deprio in update rule \n");
+
+				update_msg->type = SFE_CONNECTION_MARK_TYPE_BIDIR_SAWF_MARK;
+				update_msg->info.sawf.flow_mark = msg->flow_mark;
+				update_msg->info.sawf.flow_svc_id = msg->flow_service_class_id;
+
+				if (SFE_GET_SAWF_TAG(update_msg->info.sawf.flow_mark) == SFE_SAWF_VALID_TAG
+						|| (msg->flags & ECM_FRONT_END_PRIO_UPDATE_FLOW)) {
+					update_msg->flags |= SFE_UPDATE_RULE_SAWF_FLOW_VALID;
+				}
+
+				update_msg->info.sawf.return_mark = msg->return_mark;
+				update_msg->info.sawf.return_svc_id = msg->return_service_class_id;
+
+				if (SFE_GET_SAWF_TAG(update_msg->info.sawf.return_mark) == SFE_SAWF_VALID_TAG
+						|| (msg->flags & ECM_FRONT_END_PRIO_UPDATE_RETURN)) {
+					update_msg->flags |= SFE_UPDATE_RULE_SAWF_RETURN_VALID;
+				}
+
+				update_msg->protocol = msg->protocol;
+				update_msg->src_port = msg->flow_src_port;
+				update_msg->dest_port = msg->flow_dest_port;
+
+				ECM_IP_ADDR_COPY(update_msg->src_ip, msg->flow_src_ip);
+				ECM_IP_ADDR_COPY(update_msg->dest_ip, msg->flow_dest_ip);
+
+				sfe_tx_status = sfe_ipv6_tx(NULL, msg_v6);
+
+				atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(sfe_tx_status));
+				if (sfe_tx_status != SFE_TX_SUCCESS) {
+					DEBUG_WARN("%px: Failed to update mark value in SFE", feci);
+					kfree(msg_v6);
+					return;
+				}
+
+				DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6c@%u -> %pI6c@%u protocol=%u\n",
+						feci, update_msg->info.sawf.flow_mark, update_msg->info.sawf.return_mark,
+						update_msg->src_ip, ntohs(update_msg->src_port),
+						update_msg->dest_ip, ntohs(update_msg->dest_port),
+						update_msg->protocol);
+
+				/*
+				 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of
+				 * update, they will handle the event.
+				 */
+				assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(feci->ci, assignments);
+				for (aci_index = 0; aci_index < assignment_count; ++aci_index) {
+					struct ecm_classifier_instance *aci;
+					aci = assignments[aci_index];
+					if (aci->update) {
+						aci->update(aci, type, msg);
+					}
+				}
+				ecm_db_connection_assignments_release(assignment_count, assignments);
+				kfree(msg_v6);
 			}
+			break;
 		}
-		ecm_db_connection_assignments_release(assignment_count, assignments);
-
-		break;
-	}
-
-	default:
-		DEBUG_WARN("%px: unsupported update rule type: %d\n", feci, type);
-		break;
+		default:
+		{
+			DEBUG_WARN("%px: unsupported update rule type: %d\n", feci, type);
+			break;
+		}
 	}
 }
 

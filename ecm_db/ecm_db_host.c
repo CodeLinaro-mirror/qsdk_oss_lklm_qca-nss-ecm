@@ -21,7 +21,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
@@ -163,7 +162,7 @@ EXPORT_SYMBOL(ecm_db_host_get_and_ref_next);
  * ecm_db_host_routed_stats_get()
  *	Return routed stats for the instance
  */
-void ecm_db_host_routed_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_data_routed, uint64_t *to_data_routed,
+static void ecm_db_host_routed_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_data_routed, uint64_t *to_data_routed,
 				  uint64_t *from_packet_routed, uint64_t *to_packet_routed)
 {
 	DEBUG_CHECK_MAGIC(hi, ECM_DB_HOST_INSTANCE_MAGIC, "%px: magic failed", hi);
@@ -187,7 +186,7 @@ void ecm_db_host_routed_stats_get(struct ecm_db_host_instance *hi, uint64_t *fro
  * ecm_db_host_data_stats_get()
  *	Return data stats for the instance
  */
-void ecm_db_host_data_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_data_total, uint64_t *to_data_total,
+static void ecm_db_host_data_stats_get(struct ecm_db_host_instance *hi, uint64_t *from_data_total, uint64_t *to_data_total,
 						uint64_t *from_packet_total, uint64_t *to_packet_total,
 						uint64_t *from_data_total_dropped, uint64_t *to_data_total_dropped,
 						uint64_t *from_packet_total_dropped, uint64_t *to_packet_total_dropped)

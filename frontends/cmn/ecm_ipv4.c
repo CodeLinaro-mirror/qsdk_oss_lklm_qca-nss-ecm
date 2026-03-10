@@ -23,7 +23,6 @@
 #include <net/tcp.h>
 #include <net/addrconf.h>
 #include <net/xfrm.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -93,6 +92,7 @@
 #endif
 #include "ecm_multicast_ipv4.h"
 #include "ecm_stats_v4.h"
+#include "ecm_ipv4.h"
 
 /*
  * Locking of the classifier - concurrency control for file global parameters.
@@ -326,34 +326,6 @@ skip_port:
 
 }
 #endif
-
-/*
- * ecm_ipv4_is_arp_allowed()
- *	Check if ARP is allowed for a given tunnel interface.
- */
-static bool ecm_ipv4_is_arp_allowed(struct net_device *dev, struct sk_buff *skb)
-{
-	struct iphdr *iph;
-	uint8_t proto;
-
-	iph = ip_hdr(skb);
-	proto = iph->protocol;
-
-	/*
-	 * For tunnels, sending an ARP request while the
-	 * packet is being transmitted can lead to a deadlock.
-	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
-	 */
-	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
-		return false;
-	}
-
-	if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && (proto == IPPROTO_GRE)) {
-		return false;
-	}
-
-	return true;
-}
 
 /*
  * ecm_ipv4_node_establish_and_ref()
@@ -768,7 +740,7 @@ struct ecm_db_node_instance *ecm_ipv4_node_establish_and_ref(struct ecm_front_en
 					on_link = false;
 				}
 
-				if (ecm_ipv4_is_arp_allowed(dev, skb)) {
+				if (ecm_interface_is_arp_allowed(dev, skb)) {
 					ecm_interface_send_arp_request(mac_dev, addr, on_link, gw_addr);
 				}
 
@@ -1461,6 +1433,18 @@ vxlan_done:
 		if (!ecm_front_end_l2tp_proto_is_accel_allowed(in_dev, out_dev)) {
 			DEBUG_WARN("%px: L2TPv3 protocol is not allowed\n", skb);
 			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_UNSUPPORTED_L2TPV3_PROTOCOL);
+			return NF_ACCEPT;
+		}
+	}
+
+	/*
+	 * Check if we can accelerate ESP porotcol.
+	 */
+	if (ip_hdr.protocol == IPPROTO_ESP) {
+		bool inner;
+		if (!ecm_front_end_is_xfrm_flow(skb, &ip_hdr, &inner)) {
+			ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH);
+			DEBUG_TRACE("%px: IPsec ESP passthrough is not allowed\n", skb);
 			return NF_ACCEPT;
 		}
 	}
@@ -2222,6 +2206,16 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_BRIDGE_PORT_NOT_FOUND);
 		return NF_ACCEPT;
 	}
+
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+	if (!ecm_interface_validate_bridge_sub_ids(in, out, skb)) {
+		DEBUG_TRACE("skb: %px, Bridge sub-ID validation failed\n", skb);
+		dev_put(in);
+		dev_put(bridge);
+		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_BRIDGE_SUB_ID_MISMATCH);
+		return NF_ACCEPT;
+	}
+#endif
 
 	/*
 	 * This flag needs to be checked in slave port(eth0/ath0)

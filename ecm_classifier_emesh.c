@@ -84,6 +84,7 @@
 #define ECM_CLASSIFIER_EMESH_SAWF_TAG_GET(sawf_meta)    ((sawf_meta >> 24) & 0xFF)
 #define ECM_CLASSIFIER_EMESH_SAWF_FLAG_GET(sawf_meta)   ((sawf_meta >> 20) & 0x4)
 #define ECM_CLASSIFIER_EMESH_SCS_SAWF_RSVD_SERVICE_CLASS 127
+#define ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID  0
 
 /*
  * Default value to Enable emesh classifier and SAWF mode
@@ -177,8 +178,8 @@ static uint32_t ecm_classifier_emesh_enabled;			/* Operational behaviour */
 static uint32_t ecm_classifier_emesh_latency_config_enabled;	/* Mesh Latency profile enable flag */
 static uint32_t ecm_classifier_sawf_enabled;			/* SAWF Mode */
 static uint32_t ecm_classifier_sawf_cake_enabled;		/* CAKE Qdisc enable flag for SAWF */
-static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
 static uint32_t ecm_classifier_3link_mlo_enabled = 1;		/* 3link MLO mode */
+static int ecm_classifier_sawf_emesh_udp_ipsec_port = 4500;	/* UDP ipsec port */
 
 /*
  * Management thread control
@@ -761,7 +762,7 @@ update_rule:
 	 * prioritization is handled by sp_mapdb_rule_apply_sawf call in the process function
 	 */
 	if (update_rule) {
-		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS, msg);
 
 		/*
 		 * TODO: This is a WAR and need to fix later.
@@ -1095,7 +1096,8 @@ static inline bool ecm_classifier_emesh_sawf_is_bidi_packet_seen(struct ecm_clas
 static void ecm_classifier_emesh_sawf_fill_dscp_info(uint16_t dscp, struct ecm_classifier_emesh_sawf_instance *cemi,
 							ecm_tracker_sender_type_t sender,
 							struct sp_rule_input_params *flow_input_params,
-							struct sp_rule_input_params *return_input_params)
+							struct sp_rule_input_params *return_input_params,
+							struct ecm_db_connection_instance *ci)
 {
 	/*
 	 * Save the dscp values and fill the flow and return
@@ -1107,9 +1109,12 @@ static void ecm_classifier_emesh_sawf_fill_dscp_info(uint16_t dscp, struct ecm_c
 		 * In case of UDP acceleration delay packets disabled, we save the same
 		 * DSCP value in the return direction. Also we avoid saving the value if
 		 * we have already seen reverse direction packet and saved the dscp in reverse direction.
+		 * This is done only when the uni-direction acceleration is not enabled.
 		 */
-		if (!cemi->dscp[ECM_CONN_DIR_RETURN]) {
-			cemi->dscp[ECM_CONN_DIR_RETURN] = dscp;
+		if (!ci->unidir_accel_en) {
+			if (!cemi->dscp[ECM_CONN_DIR_RETURN]) {
+				cemi->dscp[ECM_CONN_DIR_RETURN] = dscp;
+			}
 		}
 
 		flow_input_params->dscp = cemi->dscp[ECM_CONN_DIR_FLOW];
@@ -1274,7 +1279,7 @@ get_source_vlan_dev:
  */
 static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_emesh_sawf_instance *cemi,
 		struct sp_rule_output_params *flow_output_params, struct sp_rule_output_params *return_output_params,
-		uint32_t msduq_forward, uint32_t msduq_reverse)
+		uint32_t msduq_forward, uint32_t msduq_reverse, struct ecm_db_connection_instance *ci)
 {
 	DEBUG_ASSERT(spin_is_locked(&ecm_classifier_emesh_sawf_lock), "%px: lock is not held\n", cemi);
 
@@ -1362,6 +1367,7 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	 * While updating the DSCP remark values, even if one direction rule matches and we have one sided dscp remark
 	 * coming from userspace, we will apply the same for both direction. Does not apply for vlan
 	 * pcp remark as vlan id could be different in the other direction.
+	 * If uni-direction acceleration is enabled, we will set the values only in one direction at a time.
 	 */
 	if (flow_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK &&
 			return_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
@@ -1370,10 +1376,14 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
 	} else if (flow_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
 		cemi->process_response.flow_dscp = flow_output_params->dscp_remark;
-		cemi->process_response.return_dscp = flow_output_params->dscp_remark;
+		if (!ci->unidir_accel_en) {
+			cemi->process_response.return_dscp = flow_output_params->dscp_remark;
+		}
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
 	} else if (return_output_params->dscp_remark != SP_RULE_INVALID_DSCP_REMARK) {
-		cemi->process_response.flow_dscp = return_output_params->dscp_remark;
+		if (!ci->unidir_accel_en) {
+			cemi->process_response.flow_dscp = return_output_params->dscp_remark;
+		}
 		cemi->process_response.return_dscp = return_output_params->dscp_remark;
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_DSCP;
 	}
@@ -1390,6 +1400,14 @@ static void ecm_classifier_emesh_sawf_fill_sawf_metadata(struct ecm_classifier_e
 	if ((flow_output_params->vlan_pcp_remark != SP_RULE_INVALID_VLAN_PCP_REMARK) ||
 					(return_output_params->vlan_pcp_remark != SP_RULE_INVALID_VLAN_PCP_REMARK)) {
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_VLAN_PCP_REMARK;
+	}
+
+	if (flow_output_params->out_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID){
+		cemi->process_response.flow_qos_tag = flow_output_params->out_class_id;
+	}
+
+	if (return_output_params->out_class_id != ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID){
+		cemi->process_response.return_qos_tag = return_output_params->out_class_id;
 	}
 
 	cemi->type = ECM_CLASSIFIER_SAWF;
@@ -1441,7 +1459,7 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 		iph = ip_hdr(skb);
 
 		dscp = ipv4_get_dsfield(iph) >> XT_DSCP_SHIFT;
-		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
+		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params, ci);
 	} else if (version == 6) {
 		if (unlikely(!pskb_may_pull(skb, sizeof(*ip6h)))) {
 			/*
@@ -1453,7 +1471,7 @@ static bool ecm_classifier_sawf_fill_input_params(struct sk_buff *skb, struct ec
 
 		ip6h = ipv6_hdr(skb);
 		dscp = ipv6_get_dsfield(ip6h) >> XT_DSCP_SHIFT;
-		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params);
+		ecm_classifier_emesh_sawf_fill_dscp_info(dscp, cemi, sender, flow_input_params, return_input_params, ci);
 	} else {
 		DEBUG_INFO("Invalid IP version: %d \n", version);
 		return false;
@@ -1907,6 +1925,9 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	return_output_params.rule_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_RULE_LOOKUP;
 	flow_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
 	return_output_params.sawf_rule_type = SP_RULE_TYPE_SAWF_INVALID;
+	flow_output_params.out_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID;
+	return_output_params.out_class_id = ECM_CLASSIFIER_EMESH_SAWF_INVALID_OUT_CLASS_ID;
+
 	if (ecm_classifier_sawf_enabled) {
 		uint32_t msduq_forward = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
 		uint32_t msduq_reverse = ECM_CLASSIFIER_EMESH_SAWF_INVALID_MSDUQ;
@@ -2077,12 +2098,12 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 			ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &flow_output_params, &return_output_params,
-				msduq_forward, msduq_reverse);
+				msduq_forward, msduq_reverse, ci);
 			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		} else {
 			spin_lock_bh(&ecm_classifier_emesh_sawf_lock);
 			ecm_classifier_emesh_sawf_fill_sawf_metadata(cemi, &return_output_params, &flow_output_params,
-				msduq_reverse, msduq_forward);
+				msduq_reverse, msduq_forward, ci);
 			spin_unlock_bh(&ecm_classifier_emesh_sawf_lock);
 		}
 		DEBUG_TRACE("%px: skb->mark: %u", cemi, skb->mark);
@@ -2283,10 +2304,18 @@ sawf_classifier_out:
 		/*
 		 * If we didn't see both direction traffic during the acceleration
 		 * delay time, we can allow the acceleration by setting the uni-directional
-		 * values to both flow and return PCP.
+		 * values to both flow and return PCP if unidirection flag is not enabled.
 		 */
-		cemi->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
-		cemi->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+		if (ci->unidir_accel_en) {
+			if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+				cemi->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
+			} else {
+				cemi->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+			}
+		} else {
+			cemi->pcp[ECM_CONN_DIR_FLOW] = skb->priority;
+			cemi->pcp[ECM_CONN_DIR_RETURN] = skb->priority;
+		}
 
 		/*
 		 * In case if SAWF rule matches with reverse direction,
@@ -2343,13 +2372,45 @@ done:
 		cemi->process_response.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG;
 	}
 
+	/*
+	 * We need to reset the value of appropriate qos_tag, if QDISC configured
+	 * 			set for valid class_id in ecm_classifier_emesh_sawf_fill_sawf_metadata
+	 * IF sender = SRC, flow_qos_tag takes class_id from flow_output_params -> RESET
+	 * 			return_qos_tag takes from return_output_params
+	 * IF sender = DEST, flow_qos_tag takes class_id from return_output_params
+	 * 			return_qos_tag takes class_id from flow_output_params -> RESET
+	 * ELSE if QDISC not configured, reset both qos_tags
+	 */
 	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
 			((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
-		cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
-		cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
+				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+			else
+				cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		} else {
+			cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+			cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+		}
+
+		/*
+		 * Assign out_priority values via pcp to flow and return int_pri
+		 */
+		cemi->process_response.flow_int_pri = cemi->pcp[ECM_CONN_DIR_FLOW];
+		cemi->process_response.return_int_pri = cemi->pcp[ECM_CONN_DIR_RETURN];
 	} else {
-		cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
-		cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
+				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+			else
+				cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		} else {
+			cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
+			cemi->process_response.return_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
+		}
+
+		cemi->process_response.flow_int_pri = cemi->pcp[ECM_CONN_DIR_RETURN];
+		cemi->process_response.return_int_pri = cemi->pcp[ECM_CONN_DIR_FLOW];
 	}
 sawf_emesh_classifier_out:
 
@@ -3125,7 +3186,8 @@ void ecm_classifier_emesh_sawf_update_flowmark_upon_notify_create(struct ecm_cla
 	msg->flow_mark = msduq_forward;
 	msg->return_mark = msduq_reverse;
 
-	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+	msg->flags |= sender == ECM_TRACKER_SENDER_TYPE_SRC ? ECM_FRONT_END_PRIO_UPDATE_FLOW : ECM_FRONT_END_PRIO_UPDATE_RETURN;
+	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS, msg);
 
 	if (!msg->status) {
 		DEBUG_WARN("%px : failed to update mark flow_rule_classifier_type: %u return_rule_classifier_type : %u\n",
@@ -3421,7 +3483,8 @@ void ecm_classifier_emesh_sawf_update_flowmark_wifi(struct ecm_classifier_instan
 done:
 
 	if (update_rule) {
-		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, msg);
+		msg->flags |= sender == ECM_TRACKER_SENDER_TYPE_SRC ? ECM_FRONT_END_PRIO_UPDATE_FLOW : ECM_FRONT_END_PRIO_UPDATE_RETURN;
+		feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS, msg);
 
 		if (!msg->status) {
 			DEBUG_WARN("%px : failed to update mark flow_rule_classifier_type: %u return_rule_classifier_type : %u\n",
@@ -3454,7 +3517,7 @@ out:
 void ecm_classifier_emesh_sawf_update(struct ecm_classifier_instance *aci, enum ecm_rule_update_type type, void *arg)
 {
 
-	if (type != ECM_RULE_UPDATE_TYPE_SAWFMARK && type != ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM) {
+	if (type != ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS && type != ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM) {
 		DEBUG_WARN("%px: unsupported update type: %d\n", aci, type);
 		return;
 	}
@@ -4070,7 +4133,7 @@ defunct_by_priority:
  * ecm_classifier_emesh_enable_handler()
  * 	Proc handler to enable or disable emesh classifier
  */
-static int ecm_classifier_emesh_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_emesh_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4117,7 +4180,7 @@ static int ecm_classifier_emesh_enable_handler(struct ctl_table *ctl, int write,
  * ecm_classifier_emesh_latency_config_enable_handler()
  * 	Proc handler to enable or disable mesh latency
  */
-static int ecm_classifier_emesh_latency_config_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_emesh_latency_config_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4164,7 +4227,7 @@ static int ecm_classifier_emesh_latency_config_enable_handler(struct ctl_table *
  * ecm_classifier_sawf_enable_handler()
  * 	Proc handler to enable or disable SAWF
  */
-static int ecm_classifier_sawf_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4210,7 +4273,7 @@ static int ecm_classifier_sawf_enable_handler(struct ctl_table *ctl, int write, 
  * ecm_classifier_sawf_cake_enable_handler()
  * 	Proc handler to enable or disable CAKE Qdisc flag
  */
-static int ecm_classifier_sawf_cake_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_cake_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4254,7 +4317,7 @@ static int ecm_classifier_sawf_cake_enable_handler(struct ctl_table *ctl, int wr
  * ecm_classifier_3link_mlo_enable_handler()
  * 	Proc handler to enable or disable 3 link mlo
  */
-static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_3link_mlo_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4298,7 +4361,7 @@ static int ecm_classifier_3link_mlo_enable_handler(struct ctl_table *ctl, int wr
  * ecm_classifier_sawf_emesh_udp_ipsec_port_handler()
  * 	Proc handler to update UDP ipsec port
  */
-static int ecm_classifier_sawf_emesh_udp_ipsec_port_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_sawf_emesh_udp_ipsec_port_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -4377,7 +4440,6 @@ static struct ctl_table ecm_classifier_emesh_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_sawf_emesh_udp_ipsec_port_handler,
 	},
-	{ }
 };
 
 /*
@@ -4738,7 +4800,7 @@ ecm_classifier_emesh_sdwf_deprio_status_t ecm_classifier_emesh_sdwf_check_and_de
 	}
 	spin_unlock_bh(&feci->lock);
 
-	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_SAWFMARK, &msg);
+	feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS, &msg);
 	status = ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS;
 
 	DEBUG_INFO("%px: Deprioritization is successful for flow\n", param);

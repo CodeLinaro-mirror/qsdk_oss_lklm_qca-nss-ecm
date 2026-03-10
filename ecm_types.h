@@ -8,6 +8,7 @@
 #ifndef ECM_TYPES_H_
 #define ECM_TYPES_H_
 
+#include <linux/version.h>
 #include <linux/printk.h>
 #include <linux/debugfs.h>
 
@@ -40,8 +41,9 @@ enum ecm_conn_dir {
  */
 enum ecm_rule_update_type {
 	ECM_RULE_UPDATE_TYPE_CONNMARK,
-	ECM_RULE_UPDATE_TYPE_SAWFMARK,
 	ECM_RULE_UPDATE_TYPE_FLOWMARK_WIFI_QM,
+	ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS,
+	ECM_RULE_UPDATE_TYPE_UNI_DI_QOS,
 	ECM_RULE_UPDATE_TYPE_MAX
 };
 
@@ -597,3 +599,14 @@ static inline bool ecm_debugfs_lookup(const char *name, struct dentry *parent, s
 #endif
 #endif
 #endif
+
+
+/* Linux 6.11 made the first argument of proc_handler 'const'.
+ * Define a macro to handle this difference.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+#define ECM_CTL_TABLE_CONST const
+#else
+#define ECM_CTL_TABLE_CONST
+#endif
+

@@ -25,7 +25,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -226,7 +225,7 @@ static void ecm_bond_notifier_bond_delete_by_mac(uint8_t *mac)
  * ecm_bond_notifier_stop_handler()
  * 	Proc handler for enable or disable ECM bond notifier
  */
-static int ecm_bond_notifier_stop_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_bond_notifier_stop_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -270,7 +269,6 @@ static struct ctl_table ecm_bond_notifier_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_bond_notifier_stop_handler,
 	},
-	{ }
 };
 
 void ecm_bond_notifier_stop(int num)

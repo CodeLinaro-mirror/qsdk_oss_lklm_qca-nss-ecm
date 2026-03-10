@@ -20,7 +20,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -507,26 +506,26 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
 			/*
-			 * If UDP bi-di traffic is being run, it is possible that other direction's
-			 * QoS and DSCP values are also set by the subsequent packets before we push
-			 * the rule to NSS. So, let's update them, if they are not set.
+			 * If uni-direction acceleration is enabled, flow and return values will be
+			 * filled seperately otherwise fill both direction if they are not set
 			 */
-			if (cdscpi->process_response.return_int_pri == 0) {
-				cdscpi->process_response.return_int_pri = skb->int_pri;
-			}
+			if (!ci->unidir_accel_en) {
+				if (cdscpi->process_response.return_int_pri == 0) {
+					cdscpi->process_response.return_int_pri = skb->int_pri;
+				}
 
-			if (cdscpi->process_response.return_qos_tag == 0) {
-				cdscpi->process_response.return_qos_tag = skb->priority;
-			}
+				if (cdscpi->process_response.return_qos_tag == 0) {
+					cdscpi->process_response.return_qos_tag = skb->priority;
+				}
 
-			if (cdscpi->process_response.return_mark == 0) {
-				cdscpi->process_response.return_mark = skb->mark;
-			}
+				if (cdscpi->process_response.return_mark == 0) {
+					cdscpi->process_response.return_mark = skb->mark;
+				}
 
-			if (cdscpi->process_response.return_dscp == 0) {
-				cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				if (cdscpi->process_response.return_dscp == 0) {
+					cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				}
 			}
-
 		} else {
 			cdscpi->process_response.return_qos_tag = skb->priority;
 			cdscpi->process_response.return_int_pri = skb->int_pri;
@@ -534,25 +533,25 @@ static void ecm_classifier_dscp_process(struct ecm_classifier_instance *aci, ecm
 			cdscpi->process_response.return_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
 
 			/*
-			 * If UDP bi-di traffic is being run, it is possible that other direction's
-			 * QoS and DSCP values are also set by the subsequent packets before we push
-			 * the rule to NSS. So, let's update them, if they are not set.
+			 * If uni-direction acceleration is enabled, flow and return values will be
+			 * filled seperately otherwise fill both direction if they are not set
 			 */
+			if (!ci->unidir_accel_en) {
+				if (cdscpi->process_response.flow_int_pri == 0) {
+					cdscpi->process_response.flow_int_pri = skb->int_pri;
+				}
 
-			if (cdscpi->process_response.flow_int_pri == 0) {
-				cdscpi->process_response.flow_int_pri = skb->int_pri;
-			}
+				if (cdscpi->process_response.flow_qos_tag == 0) {
+					cdscpi->process_response.flow_qos_tag = skb->priority;
+				}
 
-			if (cdscpi->process_response.flow_qos_tag == 0) {
-				cdscpi->process_response.flow_qos_tag = skb->priority;
-			}
+				if (cdscpi->process_response.flow_mark == 0) {
+					cdscpi->process_response.flow_mark = skb->mark;
+				}
 
-			if (cdscpi->process_response.flow_mark == 0) {
-				cdscpi->process_response.flow_mark = skb->mark;
-			}
-
-			if (cdscpi->process_response.flow_dscp == 0) {
-				cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				if (cdscpi->process_response.flow_dscp == 0) {
+					cdscpi->process_response.flow_dscp = ip_hdr->ds >> XT_DSCP_SHIFT;
+				}
 			}
 		}
 
@@ -896,7 +895,7 @@ static int ecm_classifier_dscp_state_get(struct ecm_classifier_instance *ci, str
  * ecm_classifier_dscp_enable_handler()
  * 	Proc handler to enable or disable DSCP classifier
  */
-static int ecm_classifier_dscp_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_classifier_dscp_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -945,7 +944,6 @@ static struct ctl_table ecm_classifier_dscp_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_classifier_dscp_enable_handler,
 	},
-	{ }
 };
 
 /*

@@ -20,7 +20,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -426,7 +425,7 @@ static void ecm_classifier_hyfi_get_bridge_name(struct ecm_db_connection_instanc
 			struct net_device *master;
 			master = ecm_interface_get_and_hold_dev_master(dev);
 			if (master) {
-				strlcpy(name_buffer, master->name, IFNAMSIZ);
+				strscpy(name_buffer, master->name, IFNAMSIZ);
 				dev_put(master);
 				dev_put(dev);
 				break;
@@ -830,13 +829,13 @@ struct ecm_classifier_hyfi_instance *ecm_classifier_hyfi_instance_alloc(struct e
 		/* one of the bridge name is null, typical
 		 * routed connection. Consider valid bridge*/
 		if (strlen(to_bridge)) {
-			strlcpy(chfi->bridge_name, to_bridge, IFNAMSIZ);
+			strscpy(chfi->bridge_name, to_bridge, IFNAMSIZ);
 		} else if (strlen(from_bridge)) {
-			strlcpy(chfi->bridge_name, from_bridge, IFNAMSIZ);
+			strscpy(chfi->bridge_name, from_bridge, IFNAMSIZ);
 		}
 	} else if (!strncmp(to_bridge, from_bridge, IFNAMSIZ)) {
 		/* Pure bridge connection. Consider any one bridge */
-		strlcpy(chfi->bridge_name, to_bridge, IFNAMSIZ);
+		strscpy(chfi->bridge_name, to_bridge, IFNAMSIZ);
 	} else {
 		/* multi-bridge connection */
 		chfi->multi_bridge_flow = true;

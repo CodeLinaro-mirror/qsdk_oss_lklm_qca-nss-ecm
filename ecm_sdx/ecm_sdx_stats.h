@@ -24,3 +24,6 @@ int ecm_sdx_stats_lan_prefix_handler_read(void *buffer, size_t *lenp, loff_t *pp
 
 int ecm_sdx_stats_init(struct dentry *dentry);
 void ecm_sdx_stats_exit(void);
+
+int ecm_sdx_init(struct dentry *dentry);
+void ecm_sdx_exit(void);

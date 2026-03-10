@@ -453,6 +453,11 @@ ccflags-$(ECM_FRONT_END_FSE_ENABLE) += -DECM_FRONT_END_FSE_ENABLE
 ccflags-$(ECM_256M_PROFILE) += -DECM_256M_PROFILE
 
 # #############################################################################
+# Define ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE=y in order to enable Bridge Isolation.
+# #############################################################################
+ccflags-$(ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE) += -DECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+
+# #############################################################################
 # Debug flags, set these to = 0 if you want to disable all debugging for that
 # file.
 # By turning off debugs you gain maximum ECM performance.
@@ -520,6 +525,7 @@ ccflags-y += -DECM_STATS_DEBUG_LEVEL=1
 ccflags-y += -DECM_CLASSIFIER_WIFI_DEBUG_LEVEL=1
 ccflags-y += -DECM_SFE_STATS_DEBUG_LEVEL=1
 ccflags-y += -DECM_PPE_STATS_DEBUG_LEVEL=1
+ccflags-y += -DECM_SDX_PCC_DEBUG_LEVEL=1
 
 ccflags-y += -I$(obj)/ -I$(obj)/ecm_db -I$(obj)/frontends/include -I$(obj)/frontends/nss -I$(obj)/frontends/sfe -I$(obj)/frontends/cmn -I$(obj)/exports
 

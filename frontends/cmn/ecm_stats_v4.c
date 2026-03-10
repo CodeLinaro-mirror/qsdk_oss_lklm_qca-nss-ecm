@@ -74,6 +74,8 @@ static const char* ecm_stats_v4_exception_cmn_name_str[] = {
 	"v4_bridge_in_iff_offload_disabled",
 	"v4_bridge_out_iff_offload_disabled",
 	"v4_unsupported_l2tpv3_protocol",
+	"v4_unsupported_IPsec_ESP_passthrough",
+	"v4_bridge_sub_id_mismatch",
 };
 
 static const char* ecm_stats_v4_exception_ported_name_str[] = {
@@ -118,6 +120,7 @@ static const char* ecm_stats_v4_exception_ported_name_str[] = {
 	"v4_ported_touch_timer_not_set",
 	"v4_ported_db_conn_timer_expired",
 	"v4_ported_drop_by_classifier",
+	"v4_ported_accel_delay",
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE

@@ -114,6 +114,10 @@ enum ecm_ppe_stats_v4_exception_ported_events {
 	/* Number of IPv4 packets ignored in ported flow as bridge vlan filtering not supported in PPE */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED,
 	/* Number of IPv4 packets ignored in ported flow as TUNIPIP6 FMR flow offload not supported in PPE */
+	ECM_PPE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL,
+	/* Number of IPv4 packets failed in unidirection update in unidirectional acceleration */
+	ECM_PPE_STATS_V4_EXCEPTION_PORTED_BIDIR_UPDATE_FAIL,
+	/* Number of IPv4 packets failed in bidirection update in unidirectional acceleration */
 	ECM_PPE_STATS_V4_EXCEPTION_PORTED_MAX
 };
 

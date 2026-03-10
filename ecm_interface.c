@@ -24,7 +24,6 @@
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/addrconf.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <linux/inet.h>
 #include <linux/in6.h>
@@ -198,6 +197,10 @@ int ecm_interface_src_check;
  */
 int ecm_interface_mwan3_enable = 0;
 
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+int ecm_interface_br_isolation_enable;
+#endif
+
 /*
  * Source interface check no flush flag.
  * 	If this is enabled, the flows with a mismatch of source interface will not be flushed.
@@ -227,60 +230,169 @@ static struct ctl_table_header *ecm_interface_ctl_table_header;	/* Sysctl table 
 static LIST_HEAD(ecm_interface_netdev_hook_reg_list);
 
 /*
+ * ecm_interface_hierarchy_is_tunnel_dev()
+ *	Check is given dev is a tunnel dev.
+ */
+static inline bool ecm_interface_hierarchy_is_tunnel_dev(struct net_device *dev)
+{
+	const char *tunnel[] = {
+							"vxlan", "gretap", "gre", "ip6gre", "ipip", "sit",
+							"geneve", "erspan", "ip6tnl", "fou", "bareudp",
+							"mpls_gre", "mpls_ip", "tun", "xfrm", "ip6erspan"
+							};
+
+	if (!dev) {
+		return false;
+	}
+
+	uint8_t tunnel_num = sizeof(tunnel) / sizeof(tunnel[0]);
+	switch (dev->type) {
+	case ARPHRD_TUNNEL:
+	case ARPHRD_TUNNEL6:
+	case ARPHRD_SIT:
+	case ARPHRD_IPGRE:
+	case ECM_ARPHRD_IPSEC_TUNNEL_TYPE:
+		return true;
+	case ARPHRD_ETHER:
+	case ARPHRD_NONE:
+		if (dev->rtnl_link_ops && dev->rtnl_link_ops->kind) {
+			const char *kind = dev->rtnl_link_ops->kind;
+			for (uint8_t i = 0; i < tunnel_num; i++) {
+				if (!strcmp(kind, tunnel[i]))
+					return true;
+			}
+		}
+		break;
+	}
+
+	/*
+	 * Additional check to see if its a tunnel dev,
+	 * in case missed by above checks.
+	 */
+	if (dev->priv_flags_ext & (
+				IFF_EXT_TUN_TAP | IFF_EXT_PPP_L2TPV2|
+				IFF_EXT_PPP_L2TPV3 | IFF_EXT_PPP_PPTP |
+				IFF_EXT_GRE_V4_TAP | IFF_EXT_GRE_V6_TAP |
+				IFF_EXT_ETH_L2TPV3 | IFF_EXT_MAPT)) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
+ * ecm_interface_hierarchy_is_tunnel_flow()
+ *	Check if any of the src/dest dev is tunnel dev.
+ */
+bool ecm_interface_hierarchy_is_tunnel_flow(struct net_device *in_dev, struct net_device *out_dev)
+{
+	return ecm_interface_hierarchy_is_tunnel_dev(in_dev) || ecm_interface_hierarchy_is_tunnel_dev(out_dev);
+}
+
+/*
  * ecm_interface_handle_wlan_egress_packet()
  *	Process the packets that need WLAN QoS handling
  */
-int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
+static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 {
-	__u8 proto;
+	u8 proto;
 	int ip_version;
 	ip_addr_t src_ip, dst_ip;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_flowsawf_msg msg;
 	struct ecm_classifier_instance *aci;
-	struct nf_conn *ct;
-	enum ip_conntrack_info ctinfo;
-	struct nf_conntrack_tuple orig_tuple;
-	struct nf_conntrack_tuple reply_tuple;
-	u8 l3proto;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
 	int assignment_count;
+	u16 sport = 0, dport = 0;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
+	struct nf_conntrack_tuple orig_tuple, reply_tuple;
+	int sender;
 
+	/*
+	 * Only process packets with valid conntrack information
+	 */
 	ct = nf_ct_get(skb, &ctinfo);
-	if (!ct) {
-		DEBUG_TRACE("%px: no ct\n", skb);
+	if (!ct || ctinfo == IP_CT_UNTRACKED) {
+		DEBUG_TRACE("No conntrack available, skipping packet\n");
 		return -1;
 	}
 
+	/*
+	 * Extract conntrack connection information
+	 */
 	orig_tuple = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple;
 	reply_tuple = ct->tuplehash[IP_CT_DIR_REPLY].tuple;
 
-	l3proto = orig_tuple.src.l3num;
+	/*
+	 * Determine packet direction relative to conntrack
+	 */
+	if (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo)) {
+		DEBUG_TRACE("Packet is in ORIGINAL direction (uplink)\n");
+		sender = ECM_TRACKER_SENDER_TYPE_SRC;
+	} else {
+		DEBUG_TRACE("Packet is in REPLY direction (downlink)\n");
+		sender = ECM_TRACKER_SENDER_TYPE_DEST;
+	}
+
+	/*
+	 * Extract protocol (same in both directions)
+	 */
 	proto = orig_tuple.dst.protonum;
 
-	if (l3proto == NFPROTO_IPV4) {
-		ci = ecm_db_connection_ipv4_from_ct_get_and_ref(ct);
-		if (!ci) {
-			DEBUG_TRACE("%px: connection not found\n", ct);
-			return -1;
+	if (proto != IPPROTO_TCP && proto != IPPROTO_UDP) {
+		DEBUG_WARN("Unsupported protocol from conntrack: %d\n", proto);
+		return -1;
+	}
+
+	/*
+	 * Extract 5-tuple based on actual packet direction
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		if (orig_tuple.src.l3num == NFPROTO_IPV4) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.ip);
+			ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, orig_tuple.dst.u3.ip);
+			ip_version = 4;
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, orig_tuple.dst.u3.in6);
+			ip_version = 6;
 		}
 
-		ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.ip);
-		ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.ip);
-		ip_version = 4;
-	} else if (l3proto == NFPROTO_IPV6) {
-		ci = ecm_db_connection_ipv6_from_ct_get_and_ref(ct);
-		if (!ci) {
-			DEBUG_TRACE("%px: connection not found\n", ct);
-			return -1;
+		if (proto == IPPROTO_TCP) {
+			sport = ntohs(orig_tuple.src.u.tcp.port);
+			dport = ntohs(orig_tuple.dst.u.tcp.port);
+		} else if (proto == IPPROTO_UDP) {
+			sport = ntohs(orig_tuple.src.u.udp.port);
+			dport = ntohs(orig_tuple.dst.u.udp.port);
 		}
-
-		ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, orig_tuple.src.u3.in6);
-		ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.src.u3.in6);
-		ip_version = 6;
 	} else {
-		DEBUG_TRACE("%px: Unsupported protocol %d\n", ct, l3proto);
+		if (reply_tuple.src.l3num == NFPROTO_IPV4) {
+			ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, reply_tuple.src.u3.ip);
+			ECM_NIN4_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.dst.u3.ip);
+			ip_version = 4;
+		} else {
+			ECM_NIN6_ADDR_TO_IP_ADDR(src_ip, reply_tuple.src.u3.in6);
+			ECM_NIN6_ADDR_TO_IP_ADDR(dst_ip, reply_tuple.dst.u3.in6);
+			ip_version = 6;
+		}
+
+		if (proto == IPPROTO_TCP) {
+			sport = ntohs(reply_tuple.src.u.tcp.port);
+			dport = ntohs(reply_tuple.dst.u.tcp.port);
+		} else if (proto == IPPROTO_UDP) {
+			sport = ntohs(reply_tuple.src.u.udp.port);
+			dport = ntohs(reply_tuple.dst.u.udp.port);
+		}
+	}
+
+	/*
+	 * Find the ECM connection based on the conntrack-extracted 5-tuple
+	 */
+	ci = ecm_db_connection_find_and_ref(src_ip, dst_ip, proto, sport, dport);
+	if (unlikely(!ci)) {
+		DEBUG_WARN("Unable to find ci\n");
 		return -1;
 	}
 
@@ -289,17 +401,8 @@ int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 	msg.flow_mark = skb->mark;
 	msg.ip_version = ip_version;
 	msg.protocol = proto;
-
-	if (proto == IPPROTO_UDP) {
-		msg.flow_src_port = orig_tuple.src.u.udp.port;
-		msg.flow_dest_port = orig_tuple.dst.u.udp.port;
-	} else if (proto == IPPROTO_TCP) {
-		msg.flow_src_port = orig_tuple.src.u.tcp.port;
-		msg.flow_dest_port = orig_tuple.dst.u.tcp.port;
-	} else {
-		msg.flow_src_port = 0;
-		msg.flow_dest_port = 0;
-	}
+	msg.flow_src_port = sport;
+	msg.flow_dest_port = dport;
 
 	assignment_count = ecm_db_connection_classifier_assignments_get_and_ref(ci, assignments);
 
@@ -1637,7 +1740,12 @@ __be32 ecm_interface_vxlan_gpe_get_vni_remote_ip_from_inner(struct net_device *d
 		__be32 daddr;
 
 		daddr = netif_is_vxlan(indev) ? ip_hdr(skb)->saddr : ip_hdr(skb)->daddr;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+		rt = ip_route_output(&init_net, daddr, 0, 0, 0, RT_SCOPE_UNIVERSE);
+#else
 		rt = ip_route_output(&init_net, daddr, 0, 0, 0);
+#endif
+
 		if (IS_ERR_OR_NULL(rt)) {
 			DEBUG_WARN("%px: VXLAN-GPE failed to get IPv4 route to: %pI4\n", dev, &daddr);
 			goto rt_error;
@@ -1960,7 +2068,11 @@ struct neighbour *ecm_interface_ipv4_neigh_get(ip_addr_t addr)
 	__be32 ipv4_addr;
 
 	ECM_IP_ADDR_TO_NIN4_ADDR(ipv4_addr, addr);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
+	rt = ip_route_output(&init_net, ipv4_addr, 0, 0, 0, RT_SCOPE_UNIVERSE);
+#else
 	rt = ip_route_output(&init_net, ipv4_addr, 0, 0, 0);
+#endif
 	if (IS_ERR_OR_NULL(rt)) {
 		return NULL;
 	}
@@ -5393,12 +5505,69 @@ static bool ecm_interface_multicast_get_next_node_mac_address(
 #endif
 
 /*
+ * ecm_interface_is_arp_allowed()
+ *	Check if ARP is allowed for a given tunnel interface.
+ */
+bool ecm_interface_is_arp_allowed(struct net_device *dev, struct sk_buff *skb)
+{
+	struct iphdr *iph;
+	uint8_t proto;
+
+	iph = ip_hdr(skb);
+	proto = iph->protocol;
+
+	/*
+	 * For tunnels, sending an ARP request while the
+	 * packet is being transmitted can lead to a deadlock.
+	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
+	 */
+	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
+		return false;
+	}
+
+	if ((dev->priv_flags_ext & IFF_EXT_GRE_V4_TAP) && (proto == IPPROTO_GRE)) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * ecm_interface_is_ns_allowed()
+ *	Check if Neighbor Solicitation is allowed for a given tunnel interface.
+ */
+bool ecm_interface_is_ns_allowed(struct net_device *dev, struct sk_buff *skb)
+{
+	struct ipv6hdr *iph;
+	uint8_t proto;
+
+	iph = ipv6_hdr(skb);
+	proto = iph->nexthdr;
+
+	/*
+	 * For tunnels, sending a Neighbor Solicitation while the
+	 * packet is being transmitted can lead to a deadlock.
+	 * Dont send NS frames on tunnel interface if the IP protocol is of tunnel type
+	 */
+	if ((dev->priv_flags_ext & IFF_EXT_ETH_L2TPV3) && (proto == IPPROTO_L2TP)) {
+		return false;
+	}
+
+	if ((dev->priv_flags_ext & IFF_EXT_GRE_V6_TAP) && (proto == IPPROTO_GRE)) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
  * ecm_interface_get_next_node_mac_address()
  *	Get the MAC address of the next node
  */
 static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 					struct net_device *dest_dev,
-					int ip_version, uint8_t *mac_addr, uint32_t skb_mark)
+					int ip_version, uint8_t *mac_addr, uint32_t skb_mark,
+					struct net_device *src_dev, struct sk_buff *skb)
 {
 	ip_addr_t gw_addr = ECM_IP_ADDR_NULL;
 	bool on_link = true;
@@ -5428,14 +5597,18 @@ static bool ecm_interface_get_next_node_mac_address(ip_addr_t dest_addr,
 	if (ip_version == 4) {
 		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_DOT_FMT " send ARP request\n",
 				ECM_IP_ADDR_TO_DOT(dest_addr));
-		ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+		if (ecm_interface_is_arp_allowed(src_dev, skb)) {
+			ecm_interface_send_arp_request(dest_dev, dest_addr, on_link, gw_addr);
+		}
 	}
 
 #ifdef ECM_IPV6_ENABLE
 	if (ip_version == 6) {
 		DEBUG_WARN("Unable to obtain MAC address for " ECM_IP_ADDR_OCTAL_FMT  " send solicitation request\n",
 				ECM_IP_ADDR_TO_OCTAL(dest_addr));
-		ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+		if (ecm_interface_is_ns_allowed(src_dev, skb)) {
+			ecm_interface_send_neighbour_solicitation(dest_dev, dest_addr);
+		}
 	}
 #endif
 
@@ -6078,7 +6251,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						}
 #endif
 
-						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr, skb->mark)) {
+						if (!ecm_interface_get_next_node_mac_address(look_up_addr, lookup_dev, ip_version, mac_addr, skb->mark, given_src_dev, skb)) {
 							DEBUG_WARN("%px: Unable to find the host MAC address connected to the Linux bridge\n", feci);
 							goto done;
 						}
@@ -6126,7 +6299,7 @@ int32_t ecm_interface_heirarchy_construct(struct ecm_front_end_connection_instan
 						dev_put(tmp_dev);
 					}
 
-					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr, skb->mark)) {
+					if (!ecm_interface_get_next_node_mac_address(look_up_addr, dest_dev, ip_version, mac_addr, skb->mark, given_src_dev, skb)) {
 						DEBUG_WARN("%px: Unable to find the host MAC address connected to the OVS bridge\n", feci);
 						goto done;
 					}
@@ -8467,6 +8640,7 @@ void ecm_interface_node_connections_defunct_by_type_sta_join(uint8_t *mac)
 }
 EXPORT_SYMBOL(ecm_interface_node_connections_defunct_by_type_sta_join);
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
 /*
  * ecm_interface_defunct_qm_connections()
  *	Defunct the connections with qm type and qm id
@@ -8476,6 +8650,7 @@ void ecm_interface_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, ui
 	ecm_db_node_defunct_qm_connections(mac, wifi_qm_type, wifi_qm_id);
 }
 EXPORT_SYMBOL(ecm_interface_defunct_qm_connections);
+#endif
 
 /*
  * ecm_interface_node_connections_defunct()
@@ -8999,7 +9174,7 @@ static struct notifier_block ecm_interface_neigh_mac_update_nb = {
  * ecm_interface_igs_enabled_handler()
  *	IGS enabled check sysctl node handler.
  */
-static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, void __user *buffer,
+static int ecm_interface_igs_enabled_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer,
 		 size_t *lenp, loff_t *ppos)
 {
 	int ret;
@@ -9040,7 +9215,7 @@ static int ecm_interface_igs_enabled_handler(struct ctl_table *ctl, int write, v
  * ecm_interface_src_check_handler()
  *	Source interface check sysctl node handler.
  */
-static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_src_check_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_value;
@@ -9081,7 +9256,7 @@ static int ecm_interface_src_check_handler(struct ctl_table *ctl, int write, voi
  * ecm_interface_src_check_no_flush_handler()
  *	Source interface check no flush sysctl node handler.
  */
-static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_src_check_no_flush_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -9105,7 +9280,7 @@ static int ecm_interface_src_check_no_flush_handler(struct ctl_table *ctl, int w
  * ecm_interface_mwan3_enable_handler()
  *	 mwan3 enable check sysctl node handler.
  */
-static int ecm_interface_mwan3_enable_handler(struct ctl_table *ctl, int write, void __user *buffer,
+static int ecm_interface_mwan3_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void __user *buffer,
 		 size_t *lenp, loff_t *ppos)
 {
 	int ret;
@@ -9331,7 +9506,7 @@ static int ecm_interface_accel_denied_handler(int write, void *buffer, size_t *l
  * ecm_interface_accel_denied_list_handler()
  * 	Proc handler function for denied interface read/write operation
  */
-static int ecm_interface_accel_denied_list_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_accel_denied_list_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -9518,7 +9693,7 @@ static int ecm_interface_defunct_by_iface(int write, void *buffer, size_t *lenp,
  * ecm_interface_defunct_by_mac_addr_handler()
  * 	Proc handler function for defunct the ecm rules by mac address
  */
-static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_defunct_by_mac_address_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * To mark a MAC address as defunct:
@@ -9533,7 +9708,7 @@ static int ecm_interface_defunct_by_mac_address_handler(struct ctl_table *ctl, i
  * ecm_interface_defunct_by_iface_handler()
  * 	Proc handler function for defunct the ecm rules by iface
  */
-static int ecm_interface_defunct_by_iface_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_interface_defunct_by_iface_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * To mark a iface name as defunct:
@@ -9544,6 +9719,31 @@ static int ecm_interface_defunct_by_iface_handler(struct ctl_table *ctl, int wri
 	 */
 	return ecm_interface_defunct_by_iface(write, buffer, lenp, ppos);
 }
+
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+/*
+ * ecm_interface_validate_bridge_sub_ids()
+ *	Validate sub bridge ids of the bridge ports
+ */
+bool ecm_interface_validate_bridge_sub_ids(struct net_device *in, struct net_device *out, struct sk_buff *skb)
+{
+       if (ecm_interface_br_isolation_enable == 1) {
+               int from_sub_br_id = -1, to_sub_br_id = -1;
+
+               from_sub_br_id = br_port_get_sub_br_id(in);
+               to_sub_br_id = br_port_get_sub_br_id(out);
+
+               if (from_sub_br_id < 0 || to_sub_br_id < 0 || (from_sub_br_id != to_sub_br_id)) {
+                       DEBUG_TRACE("skb: %px, Invalid or incompatible from/to interface sub bridge ID, from id: %d, to id: %d\n",
+                                       skb, from_sub_br_id, to_sub_br_id);
+                       return false;
+               }
+       }
+
+       return true;
+}
+
+#endif
 
 static struct ctl_table ecm_interface_table[] = {
 	{
@@ -9599,7 +9799,17 @@ static struct ctl_table ecm_interface_table[] = {
 		.mode			= 0644,
 		.proc_handler		= &ecm_interface_defunct_by_iface_handler,
 	},
-	{ }
+#ifdef ECM_INTERFACE_BRIDGE_ISOLATION_ENABLE
+	{
+		.procname       = "br_isolation_enable",
+		.data           = &ecm_interface_br_isolation_enable,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 };
 
 #ifdef ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
@@ -10134,6 +10344,200 @@ static inline void ecm_interface_register_nf_hook_wlan_device(void)
 	}
 
 	rtnl_unlock();
+}
+
+/*
+ * ecm_interface_is_ipsec_tunnel_dev()
+ *	Check is given dev is a tunnel dev.
+ */
+static bool ecm_interface_is_ipsec_tunnel_dev(struct sk_buff *skb, struct net_device *dev, int protocol)
+{
+#ifdef ECM_XFRM_ENABLE
+	if (dev->type == ECM_ARPHRD_IPSEC_TUNNEL_TYPE &&
+				(IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
+		return true;
+	}
+#else
+	if (protocol == IPPROTO_UDP && udp_hdr(skb)->dest == htons(4500)) {
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+/*
+ * ecm_interface_hieararchy_is_ipsec_outer()
+ *	Check if any of the src/dest dev is ipsec tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_ipsec_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev, int protocol)
+{
+	return ecm_interface_is_ipsec_tunnel_dev(skb, in_dev, protocol) || ecm_interface_is_ipsec_tunnel_dev(skb, out_dev, protocol);
+}
+
+/*
+ * ecm_interface_hieararchy_is_mapt_outer()
+ *	Check if any of the src/dest dev is mapt tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_mapt_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * For MAP-T tunnels, only check the device for IPv6 packets
+	 */
+	if (skb && skb->protocol == htons(ETH_P_IPV6)) {
+		if (in_dev->priv_flags_ext & IFF_EXT_MAPT) {
+			return true;
+		}
+
+		if (out_dev->priv_flags_ext & IFF_EXT_MAPT) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+/*
+ * ecm_interface_hieararchy_is_vxlan_outer()
+ *	Check if any of the src/dest dev is vxlan tunnel dev.
+ */
+static bool ecm_interface_hieararchy_is_vxlan_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * Check if any of the interface is vxlan tunnel endpoint
+	 */
+	if (netif_is_vxlan(in_dev)) {
+		struct vxlan_dev *vxlan_tun;
+
+		vxlan_tun = netdev_priv(in_dev);
+		if (ecm_interface_vxlan_type_get(skb, vxlan_tun) == 0) {
+			return true;
+		}
+	}
+
+	if (netif_is_vxlan(out_dev)) {
+		struct vxlan_dev *vxlan_tun;
+
+		vxlan_tun = netdev_priv(out_dev);
+		if (ecm_interface_vxlan_type_get(skb, vxlan_tun) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+/*
+ * ecm_interface_is_l2tp_tunnel_dev()
+ *	Check if dev is l2tp tunnel dev.
+ */
+static bool ecm_interface_is_l2tp_tunnel_dev(struct sk_buff *skb, struct net_device *dev)
+{
+	struct ppp_channel *ppp_chan[1];
+	int channel_count;
+	struct pppol2tp_common_addr info;
+	struct iphdr *iph;
+	struct udphdr *udph;
+
+	if ((dev->priv_flags_ext & IFF_EXT_PPP_L2TPV2) && ppp_is_xmit_locked(dev)) {
+		if (skb && (skb->skb_iif == dev->ifindex)) {
+			/*
+			 * Get the PPP channel to extract L2TP tunnel information
+			 */
+			if (__ppp_is_multilink(dev) > 0) {
+				DEBUG_TRACE("%px: Net device: %px is MULTILINK PPP - Not supported\n", skb, dev);
+				return false;
+			}
+
+			channel_count = __ppp_hold_channels(dev, ppp_chan, 1);
+			if (channel_count != 1) {
+				DEBUG_TRACE("%px: Net device: %px PPP has %d channels - Not supported\n", skb, dev, channel_count);
+				return false;
+			}
+
+			if (pppol2tp_channel_addressing_get(ppp_chan[0], &info)) {
+				ppp_release_channels(ppp_chan, 1);
+				return false;
+			}
+
+			/*
+			 * Now check if the packet's UDP ports match the L2TP tunnel ports
+			 */
+			if (skb->protocol == htons(ETH_P_IP)) {
+				iph = ip_hdr(skb);
+				if (iph->protocol == IPPROTO_UDP) {
+					udph = udp_hdr(skb);
+
+					/*
+					 * Check if UDP ports match L2TP tunnel ports
+					 * This confirms it's an outer header
+					 */
+					if ((udph->source == info.local_addr.sin_port && udph->dest == info.remote_addr.sin_port) ||
+						(udph->source == info.remote_addr.sin_port && udph->dest == info.local_addr.sin_port)) {
+						ppp_release_channels(ppp_chan, 1);
+						return true;
+					}
+				}
+			}
+
+			ppp_release_channels(ppp_chan, 1);
+		}
+	}
+
+	return false;
+}
+
+/*
+ * ecm_interface_hieararchy_is_l2tp_outer()
+ *	Check if any of the src/dest dev is l2tpv2 tunnel dev.
+ * Also checks if the packet contains L2TP outer header.
+ */
+static bool ecm_interface_hieararchy_is_l2tp_outer(struct sk_buff *skb, struct net_device *in_dev, struct net_device *out_dev)
+{
+	/*
+	 * Check if any of the devices is an L2TP tunnel device
+	 */
+	if (ecm_interface_is_l2tp_tunnel_dev(skb, in_dev)) {
+		return true;
+	}
+
+	if (ecm_interface_is_l2tp_tunnel_dev(skb, out_dev)) {
+		return true;
+	}
+	return false;
+}
+#endif
+
+/*
+ * ecm_interface_ported_hiearachy_is_tun_outer
+ *	Checking ported tunnels for unidirection acceleration
+ */
+bool ecm_interface_ported_hiearachy_is_tun_outer(struct sk_buff *skb, struct net_device *in_dev,
+	struct net_device *out_dev, int protocol)
+{
+	if (ecm_interface_hieararchy_is_ipsec_outer(skb, in_dev, out_dev, protocol)) {
+		return true;
+	}
+
+	if (ecm_interface_hieararchy_is_mapt_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+
+#ifdef ECM_INTERFACE_VXLAN_ENABLE
+	if (ecm_interface_hieararchy_is_vxlan_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+#endif
+
+#ifdef ECM_INTERFACE_L2TPV2_ENABLE
+	if (ecm_interface_hieararchy_is_l2tp_outer(skb, in_dev, out_dev)) {
+		return true;
+	}
+#endif
+
+	return false;
 }
 
 /*

@@ -42,4 +42,7 @@ int ecm_db_per_client_routed_stats_state_write(struct ecm_state_file_instance *s
 int ecm_db_adv_stats_state_write(struct ecm_state_file_instance *sfi,uint64_t from_data_total, uint64_t to_data_total,
 				uint64_t from_packet_total, uint64_t to_packet_total, uint64_t from_data_total_dropped,
 				uint64_t to_data_total_dropped, uint64_t from_packet_total_dropped, uint64_t to_packet_total_dropped);
+
+int ecm_db_init(struct dentry *dentry);
+void ecm_db_exit(void);
 #endif /* ECM_DB_H_ */

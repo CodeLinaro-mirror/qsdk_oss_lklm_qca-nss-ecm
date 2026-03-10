@@ -13,7 +13,6 @@
 #include <linux/kthread.h>
 #include <linux/string.h>
 #include <linux/debugfs.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <linux/inet.h>
 #include <linux/ipv6.h>
@@ -886,7 +885,7 @@ static struct file_operations ecm_state_fops = {
  * ecm_state_file_output_mask_handler()
  * 	Proc handler to select different output flags for ecm dump
  */
-static int ecm_state_file_output_mask_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_state_file_output_mask_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -972,7 +971,6 @@ static struct ctl_table ecm_state_ctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_state_file_output_mask_handler,
 	},
-	{ }
 };
 
 /*

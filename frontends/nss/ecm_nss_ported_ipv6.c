@@ -316,7 +316,8 @@ static void ecm_nss_ported_ipv6_connection_callback(void *app_data, struct nss_i
  */
 static void ecm_nss_ported_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
 									struct ecm_classifier_process_response *pr, bool is_l2_encap,
-									struct nf_conn *ct, struct sk_buff *skb)
+									struct nf_conn *ct, struct sk_buff *skb,
+									ecm_tracker_sender_type_t sender)
 {
 	uint16_t regen_occurrances;
 	int protocol;

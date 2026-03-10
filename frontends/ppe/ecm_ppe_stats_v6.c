@@ -71,7 +71,9 @@ static const char *ecm_ppe_stats_v6_exception_ported_name_str[] = {
 	"v6_exception_ported_immediate_flush",
 	"v6_exception_ported_decelerate_pending",
 	"v6_exception_ported_ppe_accel_failed",
-	"v6_exception_ported_bridge_vlan_filter_unsupported"
+	"v6_exception_ported_bridge_vlan_filter_unsupported",
+	"v6_exception_ported_unidir_update_fail",
+	"v6_exception_ported_bidir_update_fail"
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
@@ -135,8 +137,10 @@ void ecm_ppe_stats_v6_inc(struct ecm_front_end_connection_instance *feci, ecm_pp
 	/*
 	 * In ECM exceptions 0 means ACCEL_NOT_PERMITTED, it may overwrite the actual AE failure
 	 */
-	if (stat_idx)
+	if (stat_idx) {
 		atomic64_set(&feci->ppe_accel_fail_reason, stat_idx);
+		atomic64_set(&feci->unidir_accel_fail_reason, stat_idx);
+	}
 }
 
 static int ecm_ppe_stats_v6_exception_show(struct seq_file *m, void __attribute__((unused))*ptr)

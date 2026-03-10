@@ -20,7 +20,6 @@
 #include <net/route.h>
 #include <net/ip.h>
 #include <net/tcp.h>
-#include <asm/unaligned.h>
 #include <asm/uaccess.h>	/* for put_user */
 #include <net/ipv6.h>
 #include <linux/inet.h>
@@ -901,7 +900,7 @@ static void ecm_sfe_ipv4_sync_queue_exit(void)
  * ecm_sfe_ipv4_accel_limit_mode_handler()
  * 	Proc handler to limit the number of connection
  */
-static int ecm_sfe_ipv4_accel_limit_mode_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_ipv4_accel_limit_mode_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -947,7 +946,7 @@ static int ecm_sfe_ipv4_accel_limit_mode_handler(struct ctl_table *ctl, int writ
  * ecm_sfe_ipv4_driver_fail_limit_default_handler()
  * 	Proc handler to limit driver interactions failure
  */
-static int ecm_sfe_ipv4_driver_fail_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_ipv4_driver_fail_limit_default_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -987,7 +986,7 @@ static int ecm_sfe_ipv4_driver_fail_limit_default_handler(struct ctl_table *ctl,
  * ecm_sfe_ipv4_nack_limit_default_handler()
  * 	Proc handler to handle nack limit
  */
-static int ecm_sfe_ipv4_nack_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_ipv4_nack_limit_default_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1027,7 +1026,7 @@ static int ecm_sfe_ipv4_nack_limit_default_handler(struct ctl_table *ctl, int wr
  * ecm_sfe_ipv4_no_action_limit_default_handler()
  * 	Proc handler to set default no action limit
  */
-static int ecm_sfe_ipv4_no_action_limit_default_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_ipv4_no_action_limit_default_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1068,7 +1067,7 @@ static int ecm_sfe_ipv4_no_action_limit_default_handler(struct ctl_table *ctl, i
  * ecm_sfe_ipv4_reject_acceleration_for_ipsec_handler()
  * 	Proc handler to enable/diable IPsec acceleration
  */
-static int ecm_sfe_ipv4_reject_acceleration_for_ipsec_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_sfe_ipv4_reject_acceleration_for_ipsec_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1143,7 +1142,6 @@ static struct ctl_table ecm_sfe_ipv4_ctl_table[] = {
 		.proc_handler	= &ecm_sfe_ipv4_reject_acceleration_for_ipsec_handler,
 	},
 #endif
-	{ }
 };
 
 /*

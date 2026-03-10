@@ -124,6 +124,12 @@ void ecm_db_node_ovs_connections_masked_defunct(int ip_ver, uint8_t *src_mac, bo
 							uint16_t src_port_mask, uint8_t *dest_mac, bool dest_mac_check,
 							ip_addr_t dest_addr_mask, uint16_t dest_port_mask,
 							int proto, ecm_db_obj_dir_t dir, bool is_routed);
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
 void ecm_db_node_defunct_qm_connections(uint8_t *mac, uint8_t wifi_qm_type, uint8_t wifi_qm_id);
+#endif
+void ecm_db_node_data_stats_get(struct ecm_db_node_instance *ni, uint64_t *from_data_total, uint64_t *to_data_total,
+						uint64_t *from_packet_total, uint64_t *to_packet_total,
+						uint64_t *from_data_total_dropped, uint64_t *to_data_total_dropped,
+						uint64_t *from_packet_total_dropped, uint64_t *to_packet_total_dropped);
 bool ecm_db_node_init(struct dentry *dentry);
 void ecm_db_node_exit(void);

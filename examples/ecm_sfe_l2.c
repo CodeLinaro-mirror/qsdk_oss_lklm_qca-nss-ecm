@@ -207,7 +207,7 @@ done:
  * ecm_sfe_l2_accel_check_callback()
  *	L2 acceleration check function callback.
  */
-uint32_t ecm_sfe_l2_accel_check_callback(struct ecm_sfe_common_tuple *tuple)
+static uint32_t ecm_sfe_l2_accel_check_callback(struct ecm_sfe_common_tuple *tuple)
 {
 	struct net_device *flow_dev;
 	struct net_device *return_dev;

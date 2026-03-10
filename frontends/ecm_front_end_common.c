@@ -1,19 +1,8 @@
 /*
  **************************************************************************
  * Copyright (c) 2015, 2016, 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
- *
- * Permission to use, copy, modify, and/or distribute this software for
- * any purpose with or without fee is hereby granted, provided that the
- * above copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
- * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ * SPDX-License-Identifier: ISC
  **************************************************************************
  */
 
@@ -40,6 +29,7 @@
 #endif
 #include <linux/hashtable.h>
 #include <net/sch_generic.h>
+#include <linux/vmalloc.h>
 #ifdef ECM_FRONT_END_PPE_ENABLE
 #include <ppe_drv.h>
 #endif
@@ -127,6 +117,13 @@ unsigned int ecm_front_end_conn_limit = 0;
 #ifdef ECM_FRONT_END_PPE_ENABLE
 unsigned int ecm_front_end_ppe_fse_enable = 1;
 #endif
+
+/*
+ * Operations for per-direction acceleration
+ */
+int ecm_front_end_unidir_accel_en = 1;
+int ecm_front_end_unidir_accel_delay = 0;
+int ecm_front_end_udp_ipsec_port = 4500;	/* UDP IPsec port */
 
 #define ECM_FRONT_END_DENIED_PORTS_HASH_BITS 6
 #define ECM_FRONT_END_DENIED_PORTS_HTABLE_SIZE (1 << ECM_FRONT_END_DENIED_PORTS_HASH_BITS)
@@ -502,6 +499,26 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	}
 	if ((result = ecm_state_write(sfi, "accel_mode", "%d", accel_mode))) {
 		return result;
+	}
+	if (feci->ci->unidir_accel_en) {
+		if ((result = ecm_state_write(sfi, "udp_flow_dir_accel", "%s", (feci->udp_flow_dir_accel ? "yes" : "no")))) {
+			return result;
+		}
+		if ((result = ecm_state_write(sfi, "udp_return_dir_accel", "%s", (feci->udp_return_dir_accel ? "yes" : "no")))) {
+			return result;
+		}
+
+		uint16_t unidir_fail_reason = (0x7FFF & atomic64_read(&feci->unidir_accel_fail_reason));
+		bool unidir_ae_failure = atomic64_read(&feci->unidir_accel_fail_reason) >> ECM_FRONT_END_FAIL_REASON_SHIFT;
+		if (unidir_ae_failure) {
+			if ((result = ecm_state_write(sfi, "unidir_fail_reason", "%s %u", " AE", unidir_fail_reason))) {
+				return result;
+			}
+		} else if (unidir_fail_reason) {
+			if ((result = ecm_state_write(sfi, "unidir_fail_reason", "%s %u", " ECM", unidir_fail_reason))) {
+				return result;
+			}
+		}
 	}
 	if ((result = ecm_state_write(sfi, "decelerate_pending", "%d", stats.decelerate_pending))) {
 		return result;
@@ -933,7 +950,7 @@ uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_ins
  * ecm_front_end_ppe_fse_enable_limit_handler()
  *	Sysctl to enable/disable FSE programming through PPE.
  */
-int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+int ecm_front_end_ppe_fse_enable_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 
@@ -968,7 +985,7 @@ int ecm_front_end_ppe_fse_enable_handler(struct ctl_table *ctl, int write, void 
  * ecm_front_end_db_conn_limit_handler()
  *	Database connection limit sysctl node handler.
  */
-int ecm_front_end_db_conn_limit_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_db_conn_limit_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	int ret;
 	int current_value;
@@ -1187,7 +1204,7 @@ static int ecm_front_end_denied_ports_handler(int write, void *buffer, size_t *l
  * ecm_front_end_udp_denied_ports_handler()
  *	Proc handler function for UDP denied ports read/write operation.
  */
-static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_udp_denied_ports_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1207,7 +1224,7 @@ static int ecm_front_end_udp_denied_ports_handler(struct ctl_table *ctl, int wri
  * ecm_front_end_tcp_denied_ports_handler()
  *	Proc handler function for TCP denied ports read/write operation.
  */
-static int ecm_front_end_tcp_denied_ports_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+static int ecm_front_end_tcp_denied_ports_handler(ECM_CTL_TABLE_CONST struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
 {
 	/*
 	 * Usage:
@@ -1221,6 +1238,28 @@ static int ecm_front_end_tcp_denied_ports_handler(struct ctl_table *ctl, int wri
 	 *	cat /proc/sys/net/ecm/tcp_denied_ports
 	 */
 	return ecm_front_end_denied_ports_handler(write, buffer, lenp, ppos, ecm_front_end_tcp_denied_ports, false);
+}
+
+/*
+ * ecm_front_end_unidir_accel_proc_handler()
+ *	Per-direction acceleration sysctl handler.
+ */
+int ecm_front_end_unidir_accel_proc_handler(struct ctl_table *ctl, int write, void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	return ret;
 }
 
 static struct ctl_table ecm_front_end_sysctl_tbl[] = {
@@ -1254,7 +1293,27 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_tcp_denied_ports_handler,
 	},
-	{}
+	{
+		.procname	= "unidir_accel_en",
+		.data		= &ecm_front_end_unidir_accel_en,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_unidir_accel_proc_handler,
+	},
+	{
+		.procname	= "unidir_accel_delay",
+		.data		= &ecm_front_end_unidir_accel_delay,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_unidir_accel_proc_handler,
+	},
+	{
+		.procname	= "udp_ipsec_port",
+		.data		= &ecm_front_end_udp_ipsec_port,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_unidir_accel_proc_handler,
+	},
 };
 
 /*
@@ -1853,11 +1912,12 @@ bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
 	return false;
 }
 
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 /*
  * ecm_front_end_common_check_if_vap
  *	Returns true if the dev is VAP.
  */
-bool ecm_front_end_common_check_if_vap(int32_t interface_num)
+static bool ecm_front_end_common_check_if_vap(int32_t interface_num)
 {
 	struct net_device *vap_dev = dev_get_by_index(&init_net, interface_num);
 	if (!vap_dev) {
@@ -1877,7 +1937,6 @@ bool ecm_front_end_common_check_if_vap(int32_t interface_num)
 	return true;
 }
 
-#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 /*
  * ecm_front_end_common_check_dl_vp_qdisc
  *	Returns true if the interface is part of DL VP qdisc

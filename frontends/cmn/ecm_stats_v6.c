@@ -71,6 +71,8 @@ static const char* ecm_stats_v6_exception_name_str[] = {
 	"v6_bridge_in_iff_offload_disabled",
 	"v6_bridge_out_iff_offload_disabled",
 	"v6_unsupported_l2tpv3_protocol",
+	"v6_unsupported_IPsec_ESP_passthrough",
+	"v6_bridge_sub_id_mismatch",
 };
 
 static const char* ecm_stats_v6_exception_ported_name_str[] = {
@@ -115,6 +117,7 @@ static const char* ecm_stats_v6_exception_ported_name_str[] = {
     "v6_ported_src_nat_ip_changed",
     "v6_ported_db_conn_timer_expired",
     "v6_ported_drop_by_classifier",
+    "v6_ported_accel_delay",
 };
 
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE

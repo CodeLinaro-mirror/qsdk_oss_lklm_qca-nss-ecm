@@ -148,7 +148,8 @@ static bool ecm_ppe_non_ported_ipv6_accelerate_done(struct ecm_front_end_connect
  */
 static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_connection_instance *feci,
 								struct ecm_classifier_process_response *pr, bool is_l2_encap,
-								struct nf_conn *ct, struct sk_buff *skb)
+								struct nf_conn *ct, struct sk_buff *skb,
+								ecm_tracker_sender_type_t sender)
 {
 	uint16_t regen_occurrances;
 	int32_t from_ifaces_first;
@@ -338,7 +339,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		ii_name = ecm_db_interface_type_to_string(ii_type);
 		iface_id = ecm_db_iface_interface_identifier_get(ii);
 		ae_iface_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(iface_id);
-
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined (ECM_INTERFACE_TUNIPIP6_ENABLE)
+		struct ipv6hdr *ip6h = ipv6_hdr(skb);
+		__be32 flowlabel = ip6_flowlabel(ip6h);
+#endif
 		DEBUG_TRACE("%px: list_index: %d, ii: %px, type: %d (%s) ae_iface_id(%d)\n", feci, list_index, ii, ii_type, ii_name, ae_iface_id);
 
 		if (ae_iface_id < 0) {
@@ -468,6 +472,14 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				}
 				dev_put(dev);
 			}
+
+			/*
+			 * Copy flow label present in the IPv6 header of pkt.
+			 * PPE will be programmed to add the same flow label to all
+			 * packets accelerated for this tunnel.
+			 */
+			pd6rc->conn_rule.flow_label = flowlabel;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_LABEL;
 #endif
 			/*
 			 * Can only handle one MAC, the first outermost mac.
@@ -486,6 +498,14 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_FROM_IFACE_GRETUN_IFACE_MTU_UNKNOWN);
 				DEBUG_WARN("%px: Unable to get mtu value for the GRE TUN interface\n", feci);
 			}
+
+			/*
+			 * Copy flow label present in the IPv6 header of pkt.
+			 * PPE will be programmed to add the same flow label to all
+			 * packets accelerated for this tunnel.
+			 */
+			pd6rc->conn_rule.flow_label = flowlabel;
+			pd6rc->valid_flags|= PPE_DRV_V6_VALID_FLAG_FLOW_LABEL;
 			break;
 #endif
 		case ECM_DB_IFACE_TYPE_PPPOE:
@@ -617,6 +637,12 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
 				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
 			}
+
+			/*
+			 * Copy flow label present in the IPv6 header.
+			 */
+			pd6rc->conn_rule.flow_label = flowlabel;
+			pd6rc->valid_flags|= PPE_DRV_V6_VALID_FLAG_FLOW_LABEL;
 #endif
 			break;
 
@@ -655,6 +681,10 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 		struct ecm_db_interface_info_vlan vlan_info;
 		uint32_t vlan_value = 0;
 		struct net_device *vlan_out_dev = NULL;
+#endif
+#if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined (ECM_INTERFACE_TUNIPIP6_ENABLE)
+		struct ipv6hdr *ip6h = ipv6_hdr(skb);
+		__be32 flowlabel = ip6_flowlabel(ip6h);
 #endif
 
 		ii = to_ifaces[list_index];
@@ -891,6 +921,12 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED, ECM_PPE_STATS_V6_EXCEPTION_NON_PORTED_TUNIPIP6_FMR_FLOW_OFFLOAD_UNSUPPORTED);
 				DEBUG_TRACE("%px: TUNIPIP6 FMR - unsupported\n", feci);
 			}
+
+			/*
+			 * Copy flow label present in the IPv6 header of pkt.
+			 */
+			pd6rc->conn_rule.flow_label = flowlabel;
+			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_LABEL;
 #endif
 			break;
 
@@ -1142,7 +1178,8 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			"flow_dscp: %x\n"
 			"return_dscp: %x\n"
 			"conn_rule.rx_if: %d (from iface first:%s)\n"
-			"conn_rule.tx_if: %d (to iface first:%s)\n",
+			"conn_rule.tx_if: %d (to iface first:%s)\n"
+			"conn_rule.flow_label: %x\n",
 			feci,
 			feci->ci,
 			pd6rc->tuple.protocol,
@@ -1173,7 +1210,8 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			pd6rc->dscp_rule.flow_dscp,
 			pd6rc->dscp_rule.return_dscp,
 			pd6rc->conn_rule.rx_if, (from_ifaces[from_ifaces_first])->name,
-			pd6rc->conn_rule.tx_if, (to_ifaces[to_ifaces_first])->name);
+			pd6rc->conn_rule.tx_if, (to_ifaces[to_ifaces_first])->name,
+			pd6rc->conn_rule.flow_label);
 
 	/*
 	 * Now that the rule has been constructed we re-compare the generation occurrance counter.
