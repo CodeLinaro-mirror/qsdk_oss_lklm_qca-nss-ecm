@@ -76,6 +76,24 @@ struct ecm_classifier_wifi_instance {
 };
 
 /*
+ * struct ecm_classifier_wifi_fill_metadata_params
+ *	Parameters for filling WiFi metadata
+ */
+struct ecm_classifier_wifi_fill_metadata_params {
+	uint32_t flow_wifi_metadata;
+	uint32_t flow_wifi_ds_node_id;
+	uint32_t return_wifi_metadata;
+	uint32_t return_wifi_ds_node_id;
+	ecm_tracker_sender_type_t sender;
+	uint16_t flow_ast_info;
+	uint16_t return_ast_info;
+	uint16_t return_peer_id;
+	uint16_t flow_peer_id;
+	uint8_t flow_stream_id;
+	uint8_t return_stream_id;
+};
+
+/*
  * Operational control
  */
 static uint32_t ecm_classifier_wifi_enabled = 1;			/* Operational behaviour */
@@ -157,23 +175,39 @@ static void ecm_classifier_wifi_reclassify(struct ecm_classifier_instance *ci)
  * ecm_classifier_wifi_fill_metadata()
  *	Save the wifi metadata in the classifier instance.
  */
-static void ecm_classifier_wifi_fill_metadata(struct ecm_classifier_wifi_instance *cwifii, uint32_t flow_wifi_metadata, uint32_t flow_wifi_ds_node_id,
-							uint32_t return_wifi_metadata, uint32_t return_wifi_ds_node_id, ecm_tracker_sender_type_t sender)
+static void ecm_classifier_wifi_fill_metadata(struct ecm_classifier_wifi_instance *cwifii,
+					       struct ecm_classifier_wifi_fill_metadata_params *params)
 {
 	spin_lock_bh(&ecm_classifier_wifi_lock);
-	if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
+	if (params->sender == ECM_TRACKER_SENDER_TYPE_SRC)
 	{
 		cwifii->process_response.process_actions |= (ECM_CLASSIFIER_PROCESS_ACTION_MARK | ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG);
-		cwifii->process_response.flow_mark = flow_wifi_metadata;
-		cwifii->process_response.flow_wifi_ds_node_id = flow_wifi_ds_node_id;
-		cwifii->process_response.return_mark = return_wifi_metadata;
-		cwifii->process_response.return_wifi_ds_node_id = return_wifi_ds_node_id;
+		cwifii->process_response.flow_mark = params->flow_wifi_metadata;
+		cwifii->process_response.flow_wifi_ds_node_id = params->flow_wifi_ds_node_id;
+		cwifii->process_response.return_mark = params->return_wifi_metadata;
+		cwifii->process_response.return_wifi_ds_node_id = params->return_wifi_ds_node_id;
+
+		/* Store flow WiFi metadata fields */
+		cwifii->process_response.flow_ast_info = params->flow_ast_info;
+		cwifii->process_response.flow_stream_id = params->flow_stream_id;
+		cwifii->process_response.flow_peer_id = params->flow_peer_id;
+		cwifii->process_response.return_ast_info = params->return_ast_info;
+		cwifii->process_response.return_stream_id = params->return_stream_id;
+		cwifii->process_response.return_peer_id = params->return_peer_id;
 	} else {
 		cwifii->process_response.process_actions |= (ECM_CLASSIFIER_PROCESS_ACTION_MARK | ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG);
-		cwifii->process_response.flow_mark = return_wifi_metadata;
-		cwifii->process_response.flow_wifi_ds_node_id = return_wifi_ds_node_id;
-		cwifii->process_response.return_mark = flow_wifi_metadata;
-		cwifii->process_response.return_wifi_ds_node_id = flow_wifi_ds_node_id;
+		cwifii->process_response.flow_mark = params->return_wifi_metadata;
+		cwifii->process_response.flow_wifi_ds_node_id = params->return_wifi_ds_node_id;
+		cwifii->process_response.return_mark = params->flow_wifi_metadata;
+		cwifii->process_response.return_wifi_ds_node_id = params->flow_wifi_ds_node_id;
+
+		/* Store return WiFi metadata fields (swapped for DEST sender) */
+		cwifii->process_response.flow_ast_info = params->return_ast_info;
+		cwifii->process_response.flow_stream_id = params->return_stream_id;
+		cwifii->process_response.flow_peer_id = params->return_peer_id;
+		cwifii->process_response.return_ast_info = params->flow_ast_info;
+		cwifii->process_response.return_stream_id = params->flow_stream_id;
+		cwifii->process_response.return_peer_id = params->flow_peer_id;
 	}
 
 	spin_unlock_bh(&ecm_classifier_wifi_lock);
@@ -224,6 +258,13 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 	enum ip_conntrack_info ctinfo;
 	struct nf_conn *ct;
 	uint64_t slow_pkts = 0;
+	uint16_t flow_ast_info = ECM_CLASSIFIER_WIFI_INVALID_AST_INFO;
+	uint16_t return_ast_info = ECM_CLASSIFIER_WIFI_INVALID_AST_INFO;
+	uint8_t flow_stream_id = ECM_CLASSIFIER_WIFI_INVALID_STREAM_ID;
+	uint8_t return_stream_id = ECM_CLASSIFIER_WIFI_INVALID_STREAM_ID;
+	uint16_t flow_peer_id = ECM_CLASSIFIER_WIFI_INVALID_PEER_ID;
+	uint16_t return_peer_id = ECM_CLASSIFIER_WIFI_INVALID_PEER_ID;
+	struct ecm_classifier_wifi_fill_metadata_params metadata_params;
 
 	cwifii = (struct ecm_classifier_wifi_instance *)aci;
 	DEBUG_CHECK_MAGIC(cwifii, ECM_CLASSIFIER_WIFI_INSTANCE_MAGIC, "%px: magic failed\n", cwifii);
@@ -327,7 +368,14 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		wifi_flow_metadata = ecm_wifi.get_wifi_metadata(&wifi_metadata_info);
 		flow_ds_metadata = wifi_metadata_info.wifi_mdata.out_ppe_ds_node_id;
 		flow_hlos_tid_override = wifi_metadata_info.wifi_mdata.hlos_tid_override;
+
+		if (wifi_metadata_info.wifi_mdata.out_ast_valid) {
+			flow_ast_info = wifi_metadata_info.wifi_mdata.out_ast_info;
+			flow_peer_id = wifi_metadata_info.wifi_mdata.out_peer_id;
+		}
 	}
+
+	memset(&wifi_metadata_info, 0, sizeof(struct ecm_classifier_wifi_metadata));
 
 	if (src_dev) {
 		wifi_metadata_info.valid_params_flag |= ECM_CLASSIFIER_WIFI_MLO_PARAM_VALID;
@@ -337,6 +385,11 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		wifi_return_metadata = ecm_wifi.get_wifi_metadata(&wifi_metadata_info);
 		return_ds_metadata = wifi_metadata_info.wifi_mdata.out_ppe_ds_node_id;
 		return_hlos_tid_override = wifi_metadata_info.wifi_mdata.hlos_tid_override;
+
+		if (wifi_metadata_info.wifi_mdata.out_ast_valid) {
+			return_ast_info = wifi_metadata_info.wifi_mdata.out_ast_info;
+			return_peer_id = wifi_metadata_info.wifi_mdata.out_peer_id;
+		}
 	}
 
 	/*
@@ -352,7 +405,19 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 		goto process_wifi_classifier_out;
 	}
 
-	ecm_classifier_wifi_fill_metadata(cwifii, wifi_flow_metadata, flow_ds_metadata, wifi_return_metadata, return_ds_metadata, sender);
+	metadata_params.flow_wifi_metadata = wifi_flow_metadata;
+	metadata_params.flow_wifi_ds_node_id = flow_ds_metadata;
+	metadata_params.return_wifi_metadata = wifi_return_metadata;
+	metadata_params.return_wifi_ds_node_id = return_ds_metadata;
+	metadata_params.sender = sender;
+	metadata_params.flow_ast_info = flow_ast_info;
+	metadata_params.flow_stream_id = flow_stream_id;
+	metadata_params.flow_peer_id = flow_peer_id;
+	metadata_params.return_ast_info = return_ast_info;
+	metadata_params.return_stream_id = return_stream_id;
+	metadata_params.return_peer_id = return_peer_id;
+
+	ecm_classifier_wifi_fill_metadata(cwifii, &metadata_params);
 
 	/*
 	 * We are relevant to the connection.

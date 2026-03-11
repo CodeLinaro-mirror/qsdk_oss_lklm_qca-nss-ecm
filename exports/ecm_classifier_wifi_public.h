@@ -33,12 +33,21 @@
  * @dest_dev: Destination netdevice
  * @dest_mac: Destination peer mac address
  * @out_ppe_ds_node_id: destination node id for ppe-ds
+ * @hlos_tid_override: HLOS TID override value
+ * @out_stream_id: Stream ID
+ * @out_ast_valid: AST info valid
+ * @out_ast_info: AST info
+ * @out_peer_id: Peer ID
  */
 struct ecm_classifier_wifi_metadata_info {
 	struct net_device *dest_dev;
 	uint8_t *dest_mac;
 	uint8_t out_ppe_ds_node_id;
 	uint8_t hlos_tid_override;
+	uint8_t out_stream_id;
+	uint8_t out_ast_valid;
+	uint16_t out_ast_info;
+	uint16_t out_peer_id;
 };
 
 /**

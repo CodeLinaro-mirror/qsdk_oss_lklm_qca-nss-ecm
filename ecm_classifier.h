@@ -193,6 +193,12 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_WIFI_ENABLE
 	uint32_t flow_wifi_ds_node_id;			/* Flow Wi-Fi ppe ds metadata i.e. node id */
 	uint32_t return_wifi_ds_node_id;		/* Return Wi-Fi ppe ds metadata i.e. node id */
+	uint16_t flow_ast_info;				/* Flow AST info */
+	uint16_t return_ast_info;			/* Return AST info */
+	uint8_t flow_stream_id;				/* Flow stream ID */
+	uint8_t return_stream_id;			/* Return stream ID */
+	uint16_t flow_peer_id;				/* Flow peer ID */
+	uint16_t return_peer_id;			/* Return peer ID */
 #endif
 };
 

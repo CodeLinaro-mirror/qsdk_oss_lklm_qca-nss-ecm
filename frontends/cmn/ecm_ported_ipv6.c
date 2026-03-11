@@ -1140,6 +1140,13 @@ done:
 			prevalent_pr.process_actions |= ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG;
 			prevalent_pr.flow_wifi_ds_node_id = aci_pr.flow_wifi_ds_node_id;
 			prevalent_pr.return_wifi_ds_node_id = aci_pr.return_wifi_ds_node_id;
+
+			prevalent_pr.flow_ast_info = aci_pr.flow_ast_info;
+			prevalent_pr.flow_stream_id = aci_pr.flow_stream_id;
+			prevalent_pr.flow_peer_id = aci_pr.flow_peer_id;
+			prevalent_pr.return_ast_info = aci_pr.return_ast_info;
+			prevalent_pr.return_stream_id = aci_pr.return_stream_id;
+			prevalent_pr.return_peer_id = aci_pr.return_peer_id;
 		}
 #endif
 		/*
