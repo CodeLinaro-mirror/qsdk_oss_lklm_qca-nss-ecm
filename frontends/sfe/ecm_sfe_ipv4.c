@@ -418,6 +418,43 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		 */
 		feci->accel_ceased(feci);
 		break;
+
+	case SFE_RULE_SYNC_REASON_FLOW_CLASSIFIED:
+		/*
+		 * FLS has classified the flow - mark the 17th bit for IPA offload
+		 * Do NOT flush the connection, connection stays accelerated in SFE
+		 */
+		DEBUG_INFO("%px: FLS classified flow, marking 17th bit for IPA offload\n", ci);
+		{
+			struct nf_conn *ct;
+
+			ct = ecm_classifier_get_and_ref_ct(ci);
+			if (ct) {
+				bool ct_update = ecm_classifier_update_ct_mark(ct);
+				if (!ct_update) {
+					DEBUG_TRACE("Update mark failed for ecm db connection instance: %px\n", ci);
+				} else {
+					DEBUG_TRACE("Update mark SUCCESS for ecm db connection instance: %px, mark=0x%x\n", ci, ct->mark);
+				}
+			} else {
+				DEBUG_TRACE("Failed to get ct for ci: %px\n", ci);
+			}
+		}
+
+		/*
+		 * Mark that action has been seen for this connection.
+		 * This is critical when IPA offloads packets - SFE won't see packets (tx_count=0)
+		 * so the check at line 315 fails and ecm_front_end_connection_action_seen() at
+		 * line 364 is not called. Without this, no_action_seen counter keeps incrementing
+		 * and eventually reaches the limit, causing ECM to decelerate the connection even
+		 * though it's actively being offloaded by IPA.
+		 */
+		ecm_front_end_connection_action_seen(feci);
+
+		/* Do NOT call feci->decelerate() or feci->accel_ceased() */
+		/* Connection remains accelerated in SFE */
+		break;
+
 	default:
 		if (ecm_db_connection_is_routed_get(ci)) {
 			/*
