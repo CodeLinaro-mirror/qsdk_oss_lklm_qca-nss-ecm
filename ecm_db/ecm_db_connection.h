@@ -168,7 +168,9 @@ struct ecm_db_connection_instance {
 	uint16_t l2_encap_proto;				/* L2 encap protocol of the flow of this connection */
 	uint32_t mark;						/* The result value of mark classifier on this connection */
 	bool is_rtp;						/* RTP is present in UDP if this flag is set */
-
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+	uint32_t spi[ECM_DB_OBJ_DIR_MAX];			/* ESP SPI index in flow and return direction */
+#endif
 	/*
 	 * Connection endpoint mapping
 	 * NOTE: For non-NAT connections mapping[ECM_DB_OBJ_DIR_FROM_NAT] and mapping[ECM_DB_OBJ_DIR_TO_NAT]
@@ -341,6 +343,7 @@ struct ecm_db_connection_instance {
 #define ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED 0x4	/* Connection is defuncted because of conntarck Destroyed */
 #define ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER 0x8		/* Connection is for a tunnel connection outer */
 #define ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW 0x10		/* Connection is for a tunnel connection, either inner or outer tunnel */
+#define ECM_DB_CONNECTION_FLAGS_ESP_SPI_PASSTH 0x20		/* Connection is ESP SPI based pass-through */
 
 int _ecm_db_connection_count_get(void);
 
@@ -372,6 +375,10 @@ void ecm_db_connection_address_get(struct ecm_db_connection_instance *ci, ecm_db
 
 int ecm_db_connection_port_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
 
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+void ecm_db_connection_spi_set(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, uint32_t spi);
+uint32_t ecm_db_connection_spi_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir);
+#endif
 void ecm_db_connection_node_address_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, uint8_t *address_buffer);
 
 void ecm_db_connection_iface_name_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, char *name_buffer);

@@ -820,6 +820,38 @@ ecm_db_iface_type_t ecm_db_connection_iface_type_get(struct ecm_db_connection_in
 }
 EXPORT_SYMBOL(ecm_db_connection_iface_type_get);
 
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+/*
+ * ecm_db_connection_spi_set()
+ *	Set the SPI values in ECM connection.
+ */
+void ecm_db_connection_spi_set(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir, uint32_t spi)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	ci->spi[dir] = spi;
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_connection_spi_set);
+
+/*
+ * ecm_db_connection_spi_get()
+ *	Return the SPI value from ECM connection DB.
+ */
+uint32_t ecm_db_connection_spi_get(struct ecm_db_connection_instance *ci, ecm_db_obj_dir_t dir)
+{
+	uint32_t spi;
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+
+	spin_lock_bh(&ecm_db_lock);
+	spi = ci->spi[dir];
+	spin_unlock_bh(&ecm_db_lock);
+	return spi;
+}
+EXPORT_SYMBOL(ecm_db_connection_spi_get);
+#endif
+
 /*
  * ecm_db_connection_regeneration_occurrances_get()
  *	Get the number of regeneration occurrances that have occurred since the connection was created.
@@ -4372,6 +4404,22 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 		break;
 	case IPPROTO_IPV6:
 	case IPPROTO_ESP:
+		/*
+		 * In case of ESP SPI pass through, the port numbers are unique
+		 * ESP IDs indirectly representing the SPI values aligned with conntrack
+		 * entry - making it 5 tuple instead of 3. In case if this feature is
+		 * disabled, then ESP is treated as a regular 5 tuple.
+		 */
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+		if (ecm_front_end_esp_spi_passthrough_enable) {
+			host1_port = ntohs(orig_tuple.src.u.udp.port);
+			host2_port = ntohs(reply_tuple.src.u.udp.port);
+		} else {
+			host1_port = 0;
+			host2_port = 0;
+		}
+		break;
+#endif
 	case IPPROTO_GRE:
 	case IPPROTO_L2TP:
 		host1_port = 0;

@@ -124,6 +124,9 @@ unsigned int ecm_front_end_ppe_fse_enable = 1;
 int ecm_front_end_unidir_accel_en = 1;
 int ecm_front_end_unidir_accel_delay = 0;
 int ecm_front_end_udp_ipsec_port = 4500;	/* UDP IPsec port */
+#ifdef ECM_FRONT_END_ESP_SPI_PASSTHROUGH
+unsigned int ecm_front_end_esp_spi_passthrough_enable = 0;
+#endif
 
 #define ECM_FRONT_END_DENIED_PORTS_HASH_BITS 6
 #define ECM_FRONT_END_DENIED_PORTS_HTABLE_SIZE (1 << ECM_FRONT_END_DENIED_PORTS_HASH_BITS)
@@ -615,6 +618,54 @@ bool ecm_front_end_l2tp_proto_is_accel_allowed(struct net_device *indev, struct 
 	return false;
 }
 
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+/*
+ * ecm_front_end_esp_passthrough_is_accel_allowed()
+ *	Check if ESP pass through is allowed.
+ */
+bool ecm_front_end_esp_passthrough_is_accel_allowed(struct nf_conn *ct,
+								enum ip_conntrack_info ctinfo,
+								struct sk_buff *skb,
+								struct nf_conntrack_tuple *orig_tuple)
+{
+	/*
+	 * Check for conntrack.
+	 */
+	if (!ct) {
+		DEBUG_TRACE("%px: ESP passthrough denied - No conntrack for this packet\n", skb);
+		return false;
+	}
+
+	/*
+	 * If the ESP ID is not assigned in the conntrack,
+	 * So no need to process it for SPI match.
+	 */
+	if (orig_tuple->dst.u.esp.id == 0) {
+		DEBUG_TRACE("%px: ESP passthrough denied - Not a pass through flow (ESP ID is 0)\n", skb);
+		return false;
+	}
+
+	/*
+	 * We need to extract Bi-Di SPIs from the packets. Hence do not accelerate
+	 * till we see packets from each direction.
+	 */
+	if (ctinfo != IP_CT_ESTABLISHED && ctinfo != IP_CT_ESTABLISHED_REPLY) {
+		DEBUG_TRACE("%px: ESP passthrough denied - Bi-Di packets not yet seen (ctinfo=%d)\n", skb, ctinfo);
+		return false;
+	}
+
+	/*
+	 * Check if conntrack has information about Bi-Di SPI.
+	 */
+	if (!ct->proto.esp.l_spi || !ct->proto.esp.r_spi) {
+		DEBUG_TRACE("%px: ESP passthrough denied - Both side SPIs not present\n", skb);
+		return false;
+	}
+
+	return true;
+}
+#endif
+
 /*
  * ecm_front_end_gre_proto_is_accel_allowed()
  *	Handle the following GRE cases:
@@ -944,6 +995,43 @@ uint64_t ecm_front_end_get_slow_packet_count(struct ecm_front_end_connection_ins
 	spin_unlock_bh(&feci->lock);
 	return slow_pkts;
 }
+
+#ifdef ECM_FRONT_END_ESP_SPI_PASSTHROUGH
+/*
+ * ecm_front_end_esp_spi_passthrough_enable_handler()
+ *	Sysctl to enable/disable ESP SPI based passthrough feature.
+ */
+int ecm_front_end_esp_spi_passthrough_enable_handler(struct ctl_table *ctl, int write, void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ecm_front_end_esp_spi_passthrough_enable;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if ((ecm_front_end_esp_spi_passthrough_enable != 0) &&
+			(ecm_front_end_esp_spi_passthrough_enable != 1)) {
+		DEBUG_WARN("Invalid input. Valid values 0/1\n");
+		ecm_front_end_esp_spi_passthrough_enable = current_value;
+		return -EINVAL;
+	}
+
+	return ret;
+}
+#endif
 
 #ifdef ECM_FRONT_END_PPE_ENABLE
 /*
@@ -1314,6 +1402,16 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.mode		= 0644,
 		.proc_handler	= &ecm_front_end_unidir_accel_proc_handler,
 	},
+#ifdef ECM_FRONT_END_ESP_SPI_PASSTHROUGH
+	{
+		.procname	= "esp_spi_passthrough_enable",
+		.data		= &ecm_front_end_esp_spi_passthrough_enable,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &ecm_front_end_esp_spi_passthrough_enable_handler,
+	},
+#endif
+	{}
 };
 
 /*
