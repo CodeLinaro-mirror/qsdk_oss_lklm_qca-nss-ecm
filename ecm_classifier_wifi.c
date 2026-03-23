@@ -506,6 +506,20 @@ static void ecm_classifier_wifi_sync_to_v4(struct ecm_classifier_instance *aci, 
  */
 static void ecm_classifier_wifi_sync_from_v4(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
+	struct ecm_classifier_wifi_flow_info *flow_info;
+
+	if (!ecrc->flow_info_valid || !ecrc->flow_info) {
+		return;
+	}
+
+	flow_info = ecrc->flow_info;
+
+	if (!ecm_wifi.wifi_flowq_setup) {
+		DEBUG_WARN("No callback registered for wifi queue setup\n");
+		return;
+	}
+
+	ecm_wifi.wifi_flowq_setup(flow_info);
 }
 
 /*
@@ -522,6 +536,20 @@ static void ecm_classifier_wifi_sync_to_v6(struct ecm_classifier_instance *aci, 
  */
 static void ecm_classifier_wifi_sync_from_v6(struct ecm_classifier_instance *aci, struct ecm_classifier_rule_create *ecrc)
 {
+	struct ecm_classifier_wifi_flow_info *flow_info;
+
+	if (!ecrc->flow_info_valid || !ecrc->flow_info) {
+		return;
+	}
+
+	flow_info = ecrc->flow_info;
+
+	if (!ecm_wifi.wifi_flowq_setup) {
+		DEBUG_WARN("No callback registered for wifi queue setup\n");
+		return;
+	}
+
+	ecm_wifi.wifi_flowq_setup(flow_info);
 }
 
 /*
@@ -807,7 +835,14 @@ int ecm_classifier_wifi_callback_register(struct ecm_classifier_wifi_callbacks *
 		return -1;
 	}
 
+	if (ecm_wifi.wifi_flowq_setup) {
+		spin_unlock_bh(&ecm_classifier_wifi_lock);
+		DEBUG_ERROR("Wifi flow queue setup callback is already registered\n");
+		return -1;
+	}
+
 	ecm_wifi.get_wifi_metadata = wifi_cb->get_wifi_metadata;
+	ecm_wifi.wifi_flowq_setup = wifi_cb->wifi_flowq_setup;
 	spin_unlock_bh(&ecm_classifier_wifi_lock);
 	return 0;
 }
@@ -820,6 +855,7 @@ void ecm_classifier_wifi_callback_unregister(void)
 {
 	spin_lock_bh(&ecm_classifier_wifi_lock);
 	ecm_wifi.get_wifi_metadata = NULL;
+	ecm_wifi.wifi_flowq_setup = NULL;
 	spin_unlock_bh(&ecm_classifier_wifi_lock);
 }
 EXPORT_SYMBOL(ecm_classifier_wifi_callback_unregister);

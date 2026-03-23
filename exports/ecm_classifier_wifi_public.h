@@ -53,15 +53,42 @@ struct ecm_classifier_wifi_metadata {
 };
 
 /**
+ * ecm_classifier_wifi_flow_info
+ *	Structure to pass WiFi TID queue setup parameters
+ *
+ * @dev: Network device
+ * @peer_mac: Peer MAC address
+ * @qos_tag: QoS tag
+ * @sawf_mark: SAWF mark (flow or return depending on direction)
+ * @dscp: DSCP value
+ * @protocol: Protocol type
+ * @sawf_service_class: SAWF service class (flow or return depending on direction)
+ * @sawf_rule_valid: Flag indicating if SAWF rule is valid
+ */
+struct ecm_classifier_wifi_flow_info {
+	struct net_device *dev;
+	uint8_t *peer_mac;
+	uint32_t qos_tag;
+	uint32_t sawf_mark;
+	uint8_t dscp;
+	uint8_t protocol;
+	uint8_t sawf_service_class;
+	bool sawf_rule_valid;
+};
+
+/**
  * Callback to which WLAN driver will register to get wifi metadata from ECM frontend.
  */
 typedef uint32_t (*ecm_classifier_wifi_get_info_callback_t)(struct ecm_classifier_wifi_metadata *wifi_info);
+
+typedef uint32_t (*ecm_classifier_wifi_flowq_setup_callback_t)(struct ecm_classifier_wifi_flow_info *flow_info);
 
 /**
  * Data structure for WiFi callbacks.
  */
 struct ecm_classifier_wifi_callbacks {
 	ecm_classifier_wifi_get_info_callback_t get_wifi_metadata;
+	ecm_classifier_wifi_flowq_setup_callback_t wifi_flowq_setup;
 };
 
 /**

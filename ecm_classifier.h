@@ -219,6 +219,10 @@ struct ecm_classifier_rule_create {
 #ifdef ECM_CLASSIFIER_EMESH_ENABLE
 	struct sk_buff *skb;
 #endif
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+	struct ecm_classifier_wifi_flow_info *flow_info;
+	bool flow_info_valid;
+#endif
 };
 
 /*

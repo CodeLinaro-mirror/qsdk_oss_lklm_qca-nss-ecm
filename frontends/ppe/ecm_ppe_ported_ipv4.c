@@ -91,6 +91,109 @@
 static int ecm_ppe_ported_ipv4_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX] = {0};
 						/* Array of Number of TCP and UDP connections currently offloaded */
 
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+/*
+ * ecm_ppe_ported_ipv4_wifi_flowq_setup()
+ *	Setup WiFi non default TID queues for both flow and return direction
+ */
+static void ecm_ppe_ported_ipv4_wifi_flowq_setup(struct ecm_db_connection_instance *ci,
+						  struct ecm_classifier_process_response *pr,
+						  struct ppe_drv_v4_rule_create *pd4rc,
+						  ecm_tracker_sender_type_t sender)
+{
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	uint8_t smac[ETH_ALEN] = {0};
+	uint8_t dmac[ETH_ALEN] = {0};
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc = {0};
+	struct ecm_classifier_wifi_flow_info flow_info = {0};
+
+	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_WIFI);
+	if (!aci) {
+		return;
+	}
+
+	ecrc.flow_info = &flow_info;
+	ecrc.flow_info_valid = true;
+
+	/*
+	 * Get MAC addresses based on sender direction
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	} else {
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
+	}
+
+	/*
+	 * Fetch the src and dest net devices to check their interfaces.
+	 */
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+	/*
+	 * Setup flow direction queue
+	 */
+	if (dest_dev) {
+		memset(&flow_info, 0, sizeof(flow_info));
+		/*
+		 * Check if SAWF rule is valid and extract flow SAWF parameters
+		 */
+		if (pd4rc->valid_flags & PPE_DRV_V4_VALID_FLAG_SAWF) {
+			flow_info.sawf_rule_valid = true;
+			flow_info.sawf_mark = pd4rc->sawf_rule.flow_mark;
+			flow_info.sawf_service_class = pd4rc->sawf_rule.flow_service_class;
+		}
+
+		flow_info.dev = dest_dev;
+		flow_info.peer_mac = dmac;
+		flow_info.dscp = pd4rc->dscp_rule.flow_dscp;
+		flow_info.qos_tag = pd4rc->qos_rule.flow_qos_tag;
+		flow_info.protocol = pd4rc->tuple.protocol;
+
+		aci->sync_from_v4(aci, &ecrc);
+	}
+
+	/*
+	 * Setup return direction queue
+	 */
+	if (src_dev) {
+		memset(&flow_info, 0, sizeof(flow_info));
+
+		/*
+		 * Check if SAWF rule is valid and extract return SAWF parameters
+		 */
+		if (pd4rc->valid_flags & PPE_DRV_V4_VALID_FLAG_SAWF) {
+			flow_info.sawf_rule_valid = true;
+			flow_info.sawf_mark = pd4rc->sawf_rule.return_mark;
+			flow_info.sawf_service_class = pd4rc->sawf_rule.return_service_class;
+		}
+
+		flow_info.dev = src_dev;
+		flow_info.peer_mac = smac;
+		flow_info.dscp = pd4rc->dscp_rule.return_dscp;
+		flow_info.qos_tag = pd4rc->qos_rule.return_qos_tag;
+		flow_info.protocol = pd4rc->tuple.protocol;
+
+		aci->sync_from_v4(aci, &ecrc);
+	}
+
+	aci->deref(aci);
+
+	/*
+	 * Release the source and destination dev count
+	 */
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+}
+#endif
+
 /*
  * ecm_ppe_ported_ipv4_handle_flush()
  *	Handle situation if destroy comes before setting up rule
@@ -1775,6 +1878,15 @@ process_next_iface_return:
 	 */
 	feci->fe_info.valid_flags = pd4rc->valid_flags;
 	feci->fe_info.rule_flags = pd4rc->rule_flags;
+
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
+		/*
+		 * Setup WiFi non default TID queues for both flow and return directions
+		 */
+		ecm_ppe_ported_ipv4_wifi_flowq_setup(ci, pr, pd4rc, sender);
+	}
+#endif
 
 	/*
 	 * Call the rule create function

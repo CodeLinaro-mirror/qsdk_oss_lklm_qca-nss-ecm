@@ -75,6 +75,9 @@
 #include "ecm_db.h"
 #include "ecm_classifier_default.h"
 #include "ecm_interface.h"
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+#include "ecm_classifier_wifi.h"
+#endif
 #include "ecm_sfe_ported_ipv6.h"
 #include "ecm_sfe_ipv6.h"
 #include "ecm_sfe_common.h"
@@ -83,6 +86,113 @@
 
 static int ecm_sfe_ported_ipv6_accelerated_count[ECM_FRONT_END_PORTED_PROTO_MAX] = {0};
 						/* Array of Number of TCP and UDP connections currently offloaded */
+
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+/*
+ * ecm_sfe_ported_ipv6_wifi_flowq_setup()
+ *	Setup WiFi non default TID queues for both flow and return direction
+ */
+static void ecm_sfe_ported_ipv6_wifi_flowq_setup(struct ecm_db_connection_instance *ci,
+						  struct ecm_classifier_process_response *pr,
+						  struct sfe_ipv6_rule_create_msg *nircm,
+						  ecm_tracker_sender_type_t sender)
+{
+	struct net_device *src_dev = NULL;
+	struct net_device *dest_dev = NULL;
+	uint8_t smac[ETH_ALEN] = {0};
+	uint8_t dmac[ETH_ALEN] = {0};
+	struct ecm_classifier_instance *aci;
+	struct ecm_classifier_rule_create ecrc = {0};
+	struct ecm_classifier_wifi_flow_info flow_info = {0};
+
+	aci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_WIFI);
+	if (!aci) {
+		return;
+	}
+
+	ecrc.flow_info = &flow_info;
+	ecrc.flow_info_valid = true;
+
+	/*
+	 * Get MAC addresses based on sender direction
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dmac);
+	} else {
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, smac);
+		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, dmac);
+	}
+
+	/*
+	 * Fetch the src and dest net devices to check their interfaces.
+	 */
+	ecm_db_netdevs_get_and_hold(ci, sender, &src_dev, &dest_dev);
+
+	/*
+	 * Setup flow direction queue
+	 */
+	if (dest_dev) {
+		memset(&flow_info, 0, sizeof(flow_info));
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		/*
+		 * Check if SAWF rule is valid and extract flow SAWF parameters
+		 */
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+			flow_info.sawf_rule_valid = true;
+			flow_info.sawf_mark = nircm->sawf_rule.flow_mark;
+			flow_info.sawf_service_class = nircm->sawf_rule.flow_svc_id;
+		}
+#endif
+		flow_info.dev = dest_dev;
+		flow_info.peer_mac = dmac;
+		flow_info.dscp = nircm->dscp_rule.flow_dscp;
+		flow_info.qos_tag = nircm->qos_rule.flow_qos_tag;
+		flow_info.protocol = nircm->tuple.protocol;
+
+		aci->sync_from_v6(aci, &ecrc);
+	}
+
+	/*
+	 * Setup return direction queue
+	 */
+	if (src_dev) {
+		memset(&flow_info, 0, sizeof(flow_info));
+
+#ifdef ECM_CLASSIFIER_EMESH_ENABLE
+		/*
+		 * Check if SAWF rule is valid and extract return SAWF parameters
+		 */
+		if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_EMESH_SAWF_TAG) {
+			flow_info.sawf_rule_valid = true;
+			flow_info.sawf_mark = nircm->sawf_rule.return_mark;
+			flow_info.sawf_service_class = nircm->sawf_rule.return_svc_id;
+		}
+#endif
+		flow_info.dev = src_dev;
+		flow_info.peer_mac = smac;
+		flow_info.dscp = nircm->dscp_rule.return_dscp;
+		flow_info.qos_tag = nircm->qos_rule.return_qos_tag;
+		flow_info.protocol = nircm->tuple.protocol;
+
+		aci->sync_from_v6(aci, &ecrc);
+	}
+
+	aci->deref(aci);
+
+	/*
+	 * Release the source and destination dev count
+	 */
+	if (src_dev) {
+		dev_put(src_dev);
+	}
+
+	if (dest_dev) {
+		dev_put(dest_dev);
+	}
+}
+#endif
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0))
 /*
@@ -2026,6 +2136,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	 */
 	feci->fe_info.valid_flags = nircm->valid_flags;
 	feci->fe_info.rule_flags = nircm->rule_flags;
+
+#ifdef ECM_CLASSIFIER_WIFI_ENABLE
+	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_WIFI_TAG) {
+		/*
+		* Setup WiFi non default TID queues for both flow and return directions
+		*/
+		ecm_sfe_ported_ipv6_wifi_flowq_setup(ci, pr, nircm, sender);
+	}
+#endif
 
 	/*
 	 * Call the rule create function
