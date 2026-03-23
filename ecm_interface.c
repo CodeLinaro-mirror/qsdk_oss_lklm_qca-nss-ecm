@@ -361,11 +361,11 @@ static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 		}
 
 		if (proto == IPPROTO_TCP) {
-			sport = ntohs(orig_tuple.src.u.tcp.port);
-			dport = ntohs(orig_tuple.dst.u.tcp.port);
+			sport = orig_tuple.src.u.tcp.port;
+			dport = orig_tuple.dst.u.tcp.port;
 		} else if (proto == IPPROTO_UDP) {
-			sport = ntohs(orig_tuple.src.u.udp.port);
-			dport = ntohs(orig_tuple.dst.u.udp.port);
+			sport = orig_tuple.src.u.udp.port;
+			dport = orig_tuple.dst.u.udp.port;
 		}
 	} else {
 		if (reply_tuple.src.l3num == NFPROTO_IPV4) {
@@ -379,18 +379,18 @@ static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 		}
 
 		if (proto == IPPROTO_TCP) {
-			sport = ntohs(reply_tuple.src.u.tcp.port);
-			dport = ntohs(reply_tuple.dst.u.tcp.port);
+			sport = reply_tuple.src.u.tcp.port;
+			dport = reply_tuple.dst.u.tcp.port;
 		} else if (proto == IPPROTO_UDP) {
-			sport = ntohs(reply_tuple.src.u.udp.port);
-			dport = ntohs(reply_tuple.dst.u.udp.port);
+			sport = reply_tuple.src.u.udp.port;
+			dport = reply_tuple.dst.u.udp.port;
 		}
 	}
 
 	/*
 	 * Find the ECM connection based on the conntrack-extracted 5-tuple
 	 */
-	ci = ecm_db_connection_find_and_ref(src_ip, dst_ip, proto, sport, dport);
+	ci = ecm_db_connection_find_and_ref(src_ip, dst_ip, proto, ntohs(sport), ntohs(dport));
 	if (unlikely(!ci)) {
 		DEBUG_WARN("Unable to find ci\n");
 		return -1;
