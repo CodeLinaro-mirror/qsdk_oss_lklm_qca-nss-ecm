@@ -143,10 +143,16 @@ def define_modules(target, variant):
     if target not in ("sdxkova.cpe.tarang", "sdxkova.cpe.min"):
         ecm_srcs.append("ecm_classifier_emesh.c")
         ecm_copts.append("-DECM_CLASSIFIER_EMESH_ENABLE=y")
-        ecm_deps.extend([
-            "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:emesh_sp_headers",
-            "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:{}-defconfig_emesh_sp".format(kernel_build_variant),
-        ])
+        if target in ("sdxkova"):
+            ecm_deps.extend([
+                "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-mcc-1.0:emesh_sp_headers",
+                "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-mcc-1.0:{}-defconfig_emesh_sp".format(kernel_build_variant),
+            ])
+        else:
+            ecm_deps.extend([
+                "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:emesh_sp_headers",
+                "//build_dir/target-aarch64_cortex-a53_musl/linux-sdx85/emesh-sp-1.0:{}-defconfig_emesh_sp".format(kernel_build_variant),
+            ])
 
     ddk_module(
         name = "{}_ecm".format(kernel_build_variant),
