@@ -1268,15 +1268,13 @@ static void _ecm_db_classifier_type_assignment_remove(struct ecm_db_connection_i
  * _ecm_db_connection_classifier_unassign()
  *	Unassign a classifier and remove the classifier type
  *
- * The default classifier cannot be unassigned.
+ * The default classifier cannot be unassigned from the type_assignment list.
  */
 static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connection_instance *ci, struct ecm_classifier_instance *cci, ecm_classifier_type_t ca_type)
 {
-#ifdef ECM_DB_CTA_TRACK_ENABLE
-	struct ecm_db_connection_classifier_type_assignment *ta;
-#endif
 	DEBUG_ASSERT(spin_is_locked(&ecm_db_lock), "%px: lock is not held\n", ci);
 
+	DEBUG_INFO("%px: Unassign classifier type : %d\n", ci, ca_type);
 	/*
 	 * Clear the assignment.
 	 */
@@ -1298,26 +1296,29 @@ static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connecti
 	cci->ca_prev = NULL;
 
 #ifdef ECM_DB_CTA_TRACK_ENABLE
-	/*
-	 * Remove from the classifier type assignment list
-	 */
-	ta = &ci->type_assignment[ca_type];
-	DEBUG_CHECK_MAGIC(ta, ECM_DB_CLASSIFIER_TYPE_ASSIGNMENT_MAGIC, "%px: magic failed, ci: %px", ta, ci);
-	if (ta->iteration_count > 0) {
-		/*
-		 * The list entry is being iterated outside of db lock being held.
-		 * We cannot remove this entry since it would mess up iteration.
-		 * Set the pending flag to be actioned another time
-		 */
-		ta->pending_unassign = true;
-		return;
-	}
+	if (ca_type != ECM_CLASSIFIER_TYPE_DEFAULT) {
+		struct ecm_db_connection_classifier_type_assignment *ta;
 
-	/*
-	 * Remove the list entry
-	 */
-	DEBUG_INFO("%px: Remove type assignment: %d\n", ci, ca_type);
-	_ecm_db_classifier_type_assignment_remove(ci, ca_type);
+		/*
+		 * Remove from the classifier type assignment list
+		 */
+		ta = &ci->type_assignment[ca_type];
+		DEBUG_CHECK_MAGIC(ta, ECM_DB_CLASSIFIER_TYPE_ASSIGNMENT_MAGIC, "%px: magic failed, ci: %px", ta, ci);
+		if (ta->iteration_count > 0) {
+			/*
+			 * The list entry is being iterated outside of db lock being held.
+			 * We cannot remove this entry since it would mess up iteration.
+			 * Set the pending flag to be actioned another time
+			 */
+			ta->pending_unassign = true;
+			return;
+		}
+
+		/*
+		 * Remove the list entry
+		 */
+		_ecm_db_classifier_type_assignment_remove(ci, ca_type);
+	}
 #endif
 	cci->deref(cci);
 }
@@ -1328,9 +1329,7 @@ static inline void _ecm_db_connection_classifier_unassign(struct ecm_db_connecti
  */
 int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 {
-#ifdef ECM_DB_CTA_TRACK_ENABLE
 	ecm_classifier_type_t ca_type;
-#endif
 	int32_t i;
 	int32_t dir;
 
@@ -1347,20 +1346,10 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		return refs;
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
-	/*
-	 * For multicast connections, we need to deref the
-	 * associated tuple instance as well
-	 */
-	if (ci->ti) {
-		_ecm_db_multicast_tuple_instance_deref(ci->ti);
-	}
-#endif
-
 	/*
 	 * Remove from database if inserted
 	 */
-	if ((!ci->flags) & ECM_DB_CONNECTION_FLAGS_INSERTED) {
+	if (!(ci->flags & ECM_DB_CONNECTION_FLAGS_INSERTED)) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -1495,6 +1484,15 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 			ci->mapping[dir]->conn_count[dir]--;
 		}
 
+#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+		/*
+		 * For multicast connections, we need to deref the
+		 * associated tuple instance as well
+		 */
+		if (ci->ti) {
+			_ecm_db_multicast_tuple_instance_deref(ci->ti);
+		}
+#endif
 		/*
 		 * Assert that the defunt timer has been detached
 		 */
@@ -1506,6 +1504,7 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		ecm_db_connection_count_by_protocol[ci->protocol]--;
 		DEBUG_ASSERT(ecm_db_connection_count_by_protocol[ci->protocol] >= 0, "%px: Invalid protocol count %d\n", ci, ecm_db_connection_count_by_protocol[ci->protocol]);
 
+		ci->flags &= ~ECM_DB_CONNECTION_FLAGS_INSERTED;
 		spin_unlock_bh(&ecm_db_lock);
 
 		/*
@@ -1535,7 +1534,6 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	ecm_db_connection_del_vlan_filter(ci);
 #endif
 
-#ifdef ECM_DB_CTA_TRACK_ENABLE
 	/*
 	 * Unlink from the "assignments by classifier type" lists.
 	 *
@@ -1546,11 +1544,11 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 	 * ci would be being held as part of iteration and so we would not be here!
 	 * Equally we know that if the assignments_by_type[] element is non-null then it must also be in the relevant list too.
 	 *
-	 * Default classifier is not in the classifier type assignement list, so we should start the loop index
-	 * with the first assigned classifier type.
+	 * Default classifier is not in the classifier type assignement list and _ecm_db_connection_classifier_unassign() function takes
+	 * care of it.
 	 */
 	spin_lock_bh(&ecm_db_lock);
-	for (ca_type = ECM_CLASSIFIER_TYPE_DEFAULT + 1; ca_type < ECM_CLASSIFIER_TYPES; ++ca_type) {
+	for (ca_type = ECM_CLASSIFIER_TYPE_DEFAULT; ca_type < ECM_CLASSIFIER_TYPES; ++ca_type) {
 		struct ecm_classifier_instance *cci = ci->assignments_by_type[ca_type];
 		if (!cci) {
 			/*
@@ -1561,22 +1559,12 @@ int ecm_db_connection_deref(struct ecm_db_connection_instance *ci)
 		_ecm_db_connection_classifier_unassign(ci, cci, ca_type);
 	}
 	spin_unlock_bh(&ecm_db_lock);
-#endif
 
 	/*
 	 * Throw final event
 	 */
 	if (ci->final) {
 		ci->final(ci->arg);
-	}
-
-	/*
-	 * Release instances to the objects referenced by the connection
-	 */
-	while (ci->assignments) {
-		struct ecm_classifier_instance *classi = ci->assignments;
-		ci->assignments = classi->ca_next;
-		classi->deref(classi);
 	}
 
 	for (dir = 0; dir < ECM_DB_OBJ_DIR_MAX; dir++) {
@@ -2441,8 +2429,8 @@ struct ecm_db_connection_instance *ecm_db_connection_by_classifier_type_assignme
 
 	DEBUG_TRACE("Get and ref first connection assigned with classifier type: %d\n", ca_type);
 
-	tal = &ecm_db_connection_classifier_type_assignments[ca_type];
 	spin_lock_bh(&ecm_db_lock);
+	tal = &ecm_db_connection_classifier_type_assignments[ca_type];
 	ci = tal->type_assignments_list;
 	while (ci) {
 		struct ecm_db_connection_classifier_type_assignment *ta;
@@ -2451,6 +2439,12 @@ struct ecm_db_connection_instance *ecm_db_connection_by_classifier_type_assignme
 
 		if (ta->pending_unassign) {
 			DEBUG_TRACE("Skip %px, pending unassign for type: %d\n", ci, ca_type);
+			ci = ta->next;
+			continue;
+		}
+
+		if (!(ci->flags & ECM_DB_CONNECTION_FLAGS_INSERTED)) {
+			DEBUG_TRACE("connection %px flag is in uninserted state for type: %d\n", ci, ca_type);
 			ci = ta->next;
 			continue;
 		}
@@ -2503,6 +2497,12 @@ struct ecm_db_connection_instance *ecm_db_connection_by_classifier_type_assignme
 			continue;
 		}
 
+		if (!(cin->flags & ECM_DB_CONNECTION_FLAGS_INSERTED)) {
+			DEBUG_TRACE("connection %px flag is in uninserted state for type: %d\n", cin, ca_type);
+			cin = tan->next;
+			continue;
+		}
+
 		/*
 		 * Take reference to this connection.
 		 * NOTE: Hold both the connection and the assignment entry so that when we unlock both the connection
@@ -2525,13 +2525,10 @@ EXPORT_SYMBOL(ecm_db_connection_by_classifier_type_assignment_get_and_ref_next);
  */
 void ecm_db_connection_by_classifier_type_assignment_deref(struct ecm_db_connection_instance *ci, ecm_classifier_type_t ca_type)
 {
-	struct ecm_db_connection_classifier_type_assignment_list *tal;
 	struct ecm_db_connection_classifier_type_assignment *ta;
 
 	DEBUG_ASSERT(ca_type < ECM_CLASSIFIER_TYPES, "Bad type: %d\n", ca_type);
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed\n", ci);
-
-	tal = &ecm_db_connection_classifier_type_assignments[ca_type];
 
 	/*
 	 * Drop the iteration count

@@ -248,6 +248,8 @@ int _ecm_db_multicast_tuple_instance_deref(struct ecm_db_multicast_tuple_instanc
 		if (ti->next) {
 			ti->next->prev = ti->prev;
 		}
+
+		ti->flags &= ~ECM_DB_MULTICAST_TUPLE_INSTANCE_FLAGS_INSERTED;
 	}
 
 	if (ti->l2_br_dev) {
