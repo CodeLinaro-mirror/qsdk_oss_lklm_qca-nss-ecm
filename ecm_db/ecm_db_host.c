@@ -270,7 +270,7 @@ int ecm_db_host_deref(struct ecm_db_host_instance *hi)
 	/*
 	 * Remove from database if inserted
 	 */
-	if ((!hi->flags) & ECM_DB_HOST_FLAGS_INSERTED) {
+	if (!(hi->flags & ECM_DB_HOST_FLAGS_INSERTED)) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -307,6 +307,7 @@ int ecm_db_host_deref(struct ecm_db_host_instance *hi)
 		ecm_db_host_table_lengths[hi->hash_index]--;
 		DEBUG_ASSERT(ecm_db_host_table_lengths[hi->hash_index] >= 0, "%px: invalid table len %d\n", hi, ecm_db_host_table_lengths[hi->hash_index]);
 
+		hi->flags &= ~ECM_DB_HOST_FLAGS_INSERTED;
 		spin_unlock_bh(&ecm_db_lock);
 
 		/*
