@@ -260,7 +260,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 	/*
 	 * Remove from database if inserted
 	 */
-	if ((!ni->flags) & ECM_DB_NODE_FLAGS_INSERTED) {
+	if (!(ni->flags & ECM_DB_NODE_FLAGS_INSERTED)) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -314,7 +314,7 @@ int ecm_db_node_deref(struct ecm_db_node_instance *ni)
 		ni->node_prev = NULL;
 		ni->iface->node_count--;
 #endif
-
+		ni->flags &= ~ECM_DB_NODE_FLAGS_INSERTED;
 		spin_unlock_bh(&ecm_db_lock);
 
 		/*

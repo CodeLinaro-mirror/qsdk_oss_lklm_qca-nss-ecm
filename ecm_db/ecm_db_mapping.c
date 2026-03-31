@@ -396,7 +396,7 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 	/*
 	 * Remove from database if inserted
 	 */
-	if ((!mi->flags) & ECM_DB_MAPPING_FLAGS_INSERTED) {
+	if (!(mi->flags & ECM_DB_MAPPING_FLAGS_INSERTED)) {
 		spin_unlock_bh(&ecm_db_lock);
 	} else {
 		struct ecm_db_listener_instance *li;
@@ -451,6 +451,7 @@ int ecm_db_mapping_deref(struct ecm_db_mapping_instance *mi)
 
 		mi->host->mapping_count--;
 #endif
+		mi->flags &= ~ECM_DB_MAPPING_FLAGS_INSERTED;
 		spin_unlock_bh(&ecm_db_lock);
 
 		/*
