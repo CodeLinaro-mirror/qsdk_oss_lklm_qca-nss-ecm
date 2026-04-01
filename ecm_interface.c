@@ -8755,6 +8755,7 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 	struct ecm_front_end_connection_instance *feci;
 	struct net_device *dev;
 	ip_addr_t dest_ip;
+	int dest_ip_ver;
 
 	if (!fe) {
 		DEBUG_WARN("Fetched Invalid pointer to the event data\n");
@@ -8773,10 +8774,12 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 	switch (fe->proto) {
 	case htons(ETH_P_IP):
 		ECM_HIN4_ADDR_TO_IP_ADDR(dest_ip, htonl(fe->group.ip));
+		dest_ip_ver = 4;
 		break;
 #if IS_ENABLED(CONFIG_IPV6)
 	case htons(ETH_P_IPV6):
 		ECM_NIN6_ADDR_TO_IP_ADDR(dest_ip, fe->group.in6);
+		dest_ip_ver = 6;
 		break;
 #endif
 	default:
@@ -8786,7 +8789,11 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 	}
 
 	/*
-	 * Get the first entry for the group in the tuple_instance table,
+	 * Get the first entry for the group in the tuple_instance table.
+	 * Iterate the hash bucket to find a tuple instance whose group IP
+	 * matches dest_ip. Due to hash collisions between IPv4 and IPv6
+	 * multicast addresses, the first entry in the bucket may belong to
+	 * a different IP version / IP.
 	 */
 	ti = ecm_db_multicast_connection_get_and_ref_first(dest_ip);
 	if (!ti) {
@@ -8795,20 +8802,35 @@ static int ecm_br_mdb_notify_event(struct notifier_block *nb, unsigned long even
 		return NOTIFY_DONE;
 	}
 
-	ci = ecm_db_multicast_connection_get_from_tuple(ti);
-	feci = ecm_db_connection_front_end_get_and_ref(ci);
+	while (ti) {
+		struct ecm_db_multicast_tuple_instance *ti_next;
+		ip_addr_t grp_ip;
 
-	/*
-	 * The source IP address to us is always found to be NULL
-	 * as this notification is triggered for (*,G) MDB entry.
-	 * So, update the all multicast connections for this group address.
-	 */
-	if (feci->multicast_update) {
-		feci->multicast_update(dest_ip, dev);
+		ci = ecm_db_multicast_connection_get_from_tuple(ti);
+
+		/*
+		 * Ensure IP versions match before comparing addresses.
+		 */
+		if (ecm_db_connection_ip_version_get(ci) == dest_ip_ver) {
+			ecm_db_multicast_tuple_instance_group_ip_get(ti, grp_ip);
+			if (ECM_IP_ADDR_MATCH(grp_ip, dest_ip)) {
+				feci = ecm_db_connection_front_end_get_and_ref(ci);
+
+				if (feci->multicast_update) {
+					feci->multicast_update(dest_ip, dev);
+				}
+
+				ecm_front_end_connection_deref(feci);
+				ecm_db_multicast_connection_deref(ti);
+				break;
+			}
+		}
+
+		ti_next = ecm_db_multicast_connection_get_and_ref_next(ti);
+		ecm_db_multicast_connection_deref(ti);
+		ti = ti_next;
 	}
 
-	ecm_front_end_connection_deref(feci);
-	ecm_db_multicast_connection_deref(ti);
 	dev_put(dev);
 	return NOTIFY_DONE;
 }
