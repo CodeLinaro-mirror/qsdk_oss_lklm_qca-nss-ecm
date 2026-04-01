@@ -1345,11 +1345,7 @@ static int ecm_classifier_nl_rule_set_enabled(void *data, u64 val)
 		/*
 		 * Change in state to become disabled.
 		 */
-#ifdef ECM_DB_CTA_TRACK_ENABLE
 		ecm_db_connection_regenerate_by_assignment_type(ECM_CLASSIFIER_TYPE_NL);
-#else
-		ecm_db_regeneration_needed();
-#endif
 	}
 	return 0;
 }

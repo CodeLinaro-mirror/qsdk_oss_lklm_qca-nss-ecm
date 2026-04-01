@@ -424,7 +424,7 @@ ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
 # support for the database keeping lists of connections that are assigned
 # on a per TYPE of classifier basis.
 # #############################################################################
-ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE=y
+ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE=n
 ccflags-$(ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE) += -DECM_DB_CTA_TRACK_ENABLE
 
 # #############################################################################
