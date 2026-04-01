@@ -2468,30 +2468,7 @@ void ecm_db_connection_by_classifier_type_assignment_deref(struct ecm_db_connect
 	ecm_db_connection_deref(ci);
 }
 EXPORT_SYMBOL(ecm_db_connection_by_classifier_type_assignment_deref);
-
-/*
- * ecm_db_connection_make_defunct_by_assignment_type()
- *	Make defunct all connections that are currently assigned to a classifier of the given type
- */
-void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_type)
-{
-	struct ecm_db_connection_instance *ci;
-
-	DEBUG_INFO("Make defunct all assigned to type: %d\n", ca_type);
-
-	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ca_type);
-	while (ci) {
-		struct ecm_db_connection_instance *cin;
-
-		DEBUG_TRACE("%px: Make defunct: %d\n", ci, ca_type);
-		ecm_db_connection_make_defunct(ci);
-
-		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ca_type);
-		ecm_db_connection_by_classifier_type_assignment_deref(ci, ca_type);
-		ci = cin;
-	}
-}
-EXPORT_SYMBOL(ecm_db_connection_make_defunct_by_assignment_type);
+#endif
 
 /*
  * ecm_db_connection_regenerate_by_assignment_type()
@@ -2503,20 +2480,59 @@ void ecm_db_connection_regenerate_by_assignment_type(ecm_classifier_type_t ca_ty
 
 	DEBUG_INFO("Regenerate all assigned to type: %d\n", ca_type);
 
-	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ca_type);
+	ci = ecm_db_connections_get_and_ref_first();
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
+		struct ecm_classifier_instance *eci;
+
+		eci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ca_type);
+		if (!eci) {
+			goto next_ci;
+		}
 
 		DEBUG_TRACE("%px: Re-generate: %d\n", ci, ca_type);
 		ecm_db_connection_regenerate(ci);
+		eci->deref(eci);
 
-		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ca_type);
-		ecm_db_connection_by_classifier_type_assignment_deref(ci, ca_type);
+next_ci:
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
 }
 EXPORT_SYMBOL(ecm_db_connection_regenerate_by_assignment_type);
-#endif
+
+/*
+ * ecm_db_connection_make_defunct_by_assignment_type()
+ *	Make defunct all connections that are currently assigned to a classifier of the given type
+ */
+void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_type)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_INFO("Make defunct all assigned to type: %d\n", ca_type);
+
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		struct ecm_classifier_instance *eci;
+
+		eci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ca_type);
+		if (!eci) {
+			goto next_ci;
+		}
+
+		DEBUG_TRACE("%px: Make defunct: %d\n", ci, ca_type);
+		ecm_db_connection_make_defunct(ci);
+		eci->deref(eci);
+
+next_ci:
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+}
+EXPORT_SYMBOL(ecm_db_connection_make_defunct_by_assignment_type);
 
 /*
  * ecm_db_connection_interfaces_get_and_ref()

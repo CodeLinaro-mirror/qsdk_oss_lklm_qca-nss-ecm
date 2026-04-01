@@ -4138,9 +4138,16 @@ void ecm_classifier_emesh_sdwf_deprio(struct ecm_classifier_emesh_flow_deprio_pa
 		return;
 	}
 
-	ci = ecm_db_connection_by_classifier_type_assignment_get_and_ref_first(ECM_CLASSIFIER_TYPE_EMESH);
+	ci = ecm_db_connections_get_and_ref_first();
 	while (ci) {
 		struct ecm_db_connection_instance *cin;
+		struct ecm_classifier_instance *eci;
+
+		eci = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		if (!eci) {
+			goto next_ci;
+		}
+
 		ecm_classifier_emesh_sdwf_deprio_status_t status = ecm_classifier_emesh_sdwf_check_and_deprio_connection(ci, param, dev, &svc_id);
 		if (status == ECM_CLASSIFIER_EMESH_SDWF_DEPRIO_CONNECTION_SUCCESS) {
 			DEBUG_TRACE("%px: Deprioritization is successful for svc_id %d\n", param, svc_id);
@@ -4149,8 +4156,10 @@ void ecm_classifier_emesh_sdwf_deprio(struct ecm_classifier_emesh_flow_deprio_pa
 			fail++;
 		}
 
-		cin = ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(ci, ECM_CLASSIFIER_TYPE_EMESH);
-		ecm_db_connection_by_classifier_type_assignment_deref(ci, ECM_CLASSIFIER_TYPE_EMESH);
+		eci->deref(eci);
+next_ci:
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
 		ci = cin;
 	}
 

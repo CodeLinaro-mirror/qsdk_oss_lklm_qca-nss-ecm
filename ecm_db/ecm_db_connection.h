@@ -448,10 +448,10 @@ ecm_db_connection_by_classifier_type_assignment_get_and_ref_next(struct ecm_db_c
 								 ecm_classifier_type_t ca_type);
 void ecm_db_connection_by_classifier_type_assignment_deref(struct ecm_db_connection_instance *ci,
 							   ecm_classifier_type_t ca_type);
-void ecm_db_connection_regenerate_by_assignment_type(ecm_classifier_type_t ca_type);
-void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_type);
 #endif
 
+void ecm_db_connection_regenerate_by_assignment_type(ecm_classifier_type_t ca_type);
+void ecm_db_connection_make_defunct_by_assignment_type(ecm_classifier_type_t ca_type);
 struct ecm_db_connection_instance *ecm_db_connection_alloc(void);
 void ecm_db_connection_add(struct ecm_db_connection_instance *ci,
 			   struct ecm_db_mapping_instance *mapping[],
