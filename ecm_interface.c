@@ -430,8 +430,7 @@ static inline unsigned int ecm_interface_wlan_egress_netdev_hookfn(void *priv,
 {
 	int ret;
 
-	if (((skb->mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_SCS_TAG) ||
-	    ((skb->mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_MSCS_TAG)) {
+	if (((skb->mark & ECM_INTERFACE_WIFI_QOS_TAG_MASK) == ECM_INTERFACE_WIFI_QOS_SCS_TAG)) {
 		ret = ecm_interface_handle_wlan_egress_packet(skb);
 		if (ret) {
 			DEBUG_TRACE("%px WLAN egress packet handling failed, mark : 0x%x, err: %d\n", skb, skb->mark, ret);
