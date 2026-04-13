@@ -2015,7 +2015,7 @@ bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num)
  * ecm_front_end_common_check_if_vap
  *	Returns true if the dev is VAP.
  */
-static bool ecm_front_end_common_check_if_vap(int32_t interface_num)
+bool ecm_front_end_common_check_if_vap(int32_t interface_num)
 {
 	struct net_device *vap_dev = dev_get_by_index(&init_net, interface_num);
 	if (!vap_dev) {
