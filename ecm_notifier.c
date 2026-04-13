@@ -49,6 +49,30 @@ static atomic_t ecm_notifier_count;
 static ATOMIC_NOTIFIER_HEAD(ecm_notifier_connection);
 
 /*
+ * ecm_notifier_ci_get_ae_type()
+ *	Get AE type.
+ */
+static inline uint8_t ecm_notifier_ci_get_ae_type(struct ecm_db_connection_instance *ci)
+{
+	switch (ci->feci->accel_engine) {
+	case ECM_FRONT_END_ENGINE_NSS:
+		return ECM_AE_TYPE_NSS;
+
+	case ECM_FRONT_END_ENGINE_PPE:
+		return ECM_AE_TYPE_PPE;
+
+	case ECM_FRONT_END_ENGINE_SFE:
+		return ECM_AE_TYPE_SFE;
+
+	default:
+		DEBUG_WARN("%px: AE type is not valid\n", ci);
+		break;
+	}
+
+	return ECM_AE_TYPE_NOT_VALID;
+}
+
+/*
  * ecm_notifier_ci_to_data()
  * 	Convert ci to ecm_notifier_connection_data.
  *
@@ -91,6 +115,8 @@ static bool ecm_notifier_ci_to_data(struct ecm_db_connection_instance *ci, struc
 	data->tuple.protocol = ecm_db_connection_protocol_get(ci);
 	data->tuple.src_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
 	data->tuple.dst_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
+	data->ae_type = ecm_notifier_ci_get_ae_type(ci);
+	data->is_tun_outer = ecm_db_connection_flag_check(ci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
 
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);

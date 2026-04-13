@@ -32,6 +32,16 @@
  */
 
 /**
+ *      Acceleration engine types.
+ */
+enum ecm_ae_type {
+	ECM_AE_TYPE_NOT_VALID = 0,	/**< Invalid acceleration engine type */
+	ECM_AE_TYPE_NSS,		/**< NSS acceleration engine */
+	ECM_AE_TYPE_PPE,		/**< PPE acceleration engine */
+	ECM_AE_TYPE_SFE,		/**< SFE acceleration engine */
+};
+
+/**
  * 	ECM connection tuple.
  */
 struct ecm_notifier_connection_tuple {
@@ -69,6 +79,8 @@ struct ecm_notifier_connection_data {
 	struct net_device *to_dev;			/**< First device in ECM 'to' interface hierarchy. */
 	struct net_device *from_dev;			/**< First device in ECM 'from' interface hierarchy. */
 	struct ecm_notifier_connection_tuple tuple;	/**< Connection tuple information. */
+	uint8_t ae_type; /**< acceleration engine type */
+	bool is_tun_outer;	/**< Connection is tunnel outer flow */
 };
 
 /**

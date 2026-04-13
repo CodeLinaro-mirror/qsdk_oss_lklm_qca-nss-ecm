@@ -259,7 +259,7 @@ ccflags-$(ECM_INTERFACE_SKIP_ACCEL_ENABLE) += -DECM_INTERFACE_SKIP_ACCEL_ENABLE
 
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=n
 ifeq ($(SoC),$(filter $(SoC), ipq807x ipq807x_64 ipq60xx ipq60xx_64 ipq50xx \
-	     ipq50xx_64 ipq95xx_32 ipq95xx ipq53xx_32 ipq53xx ipq54xx_32 ipq54xx ipq52xx))
+	     ipq50xx_64 ipq95xx_32 ipq95xx ipq53xx_32 ipq53xx ipq54xx_32 ipq54xx ipq52xx ipq96xx))
 ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE=$(ECM_INTERFACE_IPSEC_ENABLE)
 ccflags-$(ECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE) += -DECM_INTERFACE_IPSEC_GLUE_LAYER_SUPPORT_ENABLE
 endif
@@ -420,7 +420,7 @@ ccflags-$(ECM_TRACKER_DPI_SUPPORT_ENABLE) += -DECM_TRACKER_DPI_SUPPORT_ENABLE
 # support for the database keeping lists of connections that are assigned
 # on a per TYPE of classifier basis.
 # #############################################################################
-ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE=y
+ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE=n
 ccflags-$(ECM_DB_CLASSIFIER_TYPE_ASSIGNMENTS_TRACK_ENABLE) += -DECM_DB_CTA_TRACK_ENABLE
 
 # #############################################################################
