@@ -167,6 +167,13 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 	}
 
 	/*
+	 * Store the conntrack mark in the ECM connection instance.
+	 * This allows the defunct (inactivity) timer to be bypassed when
+	 * bits 16 or 17 of the conntrack mark are set.
+	 */
+	ecm_db_connection_ct_mark_set(ci, ct->mark);
+
+	/*
 	 * All done
 	 */
 	ecm_db_connection_deref(ci);
@@ -279,6 +286,13 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 	if (ci->feci->update_rule) {
 		ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
 	}
+
+	/*
+	 * Store the conntrack mark in the ECM connection instance.
+	 * This allows the defunct (inactivity) timer to be bypassed when
+	 * bits 16 or 17 of the conntrack mark are set.
+	 */
+	ecm_db_connection_ct_mark_set(ci, ct->mark);
 
 	/*
 	 * All done
