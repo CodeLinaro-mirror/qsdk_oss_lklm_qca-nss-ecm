@@ -238,7 +238,7 @@ static inline void ecm_nss_ipv6_process_one_conn_sync_msg(struct nss_ipv6_conn_s
 			ECM_IP_ADDR_TO_OCTAL(flow_ip), (int)sync->flow_ident,
 			ECM_IP_ADDR_TO_OCTAL(return_ip), (int)sync->return_ident);
 
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident);
+	ci = ecm_db_connection_find_and_ref_hash_first(flow_ip, return_ip, sync->protocol, (int)sync->flow_ident, (int)sync->return_ident);
 	if (!ci) {
 		DEBUG_TRACE("%px: NSS Sync: no connection\n", sync);
 		return;

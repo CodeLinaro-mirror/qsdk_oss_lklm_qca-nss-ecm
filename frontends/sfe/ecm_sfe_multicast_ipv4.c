@@ -99,7 +99,6 @@ static struct ctl_table_header *ecm_sfe_multicast_ipv4_ctl_table_header;	/* Sysc
 static void ecm_sfe_multicast_ipv4_connection_update_callback(void *app_data, struct sfe_ipv4_msg *nim)
 {
 	struct sfe_ipv4_mc_rule_create_msg *mccm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 
@@ -109,24 +108,28 @@ static void ecm_sfe_multicast_ipv4_connection_update_callback(void *app_data, st
 	 * Is this a response to a create message?
 	 */
 	if (nim->cm.type != SFE_TX_CREATE_MULTICAST_RULE_MSG) {
-		DEBUG_ERROR("%px: multicast update callback with improper type:	%d, serial: %u\n", nim, nim->cm.type, serial);
+		DEBUG_ERROR("%px: multicast update callback with improper type:	%d, serial: %u\n",
+				nim, nim->cm.type, mccm->tuple.flow_rule_id);
 		return;
+
 	}
 
 	/*
 	 * Is this a response to a update rule message?
 	 */
-	if ( !(mccm->rule_flags & SFE_MC_RULE_CREATE_FLAG_MC_UPDATE)) {
-		DEBUG_ERROR("%px: multicast update callback with improper type:	%d, serial: %u\n", nim, nim->cm.type, serial);
+	if (!(mccm->rule_flags & SFE_MC_RULE_CREATE_FLAG_MC_UPDATE)) {
+		DEBUG_ERROR("%px: multicast update callback without update flag, serial: %u\n",
+				nim, mccm->tuple.flow_rule_id);
 		return;
 	}
 
 	/*
 	 * Look up ecm connection so that we can update the status.
 	 */
-	ci = ecm_db_connection_serial_find_and_ref(serial);
+	ci = ecm_db_connection_serial_find_and_ref(mccm->tuple.flow_rule_id);
 	if (!ci) {
-		DEBUG_TRACE("%px: multicast update callback, connection not found, serial: %u\n", mccm, serial);
+		DEBUG_TRACE("%px: multicast update callback, connection not found, serial: %u\n",
+				mccm, mccm->tuple.flow_rule_id);
 		return;
 	}
 
@@ -146,7 +149,8 @@ static void ecm_sfe_multicast_ipv4_connection_update_callback(void *app_data, st
 	/*
 	 * Dump some useful trace information.
 	 */
-	DEBUG_TRACE("%px: Update accelerate response for connection: %px, serial: %u\n", feci, feci->ci, serial);
+	DEBUG_TRACE("%px: Update accelerate response for connection: %px, serial: %u\n",
+			feci, feci->ci, mccm->tuple.flow_rule_id);
 	DEBUG_TRACE("%px: valid_flags: %x\n", feci, mccm->valid_flags);
 	DEBUG_TRACE("%px: flow_ip: %pI4h:%d\n", feci, &mccm->tuple.flow_ip, mccm->tuple.flow_ident);
 	DEBUG_TRACE("%px: return_ip: %pI4h:%d\n", feci, &mccm->tuple.return_ip, mccm->tuple.return_ident);
@@ -167,7 +171,6 @@ static void ecm_sfe_multicast_ipv4_connection_update_callback(void *app_data, st
 static void ecm_sfe_multicast_ipv4_connection_create_callback(void *app_data, struct sfe_ipv4_msg *nim)
 {
 	struct sfe_ipv4_mc_rule_create_msg *__attribute__((unused))mccm = &nim->msg.mc_rule_create;
-	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 	ecm_front_end_acceleration_mode_t result_mode;
@@ -177,16 +180,18 @@ static void ecm_sfe_multicast_ipv4_connection_create_callback(void *app_data, st
 	 * Is this a response to a create message?
 	 */
 	if (nim->cm.type != SFE_TX_CREATE_MULTICAST_RULE_MSG) {
-		DEBUG_ERROR("%px: udp create callback with improper type: %d, serial: %u\n", nim, nim->cm.type, serial);
+		DEBUG_ERROR("%px: udp create callback with improper type: %d, serial: %u\n",
+				nim, nim->cm.type, mccm->tuple.flow_rule_id);
 		return;
 	}
 
 	/*
 	 * Look up ecm connection so that we can update the status.
 	 */
-	ci = ecm_db_connection_serial_find_and_ref(serial);
+	ci = ecm_db_connection_serial_find_and_ref(mccm->tuple.flow_rule_id);
 	if (!ci) {
-		DEBUG_TRACE("%px: create callback, connection not found, serial:%u\n", nim, serial);
+		DEBUG_TRACE("%px: create callback, connection not found, serial:%u\n",
+				nim, mccm->tuple.flow_rule_id);
 		return;
 	}
 
@@ -206,7 +211,8 @@ static void ecm_sfe_multicast_ipv4_connection_create_callback(void *app_data, st
 	/*
 	 * Dump some useful trace information.
 	 */
-	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n", feci, feci->ci, serial);
+	DEBUG_TRACE("%px: accelerate response for connection: %px, serial: %u\n",
+			feci, feci->ci, mccm->tuple.flow_rule_id);
 	DEBUG_TRACE("%px: valid_flags: %x\n", feci, mccm->valid_flags);
 	DEBUG_TRACE("%px: flow_ip: %pI4h:%d\n", feci, &mccm->tuple.flow_ip, mccm->tuple.flow_ident);
 	DEBUG_TRACE("%px: return_ip: %pI4h:%d\n", feci, &mccm->tuple.return_ip, mccm->tuple.return_ident);
@@ -440,6 +446,7 @@ static int ecm_sfe_multicast_ipv4_connection_update_accelerate(struct ecm_front_
 
 	create->valid_flags = 0;
 	create->rule_flags = 0;
+	create->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Initialize VLAN tag information
@@ -1070,6 +1077,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 	create = &nim->msg.mc_rule_create;
 	create->valid_flags = 0;
 	create->rule_flags = 0;
+	create->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Initialize VLAN tag information
@@ -1900,6 +1908,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 		DEBUG_TRACE("%px: UDP Accelerate connection %px\n"
 			"Vif: %d\n"
 			"Protocol: %d\n"
+			"serial:%u\n"
 			"to_mtu: %u\n"
 			"from_ip: %pI4h:%d\n"
 			"to_ip: %pI4h:%d\n"
@@ -1914,6 +1923,7 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 			feci->ci,
 			vif,
 			create->tuple.protocol,
+			create->tuple.flow_rule_id,
 			create->if_rule[vif].if_mtu,
 			&create->tuple.flow_ip, create->tuple.flow_ident,
 			&create->tuple.return_ip, create->tuple.return_ident,
@@ -2020,7 +2030,6 @@ static void ecm_sfe_multicast_ipv4_connection_accelerate(struct ecm_front_end_co
 static void ecm_sfe_multicast_ipv4_connection_destroy_callback(void *app_data, struct sfe_ipv4_msg *nim)
 {
 	struct sfe_ipv4_mc_rule_destroy_msg * __attribute__((unused))nirdm = &nim->msg.mc_rule_destroy;
-	uint32_t serial = (uint32_t)(ecm_ptr_t)app_data;
 	struct ecm_db_connection_instance *ci;
 	struct ecm_front_end_connection_instance *feci;
 
@@ -2035,9 +2044,10 @@ static void ecm_sfe_multicast_ipv4_connection_destroy_callback(void *app_data, s
 	/*
 	 * Look up ecm connection so that we can update the status.
 	 */
-	ci = ecm_db_connection_serial_find_and_ref(serial);
+	ci = ecm_db_connection_serial_find_and_ref(nirdm->tuple.flow_rule_id);
 	if (!ci) {
-		DEBUG_TRACE("%px: destroy callback, connection not found, serial: %u\n", nim, serial);
+		DEBUG_TRACE("%px: destroy callback, connection not found, serial: %u\n",
+				nim, nirdm->tuple.flow_rule_id);
 		return;
 	}
 
@@ -2165,6 +2175,7 @@ static bool ecm_sfe_multicast_ipv4_connection_decelerate_msg_send(struct ecm_fro
 
 	nirdm = &mccm->msg.mc_rule_destroy;
 	nirdm->tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	nirdm->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get addressing information

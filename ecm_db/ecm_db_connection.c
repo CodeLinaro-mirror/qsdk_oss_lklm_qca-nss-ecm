@@ -1967,10 +1967,10 @@ static inline ecm_db_connection_serial_hash_t ecm_db_connection_generate_serial_
 }
 
 /*
- * ecm_db_connection_find_and_ref_chain()
- *	Given a hash chain index locate the connection
+ * ecm_db_connection_find_and_ref_hash_first_chain()
+ *	Given a hash chain index locate the first connection in the chain matching with the 5-tuple.
  */
-static struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_chain(ecm_db_connection_hash_t hash_index,
+static struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_hash_first_chain(ecm_db_connection_hash_t hash_index,
 											ip_addr_t host1_addr, ip_addr_t host2_addr,
 											int protocol, int host1_port, int host2_port)
 {
@@ -2041,12 +2041,12 @@ connection_found:
 }
 
 /*
- * ecm_db_connection_find_and_ref()
+ * ecm_db_connection_find_and_ref_hash_first()
  *	Locate a connection instance based on addressing, protocol and optional port information.
  *
  * NOTE: For non-port based protocols then ports are expected to be -(protocol).
  */
-struct ecm_db_connection_instance *ecm_db_connection_find_and_ref(ip_addr_t host1_addr, ip_addr_t host2_addr, int protocol, int host1_port, int host2_port)
+struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_hash_first(ip_addr_t host1_addr, ip_addr_t host2_addr, int protocol, int host1_port, int host2_port)
 {
 	ecm_db_connection_hash_t hash_index;
 
@@ -2056,9 +2056,191 @@ struct ecm_db_connection_instance *ecm_db_connection_find_and_ref(ip_addr_t host
 	 * Compute the hash chain index and prepare to walk the chain
 	 */
 	hash_index = ecm_db_connection_generate_hash_index(host1_addr, host1_port, host2_addr, host2_port, protocol);
-	return ecm_db_connection_find_and_ref_chain(hash_index, host1_addr, host2_addr, protocol, host1_port, host2_port);
+	return ecm_db_connection_find_and_ref_hash_first_chain(hash_index, host1_addr, host2_addr, protocol, host1_port, host2_port);
 }
-EXPORT_SYMBOL(ecm_db_connection_find_and_ref);
+
+/*
+ * ecm_db_connection_find_and_ref_hash_next()
+ *	Locate a connection instance based on addressing, protocol and optional port information.
+ *
+ * NOTE: For non-port based protocols then ports are expected to be -(protocol).
+ */
+struct ecm_db_connection_instance *ecm_db_connection_find_and_ref_hash_next(struct ecm_db_connection_instance *ci)
+{
+	struct ecm_db_connection_instance *next;
+	spin_lock_bh(&ecm_db_lock);
+	next = ci->hash_next;
+	while (next) {
+		/*
+		 * The use of unlikely() is liberally used because under fast-hit scenarios the connection would always be at the start of a chain
+		 */
+		if (unlikely(next->protocol != ci->protocol)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(next->mapping[ECM_DB_OBJ_DIR_FROM]->host->address,
+						ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_reverse;
+		}
+
+		if (unlikely(next->mapping[ECM_DB_OBJ_DIR_FROM]->port !=
+					ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_reverse;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(next->mapping[ECM_DB_OBJ_DIR_TO]->host->address,
+						ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_reverse;
+		}
+
+		if (unlikely(next->mapping[ECM_DB_OBJ_DIR_TO]->port !=
+					ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_reverse;
+		}
+
+		goto connection_found;
+
+try_reverse:
+		if (unlikely(!ECM_IP_ADDR_MATCH(next->mapping[ECM_DB_OBJ_DIR_TO]->host->address,
+						ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_next;
+		}
+
+		if (unlikely(next->mapping[ECM_DB_OBJ_DIR_TO]->port !=
+					ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(next->mapping[ECM_DB_OBJ_DIR_FROM]->host->address,
+						ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_next;
+		}
+
+		if (unlikely(next->mapping[ECM_DB_OBJ_DIR_FROM]->port !=
+					ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_next;
+		}
+
+		goto connection_found;
+try_next:
+		next = next->hash_next;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Connection not found in hash chain\n");
+	return NULL;
+
+connection_found:
+	_ecm_db_connection_ref(next);
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_ASSERT((next != ci), "%px: Loop detected in the hash slot\n", ci);
+	DEBUG_TRACE("Connection found %px\n", ci);
+	return next;
+}
+
+/*
+ * ecm_db_connection_find_and_ref_hash_first_chain()
+ *	Given a hash chain index locate the connection
+ */
+static struct ecm_db_connection_instance *
+ecm_db_connection_source_find_and_ref_chain(ecm_db_connection_hash_t hash_index,
+		ip_addr_t host1_addr, ip_addr_t host2_addr,
+		int protocol, int host1_port, int host2_port,
+		struct net_device *in, struct net_device *out)
+{
+	struct ecm_db_connection_instance *ci;
+
+	/*
+	 * Iterate the chain looking for a connection with matching details
+	 */
+	spin_lock_bh(&ecm_db_lock);
+	ci = ecm_db_connection_table[hash_index];
+	while (ci) {
+		/*
+		 * The use of unlikely() is liberally used because under fast-hit scenarios the connection would always be at the start of a chain
+		 */
+		if (unlikely(ci->protocol != protocol)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(host1_addr, ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_reverse;
+		}
+
+		if (unlikely(host1_port != ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_reverse;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(host2_addr, ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_reverse;
+		}
+
+		if (unlikely(host2_port != ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_reverse;
+		}
+
+		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+			goto try_reverse;
+		}
+
+		if (unlikely(in->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+			goto try_reverse;
+		}
+		goto connection_found;
+
+try_reverse:
+		if (unlikely(!ECM_IP_ADDR_MATCH(host1_addr, ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_next;
+		}
+
+		if (unlikely(host1_port != ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(host2_addr, ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_next;
+		}
+
+		if (unlikely(host2_port != ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+			goto try_next;
+		}
+
+		if (unlikely(out->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+			goto try_next;
+		}
+
+		goto connection_found;
+
+try_next:
+		ci = ci->hash_next;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Connection not found in hash chain\n");
+	return NULL;
+
+connection_found:
+	_ecm_db_connection_ref(ci);
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("Connection found %px\n", ci);
+	return ci;
+}
+
+struct ecm_db_connection_instance *ecm_db_connection_source_find_and_ref(ip_addr_t host1_addr, ip_addr_t host2_addr, int protocol, int host1_port, int host2_port, struct net_device *in, struct net_device *out)
+{
+	ecm_db_connection_hash_t hash_index;
+
+	DEBUG_TRACE("Lookup connection " ECM_IP_ADDR_OCTAL_FMT ":%d <> " ECM_IP_ADDR_OCTAL_FMT ":%d protocol %d\n", ECM_IP_ADDR_TO_OCTAL(host1_addr), host1_port, ECM_IP_ADDR_TO_OCTAL(host2_addr), host2_port, protocol);
+
+	/*
+	 * Compute the hash chain index and prepare to walk the chain
+	 */
+	hash_index = ecm_db_connection_generate_hash_index(host1_addr, host1_port, host2_addr, host2_port, protocol);
+	return ecm_db_connection_source_find_and_ref_chain(hash_index, host1_addr, host2_addr,
+			protocol, host1_port, host2_port, in, out);
+}
 
 /*
  * ecm_db_connection_serial_find_and_ref()
@@ -2098,7 +2280,6 @@ struct ecm_db_connection_instance *ecm_db_connection_serial_find_and_ref(uint32_
 	DEBUG_TRACE("Connection not found\n");
 	return NULL;
 }
-EXPORT_SYMBOL(ecm_db_connection_serial_find_and_ref);
 
 /*
  * ecm_db_connection_node_get_and_ref()
@@ -4326,8 +4507,11 @@ struct ecm_db_connection_instance *ecm_db_connection_alloc(void)
 	}
 
 	/*
-	 * Assign runtime unique serial
+	 * Assign runtime unique serial, 0 is reserved.
 	 */
+	if (ecm_db_connection_serial == 0) {
+		ecm_db_connection_serial++;
+	}
 	ci->serial = ecm_db_connection_serial++;
 
 	ecm_db_connection_count++;
@@ -4392,7 +4576,7 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv6_from_ct_get_and_ref(st
 		    host2_port,
 		    protocol);
 
-	return ecm_db_connection_find_and_ref(host1_addr,
+	return ecm_db_connection_find_and_ref_hash_first(host1_addr,
 					      host2_addr,
 					      protocol,
 					      host1_port,
@@ -4468,7 +4652,7 @@ struct ecm_db_connection_instance *ecm_db_connection_ipv4_from_ct_get_and_ref(st
 		    host2_port,
 		    protocol);
 
-	return ecm_db_connection_find_and_ref(host1_addr,
+	return ecm_db_connection_find_and_ref_hash_first(host1_addr,
 					      host2_addr,
 					      protocol,
 					      host1_port,
@@ -4524,7 +4708,7 @@ struct ecm_db_connection_instance *ecm_db_connection_from_ovs_flow_get_and_ref(s
 		return NULL;
 	}
 
-	return ecm_db_connection_find_and_ref(src_addr,
+	return ecm_db_connection_find_and_ref_hash_first(src_addr,
 					      dst_addr,
 					      protocol,
 					      src_port,
@@ -4553,7 +4737,7 @@ bool ecm_db_connection_decel_v4(__be32 src_ip, int src_port,
 	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_src_ip, src_ip);
 	ECM_NIN4_ADDR_TO_IP_ADDR(ecm_dest_ip, dest_ip);
 
-	ci = ecm_db_connection_find_and_ref(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
+	ci = ecm_db_connection_find_and_ref_hash_first(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
 	if (!ci) {
 		DEBUG_WARN("Decel v4 Connection lookup failed."
 				" Received connection tuple information: \n"
@@ -4566,19 +4750,25 @@ bool ecm_db_connection_decel_v4(__be32 src_ip, int src_port,
 		return false;
 	}
 
-	DEBUG_TRACE("Decel v4, connection tuple information: \n"
-			"Protocol: %d\n"
-			"src: " ECM_IP_ADDR_DOT_FMT ":%d\n"
-			"dest: " ECM_IP_ADDR_DOT_FMT ":%d\n",
-			protocol,
-			ECM_IP_ADDR_TO_DOT(ecm_src_ip), src_port,
-			ECM_IP_ADDR_TO_DOT(ecm_dest_ip), dest_port);
+	do {
+		struct ecm_db_connection_instance *nci;
+		DEBUG_TRACE("Decel v4, connection tuple information: \n"
+				"Protocol: %d\n"
+				"src: " ECM_IP_ADDR_DOT_FMT ":%d\n"
+				"dest: " ECM_IP_ADDR_DOT_FMT ":%d\n",
+				protocol,
+				ECM_IP_ADDR_TO_DOT(ecm_src_ip), src_port,
+				ECM_IP_ADDR_TO_DOT(ecm_dest_ip), dest_port);
 
-	/*
-	 * Defunct the connection.
-	 */
-	ecm_db_connection_make_defunct(ci);
-	ecm_db_connection_deref(ci);
+		/*
+		 * Defunct the connection.
+		 */
+		ecm_db_connection_make_defunct(ci);
+		nci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = nci;
+	} while (ci);
+
 	return true;
 }
 
@@ -4609,7 +4799,7 @@ bool ecm_db_connection_decel_v6(struct in6_addr *src_ip, int src_port,
 	in6 = *dest_ip;
 	ECM_NIN6_ADDR_TO_IP_ADDR(ecm_dest_ip, in6);
 
-	ci = ecm_db_connection_find_and_ref(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
+	ci = ecm_db_connection_find_and_ref_hash_first(ecm_src_ip, ecm_dest_ip, protocol, src_port, dest_port);
 	if (!ci) {
 		DEBUG_WARN("Decel v6, Connection lookup failed."
 				" Received connection tuple information: \n"
@@ -4622,20 +4812,26 @@ bool ecm_db_connection_decel_v6(struct in6_addr *src_ip, int src_port,
 		return false;
 	}
 
+	do {
+		struct ecm_db_connection_instance *nci;
 
-	DEBUG_TRACE("Decel v6, connection tuple information: \n"
-			"Protocol: %d\n"
-			"src: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
-			"dest: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
-			protocol,
-			ECM_IP_ADDR_TO_OCTAL(ecm_src_ip), src_port,
-			ECM_IP_ADDR_TO_OCTAL(ecm_dest_ip), dest_port);
+		DEBUG_TRACE("Decel v6, connection tuple information: \n"
+				"Protocol: %d\n"
+				"src: " ECM_IP_ADDR_OCTAL_FMT ":%d\n"
+				"dest: " ECM_IP_ADDR_OCTAL_FMT ":%d\n",
+				protocol,
+				ECM_IP_ADDR_TO_OCTAL(ecm_src_ip), src_port,
+				ECM_IP_ADDR_TO_OCTAL(ecm_dest_ip), dest_port);
 
-	/*
-	 * Defunct the connection.
-	 */
-	ecm_db_connection_make_defunct(ci);
-	ecm_db_connection_deref(ci);
+		/*
+		 * Defunct the connection.
+		 */
+		ecm_db_connection_make_defunct(ci);
+		nci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = nci;
+	} while (ci);
+
 	return true;
 #endif
 	return false;

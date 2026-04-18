@@ -250,12 +250,12 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 	 * Check for multicast flow
 	 */
 	if (ecm_ip_addr_is_multicast(return_ip)) {
-		ci = ecm_db_connection_find_and_ref(flow_ip, return_ip, sync->protocol, flow_ident, (int)sync->return_ident);
+		ci = ecm_db_connection_find_and_ref_hash_first(flow_ip, return_ip, sync->protocol, flow_ident, (int)sync->return_ident);
 	} else {
-		ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, flow_ident, return_ident_xlate);
+		ci = ecm_db_connection_find_and_ref_hash_first(flow_ip, return_ip_xlate, sync->protocol, flow_ident, return_ident_xlate);
 	}
 #else
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, flow_ident, return_ident_xlate);
+	ci = ecm_db_connection_find_and_ref_hash_first(flow_ip, return_ip_xlate, sync->protocol, flow_ident, return_ident_xlate);
 #endif
 	if (!ci) {
 		DEBUG_TRACE("%px: NSS Sync: no connection\n", sync);

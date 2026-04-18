@@ -310,6 +310,11 @@ static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 	struct nf_conntrack_tuple orig_tuple, reply_tuple;
 	int sender;
 
+	if (!skb->dev) {
+		DEBUG_WARN("No device in the skb\n");
+		return -1;
+	}
+
 	/*
 	 * Only process packets with valid conntrack information
 	 */
@@ -390,7 +395,33 @@ static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 	/*
 	 * Find the ECM connection based on the conntrack-extracted 5-tuple
 	 */
-	ci = ecm_db_connection_find_and_ref(src_ip, dst_ip, proto, ntohs(sport), ntohs(dport));
+	ci = ecm_db_connection_find_and_ref_hash_first(src_ip, dst_ip, proto, ntohs(sport), ntohs(dport));
+	while (ci) {
+		struct ecm_db_connection_instance *nci;
+		struct ecm_db_iface_instance *ii;
+		int32_t iface_identifier;
+		int32_t ifaces_first;
+		struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+		int32_t list_index;
+
+		/*
+		 * assignment update if interface in interface heirarchy matches given dev iface
+		 */
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_TO);
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			ii = ifaces[list_index];
+			iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (iface_identifier == skb->dev->ifindex) {
+				ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+				break;
+			}
+		}
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+		nci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = nci;
+	};
+
 	if (unlikely(!ci)) {
 		DEBUG_WARN("Unable to find ci\n");
 		return -1;

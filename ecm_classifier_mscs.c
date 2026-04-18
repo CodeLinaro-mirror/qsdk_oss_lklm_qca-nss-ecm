@@ -750,7 +750,9 @@ mscs_classifier_exit:
 	}
 
 	if (ECM_FRONT_END_ACCELERATION_NOT_POSSIBLE(accel_mode)) {
-		DEBUG_TRACE("%x: not relevant accel_mode: %d, this is a race condition while ae switch happens from ppe to sfe\n",feci->ci->serial, accel_mode);
+		DEBUG_TRACE("%x: not relevant accel_mode: %d,"
+				" this is a race condition while ae switch happens from ppe to sfe\n",
+				ecm_db_connection_serial_get(feci->ci), accel_mode);
 	}
 
 	/*

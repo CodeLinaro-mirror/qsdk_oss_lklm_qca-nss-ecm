@@ -106,7 +106,7 @@ static int ecm_conntrack_notifier_stopped = 0;	/* When non-zero further traffic 
  */
 static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 {
-	struct ecm_db_connection_instance *ci;
+	struct ecm_db_connection_instance *ci, *next_ci;
 
 	DEBUG_INFO("Destroy event for ct: %px\n", ct);
 
@@ -115,14 +115,19 @@ static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
 		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
-	ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
-	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
 
-	/*
-	 * Force destruction of the connection by making it defunct
-	 */
-	ecm_db_connection_make_defunct(ci);
-	ecm_db_connection_deref(ci);
+	do {
+		ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
+		DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
+
+		/*
+		 * Force destruction of the connection by making it defunct
+		 */
+		ecm_db_connection_make_defunct(ci);
+		next_ci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = next_ci;
+	} while (ci);
 }
 
 #if defined(CONFIG_NF_CONNTRACK_MARK)
@@ -132,7 +137,7 @@ static void ecm_conntrack_ipv6_event_destroy(struct nf_conn *ct)
  */
 static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 {
-	struct ecm_db_connection_instance *ci;
+	struct ecm_db_connection_instance *ci, *next_ci;
 	struct ecm_classifier_instance *__attribute__((unused))cls;
 
 	DEBUG_INFO("%px: IPv6 mark event ct->mark: %d\n", ct, ct->mark);
@@ -150,25 +155,30 @@ static void ecm_conntrack_ipv6_event_mark(struct nf_conn *ct)
 		return;
 	}
 
+	do {
 #ifdef ECM_CLASSIFIER_NL_ENABLE
-	/*
-	 * As of now, only the Netlink classifier is interested in conmark changes
-	 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
-	 */
-	cls = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
-	if (cls) {
-		ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
-		cls->deref(cls);
-	}
+		/*
+		 * As of now, only the Netlink classifier is interested in conmark changes
+		 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
+		 */
+		cls = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
+		if (cls) {
+			ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
+			cls->deref(cls);
+		}
 #endif
-	if (ci->feci->update_rule) {
-		ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
-	}
+		if (ci->feci && ci->feci->update_rule) {
+			ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
+		}
 
-	/*
-	 * All done
-	 */
-	ecm_db_connection_deref(ci);
+		/*
+		 * All done, get the same 5-tuple first
+		 */
+		next_ci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = next_ci;
+
+	} while (ci);
 }
 #endif
 
@@ -219,7 +229,7 @@ EXPORT_SYMBOL(ecm_conntrack_ipv6_event);
  */
 static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 {
-	struct ecm_db_connection_instance *ci;
+	struct ecm_db_connection_instance *ci, *next_ci;
 
 	DEBUG_INFO("Destroy event for ct: %px\n", ct);
 
@@ -228,15 +238,22 @@ static void ecm_conntrack_ipv4_event_destroy(struct nf_conn *ct)
 		DEBUG_TRACE("%px: not found\n", ct);
 		return;
 	}
-	ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
 
-	DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
+	do {
+		ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_DEFUNCT_CT_DESTROYED);
 
-	/*
-	 * Force destruction of the connection by making it defunct
-	 */
-	ecm_db_connection_make_defunct(ci);
-	ecm_db_connection_deref(ci);
+		DEBUG_INFO("%px: Connection defunct %px\n", ct, ci);
+
+		/*
+		 * Force destruction of the connection by making it defunct
+		 */
+		ecm_db_connection_make_defunct(ci);
+
+		next_ci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = next_ci;
+
+	} while (ci);
 }
 
 #if defined(CONFIG_NF_CONNTRACK_MARK)
@@ -264,25 +281,31 @@ static void ecm_conntrack_ipv4_event_mark(struct nf_conn *ct)
 		return;
 	}
 
-#ifdef ECM_CLASSIFIER_NL_ENABLE
-	/*
-	 * As of now, only the Netlink classifier is interested in conmark changes
-	 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
-	 */
-	cls = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
-	if (cls) {
-		ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
-		cls->deref(cls);
-	}
-#endif
-	if (ci->feci->update_rule) {
-		ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
-	}
+	do {
+		struct ecm_db_connection_instance *next_ci;
 
-	/*
-	 * All done
-	 */
-	ecm_db_connection_deref(ci);
+#ifdef ECM_CLASSIFIER_NL_ENABLE
+		/*
+		 * As of now, only the Netlink classifier is interested in conmark changes
+		 * GGG TODO Add a classifier method to propagate this information to any and all types of classifier.
+		 */
+		cls = ecm_db_connection_assigned_classifier_find_and_ref(ci, ECM_CLASSIFIER_TYPE_NL);
+		if (cls) {
+			ecm_classifier_nl_process_mark((struct ecm_classifier_nl_instance *)cls, ct->mark);
+			cls->deref(cls);
+		}
+#endif
+		if (ci->feci && ci->feci->update_rule) {
+			ci->feci->update_rule(ci->feci, ECM_RULE_UPDATE_TYPE_CONNMARK, ct);
+		}
+
+		/*
+		 * All done, get the same 5-tuple first
+		 */
+		next_ci = ecm_db_connection_find_and_ref_hash_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = next_ci;
+	} while (ci);
 }
 #endif
 

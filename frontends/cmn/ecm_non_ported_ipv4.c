@@ -213,7 +213,8 @@ unsigned int ecm_non_ported_ipv4_process(struct net_device *out_dev, struct net_
 				ECM_IP_ADDR_TO_DOT(ip_src_addr), ECM_IP_ADDR_TO_DOT(ip_src_addr_nat), ECM_IP_ADDR_TO_DOT(ip_dest_addr),
 				ECM_IP_ADDR_TO_DOT(ip_dest_addr_nat), ecm_dir);
 
-	ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
+	ci = ecm_db_connection_source_find_and_ref(ip_src_addr, ip_dest_addr, protocol,
+			src_port, dest_port, in_dev, out_dev);
 
 	/*
 	 * If there is no existing connection then create a new one.
@@ -574,7 +575,9 @@ feci_alloc_done:
 		 * To guard against this we now perform a mutex'd lookup of the connection + add once more - another cpu may have created it before us.
 		 */
 		spin_lock_bh(&ecm_ipv4_lock);
-		ci = ecm_db_connection_find_and_ref(ip_src_addr, ip_dest_addr, protocol, src_port, dest_port);
+
+		ci = ecm_db_connection_source_find_and_ref(ip_src_addr, ip_dest_addr, protocol,
+			src_port, dest_port, in_dev, out_dev);
 		if (ci) {
 			/*
 			 * Another cpu created the same connection before us - use the one we just found

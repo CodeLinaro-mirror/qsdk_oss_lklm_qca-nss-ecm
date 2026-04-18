@@ -315,6 +315,7 @@ bool ecm_ppe_ported_ipv4_unidir_rule_update(
 	update_msg->tuple.return_ident = return_ident;
 	update_msg->tuple.flow_ip = flow_ip;
 	update_msg->tuple.return_ip = return_ip;
+	update_msg->tuple.flow_rule_id = ecm_db_connection_serial_get(ci);
 
 	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 		update_msg->info.unidir.dir = PPE_DRV_FLOW_RULE_DIR_FLOW;
@@ -404,12 +405,12 @@ bool ecm_ppe_ported_ipv4_bidir_sawf_rule_update(
 		update_msg->info.sawf.valid_flags |= PPE_DRV_SAWF_MARK_RETURN_UPDATE;
 	}
 
+	update_msg->tuple.flow_rule_id = ecm_db_connection_serial_get(ci);
 	update_msg->tuple.protocol = msg->protocol;
 	update_msg->tuple.flow_ident = ntohs(msg->flow_src_port);
 	update_msg->tuple.return_ident = ntohs(msg->flow_dest_port);
 	update_msg->tuple.flow_ip = ntohl(msg->flow_src_ip[0]);
 	update_msg->tuple.return_ip = ntohl(msg->flow_dest_ip[0]);
-
 	ppe_status = ppe_drv_v4_rule_update(update_msg);
 
 	atomic64_set(&feci->unidir_accel_fail_reason, ecm_front_end_set_ae_failure_reason(ppe_status));
@@ -521,6 +522,7 @@ static void ecm_ppe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 	pd4rc->valid_flags = 0;
 	pd4rc->rule_flags = 0;
+	pd4rc->tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Initialize VLAN tag information
@@ -2133,6 +2135,7 @@ static bool ecm_ppe_ported_ipv4_connection_decelerate_send(struct ecm_front_end_
 	spin_unlock_bh(&ecm_ppe_ipv4_lock);
 
 	pd4rd.tuple.protocol = (int32_t)ecm_db_connection_protocol_get(feci->ci);
+	pd4rd.tuple.flow_rule_id = ecm_db_connection_serial_get(feci->ci);
 
 	/*
 	 * Get addressing information

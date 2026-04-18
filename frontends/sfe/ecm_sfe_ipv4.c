@@ -205,7 +205,6 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 	struct ecm_front_end_connection_instance *feci;
 	struct neighbour *neigh;
 	ip_addr_t flow_ip;
-	ip_addr_t return_ip_xlate;
 	ip_addr_t return_ip;
 	struct ecm_classifier_instance *assignments[ECM_CLASSIFIER_TYPES];
 	int aci_index;
@@ -213,40 +212,26 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 	struct ecm_classifier_rule_sync class_sync;
 	int flow_dir;
 	int return_dir;
-	int flow_ident;
-	int return_ident_xlate;
+
+	ECM_NIN4_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
+	ECM_NIN4_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
 
 	/*
 	 * Look up ecm connection with a view to synchronising the connection, classifier and data tracker.
 	 * Note that we use _xlate versions for destination - for egressing connections this would be the wan IP address,
 	 * but for ingressing this would be the LAN side (non-nat'ed) address and is what we need for lookup of our connection.
 	 */
-	DEBUG_INFO("%px: SFE Sync, lookup connection using\n"
+	DEBUG_TRACE("%px: SFE Sync, lookup connection using serial:%d\n"
 			"Protocol: %d\n" \
 			"src_addr: %pI4n:%d\n" \
 			"dest_addr: %pI4n:%d\n",
 			sync,
+			sync->flow_rule_id,
 			(int)sync->protocol,
 			&sync->flow_ip, (int)sync->flow_ident,
 			&sync->return_ip_xlate, (int)sync->return_ident_xlate);
 
-	ECM_NIN4_ADDR_TO_IP_ADDR(flow_ip, sync->flow_ip);
-	ECM_NIN4_ADDR_TO_IP_ADDR(return_ip_xlate, sync->return_ip_xlate);
-	ECM_NIN4_ADDR_TO_IP_ADDR(return_ip, sync->return_ip);
-	flow_ident = (int)sync->flow_ident;
-	return_ident_xlate = (int)sync->return_ident_xlate;
-
-	/*
-	 * GRE connections such as PPTP-GRE are stored into the db using a 3 tuple based hash.
-	 * L2TPv3 over IP connection also uses a 3 tuple based hash.
-	 * So we ignore the port information here when trying to lookup the connection.
-	 */
-	if (sync->protocol == IPPROTO_GRE || sync->protocol == IPPROTO_L2TP) {
-		flow_ident = 0;
-		return_ident_xlate = 0;
-	}
-
-	ci = ecm_db_connection_find_and_ref(flow_ip, return_ip_xlate, sync->protocol, ntohs(flow_ident), ntohs(return_ident_xlate));
+	ci = ecm_db_connection_serial_find_and_ref(sync->flow_rule_id);
 
 	if (!ci) {
 		DEBUG_TRACE("%px: SFE Sync: no connection\n", sync);
