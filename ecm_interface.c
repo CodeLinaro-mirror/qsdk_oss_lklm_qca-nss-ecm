@@ -416,6 +416,14 @@ static int ecm_interface_handle_wlan_egress_packet(struct sk_buff *skb)
 				break;
 			}
 		}
+
+		/*
+		 * Found the matched device.
+		 */
+		if (list_index != ECM_DB_IFACE_HEIRARCHY_MAX) {
+			break;
+		}
+
 		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
 		nci = ecm_db_connection_find_and_ref_hash_next(ci);
 		ecm_db_connection_deref(ci);
