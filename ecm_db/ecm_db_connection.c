@@ -279,6 +279,20 @@ struct ecm_front_end_connection_instance *ecm_db_connection_front_end_get_and_re
 EXPORT_SYMBOL(ecm_db_connection_front_end_get_and_ref);
 
 /*
+ * ecm_db_connection_ct_mark_set()
+ *	Set the conntrack mark for this connection.
+ *	Used to bypass the ECM inactivity timer when conntrack mark bits 16/17 are set.
+ */
+void ecm_db_connection_ct_mark_set(struct ecm_db_connection_instance *ci, uint32_t ct_mark)
+{
+	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
+	spin_lock_bh(&ecm_db_lock);
+	ci->ct_mark = ct_mark;
+	spin_unlock_bh(&ecm_db_lock);
+}
+EXPORT_SYMBOL(ecm_db_connection_ct_mark_set);
+
+/*
  * ecm_db_connection_defunct_callback()
  *	Invoked by the expiration of the defunct_timer contained in a connection instance
  */
@@ -290,6 +304,21 @@ static void ecm_db_connection_defunct_callback(void *arg)
 	DEBUG_CHECK_MAGIC(ci, ECM_DB_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", ci);
 
 	DEBUG_INFO("%px: defunct timer expired\n", ci);
+
+#if defined(CONFIG_NF_CONNTRACK_MARK)
+	/*
+	 * If conntrack mark has bits 16 and 17 set, ignore the ECM inactivity timer.
+	 * Re-arm the timer and let conntrack's own timeout govern the connection lifetime.
+	 * Do NOT release the reference here - the timer still holds it.
+	 */
+	if ((ci->ct_mark & BIT(16)) && (ci->ct_mark & BIT(17))) {
+		DEBUG_INFO("%px: Ignoring defunct timer, ct_mark=0x%x has bits 16 and 17 set\n",
+			   ci, ci->ct_mark);
+		ecm_db_timer_group_entry_set(&ci->defunct_timer,
+					     ECM_DB_TIMER_GROUPS_CONNECTION_GENERIC_TIMEOUT);
+		return;
+	}
+#endif
 
 	/*
 	 * call the front end defunct to destroy the rule.
