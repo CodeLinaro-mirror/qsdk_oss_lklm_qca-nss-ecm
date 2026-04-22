@@ -176,7 +176,7 @@ typedef void (*ecm_db_timer_group_entry_callback_t)(void *arg);	/* Timer entry h
  */
 struct ecm_db_connection_defunct_info;
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 
 struct ecm_db_multicast_tuple_instance;
 
@@ -467,7 +467,7 @@ struct ecm_db_interface_info_ovpn {			/* type == ECM_DB_IFACE_TYPE_OVPN */
  */
 #define ECM_DB_IFACE_HEIRARCHY_MAX 9 /* This is the number of interfaces allowed in a heirarchy */
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * Buffer size for multicast destination interface list
  */

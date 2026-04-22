@@ -81,7 +81,7 @@
 #include "ecm_sfe_non_ported_ipv6.h"
 #endif
 #include "ecm_sfe_common.h"
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_sfe_multicast_ipv6.h"
 #endif
@@ -297,7 +297,7 @@ static void ecm_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sy
 		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 		if (ecm_ip_addr_is_multicast(return_ip)) {
 			/*
 			 * The amount of data *sent* by the ECM multicast connection 'from' side is the amount the NSS has *received* in the 'flow' direction.
@@ -1219,7 +1219,7 @@ int ecm_sfe_ipv6_init(struct dentry *dentry)
 		goto task_cleanup;
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 	if (ecm_sfe_multicast_ipv6_init(ecm_sfe_ipv6_dentry)) {
 		DEBUG_ERROR("Failed to init sfe multicast\n");
@@ -1253,7 +1253,7 @@ void ecm_sfe_ipv6_exit(void)
 
 	DEBUG_INFO("ECM SFE IPv6 Module exit\n");
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 	ecm_sfe_multicast_ipv6_exit();
 #endif

@@ -70,7 +70,7 @@ struct ecm_db_iface_instance *ecm_interface_establish_and_ref(struct ecm_front_e
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 bool ecm_interface_is_ovs_bridge_port(const struct net_device *dev);
 #endif
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *interfaces, struct net_device *in_dev, ip_addr_t packet_src_addr, ip_addr_t packet_dest_addr, uint8_t maxvif, uint32_t *dst_dev, uint32_t *to_interface_first, bool mfc_update, __be16 *layer4hdr, struct sk_buff *skb);
 
 int32_t ecm_interface_multicast_heirarchy_construct_bridged(struct ecm_front_end_connection_instance *feci, struct ecm_db_iface_instance *interfaces, struct net_device *br_dev, ip_addr_t src_addr, ip_addr_t dest_addr, uint8_t mc_max_dst, int32_t *mc_dst_dev, uint32_t *to_interface_first, uint8_t *src_node_addr, __be16 *layer4hdr, struct sk_buff *skb);
@@ -93,9 +93,8 @@ int32_t ecm_interface_multicast_from_heirarchy_construct(struct ecm_front_end_co
 					__be16 *layer4hdr, struct sk_buff *skb);
 int32_t ecm_interface_multicast_filter_src_interface(struct ecm_db_connection_instance *ci, uint32_t *mc_dst_if_index);
 
-#if defined(ECM_ATH_MCAST_ENABLE)
-int ecm_ipv6_ath_mc_bridge_get_if(struct net_device *brdev, struct in6_addr origin, struct in6_addr group, uint32_t max_dst, uint32_t *dst_dev);
-int ecm_ipv4_ath_mc_bridge_get_if(struct net_device *brdev, __be32 origin, __be32 group, uint32_t max_dst, uint32_t *dst_dev);
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
+int ecm_interface_linux_mcs_bridge_get_if(struct net_device *brdev, ip_addr_t origin, ip_addr_t group, uint32_t max_dst, uint32_t *dst_dev, bool is_v4);
 #endif
 
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE

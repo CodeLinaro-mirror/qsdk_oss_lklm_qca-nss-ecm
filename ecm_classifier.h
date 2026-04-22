@@ -158,7 +158,7 @@ struct ecm_classifier_process_response {
 #ifdef ECM_CLASSIFIER_OVS_ENABLE
 	uint32_t ingress_vlan_tag[2];			/* Ingress VLAN tags */
 	uint32_t egress_vlan_tag[2];			/* Egress VLAN tags */
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	int32_t egress_netdev_index[ECM_DB_MULTICAST_IF_MAX];	 /* Multicast egress net device interface index */
 	uint32_t egress_mc_vlan_tag[ECM_DB_MULTICAST_IF_MAX][2]; /* Multicast egress VLAN tags */
 #endif

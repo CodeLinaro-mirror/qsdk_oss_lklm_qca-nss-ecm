@@ -80,7 +80,7 @@
 #endif
 #include "ecm_interface.h"
 #include "ecm_nss_ported_ipv4.h"
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #include "ecm_nss_multicast_ipv4.h"
 #endif
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
@@ -245,7 +245,7 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 		flow_ident = 0;
 		return_ident_xlate = 0;
 	}
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	/*
 	 * Check for multicast flow
 	 */
@@ -322,7 +322,7 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 				ci, sync->flow_rx_packet_count, sync->flow_rx_byte_count, sync->return_rx_packet_count, sync->return_rx_byte_count);
 		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 		if (ecm_ip_addr_is_multicast(return_ip)) {
 			/*
 			 * The amount of data *sent* by the ECM multicast connection 'from' side is the amount the NSS has *received* in the 'flow' direction.
@@ -431,7 +431,7 @@ static inline void ecm_nss_ipv4_process_one_conn_sync_msg(struct nss_ipv4_conn_s
 				neigh_release(neigh);
 			}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 			/*
 			 * Update the neighbour entry for destination IP address
 			 */
@@ -1049,7 +1049,7 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 	 */
 	ecm_nss_ipv4_nss_ipv4_mgr = nss_ipv4_notify_register(ecm_nss_ipv4_net_dev_callback, NULL);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	result = ecm_nss_multicast_ipv4_init(ecm_nss_ipv4_dentry);
 	if (result < 0) {
 		DEBUG_ERROR("Failed to init ecm ipv4 multicast frontend\n");
@@ -1065,7 +1065,7 @@ int ecm_nss_ipv4_init(struct dentry *dentry)
 	return 0;
 
 task_cleanup_2:
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	ecm_nss_multicast_ipv4_exit();
 task_cleanup_1:
 #endif
@@ -1100,7 +1100,7 @@ void ecm_nss_ipv4_exit(void)
 		ecm_debugfs_remove_recursive(ecm_nss_ipv4_dentry);
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	ecm_nss_multicast_ipv4_exit();
 #endif
 

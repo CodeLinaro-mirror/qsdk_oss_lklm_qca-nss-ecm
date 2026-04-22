@@ -66,7 +66,7 @@
  * 4 = 3 + TRACE
  */
 #define DEBUG_LEVEL ECM_SFE_MULTICAST_IPV4_DEBUG_LEVEL
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 #include <mc_ecm.h>
 #endif
 #include "ecm_types.h"
@@ -2455,9 +2455,9 @@ static void ecm_sfe_multicast_ipv4_bridge_update_connections(ip_addr_t dest_ip, 
 		 */
 		memset(mc_dst_dev, 0, sizeof(mc_dst_dev));
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 		rcu_read_lock();
-		if_num = ecm_ipv4_ath_mc_bridge_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = ecm_interface_linux_mcs_bridge_get_if(brdev, src_ip, dest_ip, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev, true);
 		rcu_read_unlock();
 #else
 		if_num = mc_bridge_ipv4_get_if(brdev, htonl(src_ip[0]), htonl(dest_ip[0]), ECM_DB_MULTICAST_IF_MAX,
@@ -2869,7 +2869,7 @@ ssize_t ecm_sfe_multicast_ipv4_get_accelerated_count(struct device *dev,
 	return count;
 }
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 /*
  * ecm_sfe_br_multicast_update_event_callback()
  *	Callback received from bridge multicast snooper module in the
@@ -3267,7 +3267,7 @@ int ecm_sfe_multicast_ipv4_init(struct dentry *dentry)
 	ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry,
 					(u32 *)&ecm_sfe_multicast_ipv4_accelerated_count);
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
@@ -3283,7 +3283,7 @@ int ecm_sfe_multicast_ipv4_init(struct dentry *dentry)
 	if (!ipmr_register_mfc_event_offload_callback(ecm_sfe_mfc_update_event_callback)) {
 		DEBUG_ERROR("Failed to register MFC callback\n");
 		unregister_sysctl_table(ecm_sfe_multicast_ipv4_ctl_table_header);
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 		mc_bridge_ipv4_update_callback_deregister();
 #endif
 		return -1;
@@ -3303,7 +3303,7 @@ void ecm_sfe_multicast_ipv4_exit(void)
 	 * MFC and MCS snooper
 	 */
 	ipmr_unregister_mfc_event_offload_callback();
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	mc_bridge_ipv4_update_callback_deregister();
 #endif
 	/*

@@ -67,7 +67,7 @@
  * 4 = 3 + TRACE
  */
 #define DEBUG_LEVEL ECM_SFE_MULTICAST_IPV6_DEBUG_LEVEL
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 #include <mc_ecm.h>
 #endif
 #include "ecm_types.h"
@@ -2474,9 +2474,9 @@ static void ecm_sfe_multicast_ipv6_bridge_update_connections(ip_addr_t dest_ip, 
 		 * 	if_num == 0  All slaves have left the group. Deacel the flow.
 		 * 	if_num > 0   An interface leave/Join the group. Process the leave/join interface request.
 		 */
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 		rcu_read_lock();
-		if_num = ecm_ipv6_ath_mc_bridge_get_if(brdev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev);
+		if_num = ecm_interface_linux_mcs_bridge_get_if(brdev, src_ip, dest_ip, ECM_DB_MULTICAST_IF_MAX, mc_dst_dev, false);
 		rcu_read_unlock();
 #else
 		if_num = mc_bridge_ipv6_get_if (brdev, &origin6, &group6,
@@ -2851,7 +2851,7 @@ struct ecm_front_end_connection_instance *ecm_sfe_multicast_ipv6_connection_inst
 	return feci;
 }
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 /*
  * ecm_sfe_multicast_ipv6_br_update_event_callback()
  *	Callback received from bridge multicast snooper module in the
@@ -3263,7 +3263,7 @@ int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 
 	ecm_debugfs_create_u32("multicast_accelerated_count", S_IRUGO, dentry, &ecm_sfe_multicast_ipv6_accelerated_count);
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	/*
 	 * Register multicast update callback to MCS snooper
 	 */
@@ -3279,7 +3279,7 @@ int ecm_sfe_multicast_ipv6_init(struct dentry *dentry)
 	if (!ip6mr_register_mfc_event_offload_callback(ecm_sfe_multicast_ipv6_mfc_update_event_callback)) {
 		DEBUG_ERROR("Failed to register MFC callback\n");
 		unregister_sysctl_table(ecm_sfe_multicast_ipv6_ctl_table_header);
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 		mc_bridge_ipv6_update_callback_deregister();
 #endif
 		return -1;
@@ -3299,7 +3299,7 @@ void ecm_sfe_multicast_ipv6_exit(void)
 	 * MFC and MCS snooper
 	 */
 	ip6mr_unregister_mfc_event_offload_callback();
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	mc_bridge_ipv6_update_callback_deregister();
 #endif
 	/*

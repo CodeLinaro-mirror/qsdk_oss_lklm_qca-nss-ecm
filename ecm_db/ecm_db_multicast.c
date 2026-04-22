@@ -56,7 +56,6 @@
 #include "ecm_classifier_default.h"
 #include "ecm_db.h"
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
 #define ECM_DB_MULTICAST_INSTANCE_MAGIC 0xc34a
 
 #define ECM_DB_MULTICAST_TUPLE_INSTANCE_HASH_SLOTS 16
@@ -1239,4 +1238,3 @@ struct ecm_db_multicast_iface_list_info ecm_db_multicast_netdevs_get_index(struc
 	memset(&mc_ifindex, 0, sizeof(mc_ifindex));
 	return mc_ifindex;
 }
-#endif

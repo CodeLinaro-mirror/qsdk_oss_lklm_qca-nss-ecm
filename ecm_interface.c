@@ -35,8 +35,15 @@
 #include <linux/rtnetlink.h>
 #include <linux/socket.h>
 #include <linux/wireless.h>
-#if defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 #include <linux/if_bridge.h>
+/*
+ * Workaround for struct mac_addr redefinition issue between
+ * br_private.h and bond_3ad.h
+ */
+#define mac_addr br_mac_addr
+#include <br_private.h>
+#undef mac_addr
 #endif
 #include <net/genetlink.h>
 #include <net/netevent.h>
@@ -110,7 +117,7 @@
  */
 #define DEBUG_LEVEL ECM_INTERFACE_DEBUG_LEVEL
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) && !defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 #include <mc_ecm.h>
 #endif
 
@@ -214,6 +221,15 @@ int ecm_interface_src_check_no_flush;
  *	connnection, if the egress interface has ingress qdisc enabled over it.
  */
 int ecm_interface_igs_enabled;
+#endif
+
+#if defined(ECM_MULTICAST_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+static const struct rhashtable_params ecm_interface_br_mdb_rht_params = {
+	.head_offset = offsetof(struct net_bridge_mdb_entry, rhnode),
+	.key_offset = offsetof(struct net_bridge_mdb_entry, addr),
+	.key_len = sizeof(struct br_ip),
+	.automatic_shrinking = true,
+};
 #endif
 
 /*
@@ -1411,8 +1427,7 @@ bool ecm_interface_mac_addr_get_no_route(struct net_device *dev, ip_addr_t addr,
 }
 EXPORT_SYMBOL(ecm_interface_mac_addr_get_no_route);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
-
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_dest_list_find_if()
  *	Searches for a given device in a list of interface indices
@@ -2375,7 +2390,7 @@ static struct ecm_db_iface_instance *ecm_interface_macvlan_interface_establish(s
 }
 #endif
 
-#if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && (defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE))
+#if defined(ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MULTICAST_ENABLE)
 /*
  * ecm_interface_multicast_ovs_to_interface_get_and_ref()
  *	Populate ov_ ports/bridge device from multicast 'to' list.
@@ -4722,7 +4737,7 @@ identifier_update:
 }
 EXPORT_SYMBOL(ecm_interface_establish_and_ref);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_heirarchy_construct_single()
  *	Create and return an interface heirarchy for a single interface for a multicast connection
@@ -5258,9 +5273,9 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 			uint8_t mac_addr[ETH_ALEN] = {0};
 
 			if (ECM_IP_ADDR_IS_V4(packet_src_addr)) {
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 				rcu_read_lock();
-				if_num = ecm_ipv4_ath_mc_bridge_get_if(dest_dev, htonl((packet_src_addr[0])), htonl(packet_dest_addr[0]), mc_max_dst, mc_dst_if_index);
+				if_num = ecm_interface_linux_mcs_bridge_get_if(dest_dev, packet_src_addr, packet_dest_addr, mc_max_dst, mc_dst_if_index, true);
 				rcu_read_unlock();
 #else
 				if_num = mc_bridge_ipv4_get_if(dest_dev, htonl((packet_src_addr[0])),
@@ -5272,9 +5287,9 @@ int32_t ecm_interface_multicast_heirarchy_construct_routed(struct ecm_front_end_
 				struct in6_addr group6;
 				ECM_IP_ADDR_TO_NIN6_ADDR(origin6, packet_src_addr);
 				ECM_IP_ADDR_TO_NIN6_ADDR(group6, packet_dest_addr);
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 				rcu_read_lock();
-				if_num = ecm_ipv6_ath_mc_bridge_get_if(dest_dev, origin6, group6, mc_max_dst, mc_dst_if_index);
+				if_num = ecm_interface_linux_mcs_bridge_get_if(dest_dev, packet_src_addr, packet_dest_addr, mc_max_dst, mc_dst_if_index, false);
 				rcu_read_unlock();
 #else
 				if_num = mc_bridge_ipv6_get_if(dest_dev, &origin6, &group6, mc_max_dst,
@@ -6780,7 +6795,7 @@ done:
 }
 EXPORT_SYMBOL(ecm_interface_heirarchy_construct);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_from_heirarchy_construct()
  *	Construct an interface heirarchy.
@@ -7774,7 +7789,7 @@ skip_bridge_refresh:
 			stats.rx_bytes = rx_bytes;
 			stats.tx_packets = tx_packets;
 			stats.tx_bytes = tx_bytes;
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 			/*
 			 * Update multicast rx statistics only for
 			 * 'from' interface.
@@ -8121,7 +8136,7 @@ void ecm_interface_vlan_filter_stats_update(struct ecm_db_connection_instance *c
 }
 #endif
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_stats_update()
  *	Using the interface lists for the given connection, update the interface statistics for each.
@@ -8244,7 +8259,7 @@ static void ecm_interface_regenerate_connections(struct ecm_db_iface_instance *i
 		}
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	/*
 	 * Multicasts would not have recorded in the lists above.
 	 * Our only way to re-gen those is to iterate all multicasts.
@@ -8781,7 +8796,199 @@ static struct notifier_block ecm_interface_node_br_fdb_delete_nb = {
 };
 #endif
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+/*
+ * ecm_interface_br_mdb_get()
+ *	Fetch the MDB entry for the MCAST group.
+ */
+static struct net_bridge_mdb_entry *ecm_interface_br_mdb_get(struct net_bridge_mcast *brmctx, ip_addr_t origin, ip_addr_t group, u16 vid, bool is_v4)
+{
+	struct net_bridge_mdb_entry *mdb;
+	struct net_bridge *br = brmctx->br;
+	struct br_ip ip;
+
+	if (!br_opt_get(br, BROPT_MULTICAST_ENABLED) ||
+		br_multicast_ctx_vlan_global_disabled(brmctx)) {
+		DEBUG_WARN("%px: Invalid Net Bridge Pointer\n", br);
+		return NULL;
+	}
+
+	memset(&ip, 0, sizeof(ip));
+	ip.vid = vid;
+
+	/*
+	 * Fetch and Initialize v4/v6 specific info.
+	 * Lookup the MDB Database with this info.
+	 */
+	if (is_v4) {
+		__be32 origin4, group4;
+
+		ECM_IP_ADDR_TO_NIN4_ADDR(origin4, origin);
+		ECM_IP_ADDR_TO_NIN4_ADDR(group4, group);
+		ip.proto = htons(ETH_P_IP);
+		ip.dst.ip4 = group4;
+
+		if (brmctx->multicast_igmp_version == 3) {
+			ip.src.ip4 = origin4;
+			mdb = rhashtable_lookup(&br->mdb_hash_tbl, &ip, ecm_interface_br_mdb_rht_params);
+			if (mdb)
+				return mdb;
+
+			ip.src.ip4 = 0;
+		}
+
+		return rhashtable_lookup(&br->mdb_hash_tbl, &ip, ecm_interface_br_mdb_rht_params);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		struct in6_addr origin6, group6;
+
+		ECM_IP_ADDR_TO_NIN6_ADDR(origin6, origin);
+		ECM_IP_ADDR_TO_NIN6_ADDR(group6, group);
+		ip.proto = htons(ETH_P_IPV6);
+		ip.dst.ip6 = group6;
+
+		if (brmctx->multicast_mld_version == 2) {
+			ip.src.ip6 = origin6;
+			mdb = rhashtable_lookup(&br->mdb_hash_tbl, &ip, ecm_interface_br_mdb_rht_params);
+			if (mdb)
+				return mdb;
+
+			memset(&ip.src.ip6, 0, sizeof(ip.src.ip6));
+		}
+
+		return rhashtable_lookup(&br->mdb_hash_tbl, &ip, ecm_interface_br_mdb_rht_params);
+#endif
+	}
+}
+
+/*
+ * ecm_interface_linux_mcs_bridge_get_if()
+ *	Fetch the active listeners for the multicast group.
+ */
+int ecm_interface_linux_mcs_bridge_get_if(struct net_device *brdev, ip_addr_t origin, ip_addr_t group, uint32_t max_dst, uint32_t *dst_dev, bool is_v4)
+{
+	struct net_bridge_mdb_entry *mdst = NULL;
+	struct net_bridge_mcast *brmctx = NULL;
+	struct net_bridge_port_group *pg = NULL;
+	struct hlist_node *rp = NULL;
+	struct net_bridge *br = NULL;
+	struct ethhdr eth;
+	bool allow_mode_include = true;
+	int if_cnt = 0;
+	u16 vid = 0;
+
+	/*
+	 * Check whether the dst_dev pointer is valid.
+	 */
+	if (!dst_dev) {
+		DEBUG_WARN("%px:Invalid pointer to the (dst_dev) array passed\n", brdev);
+		return 0;
+	}
+
+	/*
+	 * Fetch the Bridge Netdev pointer.
+	 */
+	br = netdev_priv(brdev);
+	if (!br) {
+		DEBUG_WARN("%px:net_bridge not found from netdevice(%s)\n", brdev, brdev->name);
+		return 0;
+	}
+
+	/*
+	 * Fetch the Bridge MCAST context.
+	 */
+	brmctx = &br->multicast_ctx;
+	memset(&eth, 0, sizeof(eth));
+
+	if (is_v4) {
+		eth.h_proto = htons(ETH_P_IP);
+		rp = rcu_dereference(hlist_first_rcu(&brmctx->ip4_mc_router_list));
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+		eth.h_proto = htons(ETH_P_IPV6);
+		rp = rcu_dereference(hlist_first_rcu(&brmctx->ip6_mc_router_list));
+#endif
+	}
+
+	/*
+	 * Fetch the Bridge MDB entry.
+	 */
+	mdst = ecm_interface_br_mdb_get(brmctx, origin, group, vid, is_v4);
+	if (mdst) {
+		/*
+		 * Check if the querier exists.
+		 */
+		if (!br_multicast_querier_exists(brmctx, &eth, mdst)) {
+			DEBUG_WARN("%px: Multicast Querier not exists for Bridge\n", brmctx);
+			return 0;
+		}
+
+		/*
+		 * Check if the obtained MDB is a (*,G) or (S,G) entry.
+		 */
+		pg = rcu_dereference(mdst->ports);
+		if (br_multicast_should_handle_mode(brmctx, mdst->addr.proto) && br_multicast_is_star_g(&mdst->addr))
+			allow_mode_include = false;
+	}
+
+	while (pg || rp) {
+		struct net_bridge_port *port, *lport, *rport;
+		struct net_bridge_mcast_port *mctx = NULL;
+		struct net_device *dev;
+
+		lport = pg ? pg->key.port : NULL;
+
+		if (is_v4) {
+			mctx = hlist_entry_safe(rp, struct net_bridge_mcast_port, ip4_rlist);
+#if IS_ENABLED(CONFIG_IPV6)
+		} else {
+			mctx = hlist_entry_safe(rp, struct net_bridge_mcast_port, ip6_rlist);
+#endif
+		}
+
+		rport = mctx ? mctx->port : NULL;
+
+		if ((unsigned long)lport > (unsigned long)rport) {
+			port = lport;
+
+			/*
+			 * Reject offloading the multicast flows in ECM if Linux MCUC
+			 * is enabled on any of the Tx ports.
+			 */
+			if (port->flags & BR_MULTICAST_TO_UNICAST) {
+				memset(dst_dev, 0, (sizeof(*dst_dev) * ECM_DB_MULTICAST_IF_MAX));
+				return 0;
+			}
+
+			/*
+			 * Exclude the following interface from the list.
+			 */
+			if ((!allow_mode_include && pg->filter_mode == MCAST_INCLUDE) || (pg->flags & MDB_PG_FLAGS_BLOCKED)) {
+				goto skip_port;
+			}
+		} else {
+			port = rport;
+		}
+
+		dev = port->dev;
+		dst_dev[if_cnt] = dev->ifindex;
+		if_cnt++;
+
+		if (if_cnt == max_dst)
+			return if_cnt;
+
+skip_port:
+		if ((unsigned long)lport >= (unsigned long)port)
+			pg = rcu_dereference(pg->next);
+
+		if ((unsigned long)rport >= (unsigned long)port)
+			rp = rcu_dereference(hlist_next_rcu(rp));
+	}
+
+	DEBUG_TRACE("%px: Interfaces(%d) obtained from the netdevice(%s)\n", brdev, if_cnt, brdev->name);
+	return if_cnt;
+}
+
 /*
  * ecm_br_mdb_notify_event()
  *	Notifier event to Update MDB changes
@@ -8879,7 +9086,7 @@ static struct notifier_block ecm_br_mdb_update_nb = {
 };
 #endif
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_interface_multicast_find_outdated_iface_instances()
  *
@@ -10119,7 +10326,7 @@ static void ecm_interface_ovs_flow_defunct_connections(struct ovsmgr_dp_flow *fl
 	 * destination ip
 	 */
 	if (ecm_ip_addr_is_multicast(dest_ip)) {
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && !defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 		ip_addr_t grp_ip;
 		struct ecm_db_connection_instance *ci;
 		struct ecm_db_multicast_tuple_instance *ti;
@@ -10233,7 +10440,7 @@ defunct_by_masked_tuple:
 	ecm_interface_ovs_defunct_masked_tuple(flow);
 }
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && !defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 /*
  * ecm_interface_multicast_ovs_flow_update_connections()
  *	Update the connections based on the OVS flow information.
@@ -10339,7 +10546,7 @@ static int ecm_interface_ovs_notifier_callback(struct notifier_block *nb, unsign
 		ecm_db_connection_defunct_all();
 		break;
 	case OVSMGR_DP_FLOW_CHANGE:
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && !defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 		ecm_interface_multicast_ovs_flow_update_connections(ovs_info->flow);
 #endif
 		break;
@@ -10644,7 +10851,7 @@ int ecm_interface_init(void)
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
 	ovsmgr_notifier_register(&ecm_interface_ovs_notifier);
 #endif
-#if defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 	br_mcast_offload_mdb_register_notify(&ecm_br_mdb_update_nb);
 #endif
 	ecm_interface_register_nf_hook_wlan_device();
@@ -10683,7 +10890,7 @@ void ecm_interface_exit(void)
 		br_fdb_unregister_notify(&ecm_interface_node_br_fdb_delete_nb);
 	}
 #endif
-#if defined(ECM_ATH_MCAST_ENABLE)
+#if defined(ECM_MULTICAST_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 	br_mcast_offload_mdb_unregister_notify(&ecm_br_mdb_update_nb);
 #endif
 #ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE

@@ -62,10 +62,8 @@ endif
 
 #SFE Multicast is enabled in case NSS disabled
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/cmn/ecm_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/cmn/ecm_multicast_ipv6.o
 endif
 
 # #############################################################################
@@ -198,29 +196,24 @@ ccflags-$(ECM_INTERFACE_VXLAN_ENABLE) += -DECM_INTERFACE_VXLAN_ENABLE
 ccflags-$(ECM_IPV6_ENABLE) += -DECM_IPV6_ENABLE
 
 # #############################################################################
-# Define ECM_MULTICAST_ENABLE=y / ECM_ATH_MCAST_ENABLE=y in order to enable
+# Define ECM_MULTICAST_ENABLE=y in order to enable
 # support for ECM Multicast NSS is enabled, using NSS multicast acceleration,
 # otherwise using SFE multicast acceleration.
 # #############################################################################
 
 ecm-$(ECM_MULTICAST_ENABLE) += ecm_db/ecm_db_multicast.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += ecm_db/ecm_db_multicast.o
 ccflags-$(ECM_MULTICAST_ENABLE) += -DECM_MULTICAST_ENABLE
-ccflags-$(ECM_ATH_MCAST_ENABLE) += -DECM_ATH_MCAST_ENABLE
+ccflags-$(ECM_MCAST_LINUX_SNOOPER_SUPPORT) += -DECM_MCAST_LINUX_SNOOPER_SUPPORT
 
 ifeq ($(ECM_FRONT_END_NSS_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/nss/ecm_nss_multicast_ipv6.o
 endif
 else
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv4.o
 ifeq ($(ECM_IPV6_ENABLE), y)
 ecm-$(ECM_MULTICAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
-ecm-$(ECM_ATH_MCAST_ENABLE) += frontends/sfe/ecm_sfe_multicast_ipv6.o
 endif
 endif
 

@@ -228,7 +228,7 @@ struct ecm_db_connection_instance {
 	int32_t interface_first[ECM_DB_OBJ_DIR_MAX];	/* The index of the first interface in the list */
 	bool interface_set[ECM_DB_OBJ_DIR_MAX];		/* True when a list has been set - even if there is NO list, it's still deliberately set that way. */
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	/*
 	 * Destination Multicast interfaces list
 	 */

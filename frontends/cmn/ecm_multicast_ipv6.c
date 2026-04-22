@@ -61,7 +61,7 @@
  */
 #define DEBUG_LEVEL ECM_CMN_MULTICAST_IPV6_DEBUG_LEVEL
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 #include <mc_ecm.h>
 #endif
 
@@ -650,9 +650,9 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 			rcu_read_lock();
-			mc_if_cnt_bridge = ecm_ipv6_ath_mc_bridge_get_if(in_dev, origin6, group6, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			mc_if_cnt_bridge = ecm_interface_linux_mcs_bridge_get_if(in_dev, ip_src_addr, ip_dest_addr, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge, false);
 			rcu_read_unlock();
 #else
 			mc_if_cnt_bridge = mc_bridge_ipv6_get_if(in_dev, &origin6, &group6,
@@ -688,9 +688,9 @@ unsigned int ecm_multicast_ipv6_connection_process(struct net_device *out_dev,
 	out_dev_master =  ecm_interface_get_and_hold_dev_master(out_dev);
 	DEBUG_ASSERT(out_dev_master, "Expected a master\n");
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	rcu_read_lock();
-	mc_if_cnt = ecm_ipv6_ath_mc_bridge_get_if(out_dev_master, origin6, group6, ECM_DB_MULTICAST_IF_MAX, mc_dest_if);
+	mc_if_cnt = ecm_interface_linux_mcs_bridge_get_if(out_dev_master, ip_src_addr, ip_dest_addr, ECM_DB_MULTICAST_IF_MAX, mc_dest_if, false);
 	rcu_read_unlock();
 #else
 	mc_if_cnt = mc_bridge_ipv6_get_if(out_dev_master, &origin6, &group6,

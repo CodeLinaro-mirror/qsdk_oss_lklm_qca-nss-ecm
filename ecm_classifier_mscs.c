@@ -445,7 +445,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	struct ecm_classifier_mscs_rule_match_info rule_match_info = {0};
 	ecm_classifier_mscs_scs_priority_callback_t scs_cb = NULL;
 #endif
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	ip_addr_t dst_ip;
 #endif
 
@@ -514,7 +514,7 @@ static void ecm_classifier_mscs_process(struct ecm_classifier_instance *aci, ecm
 	/*
 	 * MSCS classifier is not applicable for Multicast Traffic
 	 */
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 	if (ecm_ip_addr_is_multicast(dst_ip)) {
 		DEBUG_TRACE("%px: Multicast Traffic, skip MSCS / SCS classification\n", ci);

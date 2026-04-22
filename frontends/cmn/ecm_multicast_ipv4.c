@@ -64,7 +64,7 @@
 #include <nss_api_if.h>
 #endif
 
-#if defined(ECM_MULTICAST_ENABLE)
+#ifndef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 #include <mc_ecm.h>
 #endif
 
@@ -677,9 +677,9 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 			l3_br_dev = in_dev;
 			memset(dst_dev_bridge, 0, sizeof(dst_dev_bridge));
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 			rcu_read_lock();
-			if_cnt_bridge = ecm_ipv4_ath_mc_bridge_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge);
+			if_cnt_bridge = ecm_interface_linux_mcs_bridge_get_if(in_dev, ip_src_addr, ip_dest_addr, ECM_DB_MULTICAST_IF_MAX, dst_dev_bridge, true);
 			rcu_read_unlock();
 #else
 			if_cnt_bridge = mc_bridge_ipv4_get_if(in_dev, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX,
@@ -718,9 +718,9 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 		goto done;
 	}
 
-#if defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
 	rcu_read_lock();
-	if_cnt = ecm_ipv4_ath_mc_bridge_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev);
+	if_cnt = ecm_interface_linux_mcs_bridge_get_if(out_dev_master, ip_src_addr, ip_dest_addr, ECM_DB_MULTICAST_IF_MAX, dst_dev, true);
 	rcu_read_unlock();
 #else
 	if_cnt = mc_bridge_ipv4_get_if(out_dev_master, ip_src, ip_grp, ECM_DB_MULTICAST_IF_MAX, dst_dev, mcuc_addr);

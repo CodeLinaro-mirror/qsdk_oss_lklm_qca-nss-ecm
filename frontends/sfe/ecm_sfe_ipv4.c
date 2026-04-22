@@ -76,7 +76,7 @@
 #ifdef ECM_NON_PORTED_SUPPORT_ENABLE
 #include "ecm_sfe_non_ported_ipv4.h"
 #endif
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 #include "ecm_sfe_multicast_ipv4.h"
 #endif
@@ -295,7 +295,7 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		DEBUG_TRACE("%px: flow_tx_packet_count: %u, flow_tx_byte_count: %u, return_tx_packet_count: %u, return_tx_byte_count: %u\n",
 				ci, sync->flow_tx_packet_count, sync->flow_tx_byte_count, sync->return_tx_packet_count, sync->return_tx_byte_count);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 		if (ecm_ip_addr_is_multicast(return_ip)) {
 			/*
 			 * The amount of data *sent* by the ECM multicast connection 'from' side is the amount the SFE has *received* in the 'flow' direction.
@@ -1209,7 +1209,7 @@ int ecm_sfe_ipv4_init(struct dentry *dentry)
 	}
 	ecm_sfe_ipv4_mgr = sfe_ipv4_notify_register(ecm_sfe_ipv4_stats_sync_callback, ecm_sfe_ipv4_connection_sync_many_callback, NULL);
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 	if (ecm_sfe_multicast_ipv4_init(ecm_sfe_ipv4_dentry)) {
 		DEBUG_ERROR("Failed to init sfe multicast\n");
@@ -1239,7 +1239,7 @@ void ecm_sfe_ipv4_exit(void)
 		return;
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 #ifndef ECM_FRONT_END_NSS_ENABLE
 	ecm_sfe_multicast_ipv4_exit();
 #endif

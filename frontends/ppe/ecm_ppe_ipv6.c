@@ -64,7 +64,7 @@
  */
 #define DEBUG_LEVEL ECM_PPE_IPV6_DEBUG_LEVEL
 
-#ifdef ECM_MULTICAST_ENABLE
+#if defined(ECM_MULTICAST_ENABLE) && !defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
 #include <mc_ecm.h>
 #endif
 

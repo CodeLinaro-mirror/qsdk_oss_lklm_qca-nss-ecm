@@ -248,7 +248,7 @@ static inline struct net_device *ecm_classifier_ovs_interface_get_and_ref(struct
 	return NULL;
 }
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_classifier_ovs_process_multicast()
  * 	Process multicast packet
@@ -1075,9 +1075,19 @@ static void ecm_classifier_ovs_process(struct ecm_classifier_instance *aci, ecm_
 		goto not_relevant;
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);
 	if (ecm_ip_addr_is_multicast(dst_ip)) {
+
+		/*
+		 * Do not process the MCAST flows and set the
+		 * classifer relevance to NO.
+		 */
+#ifdef ECM_MCAST_LINUX_SNOOPER_SUPPORT
+		DEBUG_WARN("%px: ovs classifier is not supported for Mcast flows\n", aci);
+		ecm_db_connection_deref(ci);
+		goto not_relevant;
+#endif
 		ecm_classifier_ovs_process_multicast(ci, skb, ecvi, process_response);
 		ecm_db_connection_deref(ci);
 		return;
@@ -1517,7 +1527,7 @@ static inline void ecm_classifier_ovs_stats_sync(struct ovsmgr_dp_flow *flow,
 	ovsmgr_flow_stats_update(flow, &stats);
 }
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 /*
  * ecm_classifier_ovs_multicast_sync_to_stats()
  *	Common multicast sync_to function for IPv4 and IPv6.
@@ -1755,7 +1765,7 @@ static void ecm_classifier_ovs_sync_to_stats(struct ecm_classifier_instance *aci
 		return;
 	}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	/*
 	 * Check for multicast connection.
 	 */
@@ -2113,7 +2123,7 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 
 
 	if (pr.process_actions & ECM_CLASSIFIER_PROCESS_ACTION_OVS_VLAN_TAG) {
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 		int i;
 #endif
 		/*
@@ -2144,7 +2154,7 @@ static int ecm_classifier_ovs_state_get(struct ecm_classifier_instance *ci, stru
 			}
 		}
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 		for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
 			struct net_device *dev;
 
@@ -2240,7 +2250,7 @@ static struct ctl_table ecm_classifier_ovs_ctl_table[] = {
 struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm_db_connection_instance *ci)
 {
 	struct ecm_classifier_ovs_instance *ecvi;
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	int i;
 #endif
 
@@ -2282,7 +2292,7 @@ struct ecm_classifier_ovs_instance *ecm_classifier_ovs_instance_alloc(struct ecm
 	ecvi->process_response.ingress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 	ecvi->process_response.egress_vlan_tag[1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 
-#if defined(ECM_MULTICAST_ENABLE) || defined(ECM_ATH_MCAST_ENABLE)
+#ifdef ECM_MULTICAST_ENABLE
 	for (i = 0; i < ECM_DB_MULTICAST_IF_MAX; i++) {
 		ecvi->process_response.egress_mc_vlan_tag[i][0] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
 		ecvi->process_response.egress_mc_vlan_tag[i][1] = ECM_FRONT_END_VLAN_ID_NOT_CONFIGURED;
