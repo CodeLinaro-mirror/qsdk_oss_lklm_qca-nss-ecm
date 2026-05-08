@@ -924,6 +924,8 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 					return;
 				}
 
+				msg->status = true;
+
 				DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI4:%u -> %pI4:%u protocol=%u\n",
 						feci, update_msg->info.sawf.flow_mark, update_msg->info.sawf.return_mark,
 						update_msg->src_ip, ntohs(update_msg->src_port),
@@ -993,6 +995,8 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 					kfree(msg_v6);
 					return;
 				}
+
+				msg->status = true;
 
 				DEBUG_TRACE("%px: sawf flow/return mark=0x%08x/0x%08x %pI6c@%u -> %pI6c@%u protocol=%u\n",
 						feci, update_msg->info.sawf.flow_mark, update_msg->info.sawf.return_mark,

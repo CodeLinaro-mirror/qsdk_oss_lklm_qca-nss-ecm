@@ -558,6 +558,8 @@ void ecm_ppe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 			}
 		}
 
+		msg->status = true;
+
 		/*
 		 * Get the assigned classifiers and call their update callbacks. If they are interested in this type of case
 		 * update, they will handle the event.
