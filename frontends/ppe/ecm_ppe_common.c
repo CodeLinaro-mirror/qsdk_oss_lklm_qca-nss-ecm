@@ -357,65 +357,40 @@ void ecm_ppe_common_init_fe_info(struct ecm_front_end_common_fe_info *info)
 }
 
 /*
- * ecm_ppe_common_qdisc_rule_set()
- *	Configure the qdisc settings in the rule.
+ * ecm_ppe_common_set_host_assist_qdisc_rule()
+ *	Configure the qdisc settings for PPE rule.
  *
- * Note: We configure PPE-VP datapath to use full L2 offload
- * in case a single qdisc or no qdisc is enabled in the xmit
- * interface hierarchy for the direction. This configuration
- * sequence works as below.
+ * Note: Configure PPE datapath to use full L2 offload in case
+ * a single qdisc is enabled in the xmit interface hierarchy
+ * for the direction. Determination of only single qdisc
+ * config to be taken care before calling this API.
  */
-int ecm_ppe_common_qdisc_rule_set(struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], int32_t interfaces_first,
-		uint32_t qos_tag, bool flow_valid, struct ppe_drv_vp_dl_qdisc_rule *qdisc_rule)
+bool ecm_ppe_common_set_host_assist_qdisc_rule(struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX],
+		int32_t interfaces_first, int32_t qdisc_iface_idx, uint32_t qos_tag,
+		bool flow_valid, bool is_ppe_vp, struct ppe_drv_vp_dl_qdisc_rule *qdisc_rule)
 {
 	struct net_device *qdisc_netdev;
 	uint32_t qdisc_flags;
-	int32_t qdisc_interface_num, interface_num;
-	bool qdisc_found = false;
-	bool is_ppeq = false;
-	int list_index;
+	uint32_t qdisc_iface_num = ecm_db_iface_interface_identifier_get(ifaces[qdisc_iface_idx]);
 
 	/*
-	 * Check if a single qdisc is enabled in the interface
-	 * heirarchy. If yes, configure qdisc rule
+	 * Find the qdisc net device from the given interface number.
 	 */
-	qdisc_flags = PPE_DRV_HOST_QDISC_DEV_FAST_XMIT_VP;
-	for (list_index = interfaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
-		interface_num = ecm_db_iface_interface_identifier_get(ifaces[list_index]);
-		if (ecm_front_end_common_intf_qdisc_check(interface_num, &is_ppeq)) {
-			/*
-			 * More than one Qdisc in the hierarchy, So send to SFE
-			 */
-			if (qdisc_found) {
-				return -1;
-			}
-
-			qdisc_found = true;
-			if (list_index == interfaces_first) {
-				qdisc_flags = PPE_DRV_HOST_QDISC_DEV_QUEUE_XMIT;
-			} else {
-				qdisc_flags = PPE_DRV_HOST_QDISC_DEV_FAST_XMIT_QDISC;
-			}
-
-			qdisc_interface_num = interface_num;
-		}
-	}
-
-	/*
-	 * If there is no qdisc return
-	 */
-	if (!qdisc_found) {
-		return -1;
-	}
-
-	/*
-	 * Since qdisc_found is true here, we have a valid
-	 * qdisc interface number to get netdev
-	 */
-	qdisc_netdev = dev_get_by_index(&init_net, qdisc_interface_num);
+	qdisc_netdev = dev_get_by_index(&init_net, qdisc_iface_num);
 	if (!qdisc_netdev) {
-		DEBUG_WARN("Failed to get net device with %d index\n", qdisc_interface_num);
-		return -1;
+		DEBUG_WARN("Failed to get net device with %d index\n", qdisc_iface_num);
+		return false;
+	}
+
+	/*
+	 * Set the flag if its a ppe_vp based wlan downlink flow or eth 2 eth flow.
+	 */
+	if (is_ppe_vp) {
+		qdisc_flags = (qdisc_iface_idx == interfaces_first) ?
+			PPE_DRV_HOST_QDISC_DEV_QUEUE_XMIT : PPE_DRV_HOST_QDISC_DEV_FAST_XMIT_QDISC;
+	} else {
+		qdisc_flags = (qdisc_iface_idx == interfaces_first) ?
+			PPE_DRV_HOST_QDISC_ON_BOTTOM_IFACE : PPE_DRV_HOST_QDISC_ON_NON_BOTTOM_IFACE;
 	}
 
 	if (flow_valid) {
@@ -423,19 +398,19 @@ int ecm_ppe_common_qdisc_rule_set(struct ecm_db_iface_instance *ifaces[ECM_DB_IF
 		qdisc_rule->flow_netdev = qdisc_netdev;
 		qdisc_rule->flow_class_id = qos_tag;
 
-		DEBUG_TRACE("qdisc_rule->flow_flags %d, qdisc_rule->flow_netdev %s, qdisc_rule->flow_class_id %d\n",
+		DEBUG_TRACE("qdisc_rule in flow direction flags %d, netdev %s, class_id %d\n",
 			qdisc_rule->flow_flags, qdisc_rule->flow_netdev->name, qdisc_rule->flow_class_id);
 	} else {
 		qdisc_rule->return_flags = qdisc_flags;
 		qdisc_rule->return_netdev = qdisc_netdev;
 		qdisc_rule->return_class_id = qos_tag;
 
-		DEBUG_TRACE("qdisc_rule->return_flags %d, qdisc_rule->return_netdev %s, qdisc_rule->return_class_id %d\n",
+		DEBUG_TRACE("qdisc_rule in return direction flags %d, netdev %s, class_id %d\n",
 			qdisc_rule->return_flags, qdisc_rule->return_netdev->name, qdisc_rule->return_class_id);
 	}
 
 	dev_put(qdisc_netdev);
-	return 0;
+	return true;
 }
 
 #ifdef ECM_INTERFACE_TUNIPIP6_ENABLE

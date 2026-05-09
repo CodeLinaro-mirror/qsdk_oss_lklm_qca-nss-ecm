@@ -99,8 +99,11 @@ ccflags-$(ECM_FRONT_END_PPE_ENABLE) += -DECM_FRONT_END_PPE_ENABLE
 
 # #############################################################################
 # Define ECM_FRONT_END_PPE_QOS_ENABLE=y in order to enable PPE QoS
+# Define ECM_FRONT_END_PPE_HOST_QOS_ENABLE=y to enable host assisted
+# Qdisc processing for Eth to Eth flows
 # #############################################################################
 ccflags-$(ECM_FRONT_END_PPE_QOS_ENABLE) += -DECM_FRONT_END_PPE_QOS_ENABLE
+ccflags-$(ECM_FRONT_END_PPE_HOST_QOS_ENABLE) += -DECM_FRONT_END_PPE_HOST_QOS_ENABLE
 
 # #############################################################################
 # Define ECM_FRONT_END_CONN_LIMIT_ENABLE=y in order to limit accelerated

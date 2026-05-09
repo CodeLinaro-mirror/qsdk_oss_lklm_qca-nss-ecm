@@ -152,8 +152,9 @@ static inline void ecm_ppe_common_dummy_set_stats_bitmap(struct ecm_front_end_co
 
 }
 
-int ecm_ppe_common_qdisc_rule_set(struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX], int32_t interfaces_first,
-		uint32_t qos_tag, bool flow_valid, struct ppe_drv_vp_dl_qdisc_rule *qdisc_rule);
+bool ecm_ppe_common_set_host_assist_qdisc_rule(struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX],
+		int32_t interfaces_first, int32_t qdisc_iface_idx, uint32_t qos_tag,
+		bool flow_valid, bool is_ppe_vp, struct ppe_drv_vp_dl_qdisc_rule *qdisc_rule);
 bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr);
 bool ecm_ppe_ipv6_is_conn_limit_reached(void);
 bool ecm_ppe_ipv4_is_conn_limit_reached(void);
