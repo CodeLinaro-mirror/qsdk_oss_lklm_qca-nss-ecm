@@ -827,6 +827,13 @@ failed:
 				 return;
 			}
 		}
+
+		/*
+		 * fall through from not found ci.
+		 **/
+		if (!ci) {
+			return;
+		}
 		nci = ecm_db_connection_find_and_ref_hash_next(ci);
 		ecm_db_connection_deref(ci);
 		ci = nci;
