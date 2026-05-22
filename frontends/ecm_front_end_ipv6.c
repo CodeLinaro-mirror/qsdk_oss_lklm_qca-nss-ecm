@@ -61,7 +61,7 @@ extern int ecm_front_end_ipv6_stopped;	/* When non-zero further traffic will not
 /*
  * Temporary operational control
  */
-int ecm_front_end_ipv6_stopped_temp = 0;	/* When non-zero further traffic/process will not be processed where it is checked */
+atomic_t ecm_front_end_ipv6_stopped_temp = ATOMIC_INIT(0);	/* When non-zero further traffic/process will not be processed where it is checked */
 
 /*
  * ecm_front_end_ipv6_interface_construct_ip_addr_set()
@@ -507,7 +507,13 @@ bool ecm_front_end_ipv6_interface_construct_set_and_hold(struct sk_buff *skb, ec
  */
 void ecm_front_end_ipv6_stop_temp(int num)
 {
-	ecm_front_end_ipv6_stopped_temp = num;
+	if (num) {
+		atomic_inc(&ecm_front_end_ipv6_stopped_temp);
+	} else {
+		if (atomic_read(&ecm_front_end_ipv6_stopped_temp) > 0) {
+			atomic_dec(&ecm_front_end_ipv6_stopped_temp);
+		}
+	}
 }
 
 /*
