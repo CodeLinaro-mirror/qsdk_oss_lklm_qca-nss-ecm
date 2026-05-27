@@ -300,7 +300,9 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
 {
        struct sp_rule_inner *in = &r->inner;
        struct ecm_db_connection_instance *ci;
+	   struct nf_conn *ct;
        ip_addr_t src_ip, dest_ip;
+	   bool ct_update = false;
 
       if (in->ip_version_type == 4) {
                ECM_NIN4_ADDR_TO_IP_ADDR(src_ip, in->src_ipv4_addr);
@@ -323,13 +325,25 @@ static void ecm_classfier_emesh_stc_mark_set(struct sp_rule *r)
                return;
        }
 
-	if (in->ip_version_type == 4) {
-		DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
-				&in->src_ipv4_addr, in->src_port, &in->dst_ipv4_addr, in->dst_port, in->protocol_number);
-	} else {
-		DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
-				&in->src_ipv6_addr, in->src_port, &in->dst_ipv6_addr, in->dst_port, in->protocol_number);
-	}
+		if (in->ip_version_type == 4) {
+			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+					&in->src_ipv4_addr, in->src_port, &in->dst_ipv4_addr, in->dst_port, in->protocol_number);
+		} else {
+			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+					&in->src_ipv6_addr, in->src_port, &in->dst_ipv6_addr, in->dst_port, in->protocol_number);
+		}
+
+		ct = ecm_classifier_get_and_ref_ct(ci);
+		if (ct) {
+			ct_update = ecm_classifier_update_ct_mark(ct);
+			if (!ct_update) {
+				DEBUG_WARN("%px: Conntrack mark update skipped for ci: %px, BIT(16) not set in ct_mark.\n", r, ci);
+			} else {
+				DEBUG_INFO("%px: Conntrack mark updated successfully for ci: %px.\n", r, ci);
+			}
+		} else {
+			DEBUG_WARN("%px: Failed to get conntrack entry for ci: %px, skipping mark update.\n", r, ci);
+		}
 
         ip_addr_t match_addr, dest_ip_xlate;
         struct ecm_front_end_flowsawf_msg flowsawfmsg = {0};
