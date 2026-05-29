@@ -1056,6 +1056,13 @@ static void ecm_ppe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			pd6rc->wifi_rule.return_ds_node_mdata = pr->return_wifi_ds_node_id;
 			pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_WIFI_DS;
 		}
+
+		pd6rc->wifi_rule.flow_ast_info = pr->flow_ast_info;
+		pd6rc->wifi_rule.flow_stream_id = pr->flow_stream_id;
+		pd6rc->wifi_rule.flow_peer_id = pr->flow_peer_id;
+		pd6rc->wifi_rule.return_ast_info = pr->return_ast_info;
+		pd6rc->wifi_rule.return_stream_id = pr->return_stream_id;
+		pd6rc->wifi_rule.return_peer_id = pr->return_peer_id;
 	}
 #endif
 
