@@ -163,6 +163,7 @@ struct ecm_db_connection_instance {
 	bool timer_no_touch;					/* RO: Do no update timer when this flag is set */
 	uint16_t l2_encap_proto;				/* L2 encap protocol of the flow of this connection */
 	uint32_t mark;						/* The result value of mark classifier on this connection */
+	uint32_t ct_mark;					/* Conntrack mark (ct->mark) - bypass inactivity timer when bits 16/17 are set */
 
 	/*
 	 * Connection endpoint mapping
@@ -556,6 +557,7 @@ void ecm_db_connection_l2_encap_proto_set(struct ecm_db_connection_instance *ci,
 uint16_t ecm_db_connection_l2_encap_proto_get(struct ecm_db_connection_instance *ci);
 void ecm_db_connection_mark_set(struct ecm_db_connection_instance *ci, uint32_t mark);
 uint32_t ecm_db_connection_mark_get(struct ecm_db_connection_instance *ci);
+void ecm_db_connection_ct_mark_set(struct ecm_db_connection_instance *ci, uint32_t ct_mark);
 
 void ecm_db_connection_defunct_by_classifier(int ip_ver, ip_addr_t src_addr, uint16_t src_port, ip_addr_t dest_addr,
 						uint16_t dest_port, int proto, bool is_routed, ecm_classifier_type_t ca_type);
