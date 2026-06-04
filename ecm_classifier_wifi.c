@@ -349,10 +349,19 @@ static void ecm_classifier_wifi_process(struct ecm_classifier_instance *aci, ecm
 
 	protocol = ecm_db_connection_protocol_get(ci);
 	if ((protocol != IPPROTO_UDP) && (protocol != IPPROTO_TCP) && (protocol != IPPROTO_GRE)) {
+#if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
+		if ((protocol != IPPROTO_ESP) || !ecm_front_end_esp_spi_passthrough_enable) {
+			spin_lock_bh(&ecm_classifier_wifi_lock);
+			cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
+			DEBUG_TRACE("%px: Invalid protocol 0x:%x serial:%u\n", cwifii, protocol, cwifii->ci_serial);
+			goto process_wifi_classifier_out;
+		}
+#else
 		spin_lock_bh(&ecm_classifier_wifi_lock);
 		cwifii->process_response.relevance = ECM_CLASSIFIER_RELEVANCE_NO;
 		DEBUG_TRACE("%px: Invalid protocol 0x:%x serial:%u\n", cwifii, protocol, cwifii->ci_serial);
 		goto process_wifi_classifier_out;
+#endif
 	}
 
 	/*
