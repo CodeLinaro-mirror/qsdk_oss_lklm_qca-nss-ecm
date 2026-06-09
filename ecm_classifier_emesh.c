@@ -10,6 +10,7 @@
 #include <linux/types.h>
 #include <linux/ip.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/skbuff.h>
 #include <linux/debugfs.h>
 #include <linux/string.h>
@@ -1632,7 +1633,8 @@ static ecm_ae_classifier_result_t ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_r
  */
 static void ecm_classifier_emesh_sawf_process_ae_type(struct ecm_classifier_instance *aci, struct ecm_front_end_connection_instance *feci,
 								enum sp_rule_ae_type flow_ae_type, enum sp_rule_ae_type return_ae_type,
-								struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb)
+								struct ecm_tracker_ip_header *ip_hdr, struct sk_buff *skb,
+								uint8_t wifi_radio_version)
 {
 	struct ecm_classifier_emesh_sawf_instance *cemi;
 	ecm_ae_classifier_result_t return_ae_path = ecm_classifier_emesh_sawf_spm_ae2ecm_ae_flag_result(return_ae_type);
@@ -1645,11 +1647,19 @@ static void ecm_classifier_emesh_sawf_process_ae_type(struct ecm_classifier_inst
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
 
 	/*
-	 * If no ae type was selected from sawf rule match then select SFE as default ae.
+	 * If no ae type was selected from sawf rule match then select default ae.
+	 * For ipq52xx (ipq5200/ipq5210) and ipq96xx (ipq9650), select PPE as default ae.
+	 * For Wi-Fi 8 platforms, select PPE as default ae.
+	 * For other platforms, select SFE as default ae.
 	 */
 	if ((return_ae_path == ECM_AE_CLASSIFIER_RESULT_DONT_CARE) && (flow_ae_path == ECM_AE_CLASSIFIER_RESULT_DONT_CARE)) {
-		return_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
-		flow_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
+		if (wifi_radio_version >= ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_8) {
+			return_ae_path = ECM_AE_CLASSIFIER_RESULT_PPE;
+			flow_ae_path = ECM_AE_CLASSIFIER_RESULT_PPE;
+		} else {
+			return_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
+			flow_ae_path = ECM_AE_CLASSIFIER_RESULT_SFE;
+		}
 		ae_type = flow_ae_path;
 		DEBUG_INFO("%px : using the default acceleration engine\n", cemi);
 	}
@@ -1825,6 +1835,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 	struct ecm_classifier_emesh_sawf_flow_info sawf_flow_info = {0};
 	bool is_mc_flow = false;
 	bool emesh_spm_priority_update = false;
+	uint8_t sawf_wifi_arch = ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_UNKNOWN;
 
 	cemi = (struct ecm_classifier_emesh_sawf_instance *)aci;
 	DEBUG_CHECK_MAGIC(cemi, ECM_CLASSIFIER_EMESH_INSTANCE_MAGIC, "%px: magic failed\n", cemi);
@@ -2031,7 +2042,6 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				DEBUG_TRACE("%px: skb->mark: %u", cemi, skb->mark);
 			}
 
-
 			if (src_dev && ecm_emesh.update_service_id_get_msduq) {
 				if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
 					ecm_classifier_emesh_sawf_query_msduq(aci, &return_input_params, src_dev, smac, 0);
@@ -2063,6 +2073,8 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 		 * Hence, we check if the flow is multicast for the given dest_dev is NULL.
 		 */
 		if (ecm_emesh.update_service_id_get_msduq) {
+			uint8_t flow_wifi_arch = ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_UNKNOWN;
+			uint8_t return_wifi_arch = ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_UNKNOWN;
 #ifdef ECM_MULTICAST_ENABLE
 			/*
 			 * Before calling msduq query, check if multicast flow have valid interfaces.
@@ -2090,6 +2102,7 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.is_mc_flow = is_mc_flow;
 
 				msduq_forward = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
+				flow_wifi_arch = sawf_flow_info.out_wifi_arch_info;
 
 				/*
 				 * Mark the skb with SAWF meta data for flow creation packet.
@@ -2107,7 +2120,17 @@ static void ecm_classifier_emesh_sawf_process(struct ecm_classifier_instance *ac
 				sawf_flow_info.is_mc_flow = is_mc_flow;
 
 				msduq_reverse = ecm_emesh.update_service_id_get_msduq(&sawf_flow_info);
+				return_wifi_arch = sawf_flow_info.out_wifi_arch_info;
 			}
+
+			/*
+			 * Resolve the wifi version to pass to process_ae_type:
+			 */
+			sawf_wifi_arch = (flow_wifi_arch) ? flow_wifi_arch : return_wifi_arch;
+
+			DEBUG_TRACE("%px: flow wifi arch mode: %d, return wifi arch mode: %d, wifi arch mode:%d\n",
+							cemi, flow_wifi_arch, return_wifi_arch, sawf_wifi_arch);
+
 		}
 
 		/*
@@ -2218,7 +2241,8 @@ sawf_classifier_out:
 	 */
 	if (is_sawf_relevant && (flow_output_params.ae_type != SP_RULE_AE_TYPE_NONE) && (return_output_params.ae_type != SP_RULE_AE_TYPE_NONE) &&
 			(cemi->flow_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID || cemi->return_valid_flag & ECM_CLASSIFIER_EMESH_SAWF_SVID_VALID)) {
-		ecm_classifier_emesh_sawf_process_ae_type(aci, feci, flow_output_params.ae_type, return_output_params.ae_type, ip_hdr, skb);
+ecm_classifier_emesh_sawf_process_ae_type(aci, feci, flow_output_params.ae_type, return_output_params.ae_type, ip_hdr, skb,
+		sawf_wifi_arch);
 	}
 
 	accel_mode = ecm_front_end_connection_accel_state_get(feci);
