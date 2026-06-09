@@ -424,6 +424,7 @@ static void ecm_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sy
 		 * FLS has classified the flow - mark the 17th bit for IPA offload
 		 * Do NOT flush the connection, connection stays accelerated in SFE
 		 */
+		pr_alert("%px: FLS classified flow, marking 17th bit for IPA offload\n", ci);
 		DEBUG_INFO("%px: FLS classified flow, marking 17th bit for IPA offload\n", ci);
 		{
 			struct nf_conn *ct;

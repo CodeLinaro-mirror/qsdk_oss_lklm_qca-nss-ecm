@@ -5443,6 +5443,12 @@ bool ecm_classifier_update_ct_mark(struct nf_conn *ct)
 		DEBUG_TRACE("%px: Conntrack mark updated: bit 17 set (ct_mark=0x%x)\n", ct, ct->mark);
 
 		if (nf_ct_l3num(ct) == AF_INET) {
+				pr_alert("CONNTrack Marking 17th bit set for: [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
 			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
 				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip,
 				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
@@ -5450,6 +5456,12 @@ bool ecm_classifier_update_ct_mark(struct nf_conn *ct)
 				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
 				ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
 		} else {
+				pr_alert("CONNTrack Marking 17th bit set for: [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.in6,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.in6,
+					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
 			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
 				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.in6,
 				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
