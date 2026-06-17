@@ -136,6 +136,7 @@ enum ecm_fe_feature {
 	ECM_FE_FEATURE_OVS_BRIDGE	= (1 << 11),
 	ECM_FE_FEATURE_OVS_VLAN		= (1 << 12),
 	ECM_FE_FEATURE_PPE		= (1 << 13),
+	ECM_FE_FEATURE_OVS_MULTICAST	= (1 << 14),
 };
 
 /*

@@ -1315,6 +1315,15 @@ esp_passth_allowed:
 			return NF_ACCEPT;
 		}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_MULTICAST)) {
+			if (ovsmgr_is_ovs_master(in_dev) || ovsmgr_is_ovs_master(out_dev)) {
+				DEBUG_WARN("OVS MCAST offload is not supported; in = %s, out = %s\n", in_dev->name, out_dev->name);
+				ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_MCAST_NOT_SUPPORTED);
+				return NF_ACCEPT;
+			}
+		}
+#endif
 		DEBUG_TRACE("%px: CMN Multicast, Processing\n", skb);
 		return ecm_multicast_ipv4_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
 									can_accel, is_routed, skb, &ip_hdr, ct, sender,
@@ -2222,6 +2231,11 @@ unsigned int ecm_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device *out
 			DEBUG_TRACE("Frontend does not support mcast, ignoring: %px\n", skb);
 			return 1;
 		}
+
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_MULTICAST)) {
+			DEBUG_WARN("Pure IPv4 bridge OVS Mcast offload not supported\n");
+			return 1;
+                }
 	}
 
 	if (skb->protocol != ntohs(ETH_P_IP)) {

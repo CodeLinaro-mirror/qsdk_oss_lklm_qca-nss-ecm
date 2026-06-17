@@ -2600,6 +2600,18 @@ process_ipmr_entry:
 			}
 
 			/*
+			 * If list of multicast destination ifindexes contain any ovmgr bridge port,
+			 * Decelerate that connection.
+			 */
+#if defined (ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+			if (ecm_interface_multicast_check_for_ovs_br_dev(dst_dev, (uint8_t)dst_if_cnt)) {
+				DEBUG_WARN("iface list has ovs ports; Deccelerate Mcast rules\n");
+				feci->decelerate(feci);
+				ecm_front_end_connection_deref(feci);
+				goto find_next_tuple;
+			}
+#endif
+			/*
 			 * Update should be allowed for the connection only if 'brdev' is part of ipmr destination interface list.
 			 */
 			for (i = 0; i < dst_if_cnt; i++) {
@@ -2936,6 +2948,16 @@ static void ecm_sfe_multicast_ipv6_mfc_update_event_callback(struct in6_addr *gr
 		return;
 	}
 
+	/*
+	 * If list of multicast destination ifindexes contain any ovmgr bridge port,
+	 * Trigger an MFC_EVENT_DELETE op.
+	 */
+#if defined (ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+	if (ecm_interface_multicast_check_for_ovs_br_dev(to_dev_idx, (uint8_t)max_to_dev)) {
+		DEBUG_WARN("MFC_EVENT: iface list has ovs ports; Deccelerate Mcast rules\n");
+		op = IP6MR_MFC_EVENT_DELETE;
+	}
+#endif
 	switch (op) {
 	case IP6MR_MFC_EVENT_UPDATE:
 	{
