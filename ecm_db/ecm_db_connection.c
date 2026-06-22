@@ -5427,31 +5427,59 @@ bool ecm_classifier_update_ct_mark(struct nf_conn *ct)
 
 	DEBUG_TRACE("%px: Pre-set conntrack marking\n", ct);
 
-	// Check if 16th bit is set (0x10000 = bit 16)
-	if (ct->mark & 0x10000) {
-			// Set the 17th bit (0x20000 = bit 17)
-			ct->mark |= 0x20000;
-			nf_conntrack_event(IPCT_MARK, ct);
-			mark_update = true;
-			DEBUG_TRACE("%px: Conntrack mark updated successfully\n", ct);
+	/*
+	 * Set bit 17 only if bit 16 is set and bit 17 is not already set.
+	 * Bit 16 (0x10000) indicates the flow is eligible for marking.
+	 * Bit 17 (0x20000) is the mark applied by ECM upon classification.
+	 * Avoid redundant updates if bit 17 is already set.
+	 */
+	if ((ct->mark & BIT(16)) && !(ct->mark & BIT(17))) {
+		/*
+		 * Set the 17th bit (BIT(17) = 0x20000).
+		 */
+		ct->mark |= BIT(17);
+		nf_conntrack_event(IPCT_MARK, ct);
+		mark_update = true;
+		DEBUG_TRACE("%px: Conntrack mark updated: bit 17 set (ct_mark=0x%x)\n", ct, ct->mark);
 
-			if (nf_ct_l3num(ct) == AF_INET) {
-				DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+		if (nf_ct_l3num(ct) == AF_INET) {
+				pr_alert("CONNTrack Marking 17th bit set for: [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
 					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip,
 					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
 					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip,
 					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
 					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
-			} else {
-				DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI4:%u -> %pI4:%u] IP Header[proto = %d]\n",
+				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip,
+				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip,
+				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+				ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
+		} else {
+				pr_alert("CONNTrack Marking 17th bit set for: [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
 					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.in6,
 					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
 					&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.in6,
 					ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
 					ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
-			}
+			DEBUG_INFO("Classified flow info CONNTrack Marking [%pI6:%u -> %pI6:%u] IP Header[proto = %d]\n",
+				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.in6,
+				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all),
+				&ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.in6,
+				ntohs(ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all),
+				ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum);
+		}
 	} else {
-			DEBUG_TRACE("%px: Bit 16 not set, no mark update needed\n", ct);
+		if (!(ct->mark & BIT(16))) {
+			DEBUG_TRACE("%px: Bit 16 not set, no mark update needed (ct_mark=0x%x)\n", ct, ct->mark);
+		} else {
+			/*
+			 * Bit 16 is set and bit 17 is already set - the flow was previously marked.
+			 * Return true to indicate the mark is in the expected state.
+			 */
+			DEBUG_TRACE("%px: Bit 17 already set, mark already applied (ct_mark=0x%x)\n", ct, ct->mark);
+			mark_update = true;
+		}
 	}
 
 	// Release conntrack reference
