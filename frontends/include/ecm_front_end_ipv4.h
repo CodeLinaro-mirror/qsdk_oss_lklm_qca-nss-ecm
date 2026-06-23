@@ -7,7 +7,7 @@
  */
 
 extern int ecm_front_end_ipv4_stopped;	/* When non-zero further traffic will not be processed */
-extern int ecm_front_end_ipv4_stopped_temp;	/* When non-zero further traffic/process will not be processed where it is checked */
+extern atomic_t ecm_front_end_ipv4_stopped_temp;	/* When non-zero further traffic/process will not be processed where it is checked */
 
 #ifdef ECM_MULTICAST_ENABLE
 extern int ecm_front_end_ipv4_mc_stopped;	/* When non-zero further traffic will not be processed */

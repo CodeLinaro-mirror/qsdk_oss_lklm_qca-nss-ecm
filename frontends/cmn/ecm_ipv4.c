@@ -1725,7 +1725,7 @@ static unsigned int ecm_ipv4_post_routing_hook(void *priv,
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv4_lock);
-	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(ecm_front_end_ipv4_stopped_temp)) {
+	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(atomic_read(&ecm_front_end_ipv4_stopped_temp))) {
 		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_FRONT_END_STOPPED);
@@ -1939,7 +1939,7 @@ static unsigned int ecm_ipv4_bridge_post_routing_hook(void *priv,
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv4_lock);
-	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(ecm_front_end_ipv4_stopped_temp)) {
+	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(atomic_read(&ecm_front_end_ipv4_stopped_temp))) {
 		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		ecm_stats_v4_inc(ECM_STATS_V4_EXCEPTION_CMN, ECM_STATS_V4_EXCEPTION_BRIDGE_FRONT_END_STOPPED);
@@ -2199,7 +2199,7 @@ unsigned int ecm_ipv4_ovs_dp_process(struct sk_buff *skb, struct net_device *out
 	 * If operations have stopped then do not process packets
 	 */
 	spin_lock_bh(&ecm_ipv4_lock);
-	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(ecm_front_end_ipv4_stopped_temp)) {
+	if (unlikely(ecm_front_end_ipv4_stopped) || unlikely(atomic_read(&ecm_front_end_ipv4_stopped_temp))) {
 		spin_unlock_bh(&ecm_ipv4_lock);
 		DEBUG_TRACE("Front end stopped\n");
 		return 1;
