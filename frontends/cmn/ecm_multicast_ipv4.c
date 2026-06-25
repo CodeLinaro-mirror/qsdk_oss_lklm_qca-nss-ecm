@@ -644,6 +644,16 @@ unsigned int ecm_multicast_ipv4_connection_process(struct net_device *out_dev,
 				if_cnt, &orig_tuple->src.u3.ip, &orig_tuple->dst.u3.ip);
 			return NF_ACCEPT;
 		}
+
+#if defined (ECM_INTERFACE_OVS_BRIDGE_ENABLE) && defined(ECM_MCAST_LINUX_SNOOPER_SUPPORT)
+		/*
+		 * if MFC table has ovs ports in its list, ECM cannot offload.
+		 */
+		if (ecm_interface_multicast_check_for_ovs_br_dev(dst_dev, (uint8_t)if_cnt)) {
+			DEBUG_WARN("MFC routing table containing ovs bridge ports cannot be offloaded\n");
+			return NF_ACCEPT;
+		}
+#endif
 	}
 
 	/*

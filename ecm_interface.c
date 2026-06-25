@@ -8974,8 +8974,8 @@ int ecm_interface_linux_mcs_bridge_get_if(struct net_device *brdev, ip_addr_t or
 		dst_dev[if_cnt] = dev->ifindex;
 		if_cnt++;
 
-		if (if_cnt == max_dst)
-			return if_cnt;
+		if (if_cnt > max_dst)
+			return -1;
 
 skip_port:
 		if ((unsigned long)lport >= (unsigned long)port)

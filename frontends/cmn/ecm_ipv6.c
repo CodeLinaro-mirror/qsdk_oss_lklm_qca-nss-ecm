@@ -1293,6 +1293,15 @@ vxlan_done:
 			return NF_ACCEPT;
 		}
 
+#ifdef ECM_INTERFACE_OVS_BRIDGE_ENABLE
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_MULTICAST)) {
+			if (ovsmgr_is_ovs_master(in_dev) || ovsmgr_is_ovs_master(out_dev)) {
+				DEBUG_WARN("OVS MCAST offload is not supported; in = %s, out = %s\n", in_dev->name, out_dev->name);
+				ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_MCAST_NOT_SUPPORTED);
+				return NF_ACCEPT;
+			}
+		}
+#endif
 		return ecm_multicast_ipv6_connection_process(out_dev, in_dev, src_node_addr, dest_node_addr,
 				can_accel, is_routed, skb, &ip_hdr, ct, sender,
 				&orig_tuple, &reply_tuple);
@@ -2322,9 +2331,14 @@ unsigned int ecm_ipv6_ovs_dp_process(struct sk_buff *skb, struct net_device *out
 	 */
 	if (skb->pkt_type == PACKET_MULTICAST) {
 		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_MULTICAST)) {
-			DEBUG_TRACE("Broadcast, ignoring: %px\n", skb);
+			DEBUG_TRACE("Frontend does not support mcast, ignoring: %px\n", skb);
 			return 1;
 		}
+
+		if (!ecm_front_end_is_feature_supported(ECM_FE_FEATURE_OVS_MULTICAST)) {
+                        DEBUG_WARN("Pure IPv6 bridge OVS Mcast offload not supported\n");
+                        return 1;
+                }
 	}
 
 	if (skb->protocol != ntohs(ETH_P_IPV6)) {
