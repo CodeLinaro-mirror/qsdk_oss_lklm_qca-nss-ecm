@@ -4194,12 +4194,13 @@ identifier_update:
 
 		DEBUG_TRACE("Net device: %px is IPSec tunnel type: %d\n", dev, dev_type);
 
-		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(dev, skb, &interface_type);
+		ipsec_dev = ecm_front_end_get_xfrm_dev_n_hold(skb);
 		if (!ipsec_dev) {
-			DEBUG_WARN("Failed to find NSS IPSec dev for: %s and type: %d\n", dev->name, dev_type);
+			DEBUG_WARN("Failed to find AE IPSec dev for: %s and type: %d\n", dev->name, dev_type);
 			return NULL;
 		}
 
+		interface_type = feci->ae_interface_type_get(feci, ipsec_dev);
 		ae_interface_num = feci->ae_interface_number_by_dev_type_get(ipsec_dev, interface_type);
 		if (ae_interface_num < 0) {
 			DEBUG_TRACE("IPSec interface %s is not ready yet\n", ipsec_dev->name);

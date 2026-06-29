@@ -318,58 +318,342 @@ bool ecm_front_end_is_xfrm_transport_inner(struct sk_buff *skb)
 	return false;
 }
 
+#ifdef ECM_XFRM_ENABLE
 /*
- * ecm_front_end_is_xfrm_flow()
- *	Returns true if the flow is an xfrm flow and identifies if the flow is xfrm inner.
+ * ecm_front_end_xfrm_outer2xs()
+ *	For outer flow (post-encapsulation, XFRM_TRANSFORMED), retrieve the xfrm
+ *	state via xfrm_state_lookup_byspi() using the SPI from the packet.
+ *	Handles both regular ESP (IPPROTO_ESP) and NAT-T UDP-encapsulated ESP
+ *	(IPPROTO_UDP, RFC 3948).  For NAT-T a zero SPI indicates IKE/keep-alive
+ *	and is skipped.
+ *	Caller must call xfrm_state_put() after use.
+ *	Returns NULL if the xfrm state cannot be found.
  */
-bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool *inner)
+struct xfrm_state *ecm_front_end_xfrm_outer2xs(struct sk_buff *skb, uint8_t protocol)
 {
-#ifdef CONFIG_XFRM
-	struct dst_entry *dst;
+	struct ip_esp_hdr *esph;
+	unsigned int esp_offset;
+	sa_family_t family;
 
 	/*
-	 * Packet seen after output transformation. We use the IPCB(skb) to check
-	 * for this condition. No custom code should mangle the IPCB: skb->cb area,
-	 * while the packet is traversing through the INET layer.
+	 * The ESP header offset is computed from the network header, not from
+	 * skb->transport_header: for an encapsulated (outer) flow the transport
+	 * header still refers to the inner L4 header, so it cannot be used here.
 	 */
-	if (ip_hdr->is_v4) {
-		if ((IPCB(skb)->flags & IPSKB_XFRM_TRANSFORMED)) {
-			DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
-			*inner = false;
-			return true;
-		}
-	} else if (IP6CB(skb)->flags & IP6SKB_XFRM_TRANSFORMED) {
-		DEBUG_TRACE("%px: Packet has undergone xfrm transformation\n", skb);
-		*inner = false;
-		return true;
-	}
+	family = (ip_hdr(skb)->version == 4) ? AF_INET : AF_INET6;
+	esp_offset = (family == AF_INET) ? (ip_hdr(skb)->ihl * 4) : sizeof(struct ipv6hdr);
 
-	if (ip_hdr->protocol == IPPROTO_ESP) {
-		DEBUG_TRACE("%px: ESP Passthrough packet\n", skb);
-		return false;
+	/*
+	 * FIXME:  Caller must ensure only NAT-T packets are passed.
+	 */
+	if (protocol == IPPROTO_UDP)
+		esp_offset += sizeof(struct udphdr);
+
+	esph = (struct ip_esp_hdr *)(skb_network_header(skb) + esp_offset);
+
+	/*
+	 * Make sure the ESP header is present in the skb before dereferencing it.
+	 * A zero SPI indicates IKE/keep-alive traffic.
+	 */
+	if (!pskb_may_pull(skb, esp_offset + sizeof(*esph)) || !esph->spi)
+		return NULL;
+
+	return xfrm_state_lookup_byspi(dev_net(skb->dev), esph->spi, family);
+}
+
+/*
+ * ecm_front_end_xfrm_inner2xs()
+ *	For inner flow (decapsulated, WAN to LAN), retrieve the xfrm state
+ *	from the sec_path attached to the skb.
+ *	Returns NULL if the xfrm state cannot be found.
+ */
+struct xfrm_state *ecm_front_end_xfrm_inner2xs(struct sk_buff *skb)
+{
+	struct sec_path *sp = skb_sec_path(skb);
+
+	if (sp && sp->len > 0)
+		return sp->xvec[sp->len - 1];
+
+	return NULL;
+}
+
+/*
+ * ecm_front_end_xfrm_dst2xs()
+ *	For inner flow (plain text destined for xfrm, LAN to WAN),
+ *	retrieve the xfrm state from dst->xfrm.
+ *	Returns NULL if the xfrm state cannot be found.
+ */
+struct xfrm_state *ecm_front_end_xfrm_dst2xs(struct sk_buff *skb)
+{
+	struct dst_entry *dst = skb_dst(skb);
+
+	if (dst && dst->xfrm)
+		return dst->xfrm;
+
+	return NULL;
+}
+
+/*
+ * ecm_front_end_xfrm_xs2dev()
+ *	Get the net device associated with the EIP IPsec xfrm state.
+ *
+ *	The EIP IPsec client (eip_ipsec_xfrm.c) stores the IPsec tunnel net
+ *	device in xs->data and marks the xfrm state with
+ *	XFRM_STATE_OFFLOAD_HW when it is offloaded.  This function checks
+ *	that flag before accessing xs->data, ensuring we only return a device
+ *	for EIP-managed states.
+ *	Returns NULL if the xfrm state is not managed by EIP or has no device.
+ */
+struct net_device *ecm_front_end_xfrm_xs2dev(struct xfrm_state *xs)
+{
+	if (!xs)
+		return NULL;
+
+	if (!(xs->xflags & XFRM_STATE_OFFLOAD_HW))
+		return NULL;
+
+	return xs->data;
+}
+
+/*
+ * ecm_front_end_xfrm_get_offloads()
+ *	Retrieve HW offload capability flags from the xfrm state for the given flow.
+ *
+ *	For outer flows (post-encapsulation): uses ecm_front_end_xfrm_outer2xs()
+ *	which handles both regular ESP and NAT-T (UDP-encapsulated ESP, RFC 3948).
+ *	For inner flows (decapsulated): uses ecm_front_end_xfrm_inner2xs().
+ *	For inner flows (plain text destined for xfrm): uses ecm_front_end_xfrm_dst2xs().
+ *	Returns 0 on success, else a negative error code.
+ */
+static int ecm_front_end_xfrm_get_offloads(struct sk_buff *skb,
+					   enum ecm_xfrm_flow_type flow_type,
+					   bool *inner_offload, bool *outer_offload)
+{
+	struct xfrm_state *xs;
+
+	if (!inner_offload || !outer_offload)
+		return -EINVAL;
+
+	/*
+	 * There are no offload flags to retrieve for a non-xfrm flow.
+	 */
+	if (flow_type == ECM_XFRM_FLOW_NOT_XFRM)
+		return -EINVAL;
+
+	if (flow_type == ECM_XFRM_FLOW_OUTER) {
+		/*
+		 * Outer flow (post-encapsulation): retrieve xfrm state from the
+		 * ESP SPI.  Handles both regular ESP and NAT-T (UDP-encapsulated ESP).
+		 */
+		xs = ecm_front_end_xfrm_outer2xs(skb, (ip_hdr(skb)->version == 4) ?
+						 ip_hdr(skb)->protocol : ipv6_hdr(skb)->nexthdr);
+		if (!xs)
+			return -EINVAL;
+
+		*inner_offload = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW_INNER);
+		*outer_offload = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW);
+		xfrm_state_put(xs);
+		return 0;
 	}
 
 	/*
-	 * skb's sp is set for decapsulated packet
+	 * Inner flow: retrieve the xfrm state from sec_path (decapsulated,
+	 * WAN to LAN) or from dst->xfrm (plain text destined for xfrm, LAN to WAN).
 	 */
-	if (secpath_exists(skb)) {
-		DEBUG_TRACE("%px: Packet has undergone xfrm decapsulation((%d)\n", skb, ip_hdr->protocol);
-		*inner = true;
-		return true;
+	xs = ecm_front_end_xfrm_inner2xs(skb);
+	if (xs || (xs = ecm_front_end_xfrm_dst2xs(skb))) {
+		*inner_offload = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW_INNER);
+		*outer_offload = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+/*
+ * ecm_front_end_xfrm_flow_type()
+ *	Detect whether the skb belongs to an xfrm-managed flow.
+ *
+ *	Returns ECM_XFRM_FLOW_NOT_XFRM if not an xfrm flow,
+ *	        ECM_XFRM_FLOW_INNER for inner (plain-text) flows,
+ *	        ECM_XFRM_FLOW_OUTER for outer (encrypted/transformed) flows.
+ */
+static enum ecm_xfrm_flow_type ecm_front_end_xfrm_flow_type(struct sk_buff *skb)
+{
+	struct xfrm_state *xs;
+	uint32_t xfrm_flags;
+	uint32_t xfrm_transformed;
+	uint8_t protocol;
+	uint8_t ip_ver;
+
+	/*
+	 * Packet seen after output transformation (outer/encrypted flow) is
+	 * flagged in the IPCB(skb)/IP6CB(skb) area. No custom code should mangle
+	 * the CB area while the packet traverses the INET layer.
+	 */
+	ip_ver = ip_hdr(skb)->version;
+	switch (ip_ver) {
+	case 4:	/* IPv4 flow */
+		protocol = ip_hdr(skb)->protocol;
+		xfrm_flags = IPCB(skb)->flags;
+		xfrm_transformed = IPSKB_XFRM_TRANSFORMED;
+		break;
+
+	case 6:	/* IPv6 flow */
+		protocol = ipv6_hdr(skb)->nexthdr;
+		xfrm_flags = IP6CB(skb)->flags;
+		xfrm_transformed = IP6SKB_XFRM_TRANSFORMED;
+		break;
+
+	default:
+		return ECM_XFRM_FLOW_NOT_XFRM;
+	}
+
+	if (xfrm_flags & xfrm_transformed) {
+		DEBUG_TRACE("%px: IPv%u packet has undergone xfrm transformation (protocol=%u)\n",
+			    skb, ip_ver, protocol);
+		return ECM_XFRM_FLOW_OUTER;
 	}
 
 	/*
-	 * dst->xfrm is valid for lan to wan plain packet
+	 * At this point we know that the flow is not IPsec transformed, so an
+	 * ESP packet here is an ESP passthrough flow.
 	 */
-	dst = skb_dst(skb);
-	if (dst && dst->xfrm) {
-		DEBUG_TRACE("%px: Plain text packet destined for xfrm(%d)\n", skb, ip_hdr->protocol);
-		*inner = true;
-		return true;
+	if (protocol == IPPROTO_ESP) {
+		DEBUG_TRACE("%px: ESP passthrough packet\n", skb);
+		return ECM_XFRM_FLOW_NOT_XFRM;
 	}
+
+	/*
+	 * Check for inner flow; sec_path is set for decapsulated packets
+	 * (WAN to LAN) and dst->xfrm is valid for plain text packets destined
+	 * for xfrm (LAN to WAN).
+	 */
+	xs = ecm_front_end_xfrm_inner2xs(skb);
+	if (xs || (xs = ecm_front_end_xfrm_dst2xs(skb))) {
+		DEBUG_TRACE("%px: xfrm inner flow (protocol=%u)\n", skb, protocol);
+		return ECM_XFRM_FLOW_INNER;
+	}
+
+	return ECM_XFRM_FLOW_NOT_XFRM;
+}
+#endif /* ECM_XFRM_ENABLE */
+
+/*
+ * ecm_front_end_xfrm_flow_accel_check()
+ *	Master function: returns the xfrm flow type for the packet.
+ *
+ * Returns ECM_XFRM_FLOW_NOT_XFRM if the packet is not xfrm-managed,
+ * ECM_XFRM_FLOW_INNER for inner (plain-text) flows,
+ * ECM_XFRM_FLOW_OUTER for outer (encrypted/transformed) flows.
+ *
+ * Also populates inner_offload and outer_offload with the HW offload
+ * capability flags from the xfrm state.
+ *
+ * Flow detection is delegated to ecm_front_end_xfrm_flow_type().
+ * HW offload flag retrieval is delegated to ecm_front_end_xfrm_get_offloads(),
+ * which uses ecm_front_end_xfrm_outer2xs() for outer flows
+ * (covering both regular ESP and NAT-T) and the secpath/dst helpers for
+ * inner flows.
+ */
+enum ecm_xfrm_flow_type ecm_front_end_xfrm_flow_accel_check(struct sk_buff *skb, bool *inner_offload, bool *outer_offload)
+{
+#ifdef ECM_XFRM_ENABLE
+	enum ecm_xfrm_flow_type flow_type;
+
+	if (!inner_offload || !outer_offload)
+		return ECM_XFRM_FLOW_NOT_XFRM;
+
+	*inner_offload = false;
+	*outer_offload = false;
+
+	flow_type = ecm_front_end_xfrm_flow_type(skb);
+
+	/*
+	 * If the offload flags cannot be retrieved then the flow is not
+	 * managed by the AE, so treat it as a non-xfrm flow.
+	 */
+	if (ecm_front_end_xfrm_get_offloads(skb, flow_type, inner_offload, outer_offload))
+		return ECM_XFRM_FLOW_NOT_XFRM;
+
+	return flow_type;
+#else
+	return ECM_XFRM_FLOW_NOT_XFRM;
 #endif
+}
 
-	return false;
+/*
+ * ecm_front_end_get_xfrm_dev_n_hold()
+ *	Common helper: detect xfrm flow type from skb and return the held
+ *	EIP IPsec tunnel net device (ipsecX).
+ *
+ *	This consolidates the repeated pattern used wherever ECM needs the
+ *	IPsec device:
+ *	  - For outer (post-encap) flows: looks up xfrm state via SPI.
+ *	  - For inner (plain-text) flows: looks up xfrm state via sec_path
+ *	    (WAN->LAN decapsulated) or dst->xfrm (LAN->WAN pre-encap).
+ *	  - For non-xfrm flows: returns NULL immediately.
+ *
+ *	Caller must call dev_put() after use.
+ *	Returns NULL if the flow is not xfrm-managed or not EIP-offloaded.
+ */
+struct net_device *ecm_front_end_get_xfrm_dev_n_hold(struct sk_buff *skb)
+{
+#ifdef ECM_XFRM_ENABLE
+	struct net_device *ipsec_dev = NULL;
+	enum ecm_xfrm_flow_type flow_type;
+	struct iphdr *iph = ip_hdr(skb);
+	struct xfrm_state *xs = NULL;
+	bool inner_offload = false;
+	bool outer_offload = false;
+	uint8_t proto;
+
+	proto = (iph->version == 4) ? iph->protocol : ipv6_hdr(skb)->nexthdr;
+
+	flow_type = ecm_front_end_xfrm_flow_accel_check(skb, &inner_offload, &outer_offload);
+	switch (flow_type) {
+	case ECM_XFRM_FLOW_OUTER:
+		/*
+		 * Outer flow (post-encapsulation): look up the state by SPI.
+		 * This takes a reference on the state, released below.
+		 */
+		xs = ecm_front_end_xfrm_outer2xs(skb, proto);
+		break;
+
+	case ECM_XFRM_FLOW_INNER:
+		/*
+		 * Inner flow: sec_path for the decapsulated (WAN to LAN)
+		 * direction, dst->xfrm for the pre-encap (LAN to WAN) direction.
+		 */
+		xs = ecm_front_end_xfrm_inner2xs(skb);
+		if (!xs)
+			xs = ecm_front_end_xfrm_dst2xs(skb);
+
+		break;
+
+	default:
+		return NULL;
+	}
+
+	/*
+	 * Device retrieval and the hold are common to both directions.
+	 */
+	ipsec_dev = ecm_front_end_xfrm_xs2dev(xs);
+	if (ipsec_dev)
+		dev_hold(ipsec_dev);
+
+	/*
+	 * Release the state reference taken by ecm_front_end_xfrm_outer2xs().
+	 * This is done after the dev_hold() above, since the state is what
+	 * keeps xs->data alive.
+	 */
+	if ((flow_type == ECM_XFRM_FLOW_OUTER) && xs)
+		xfrm_state_put(xs);
+
+	return ipsec_dev;
+#else
+	return NULL;
+#endif
 }
 
 /*
@@ -378,27 +662,27 @@ bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_heade
  */
 bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
 {
-	bool inner = 0;
+	struct net_device *ipsec_dev;
+	bool inner_offload = false;
+	bool outer_offload = false;
 
-	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr, &inner)) {
-#ifdef ECM_XFRM_ENABLE
-		struct net_device *ipsec_dev;
-		int32_t interface_type;
-
-		/*
-		 * Check if the transformation for this flow
-		 * is done by AE. If yes, then try to accelerate.
-		 */
-		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
-		if (!ipsec_dev) {
-			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
-			return false;
-		}
+	/*
+	 * Detect the xfrm flow type and retrieve the EIP IPsec tunnel device.
+	 * Returns NULL for non-xfrm flows or flows not managed by EIP.
+	 */
+	ipsec_dev = ecm_front_end_get_xfrm_dev_n_hold(skb);
+	if (ipsec_dev) {
 		dev_put(ipsec_dev);
-#else
-		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
+		return true;
+	}
+
+	/*
+	 * If the flow is xfrm-managed but no EIP device was found,
+	 * it is not acceleratable.
+	 */
+	if (ecm_front_end_xfrm_flow_accel_check(skb, &inner_offload, &outer_offload) != ECM_XFRM_FLOW_NOT_XFRM) {
+		DEBUG_TRACE("%px: xfrm flow not managed by AE; skip it\n", skb);
 		return false;
-#endif
 	}
 
 	return true;

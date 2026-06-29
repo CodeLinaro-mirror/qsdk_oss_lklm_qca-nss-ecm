@@ -220,60 +220,16 @@ vxlan_fail:
 }
 #endif
 
-
-#ifdef ECM_XFRM_ENABLE
-/*
- * ecm_ppe_ipsec_flow_accel()
- *	Check if the IPsec flow is allowed for hardware acceleration.
- *	Returns 0 on success, else error.
- *	Sets inner and outer flags based on xfrm state.
- */
-static int ecm_ppe_ipsec_flow_accel(struct sk_buff *skb, bool *inner, bool *outer)
-{
-	struct sec_path *sp;
-	struct xfrm_state *xs = NULL;
-	struct dst_entry *dst;
-
-	*inner = *outer = false;
-
-	/*
-	 * skb's sp is set for decapsulated packet (WAN to LAN)
-	 */
-	if (secpath_exists(skb)) {
-		sp = skb_sec_path(skb);
-		if (!sp || sp->len <= 0)
-			return -EINVAL;
-
-		xs = sp->xvec[sp->len - 1];
-		if (xs) {
-			*inner = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW_INNER);
-			*outer = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW);
-			return 0;
-		}
-	}
-
-	/*
-	 * dst->xfrm is valid for lan to wan plain packet (LAN to WAN)
-	 */
-	dst = skb_dst(skb);
-	if (dst && dst->xfrm) {
-		xs = dst->xfrm;
-		*inner = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW_INNER);
-		*outer = !!(xs->xflags & XFRM_STATE_OFFLOAD_HW);
-		return 0;
-	}
-
-	return -EINVAL;
-}
-#endif /* ECM_XFRM_ENABLE */
-
 /*
  * ecm_ppe_feature_check()
  *	Check some specific features for PPE acceleration
  */
 bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr)
 {
-	bool inner = 0;
+	enum ecm_xfrm_flow_type flow_type;
+	bool inner_accel = false;
+	bool outer_accel = false;
+	struct net_device *ipsec_dev;
 
 #ifdef ECM_OPENWRT_SUPPORT
 	if (ip_hdr->protocol == IPPROTO_TCP) {
@@ -307,22 +263,14 @@ bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 	}
 #endif
 
-	if (ecm_front_end_is_xfrm_flow(skb, ip_hdr, &inner)) {
-#ifdef ECM_XFRM_ENABLE
-		struct net_device *ipsec_dev;
-		int32_t interface_type;
-		bool inner_accel = false;
-		bool outer_accel = false;
-
+	flow_type = ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel);
+	if (flow_type != ECM_XFRM_FLOW_NOT_XFRM) {
 		/*
-		 * Check if inner/outer acceleration is supported
+		 * If flow is inner, check if inner accel is supported by PPE.
+		 * Inner IPsec flows with HW offload are handled by SFE, not PPE.
 		 */
-		ecm_ppe_ipsec_flow_accel(skb, &inner_accel, &outer_accel);
-
-		/*
-		 * If flow is inner, check if inner accel is supported by PPE
-		 */
-		if (inner && !inner_accel) {
+		if ((flow_type == ECM_XFRM_FLOW_INNER) && !inner_accel) {
+			DEBUG_TRACE("%px: IPsec inner flow with HW offload - not accelerated by PPE\n", skb);
 			return false;
 		}
 
@@ -330,17 +278,13 @@ bool ecm_ppe_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip
 		 * Check if the transformation for this flow
 		 * is done by AE. If yes, then try to accelerate.
 		 */
-		ipsec_dev = ecm_interface_get_and_hold_ipsec_tun_netdev(NULL, skb, &interface_type);
+		ipsec_dev = ecm_front_end_get_xfrm_dev_n_hold(skb);
 		if (!ipsec_dev) {
-			DEBUG_TRACE("%px xfrm flow not managed by NSS; skip it\n", skb);
+			DEBUG_TRACE("%px: xfrm flow not managed by AE; skip it\n", skb);
 			return false;
 		}
 
 		dev_put(ipsec_dev);
-#else
-		DEBUG_TRACE("%px xfrm flow, but accel is disabled; skip it\n", skb);
-		return false;
-#endif
 	}
 
 	return true;
