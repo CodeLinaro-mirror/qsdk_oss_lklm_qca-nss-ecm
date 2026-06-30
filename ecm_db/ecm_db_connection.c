@@ -1966,6 +1966,93 @@ static inline ecm_db_connection_serial_hash_t ecm_db_connection_generate_serial_
 	return (ecm_db_connection_serial_hash_t)(hash_val & (ECM_DB_CONNECTION_SERIAL_HASH_SLOTS - 1));
 }
 
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+/*
+ * ecm_db_connection_mapt_find_and_ref()
+ *	Hash-based MAP-T inner connection lookup using the MAP-T ingress device.
+ *
+ * Forward match checks in==interfaces[FROM][MAX-1].
+ * Reverse match checks in==interfaces[TO][MAX-1]
+ * The function expects only Non NAT ip addresses and ports.
+ *
+ * NOTE: A reference is held on the returned connection instance.
+ * Caller must call ecm_db_connection_deref() when done.
+ */
+struct ecm_db_connection_instance *ecm_db_connection_mapt_find_and_ref(ip_addr_t host1_addr, ip_addr_t host2_addr,
+		int protocol, int host1_port, int host2_port, struct net_device *in)
+{
+	ecm_db_connection_hash_t hash_index;
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_TRACE("MAP-T Lookup connection " ECM_IP_ADDR_OCTAL_FMT ":%d <> " ECM_IP_ADDR_OCTAL_FMT ":%d protocol %d\n",
+			ECM_IP_ADDR_TO_OCTAL(host1_addr), host1_port,
+			ECM_IP_ADDR_TO_OCTAL(host2_addr), host2_port, protocol);
+
+	hash_index = ecm_db_connection_generate_hash_index(host1_addr, host1_port,
+							   host2_addr, host2_port, protocol);
+	spin_lock_bh(&ecm_db_lock);
+	ci = ecm_db_connection_table[hash_index];
+	while (ci) {
+		if (unlikely(ci->protocol != protocol)) {
+			goto try_next;
+		}
+
+		if (unlikely(!ECM_IP_ADDR_MATCH(host1_addr, ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_reverse;
+		}
+		if (unlikely(host1_port != ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_reverse;
+		}
+		if (unlikely(!ECM_IP_ADDR_MATCH(host2_addr, ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_reverse;
+		}
+		if (unlikely(host2_port != ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_reverse;
+		}
+		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+			goto try_reverse;
+		}
+		if (unlikely(in->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+			goto try_reverse;
+		}
+		goto connection_found;
+
+try_reverse:
+		if (unlikely(!ECM_IP_ADDR_MATCH(host1_addr, ci->mapping[ECM_DB_OBJ_DIR_TO]->host->address))) {
+			goto try_next;
+		}
+		if (unlikely(host1_port != ci->mapping[ECM_DB_OBJ_DIR_TO]->port)) {
+			goto try_next;
+		}
+		if (unlikely(!ECM_IP_ADDR_MATCH(host2_addr, ci->mapping[ECM_DB_OBJ_DIR_FROM]->host->address))) {
+			goto try_next;
+		}
+		if (unlikely(host2_port != ci->mapping[ECM_DB_OBJ_DIR_FROM]->port)) {
+			goto try_next;
+		}
+		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_TO][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+			goto try_next;
+		}
+		if (unlikely(in->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_TO][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+			goto try_next;
+		}
+		goto connection_found;
+
+try_next:
+		ci = ci->hash_next;
+	}
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("MAP-T Connection not found in hash chain\n");
+	return NULL;
+
+connection_found:
+	_ecm_db_connection_ref(ci);
+	spin_unlock_bh(&ecm_db_lock);
+	DEBUG_TRACE("MAP-T Connection found %px\n", ci);
+	return ci;
+}
+#endif
+
 /*
  * ecm_db_connection_find_and_ref_hash_first_chain()
  *	Given a hash chain index locate the first connection in the chain matching with the 5-tuple.

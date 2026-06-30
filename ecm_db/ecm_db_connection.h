@@ -537,5 +537,10 @@ bool ecm_db_connection_defunct_5tuple_buffer(char *buf);
 bool ecm_db_connection_unidir_ready_for_accel(struct ecm_db_connection_instance *ci, ecm_tracker_sender_type_t sender);
 ecm_tracker_sender_type_t ecm_db_connection_accel_sender_get(struct ecm_db_connection_instance *ci);
 
+#ifdef ECM_INTERFACE_MAP_T_ENABLE
+struct ecm_db_connection_instance *ecm_db_connection_mapt_find_and_ref(ip_addr_t host1_addr, ip_addr_t host2_addr,
+		int protocol, int host1_port, int host2_port, struct net_device *in);
+#endif
+
 bool ecm_db_connection_init(struct dentry *dentry);
 void ecm_db_connection_exit(void);
