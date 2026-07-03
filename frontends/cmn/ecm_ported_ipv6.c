@@ -1070,6 +1070,24 @@ done:
 		prevalent_pr.flow_int_pri = skb->int_pri;
 		prevalent_pr.return_int_pri = skb->int_pri;
 	}
+
+	/*
+	 * Derive int_pri for this packet's direction from the prevalent qos_tag
+	 * and write it into skb->int_pri.
+	 */
+	ecm_front_end_common_update_int_pri(ci, skb, sender, prevalent_pr.flow_qos_tag, prevalent_pr.return_qos_tag);
+
+	if (ci->unidir_accel_en) {
+		if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+			prevalent_pr.flow_int_pri = skb->int_pri;
+		} else {
+			prevalent_pr.return_int_pri = skb->int_pri;
+		}
+	} else {
+		prevalent_pr.flow_int_pri = skb->int_pri;
+		prevalent_pr.return_int_pri = skb->int_pri;
+	}
+
 	prevalent_pr.accel_mode = ECM_CLASSIFIER_ACCELERATION_MODE_ACCEL;
 	prevalent_pr.timer_group = ci_orig_timer_group = ecm_db_connection_timer_group_get(ci);
 

@@ -2147,6 +2147,72 @@ bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq)
 	return false;
 }
 
+/*
+ * ecm_front_end_common_int_pri_get()
+ *	Derives int_pri for a qos_tag on the given egress interface, if that
+ *	interface has a PPE qdisc configured.
+ */
+uint8_t ecm_front_end_common_int_pri_get(int32_t egress_ifnum, uint32_t qos_tag, uint8_t default_int_pri)
+{
+#ifdef ECM_FRONT_END_PPE_QOS_ENABLE
+	bool is_ppeq = false;
+	struct net_device *dev;
+	uint8_t int_pri;
+
+	if (!ecm_front_end_common_intf_qdisc_check(egress_ifnum, &is_ppeq) || !is_ppeq) {
+		return default_int_pri;
+	}
+
+	dev = dev_get_by_index(&init_net, egress_ifnum);
+	if (!dev) {
+		DEBUG_INFO("device-ifindex[%d] is not present\n", egress_ifnum);
+		return default_int_pri;
+	}
+
+	int_pri = ppe_drv_qos_int_pri_get(dev, qos_tag);
+	dev_put(dev);
+
+	return int_pri;
+#else
+	return default_int_pri;
+#endif
+}
+
+/*
+ * ecm_front_end_common_update_int_pri()
+ *	Map int_pri with correct qos_tag for flow/return direction.
+ */
+void ecm_front_end_common_update_int_pri(struct ecm_db_connection_instance *ci, struct sk_buff *skb,
+		ecm_tracker_sender_type_t sender, uint32_t flow_qos_tag, uint32_t return_qos_tag)
+{
+	struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+	int32_t ifaces_first;
+	int32_t egress_ifnum;
+	uint32_t qos_tag;
+
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		/*
+		 * Flow direction traffic egresses via the TO-side interface.
+		 */
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_TO);
+		qos_tag = flow_qos_tag;
+	} else {
+		/*
+		 * Return direction traffic egresses via the FROM-side interface.
+		 */
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_FROM);
+		qos_tag = return_qos_tag;
+	}
+
+	if (ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) {
+		return;
+	}
+
+	egress_ifnum = ecm_db_iface_interface_identifier_get(ifaces[ifaces_first]);
+	skb->int_pri = ecm_front_end_common_int_pri_get(egress_ifnum, qos_tag, skb->int_pri);
+	ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+}
+
 #ifdef ECM_FRONT_END_FSE_ENABLE
 /*
  * ecm_front_end_fse_info_get()
