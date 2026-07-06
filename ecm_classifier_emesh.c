@@ -2416,7 +2416,7 @@ done:
 	 */
 	if (((sender == ECM_TRACKER_SENDER_TYPE_SRC) && (IP_CT_DIR_ORIGINAL == CTINFO2DIR(ctinfo))) ||
 			((sender == ECM_TRACKER_SENDER_TYPE_DEST) && (IP_CT_DIR_REPLY == CTINFO2DIR(ctinfo)))) {
-		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+		if ((dest_dev && dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev && src_dev->qdisc && src_dev->qdisc->enqueue)) {
 			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
 				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_FLOW];
 			else
@@ -2432,7 +2432,7 @@ done:
 		cemi->process_response.flow_int_pri = cemi->pcp[ECM_CONN_DIR_FLOW];
 		cemi->process_response.return_int_pri = cemi->pcp[ECM_CONN_DIR_RETURN];
 	} else {
-		if ((dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev->qdisc && src_dev->qdisc->enqueue)) {
+		if ((dest_dev && dest_dev->qdisc && dest_dev->qdisc->enqueue) || (src_dev && src_dev->qdisc && src_dev->qdisc->enqueue)) {
 			if (sender == ECM_TRACKER_SENDER_TYPE_SRC)
 				cemi->process_response.flow_qos_tag = cemi->pcp[ECM_CONN_DIR_RETURN];
 			else
