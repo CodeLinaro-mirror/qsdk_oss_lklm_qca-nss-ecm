@@ -1411,6 +1411,13 @@ static struct ctl_table ecm_front_end_sysctl_tbl[] = {
 		.proc_handler	= &ecm_front_end_esp_spi_passthrough_enable_handler,
 	},
 #endif
+	{
+		.procname	= "sixth_tuple_mode",
+		.data		= &ecm_sixth_tuple_mode,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 	{}
 };
 

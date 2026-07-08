@@ -79,6 +79,14 @@ extern unsigned int ecm_front_end_esp_spi_passthrough_enable;
 extern unsigned int ecm_sfe_mht_enable;
 #endif
 
+/*
+ * Sixth tuple mode values - must match PPE_DRV_SIXTH_TUPLE_MODE_* defines.
+ */
+#define ECM_SIXTH_TUPLE_MODE_DISABLE	0
+#define ECM_SIXTH_TUPLE_MODE_VSI	1
+#define ECM_SIXTH_TUPLE_MODE_VLAN	2
+
+extern int ecm_sixth_tuple_mode;
 extern int ecm_front_end_unidir_accel_en;
 extern int ecm_front_end_unidir_accel_delay;
 extern int ecm_front_end_udp_ipsec_port;

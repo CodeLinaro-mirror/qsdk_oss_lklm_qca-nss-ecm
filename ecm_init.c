@@ -67,6 +67,17 @@ MODULE_PARM_DESC(ecm_front_end_ipv4_stopped, "Frontend disable");
 module_param(ecm_front_end_ipv6_stopped, int, 0644) ;
 MODULE_PARM_DESC(ecm_front_end_ipv6_stopped, "Frontend disable");
 
+/*
+ * sixth_tuple_mode: controls whether ECM uses a 6th tuple (ingress interface)
+ * in addition to the standard 5-tuple for connection lookup.
+ * 0 = disable (5-tuple only)
+ * 1 = vsi  (match on VSI)
+ * 2 = vlan (match on VLAN interface)
+ */
+int ecm_sixth_tuple_mode;
+module_param(ecm_sixth_tuple_mode, int, 0644);
+MODULE_PARM_DESC(ecm_sixth_tuple_mode, "Sixth tuple mode: 0=disable, 1=vsi, 2=vlan");
+
 struct dentry *ecm_dentry;	/* Dentry object for top level ecm debugfs directory */
 
 extern int ecm_db_init(struct dentry *dentry);

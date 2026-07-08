@@ -2178,12 +2178,14 @@ ecm_db_connection_source_find_and_ref_chain(ecm_db_connection_hash_t hash_index,
 			goto try_reverse;
 		}
 
-		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
-			goto try_reverse;
-		}
+		if (likely(ecm_sixth_tuple_mode != ECM_SIXTH_TUPLE_MODE_DISABLE)) {
+			if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+				goto try_reverse;
+			}
 
-		if (unlikely(in->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
-			goto try_reverse;
+			if (unlikely(in->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+				goto try_reverse;
+			}
 		}
 		goto connection_found;
 
@@ -2204,14 +2206,15 @@ try_reverse:
 			goto try_next;
 		}
 
-		if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
-			goto try_next;
-		}
+		if (likely(ecm_sixth_tuple_mode != ECM_SIXTH_TUPLE_MODE_DISABLE)) {
+			if (unlikely(!ci->interfaces[ECM_DB_OBJ_DIR_TO][ECM_DB_IFACE_HEIRARCHY_MAX - 1])) {
+				goto try_next;
+			}
 
-		if (unlikely(out->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_FROM][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
-			goto try_next;
+			if (unlikely(out->ifindex != ci->interfaces[ECM_DB_OBJ_DIR_TO][ECM_DB_IFACE_HEIRARCHY_MAX - 1]->interface_identifier)) {
+				goto try_next;
+			}
 		}
-
 		goto connection_found;
 
 try_next:
