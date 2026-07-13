@@ -868,22 +868,32 @@ static void ecm_nss_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			break;
 		case ECM_DB_IFACE_TYPE_PPTP:
 #ifdef ECM_INTERFACE_PPTP_ENABLE
-			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
-			ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
-			if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_PPTP, &(nircm->conn_rule.flow_mtu))) {
-				rule_invalid = true;
-				DEBUG_WARN("%px: Unable to get mtu value for the PPTP interface\n", feci);
-				break;
+			/*
+			 * Check if the packet protocol type is GRE to confirm its a pptp outer rule.
+			 * This avoids setting mtu to non ported passthrough inner rule which would fail
+			 * as source and destination IP addresses would not be local.
+			 *
+			 * TODO: This check will not work if inner rule is also PPTP pass through. Need to check
+			 * how we can solve this if such scenario comes.
+			 */
+			if (proto == IPPROTO_GRE) {
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_FROM, saddr);
+				ecm_db_connection_address_get(feci->ci, ECM_DB_OBJ_DIR_TO, daddr);
+				if (!ecm_interface_tunnel_mtu_update(saddr, daddr, ECM_DB_IFACE_TYPE_PPTP, &(nircm->conn_rule.flow_mtu))) {
+					rule_invalid = true;
+					DEBUG_WARN("%px: Unable to get mtu value for the PPTP interface\n", feci);
+					break;
+				}
+
+				ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
+
+				nircm->tuple.flow_ident = pptp_info.src_call_id;
+				nircm->tuple.return_ident = pptp_info.dst_call_id;
+				nircm->conn_rule.flow_ident_xlate = pptp_info.src_call_id;
+				nircm->conn_rule.return_ident_xlate = pptp_info.dst_call_id;
+
+				nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 			}
-
-			ecm_db_iface_pptp_session_info_get(ii, &pptp_info);
-
-			nircm->tuple.flow_ident = pptp_info.src_call_id;
-			nircm->tuple.return_ident = pptp_info.dst_call_id;
-			nircm->conn_rule.flow_ident_xlate = pptp_info.src_call_id;
-			nircm->conn_rule.return_ident_xlate = pptp_info.dst_call_id;
-
-			nircm->rule_flags |= NSS_IPV4_RULE_CREATE_FLAG_NO_SRC_IDENT;
 #else
 			rule_invalid = true;
 			DEBUG_TRACE("%px: PPTP - unsupported\n", feci);
