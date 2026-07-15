@@ -9,9 +9,14 @@
 #include <linux/tcp.h>
 #include <linux/module.h>
 #include <linux/inet.h>
+#include <linux/if_arp.h>
+#include <linux/netdevice.h>
 #include <net/ipv6.h>
 #include <linux/etherdevice.h>
 #include <net/sch_generic.h>
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+#include <linux/if_pppox.h>
+#endif
 
 /*
  * Debug output levels
@@ -44,11 +49,11 @@
 #include "ecm_sfe_ported_ipv4.h"
 #include "ecm_sfe_ported_ipv6.h"
 
-#ifdef ECM_MHT_ENABLE
-#include "ppe_drv.h"
+#if defined(ECM_MHT_ENABLE) || defined(ECM_FRONT_END_PPE_ENABLE)
+#include <ppe_drv.h>
 #endif
 #ifdef ECM_FRONT_END_PPE_ENABLE
-#include<ppe_tun.h>
+#include <ppe_tun.h>
 #endif
 
 #include "ecm_sfe_stats_v4.h"
@@ -1270,4 +1275,58 @@ int ecm_sfe_common_get_vp_from_iface_id(int32_t iface_id)
 done:
 	return vp;
 }
+
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+/*
+ * ecm_sfe_common_get_veip_iface_id()
+ *	Return the VEIP interface id for direct VEIP or PPPoE-over-VEIP.
+ */
+int ecm_sfe_common_get_veip_iface_id(int32_t iface_id)
+{
+	struct net_device *dev;
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+	struct pppoe_opt addressing;
+#endif
+	int32_t veip_iface_id = -1;
+	int channel_protocol = 0;
+
+	dev = dev_get_by_index(&init_net, iface_id);
+	if (!dev) {
+		goto done;
+	}
+
+	if (ppe_drv_is_veip_dev(dev)) {
+		veip_iface_id = dev->ifindex;
+		goto done_put;
+	}
+
+#ifdef ECM_INTERFACE_PPPOE_ENABLE
+	if (dev->type == ARPHRD_PPP) {
+		struct ppp_channel *ppp_chan[1];
+		int channel_count;
+
+		channel_count = ppp_hold_channels(dev, ppp_chan, 1);
+		if (channel_count == 1) {
+			channel_protocol = ppp_channel_get_protocol(ppp_chan[0]);
+
+			if (channel_protocol == PX_PROTO_OE) {
+				if (!pppoe_channel_addressing_get(ppp_chan[0], &addressing)) {
+					if (ppe_drv_is_veip_dev(addressing.dev)) {
+						veip_iface_id = addressing.dev->ifindex;
+					}
+					dev_put(addressing.dev);
+				}
+			}
+
+			ppp_release_channels(ppp_chan, 1);
+		}
+	}
+#endif
+
+done_put:
+	dev_put(dev);
+done:
+	return veip_iface_id;
+}
+#endif
 #endif

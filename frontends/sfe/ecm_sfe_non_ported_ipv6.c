@@ -339,6 +339,9 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 #if defined(ECM_INTERFACE_GRE_TAP_ENABLE) || defined(ECM_INTERFACE_GRE_TUN_ENABLE) || defined(ECM_INTERFACE_L2TPV3_ENABLE)
 	struct net_device *dev;
 #endif
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	int veip_iface_id;
+#endif
 	int proto = ecm_db_connection_protocol_get(feci->ci);
 
 	DEBUG_CHECK_MAGIC(feci, ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC, "%px: magic failed", feci);
@@ -648,6 +651,14 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_DECAP_VALID;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
 
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+			veip_iface_id = ecm_sfe_common_get_veip_iface_id(ii->interface_identifier);
+
+			if (veip_iface_id >= 0) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_DEST_VEIP_PON_VP;
+				nircm->conn_rule.veip_xmit_interface_num = veip_iface_id;
+			}
+#endif
 
 			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
 					nircm->pppoe_rule.flow_pppoe_session_id,
@@ -681,6 +692,20 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				dev_put(vlan_in_dev);
 				vlan_in_dev = NULL;
 			}
+
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+			/*
+			 * For flows egressing a VLAN-as-VEIP device in the return
+			 * direction, SFE needs the VEIP interface so its transmit path
+			 * can offload via the VEIP GW VP instead of the VLAN device.
+			 */
+			veip_iface_id = ecm_sfe_common_get_veip_iface_id(ii->interface_identifier);
+
+			if (veip_iface_id >= 0) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_DEST_VEIP_PON_VP;
+				nircm->conn_rule.veip_xmit_interface_num = veip_iface_id;
+			}
+#endif
 
 			/*
 			 * Primary or secondary (QinQ) VLAN?
@@ -913,6 +938,15 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 			nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+			veip_iface_id = ecm_sfe_common_get_veip_iface_id(ii->interface_identifier);
+
+			if (veip_iface_id >= 0) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_DEST_VEIP_PON_VP;
+				nircm->conn_rule.veip_xmit_interface_num = veip_iface_id;
+			}
+#endif
+
 			DEBUG_TRACE("%px: PPPoE - session: %x, remote_mac: %pM\n", feci,
 					nircm->pppoe_rule.return_pppoe_session_id,
 					nircm->pppoe_rule.return_pppoe_remote_mac);
@@ -945,6 +979,20 @@ static void ecm_sfe_non_ported_ipv6_connection_accelerate(struct ecm_front_end_c
 				dev_put(vlan_out_dev);
 				vlan_out_dev = NULL;
 			}
+
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+			/*
+			 * For flows egressing a VLAN-as-VEIP device, SFE needs the
+			 * VEIP interface so its transmit path can offload via the VEIP
+			 * GW VP instead of the VLAN device.
+			 */
+			veip_iface_id = ecm_sfe_common_get_veip_iface_id(ii->interface_identifier);
+
+			if (veip_iface_id >= 0) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_DEST_VEIP_PON_VP;
+				nircm->conn_rule.veip_xmit_interface_num = veip_iface_id;
+			}
+#endif
 
 			/*
 			 * Primary or secondary (QinQ) VLAN?

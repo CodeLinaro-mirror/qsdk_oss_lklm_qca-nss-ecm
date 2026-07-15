@@ -148,3 +148,6 @@ bool ecm_sfe_common_get_mht_port_id(struct ecm_front_end_connection_instance *fe
 #ifdef ECM_FRONT_END_PPE_ENABLE
 int ecm_sfe_common_get_vp_from_iface_id(int32_t iface_id);
 #endif
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+int ecm_sfe_common_get_veip_iface_id(int32_t iface_id);
+#endif
