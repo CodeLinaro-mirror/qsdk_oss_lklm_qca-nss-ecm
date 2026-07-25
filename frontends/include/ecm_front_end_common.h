@@ -474,6 +474,9 @@ bool ecm_front_end_check_default_denied_ports(int src_port, int dest_port);
 bool ecm_front_end_check_tcp_denied_ports(uint16_t src_port, uint16_t dest_port);
 bool ecm_front_end_common_intf_qdisc_check(int32_t interface_num, bool *is_ppeq);
 bool ecm_front_end_common_intf_ingress_qdisc_check(int32_t interface_num);
+uint8_t ecm_front_end_common_int_pri_get(int32_t egress_ifnum, uint32_t qos_tag, uint8_t default_int_pri);
+void ecm_front_end_common_update_int_pri(struct ecm_db_connection_instance *ci, struct sk_buff *skb,
+		ecm_tracker_sender_type_t sender, uint32_t flow_qos_tag, uint32_t return_qos_tag);
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 bool ecm_front_end_common_check_if_vap(int32_t interface_num);
 bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num);

@@ -555,6 +555,8 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 	if (pr->process_actions & ECM_CLASSIFIER_PROCESS_ACTION_QOS_TAG) {
 		update_msg->info.unidir.qos.flow_qos_tag = (uint32_t)pr->flow_qos_tag;
 		update_msg->info.unidir.qos.return_qos_tag = (uint32_t)pr->return_qos_tag;
+		update_msg->info.unidir.qos.flow_int_pri = (uint8_t)pr->flow_int_pri;
+		update_msg->info.unidir.qos.return_int_pri = (uint8_t)pr->return_int_pri;
 		update_msg->flags |= SFE_UPDATE_RULE_QOS_VALID;
 	}
 
