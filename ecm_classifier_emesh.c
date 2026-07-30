@@ -768,6 +768,7 @@ update_rule:
 		 * prioritization is handled by sp_mapdb_rule_apply_sawf call in the process function
 		 */
 		if (update_rule) {
+			msg->flags |= sender == ECM_TRACKER_SENDER_TYPE_SRC ? ECM_FRONT_END_PRIO_UPDATE_FLOW : ECM_FRONT_END_PRIO_UPDATE_RETURN;
 			feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_BI_DI_SAWF_QOS, msg);
 
 			/*
