@@ -70,6 +70,17 @@ struct ecm_classifier_fse_info {
 };
 
 /**
+ * ecm_classifier_emesh_sawf_wifi_version
+ *	Wi-Fi generation reported by the wlan driver via out_supported_wifi_version.
+ *	Values mirror PPE_DS_WIFI_ARCH_MODE_WIFI7/8 in nss_plugins.h.
+ */
+enum ecm_classifier_emesh_sawf_wifi_version {
+	ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_UNKNOWN = 0,	/**< No PPE-DS ops registered */
+	ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_7 = 7,		/**< Wi-Fi 7 */
+	ECM_CLASSIFIER_EMESH_SAWF_WIFI_VERSION_8 = 8,		/**< Wi-Fi 8 */
+};
+
+/**
  * ecm_classifier_emesh_sawf_flow_info
  *
  * @netdev : Netdevice
@@ -78,6 +89,9 @@ struct ecm_classifier_fse_info {
  * @dscp : Differentiated Services Code Point
  * @rule_id : Rule id
  * @sawf_rule_type: Rule type
+ * @out_wifi_arch_info : OUT - Wi-Fi generation reported by the wlan
+ *   driver (7 = Wi-Fi 7, 8 = Wi-Fi 8); set by the wlan driver inside the
+ *   update_service_id_get_msduq callback, read by ECM after the call returns
  */
 struct ecm_classifier_emesh_sawf_flow_info {
 	struct net_device *netdev;
@@ -90,6 +104,7 @@ struct ecm_classifier_emesh_sawf_flow_info {
 	uint8_t sawf_rule_type;
 	bool is_mc_flow;
 	bool is_scs_mscs;
+	uint8_t out_wifi_arch_info;
 };
 
 /**
