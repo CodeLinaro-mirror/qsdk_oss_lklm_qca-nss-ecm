@@ -702,7 +702,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 				sfe_ipv4_msg_init(msg_v4, SFE_SPECIAL_INTERFACE_IPV4, SFE_TX_UPDATE_RULE_MSG,
 					sizeof(struct sfe_rule_update_msg), NULL, NULL);
 
-				status = ecm_sfe_ported_ipv4_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, msg_v4);
+				status = ecm_sfe_ported_ipv4_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, update_info->skb, msg_v4);
 				if (!status) {
 						DEBUG_WARN("%p: Uni-directional v4 flow update failed in SFE.\n", feci);
 						ecm_sfe_stats_v4_inc(feci, ECM_SFE_STATS_V4_EXCEPTION_PORTED, ECM_SFE_STATS_V4_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL);
@@ -723,7 +723,7 @@ void ecm_sfe_common_update_rule(struct ecm_front_end_connection_instance *feci, 
 				sfe_ipv6_msg_init(msg_v6, SFE_SPECIAL_INTERFACE_IPV6, SFE_TX_UPDATE_RULE_MSG,
 							sizeof(struct sfe_rule_update_msg), NULL, NULL);
 
-				status = ecm_sfe_ported_ipv6_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, msg_v6);
+				status = ecm_sfe_ported_ipv6_unidir_rule_update(feci->ci, update_info->pr, update_info->sender, update_info->skb, msg_v6);
 				if (!status) {
 					DEBUG_WARN("%p: Uni-directional v6 flow update failed in SFE.\n", feci);
 					ecm_sfe_stats_v6_inc(feci, ECM_SFE_STATS_V6_EXCEPTION_PORTED, ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_FAIL);
@@ -1327,6 +1327,52 @@ done_put:
 	dev_put(dev);
 done:
 	return veip_iface_id;
+}
+
+/*
+ * ecm_sfe_common_iface_is_pon()
+ *	Determine if one side of a flow faces the PON/UNI boundary.
+ *
+ * VEIP detection is sourced from a live interface hierarchy when available.
+ * Falls back to checking for a bare PON GEM port.
+ */
+bool ecm_sfe_common_iface_is_pon(struct ecm_db_iface_instance *ifaces[],
+		int32_t ifaces_first, int32_t sfe_iface_id)
+{
+	struct net_device *pon_dev;
+	int32_t pon_port_num;
+	int32_t list_index;
+
+	if (ifaces) {
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			struct ecm_db_iface_instance *ii = ifaces[list_index];
+			ecm_db_iface_type_t ii_type = ecm_db_iface_type_get(ii);
+
+			if ((ii_type == ECM_DB_IFACE_TYPE_PPPOE) || (ii_type == ECM_DB_IFACE_TYPE_VLAN)) {
+				if (ecm_sfe_common_get_veip_iface_id(ii->interface_identifier) > 0) {
+					return true;
+				}
+			}
+		}
+	}
+
+	/*
+	 * GEM-port fallback for flows that terminate directly on a bare GEM port
+	 * rather than via a PPPoE/VLAN-as-VEIP interface.
+	 */
+	pon_dev = dev_get_by_index(&init_net, sfe_iface_id);
+	if (!pon_dev) {
+		return false;
+	}
+
+	pon_port_num = ppe_drv_port_num_from_dev(pon_dev);
+	if ((pon_port_num >= 0) && ppe_drv_port_is_gem((uint16_t)pon_port_num)) {
+		dev_put(pon_dev);
+		return true;
+	}
+
+	dev_put(pon_dev);
+	return false;
 }
 #endif
 #endif

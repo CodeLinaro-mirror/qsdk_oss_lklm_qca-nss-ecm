@@ -12,6 +12,9 @@
 #include <net/netfilter/nf_conntrack.h>
 
 #include "ecm_ae_classifier_public.h"
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+#include "nss_pon_plugin_public.h"
+#endif
 
 #define ECM_FRONT_END_CONNECTION_INSTANCE_MAGIC 0xFEC1
 
@@ -309,6 +312,13 @@ struct ecm_front_end_connection_instance {
 	atomic64_t unidir_accel_fail_reason;				/* Unidirection accel fail reason */
 #ifdef ECM_FRONT_END_PPE_ENABLE
 	atomic64_t ppe_accel_fail_reason;			/* PPE accel fail reason */
+#endif
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	bool pon_accel_allowed;				/* Last PON query's accel_allowed result */
+	nss_pon_egress_vlan_action_t pon_eg_vlan_action;	/* Last PON query's egress VLAN action */
+	nss_pon_ingress_vlan_action_t pon_in_vlan_action;	/* Last PON query's ingress VLAN action */
+	struct nss_pon_vlan_rule pon_eg_vlan_tag;		/* Last PON query's egress VLAN tag(s) */
+	struct nss_pon_vlan_rule pon_in_vlan_tag;		/* Last PON query's ingress VLAN tag(s) */
 #endif
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	atomic64_t sfe_accel_fail_reason;			/* SFE accel fail reason */

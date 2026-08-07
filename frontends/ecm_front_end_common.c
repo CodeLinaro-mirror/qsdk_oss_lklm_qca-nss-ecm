@@ -799,6 +799,13 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	char *ae_selection_done = "precedence-array";
 	uint32_t valid_flags;
 	uint32_t rule_flags;
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	bool pon_accel_allowed;
+	nss_pon_egress_vlan_action_t pon_eg_vlan_action;
+	nss_pon_ingress_vlan_action_t pon_in_vlan_action;
+	struct nss_pon_vlan_rule pon_eg_vlan_tag;
+	struct nss_pon_vlan_rule pon_in_vlan_tag;
+#endif
 
 	spin_lock_bh(&feci->lock);
 	can_accel = feci->can_accel;
@@ -813,6 +820,13 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	}
 
 	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	pon_accel_allowed = feci->pon_accel_allowed;
+	pon_eg_vlan_action = feci->pon_eg_vlan_action;
+	pon_in_vlan_action = feci->pon_in_vlan_action;
+	pon_eg_vlan_tag = feci->pon_eg_vlan_tag;
+	pon_in_vlan_tag = feci->pon_in_vlan_tag;
+#endif
 	spin_unlock_bh(&feci->lock);
 
 	if ((result = ecm_state_prefix_add(sfi, conn_type))) {
@@ -904,6 +918,26 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	}
 #endif
 
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	if ((result = ecm_state_write(sfi, "pon_accel_allowed", "%d", pon_accel_allowed))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_action", "%d", pon_eg_vlan_action))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_action", "%d", pon_in_vlan_action))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_tag", "primary: %x, secondary: %x",
+				       pon_eg_vlan_tag.primary_vlan_tag, pon_eg_vlan_tag.secondary_vlan_tag))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_tag", "primary: %x, secondary: %x",
+				       pon_in_vlan_tag.primary_vlan_tag, pon_in_vlan_tag.secondary_vlan_tag))) {
+		return result;
+	}
+#endif
+
 #ifdef ECM_FRONT_END_SFE_ENABLE
 	uint16_t sfe_fail_reason = (0x7FFF & atomic64_read(&feci->sfe_accel_fail_reason));
 	bool sfe_ae_failure = atomic64_read(&feci->sfe_accel_fail_reason) >> ECM_FRONT_END_FAIL_REASON_SHIFT;
@@ -919,6 +953,25 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 #endif
 
 	return ecm_state_prefix_remove(sfi);
+}
+#endif
+
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+/*
+ * ecm_front_end_common_connection_pon_state_update()
+ *	Record the PON/OMCI plugin's queried VLAN action state on the connection.
+ *	Caller must pass a fresh (zero-initialized) action when the query did not succeed.
+ */
+void ecm_front_end_common_connection_pon_state_update(struct ecm_front_end_connection_instance *feci,
+						       struct nss_pon_action *action)
+{
+	spin_lock_bh(&feci->lock);
+	feci->pon_accel_allowed = action->accel_allowed;
+	feci->pon_eg_vlan_action = action->eg_vlan_action;
+	feci->pon_in_vlan_action = action->in_vlan_action;
+	feci->pon_eg_vlan_tag = action->eg_vlan_tag;
+	feci->pon_in_vlan_tag = action->in_vlan_tag;
+	spin_unlock_bh(&feci->lock);
 }
 #endif
 

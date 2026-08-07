@@ -1442,6 +1442,7 @@ done:
 			if (update_info) {
 				update_info->sender = sender;
 				update_info->pr = &prevalent_pr;
+				update_info->skb = skb;
 				feci->update_rule(feci, ECM_RULE_UPDATE_TYPE_UNI_DI_QOS, (void *) update_info);
 				kfree(update_info);
 			} else {

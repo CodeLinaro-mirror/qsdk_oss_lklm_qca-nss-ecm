@@ -104,6 +104,7 @@ static inline uint16_t ecm_front_end_set_ae_failure_reason(uint16_t failure_reas
 struct ecm_cmn_unidir_update_info {
 	ecm_tracker_sender_type_t sender;		/**< Sender information. */
 	struct ecm_classifier_process_response *pr;	/**< Classifer information. */
+	struct sk_buff *skb;				/**< skb of the packet that triggered this update. */
 };
 
 /*
@@ -427,6 +428,10 @@ bool ecm_front_end_l2tp_proto_is_accel_allowed(struct net_device *indev, struct 
 extern int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_instance *feci,
 						    struct ecm_state_file_instance *sfi,
 						    char *conn_type);
+#endif
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+extern void ecm_front_end_common_connection_pon_state_update(struct ecm_front_end_connection_instance *feci,
+							       struct nss_pon_action *action);
 #endif
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,
 						      struct net_device *outdev,

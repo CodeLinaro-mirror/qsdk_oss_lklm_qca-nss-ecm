@@ -160,6 +160,8 @@ enum ecm_sfe_stats_v6_exception_ported_events {
     /* Number of IPv6 packets failed in bidirection update in unidirectional acceleration */
     ECM_SFE_STATS_V6_EXCEPTION_PORTED_UNIDIR_UPDATE_NO_MEM,
     /* Number of IPv6 packets failed to alloc memory for unidirection update */
+    ECM_SFE_STATS_V6_EXCEPTION_PORTED_PON_ACCEL_DENIED,
+    /* Number of IPv6 packets ignored in ported flow as PON/OMCI denied acceleration */
     ECM_SFE_STATS_V6_EXCEPTION_PORTED_MAX
 };
 
