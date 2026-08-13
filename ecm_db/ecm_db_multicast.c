@@ -397,6 +397,19 @@ void ecm_db_multicast_connection_to_interfaces_update(struct ecm_db_connection_i
 	 * Iterate the to interface list, adding in the new
 	 */
 	spin_lock_bh(&ecm_db_lock);
+
+	/*
+	 * The destination interfaces list may have been concurrently freed
+	 * (e.g. by a leave/clear or a decelerate response) between this
+	 * caller building its hierarchy and taking ecm_db_lock here. Bail
+	 * out if the list is no longer valid instead of dereferencing NULL.
+	 */
+	if (!ci->to_mcast_interfaces_set) {
+		spin_unlock_bh(&ecm_db_lock);
+		DEBUG_TRACE("%px: to_mcast_interfaces not set, skip update\n", ci);
+		return;
+	}
+
 	for (heirarchy_index = 0, if_index = 0; heirarchy_index < ECM_DB_MULTICAST_IF_MAX; heirarchy_index++) {
 		ii_temp = ecm_db_multicast_if_heirarchy_get(interfaces, if_index);
 		join_first = ecm_db_multicast_if_first_get_at_index(mc_join_first, if_index);
