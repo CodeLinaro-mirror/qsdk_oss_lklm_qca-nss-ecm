@@ -9801,7 +9801,11 @@ static int ecm_interface_defunct_by_mac_address_read(void *buffer, size_t *lenp,
 	char *read_buf;
 	int len;
 
-	read_buf = kzalloc(ECM_MAC_ADDR_STR_BUFF_SIZE * sizeof(char), GFP_KERNEL);
+	/*
+	 * +1 for the trailing '\n' appended after the MAC string below;
+	 * ECM_MAC_ADDR_STR_BUFF_SIZE only accounts for "aa:bb:cc:dd:ee:ff\0".
+	 */
+	read_buf = kzalloc((ECM_MAC_ADDR_STR_BUFF_SIZE + 1) * sizeof(char), GFP_KERNEL);
 	if (!read_buf) {
 		DEBUG_ERROR("Failed to allocate buffer for MAC address\n");
 		return -ENOMEM;
@@ -9815,7 +9819,7 @@ static int ecm_interface_defunct_by_mac_address_read(void *buffer, size_t *lenp,
 	}
 
 	bytes += len;
-	len = scnprintf(read_buf + bytes, 4, "\n");
+	len = scnprintf(read_buf + bytes, 2, "\n");
 	bytes += len;
 	bytes = memory_read_from_buffer(buffer, *lenp, ppos, read_buf, bytes);
 	*lenp = bytes;
