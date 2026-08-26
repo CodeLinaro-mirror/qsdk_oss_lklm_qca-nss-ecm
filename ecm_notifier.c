@@ -73,6 +73,27 @@ static inline uint8_t ecm_notifier_ci_get_ae_type(struct ecm_db_connection_insta
 }
 
 /*
+ * ecm_notifier_ci_get_tun_type()
+ *	Get CI tunnel type.
+ */
+static inline enum ecm_notifier_con_tun_type ecm_notifier_ci_get_tun_type(struct ecm_db_connection_instance *ci)
+{
+	/*
+	 * Check inner flow
+	 */
+	if (ecm_db_connection_flag_check(ci, ECM_DB_CONNECTION_FLAGS_IPSEC_INNER_FLOW))
+		return ECM_NOTIFIER_CON_TUN_TYPE_IPSEC_INNER;
+
+	/*
+	 * Check outer flow
+	 */
+	if (ecm_db_connection_flag_check(ci, ECM_DB_CONNECTION_FLAGS_IPSEC_OUTER_FLOW))
+		return ECM_NOTIFIER_CON_TUN_TYPE_IPSEC_OUTER;
+
+	return ECM_NOTIFIER_CON_TUN_TYPE_NONE;
+}
+
+/*
  * ecm_notifier_ci_to_data()
  * 	Convert ci to ecm_notifier_connection_data.
  *
@@ -116,7 +137,7 @@ static bool ecm_notifier_ci_to_data(struct ecm_db_connection_instance *ci, struc
 	data->tuple.src_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM);
 	data->tuple.dst_port = ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO);
 	data->ae_type = ecm_notifier_ci_get_ae_type(ci);
-	data->is_tun_outer = ecm_db_connection_flag_check(ci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER);
+	data->tun_type = ecm_notifier_ci_get_tun_type(ci);
 
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
 	ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dst_ip);

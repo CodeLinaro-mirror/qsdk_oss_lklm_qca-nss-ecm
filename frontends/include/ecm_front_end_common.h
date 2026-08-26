@@ -457,8 +457,63 @@ void ecm_front_end_common_sysctl_unregister(void);
 int ecm_sfe_sysctl_tbl_init(void);
 void ecm_sfe_sysctl_tbl_exit(void);
 bool ecm_front_end_feature_check(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr);
-bool ecm_front_end_is_xfrm_flow(struct sk_buff *skb, struct ecm_tracker_ip_header *ip_hdr, bool *inner);
 bool ecm_front_end_is_xfrm_transport_inner(struct sk_buff *skb);
+
+/*
+ * ecm_xfrm_flow_type - identifies the xfrm flow direction returned by
+ *                      ecm_front_end_xfrm_flow_accel_check().
+ *
+ * @ECM_XFRM_FLOW_NOT_XFRM: packet is not part of an xfrm-managed flow
+ *                           (e.g. ESP passthrough).
+ * @ECM_XFRM_FLOW_INNER:    inner (plain-text) flow - either a packet
+ *                           destined for xfrm encapsulation (LAN→WAN) or
+ *                           a decapsulated packet (WAN→LAN).
+ * @ECM_XFRM_FLOW_OUTER:    outer (encrypted/transformed) flow - packet has
+ *                           already undergone xfrm transformation.
+ */
+enum ecm_xfrm_flow_type {
+	ECM_XFRM_FLOW_NOT_XFRM = 0,
+	ECM_XFRM_FLOW_INNER,
+	ECM_XFRM_FLOW_OUTER,
+};
+
+enum ecm_xfrm_flow_type ecm_front_end_xfrm_flow_accel_check(struct sk_buff *skb, bool *inner_offload, bool *outer_offload);
+struct net_device *ecm_front_end_get_xfrm_dev_n_hold(struct sk_buff *skb);
+
+#ifdef ECM_XFRM_ENABLE
+#include <net/xfrm.h>
+
+/*
+ * ecm_front_end_xfrm_outer2xs()
+ *	For outer flow (post-encapsulation), retrieve the xfrm state via SPI.
+ *	Handles both regular ESP and NAT-T (UDP-encapsulated ESP, RFC 3948).
+ *	Caller must call xfrm_state_put() after use.
+ */
+struct xfrm_state *ecm_front_end_xfrm_outer2xs(struct sk_buff *skb, uint8_t protocol);
+
+/*
+ * ecm_front_end_xfrm_inner2xs()
+ *	For inner flow (decapsulated, WAN to LAN), retrieve the xfrm state
+ *	from the sec_path attached to the skb.
+ */
+struct xfrm_state *ecm_front_end_xfrm_inner2xs(struct sk_buff *skb);
+
+/*
+ * ecm_front_end_xfrm_dst2xs()
+ *	For inner flow (plain text destined for xfrm, LAN to WAN),
+ *	retrieve the xfrm state from dst->xfrm.
+ */
+struct xfrm_state *ecm_front_end_xfrm_dst2xs(struct sk_buff *skb);
+
+/*
+ * ecm_front_end_xfrm_xs2dev()
+ *	Get the EIP IPsec tunnel net device from xs->data.
+ *	Checks XFRM_STATE_OFFLOAD_HW before accessing xs->data.
+ *	No reference is taken on the device; ecm_front_end_get_xfrm_dev_n_hold()
+ *	holds it for the caller.
+ */
+struct net_device *ecm_front_end_xfrm_xs2dev(struct xfrm_state *xs);
+#endif /* ECM_XFRM_ENABLE */
 
 ecm_front_end_acceleration_mode_t ecm_front_end_connection_accel_state_get(struct ecm_front_end_connection_instance *feci);
 void ecm_front_end_connection_action_seen(struct ecm_front_end_connection_instance *feci);

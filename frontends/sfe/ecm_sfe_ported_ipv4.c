@@ -623,6 +623,11 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 	sfe_tx_status_t sfe_tx_status;
 	int32_t list_index;
 	int32_t interface_type_counts[ECM_DB_IFACE_TYPE_COUNT];
+#ifdef ECM_INTERFACE_IPSEC_ENABLE
+	enum ecm_xfrm_flow_type flow_type __maybe_unused;
+	bool inner_accel __maybe_unused = false;
+	bool outer_accel __maybe_unused = false;
+#endif /* ECM_INTERFACE_IPSEC_ENABLE */
 	bool rule_invalid;
 	uint8_t dest_mac_xlate[ETH_ALEN];
 	ecm_db_direction_t ecm_dir;
@@ -1547,6 +1552,15 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 				 * Set the SFE valid flag for frag offload if inline fragmentation has to be skipped
 				 */
 				nircm->valid_flags |= SFE_RULE_CREATE_SKIP_FRAG_OFFLOAD_VALID;
+			}
+
+			/*
+			 * Check for IPsec inner / outer acceleration
+			 */
+			flow_type = ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel);
+			if ((flow_type == ECM_XFRM_FLOW_INNER) && inner_accel) {
+				nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_DEST_TUN_VP;
+				DEBUG_TRACE("%px: IPsec inner flow - setting FLOW_DEST_TUN_VP\n", feci);
 			}
 
 			if (interface_type_counts[ii_type] != 0) {

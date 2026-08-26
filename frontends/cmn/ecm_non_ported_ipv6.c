@@ -510,6 +510,9 @@ feci_alloc_done:
 			ecm_tracker_sender_state_t src_state;
 			ecm_tracker_sender_state_t dest_state;
 			ecm_tracker_connection_state_t state;
+			enum ecm_xfrm_flow_type flow_type;
+			bool inner_accel = false;
+			bool outer_accel = false;
 
 			/*
 			 * Ask tracker for timer group to set the connection to initially.
@@ -527,6 +530,18 @@ feci_alloc_done:
 			 * Marking this as a tunnel flow in CI.
 			 */
 			ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW);
+
+			/*
+			 * Identify IPsec inner flow or outer flow.
+			 */
+			flow_type = ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel);
+			if (flow_type == ECM_XFRM_FLOW_INNER) {
+				ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_IPSEC_INNER_FLOW);
+				DEBUG_TRACE("%px: IPsec inner flow - setting IPSEC_INNER_FLOW flag\n", nci);
+			} else if (flow_type == ECM_XFRM_FLOW_OUTER) {
+				ecm_db_connection_flag_set(nci, ECM_DB_CONNECTION_FLAGS_IPSEC_OUTER_FLOW);
+				DEBUG_TRACE("%px: IPsec outer flow - setting IPSEC_OUTER_FLOW flag\n", nci);
+			}
 
 			/*
 			 * Add the new connection we created into the database

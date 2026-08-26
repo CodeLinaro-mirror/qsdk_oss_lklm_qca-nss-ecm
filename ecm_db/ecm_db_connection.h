@@ -344,6 +344,8 @@ struct ecm_db_connection_instance {
 #define ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER 0x8		/* Connection is for a tunnel connection outer */
 #define ECM_DB_CONNECTION_FLAGS_TUNNEL_FLOW 0x10		/* Connection is for a tunnel connection, either inner or outer tunnel */
 #define ECM_DB_CONNECTION_FLAGS_ESP_SPI_PASSTH 0x20		/* Connection is ESP SPI based pass-through */
+#define ECM_DB_CONNECTION_FLAGS_IPSEC_INNER_FLOW 0x40		/* Connection is an IPsec Inner flow (plain text, LAN-to-WAN, about to be encrypted). */
+#define ECM_DB_CONNECTION_FLAGS_IPSEC_OUTER_FLOW 0x80		/* Connection is an IPsec Outer flow (encrypted, WAN-to-LAN, about to be decrypted). */
 
 int _ecm_db_connection_count_get(void);
 

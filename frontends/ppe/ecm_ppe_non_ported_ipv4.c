@@ -613,7 +613,7 @@ static void ecm_ppe_non_ported_ipv4_connection_accelerate(struct ecm_front_end_c
 			/*
 			 * If the IPsec flow is a decapsulation (outer) flow, set rule_flags to IPSEC_DECAP.
 			 */
-			if (ecm_db_connection_flag_check(feci->ci, ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
+			if (ecm_db_connection_flag_check(feci->ci, ECM_DB_CONNECTION_FLAGS_IPSEC_OUTER_FLOW)) {
 				pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_IPSEC_DECAP_FLOW;
 			}
 #else

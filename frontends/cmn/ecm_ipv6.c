@@ -1266,8 +1266,10 @@ vxlan_done:
 	 * Check if we can accelerate ESP porotcol.
 	 */
 	if (ip_hdr.protocol == IPPROTO_ESP) {
-		bool inner;
-		if (!ecm_front_end_is_xfrm_flow(skb, &ip_hdr, &inner)) {
+		bool inner_accel = false;
+		bool outer_accel = false;
+
+		if (ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel) == ECM_XFRM_FLOW_NOT_XFRM) {
 			ecm_stats_v6_inc(ECM_STATS_V6_EXCEPTION_CMN, ECM_STATS_V6_EXCEPTION_UNSUPPORTED_ESP_PASSTHROUGH);
 			DEBUG_TRACE("%px: IPsec ESP passthrough is not allowed\n", skb);
 			return NF_ACCEPT;

@@ -1278,8 +1278,10 @@ vxlan_done:
 	 * Check if we can accelerate ESP porotcol.
 	 */
 	if (ip_hdr.protocol == IPPROTO_ESP) {
-		bool inner;
-		if (!ecm_front_end_is_xfrm_flow(skb, &ip_hdr, &inner)) {
+		bool inner_accel = false;
+		bool outer_accel = false;
+
+		if (ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel) == ECM_XFRM_FLOW_NOT_XFRM) {
 #if defined(ECM_FRONT_END_ESP_SPI_PASSTHROUGH)
 			if (ecm_front_end_esp_spi_passthrough_enable) {
 				if (ecm_front_end_esp_passthrough_is_accel_allowed(ct, ctinfo, skb, &orig_tuple)) {

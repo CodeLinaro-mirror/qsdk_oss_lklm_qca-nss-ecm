@@ -73,14 +73,23 @@ enum ecm_notifier_connection_state {
 };
 
 /**
+ * 	ECM connection tunnel type.
+ */
+enum ecm_notifier_con_tun_type {
+	ECM_NOTIFIER_CON_TUN_TYPE_NONE,		/**< ECM connection type is no tunnel connection */
+	ECM_NOTIFIER_CON_TUN_TYPE_IPSEC_OUTER,	/**< ECM connection type is IPsec outer */
+	ECM_NOTIFIER_CON_TUN_TYPE_IPSEC_INNER,	/**< ECM connection type is IPsec inner */
+};
+
+/**
  * 	Event data for a connection notification.
  */
 struct ecm_notifier_connection_data {
 	struct net_device *to_dev;			/**< First device in ECM 'to' interface hierarchy. */
 	struct net_device *from_dev;			/**< First device in ECM 'from' interface hierarchy. */
 	struct ecm_notifier_connection_tuple tuple;	/**< Connection tuple information. */
+	enum ecm_notifier_con_tun_type tun_type;	/**< ECM connection tunnel type. */
 	uint8_t ae_type; /**< acceleration engine type */
-	bool is_tun_outer;	/**< Connection is tunnel outer flow */
 };
 
 /**
