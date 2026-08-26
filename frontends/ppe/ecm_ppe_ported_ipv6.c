@@ -499,6 +499,19 @@ static bool ecm_ppe_ported_ipv6_connection_is_mapt_accel_valid(
 		return false;
 	}
 
+	/*
+	 * If the MAP-T device is being torn down, it may be present but not UP,
+	 * leading to a NULL nat46 instance. Treat this as a transient failure
+	 * and retry acceleration on the next packet.
+	 */
+	if (!(mapdev->flags & IFF_UP)) {
+		DEBUG_TRACE("%px: MAPT dev %s not usable (map_t:%d IFF_UP:%d), retry on next packet\n",
+				feci, mapdev->name, is_map_t_dev(mapdev), !!(mapdev->flags & IFF_UP));
+		dev_put(mapdev);
+		*accel_mode = ECM_FRONT_END_ACCELERATION_MODE_DECEL;
+		return false;
+	}
+
 	if (!(xlate_6_to_4(mapdev, &ip6, proto, &src_ip_v4, &dst_ip_v4))) {
 		DEBUG_TRACE("%px: MAPT xlate_6_to_4 failed\n", feci);
 		dev_put(mapdev);
