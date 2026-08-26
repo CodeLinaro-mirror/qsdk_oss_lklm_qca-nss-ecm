@@ -643,7 +643,7 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 	bool is_defunct = false;
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 	bool is_ppeq = false;
-	bool is_flow_dl_vp = false, is_return_dl_vp = false;
+	bool is_flow_wifi = false, is_return_wifi = false;
 	bool is_flow_host_qos = false, is_return_host_qos = false;
 	int32_t flow_qdisc_iface_idx;
 	int32_t return_qdisc_iface_idx;
@@ -804,12 +804,12 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
 			/*
-			 * if is_flow_dl_vp or is_flow_host_qos is already set to true that means
+			 * if is_flow_wifi or is_flow_host_qos is already set to true that means
 			 * there is already linux qdisc found in the interface hierarchy and this is
 			 * another qdisc, so reject this flow as we dont support more than one qdisc
 			 * in the hierarchy.
 			 */
-			if (is_flow_dl_vp || is_flow_host_qos) {
+			if (is_flow_wifi || is_flow_host_qos) {
 				ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_FROM_IFACE_QDISC_UNSUPPORTED);
 				DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 						feci, iface_id, ii_type, ii_name);
@@ -819,10 +819,10 @@ static void ecm_ppe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			}
 
 			/*
-			 * Determine if this is ppe-vp DL flow and accept it.
+			 * Determine if this is ppe-vp/DS flow and accept it.
 			 */
-			is_flow_dl_vp = ecm_front_end_common_check_dl_vp_qdisc(from_iface_id);
-			if (is_flow_dl_vp) {
+			is_flow_wifi = ecm_front_end_common_check_wifi_qdisc(from_iface_id);
+			if (is_flow_wifi) {
 				flow_qdisc_iface_idx = list_index;
 				goto process_next_iface_flow;
 			}
@@ -1241,12 +1241,12 @@ process_next_iface_flow:
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 		if (ecm_front_end_common_intf_qdisc_check(iface_id, &is_ppeq) && !is_ppeq) {
 			/*
-			 * if is_return_dl_vp or is_return_host_qos is already set to true that means
+			 * if is_return_wifi or is_return_host_qos is already set to true that means
 			 * there is already linux qdisc found in the interface hierarchy and this is
 			 * another qdisc, so reject this flow as we dont support more than one qdisc
 			 * in the hierarchy.
 			 */
-			if (is_return_dl_vp || is_return_host_qos) {
+			if (is_return_wifi || is_return_host_qos) {
 				ecm_ppe_stats_v6_inc(feci, ECM_PPE_STATS_V6_EXCEPTION_PORTED, ECM_PPE_STATS_V6_EXCEPTION_PORTED_TO_IFACE_QDISC_UNSUPPORTED);
 				DEBUG_TRACE("%px: PPE doesn't support qdisc for this flow:(%d) type:%d(%s) interface",
 						feci, iface_id, ii_type, ii_name);
@@ -1254,11 +1254,12 @@ process_next_iface_flow:
 				ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
 				goto ported_accel_bad_rule;
 			}
+
 			/*
-			 * Determine if this is ppe-vp DL flow and accept it.
+			 * Determine if this is ppe-vp/DS flow and accept it.
 			 */
-			is_return_dl_vp = ecm_front_end_common_check_dl_vp_qdisc(to_iface_id);
-			if (is_return_dl_vp) {
+			is_return_wifi = ecm_front_end_common_check_wifi_qdisc(to_iface_id);
+			if (is_return_wifi) {
 				return_qdisc_iface_idx = list_index;
 				goto process_next_iface_return;
 			}
@@ -1962,9 +1963,9 @@ process_next_iface_return:
 	/*
 	 * Fill Qdisc rule
 	 */
-	if (is_return_dl_vp) {
+	if (is_return_wifi) {
 		/*
-		 * Fill the qdisc rule in flow direction
+		 * if ppe-vp/ds is found in return, fill the qdisc rule in flow direction
 		 */
 		if (!ecm_ppe_common_set_host_assist_qdisc_rule(to_ifaces, to_ifaces_first, return_qdisc_iface_idx,
 					(uint32_t)pr->flow_qos_tag, true, true, &pd6rc->qdisc_rule)) {
@@ -1977,12 +1978,12 @@ process_next_iface_return:
 		/*
 		 * If qdisc rule is set, add valid flag for qdisc info
 		 */
-		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_HOST_QDISC_VALID;
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_FLOW_WLAN_HOST_QDISC_VALID;
 	}
 
-	if (is_flow_dl_vp) {
+	if (is_flow_wifi) {
 		/*
-		 * Fill the qdisc rule in return direction
+		 * if ppe-vp/ds flow, fill the qdisc rule in return direction
 		 */
 		if (!ecm_ppe_common_set_host_assist_qdisc_rule(from_ifaces, from_ifaces_first, flow_qdisc_iface_idx,
 					(uint32_t)pr->return_qos_tag, false, true, &pd6rc->qdisc_rule)) {
@@ -1995,7 +1996,7 @@ process_next_iface_return:
 		/*
 		 * If qdisc rule is set, add valid flag for qdisc info
 		 */
-		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_HOST_QDISC_VALID;
+		pd6rc->valid_flags |= PPE_DRV_V6_VALID_FLAG_RETURN_WLAN_HOST_QDISC_VALID;
 	}
 
 #ifdef ECM_FRONT_END_PPE_HOST_QOS_ENABLE
@@ -2162,6 +2163,19 @@ process_next_iface_return:
 	}
 
 	if (feci->fe_info.front_end_flags & ECM_FRONT_END_ENGINE_FLAG_PPE_VP) {
+		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_VP_FLOW;
+	}
+
+	/*
+	 * Set VP_FLOW flag for WLAN flows when a Linux qdisc is configured
+	 * on the egress hierarchy and eventually DS flow takes PPE VP RX path
+	 * for Qdisc processing in host. This uses the tree_id field from edma
+	 * rx descriptor in VP path. Tunnel flows are currently not supported.
+	 */
+	if (pd6rc->valid_flags & (PPE_DRV_V6_VALID_FLAG_FLOW_WLAN_HOST_QDISC_VALID |
+					PPE_DRV_V6_VALID_FLAG_RETURN_WLAN_HOST_QDISC_VALID)) {
+		DEBUG_TRACE("%px: WiFi flow with qdisc, setting VP_FLOW for qdisc steering\n", feci);
+		pd6rc->rule_flags &= ~PPE_DRV_V6_RULE_FLAG_DS_FLOW;
 		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_VP_FLOW;
 	}
 

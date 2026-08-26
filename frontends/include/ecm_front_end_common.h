@@ -535,7 +535,7 @@ void ecm_front_end_common_update_int_pri(struct ecm_db_connection_instance *ci, 
 		ecm_tracker_sender_type_t sender, uint32_t flow_qos_tag, uint32_t return_qos_tag);
 #ifdef ECM_FRONT_END_PPE_QOS_ENABLE
 bool ecm_front_end_common_check_if_vap(int32_t interface_num);
-bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num);
+bool ecm_front_end_common_check_wifi_qdisc(int32_t interface_num);
 #endif
 #ifdef ECM_FRONT_END_FSE_ENABLE
 bool ecm_front_end_fse_info_get(struct ecm_front_end_connection_instance *feci, struct ecm_front_end_fse_info *fse_info);

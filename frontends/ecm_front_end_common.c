@@ -2365,21 +2365,24 @@ bool ecm_front_end_common_check_if_vap(int32_t interface_num)
 }
 
 /*
- * ecm_front_end_common_check_dl_vp_qdisc
- *	Returns true if the interface is part of DL VP qdisc
+ * ecm_front_end_common_check_wifi_qdisc
+ *	Returns true if the interface is part of VP/DS qdisc
  */
-bool ecm_front_end_common_check_dl_vp_qdisc(int32_t interface_num)
+bool ecm_front_end_common_check_wifi_qdisc(int32_t interface_num)
 {
 	int32_t ppe_id;
+	enum ppe_drv_port_user_type user_type;
 
 	/*
 	 * If the bottom interface is a wifi interface
-	 * and the flow is offloaded to VP i.e
-	 * flow is a VP Downlink flow.
+	 * and the flow is offloaded to VP/DS i.e
+	 * flow is a VP/DS Downlink flow.
 	 */
 	if (ecm_front_end_common_check_if_vap(interface_num)) {
 		ppe_id = ecm_ppe_common_get_ae_iface_id_by_netdev_id(interface_num);
-		if (ppe_drv_iface_check_if_vp_flow(ppe_id)) {
+		user_type = ppe_drv_iface_get_port_user_type(ppe_id);
+		if (user_type == PPE_DRV_PORT_USER_TYPE_ACTIVE_VP ||
+				user_type == PPE_DRV_PORT_USER_TYPE_DS) {
 			return true;
 		}
 	}
