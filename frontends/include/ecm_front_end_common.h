@@ -478,6 +478,7 @@ enum ecm_xfrm_flow_type {
 };
 
 enum ecm_xfrm_flow_type ecm_front_end_xfrm_flow_accel_check(struct sk_buff *skb, bool *inner_offload, bool *outer_offload);
+void ecm_front_end_chk_n_set_ipsec_flow_flags(struct sk_buff *skb, struct ecm_db_connection_instance *ci);
 struct net_device *ecm_front_end_get_xfrm_dev_n_hold(struct sk_buff *skb);
 
 #ifdef ECM_XFRM_ENABLE
