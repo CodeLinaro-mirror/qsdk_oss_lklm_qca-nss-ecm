@@ -583,6 +583,26 @@ enum ecm_xfrm_flow_type ecm_front_end_xfrm_flow_accel_check(struct sk_buff *skb,
 }
 
 /*
+ * ecm_front_end_chk_n_set_ipsec_flow_flags()
+ *	Identify IPsec flow direction and set the appropriate connection flag.
+ */
+void ecm_front_end_chk_n_set_ipsec_flow_flags(struct sk_buff *skb, struct ecm_db_connection_instance *ci)
+{
+	enum ecm_xfrm_flow_type flow_type;
+	bool inner_accel = false;
+	bool outer_accel = false;
+
+	flow_type = ecm_front_end_xfrm_flow_accel_check(skb, &inner_accel, &outer_accel);
+	if (flow_type == ECM_XFRM_FLOW_INNER) {
+		ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_IPSEC_INNER_FLOW);
+		DEBUG_TRACE("%px: IPsec inner flow - setting IPSEC_INNER_FLOW flag\n", ci);
+	} else if (flow_type == ECM_XFRM_FLOW_OUTER) {
+		ecm_db_connection_flag_set(ci, ECM_DB_CONNECTION_FLAGS_IPSEC_OUTER_FLOW);
+		DEBUG_TRACE("%px: IPsec outer flow - setting IPSEC_OUTER_FLOW flag\n", ci);
+	}
+}
+
+/*
  * ecm_front_end_get_xfrm_dev_n_hold()
  *	Common helper: detect xfrm flow type from skb and return the held
  *	EIP IPsec tunnel net device (ipsecX).
