@@ -431,6 +431,7 @@ extern int ecm_front_end_common_connection_state_get(struct ecm_front_end_connec
 #endif
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
 extern void ecm_front_end_common_connection_pon_state_update(struct ecm_front_end_connection_instance *feci,
+							       ecm_tracker_sender_type_t sender,
 							       struct nss_pon_action *action);
 #endif
 extern bool ecm_front_end_gre_proto_is_accel_allowed(struct net_device *indev,

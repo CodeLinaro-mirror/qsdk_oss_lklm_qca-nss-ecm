@@ -783,6 +783,46 @@ void ecm_front_end_bond_notifier_exit(void)
 }
 #endif
 
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+/*
+ * ecm_front_end_common_pon_eg_vlan_action_to_string()
+ *	Convert a PON egress VLAN action to its string equivalent
+ */
+static const char *ecm_front_end_common_pon_eg_vlan_action_to_string(nss_pon_egress_vlan_action_t action)
+{
+	switch (action) {
+	case NSS_PON_EGRESS_VLAN_ACTION_AGNOSTIC:
+		return "agnostic";
+	case NSS_PON_EGRESS_VLAN_ACTION_UNTAG:
+		return "untag";
+	case NSS_PON_EGRESS_VLAN_ACTION_SINGLE:
+		return "single";
+	case NSS_PON_EGRESS_VLAN_ACTION_DOUBLE:
+		return "double";
+	default:
+		return "unknown";
+	}
+}
+
+/*
+ * ecm_front_end_common_pon_in_vlan_action_to_string()
+ *	Convert a PON ingress VLAN action to its string equivalent
+ */
+static const char *ecm_front_end_common_pon_in_vlan_action_to_string(nss_pon_ingress_vlan_action_t action)
+{
+	switch (action) {
+	case NSS_PON_INGRESS_VLAN_MATCH_AGNOSTIC:
+		return "agnostic";
+	case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
+		return "single";
+	case NSS_PON_INGRESS_VLAN_MATCH_DOUBLE:
+		return "double";
+	default:
+		return "unknown";
+	}
+}
+#endif
+
 #ifdef ECM_STATE_OUTPUT_ENABLE
 /*
  * ecm_front_end_common_connection_state_get()
@@ -800,11 +840,11 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 	uint32_t valid_flags;
 	uint32_t rule_flags;
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
-	bool pon_accel_allowed;
-	nss_pon_egress_vlan_action_t pon_eg_vlan_action;
-	nss_pon_ingress_vlan_action_t pon_in_vlan_action;
-	struct nss_pon_vlan_rule pon_eg_vlan_tag;
-	struct nss_pon_vlan_rule pon_in_vlan_tag;
+	bool pon_accel_allowed[2];
+	nss_pon_egress_vlan_action_t pon_eg_vlan_action[2];
+	nss_pon_ingress_vlan_action_t pon_in_vlan_action[2];
+	struct nss_pon_vlan_rule pon_eg_vlan_tag[2];
+	struct nss_pon_vlan_rule pon_in_vlan_tag[2];
 #endif
 
 	spin_lock_bh(&feci->lock);
@@ -821,11 +861,11 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 
 	memcpy(&stats, &feci->stats, sizeof(struct ecm_front_end_connection_mode_stats));
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
-	pon_accel_allowed = feci->pon_accel_allowed;
-	pon_eg_vlan_action = feci->pon_eg_vlan_action;
-	pon_in_vlan_action = feci->pon_in_vlan_action;
-	pon_eg_vlan_tag = feci->pon_eg_vlan_tag;
-	pon_in_vlan_tag = feci->pon_in_vlan_tag;
+	memcpy(pon_accel_allowed, feci->pon_accel_allowed, sizeof(pon_accel_allowed));
+	memcpy(pon_eg_vlan_action, feci->pon_eg_vlan_action, sizeof(pon_eg_vlan_action));
+	memcpy(pon_in_vlan_action, feci->pon_in_vlan_action, sizeof(pon_in_vlan_action));
+	memcpy(pon_eg_vlan_tag, feci->pon_eg_vlan_tag, sizeof(pon_eg_vlan_tag));
+	memcpy(pon_in_vlan_tag, feci->pon_in_vlan_tag, sizeof(pon_in_vlan_tag));
 #endif
 	spin_unlock_bh(&feci->lock);
 
@@ -919,21 +959,46 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
 #endif
 
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
-	if ((result = ecm_state_write(sfi, "pon_accel_allowed", "%d", pon_accel_allowed))) {
+	if ((result = ecm_state_write(sfi, "pon_accel_allowed_orig", "%d", pon_accel_allowed[ECM_TRACKER_SENDER_TYPE_SRC]))) {
 		return result;
 	}
-	if ((result = ecm_state_write(sfi, "pon_eg_vlan_action", "%d", pon_eg_vlan_action))) {
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_action_orig", "%s",
+				       ecm_front_end_common_pon_in_vlan_action_to_string(pon_in_vlan_action[ECM_TRACKER_SENDER_TYPE_SRC])))) {
 		return result;
 	}
-	if ((result = ecm_state_write(sfi, "pon_in_vlan_action", "%d", pon_in_vlan_action))) {
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_tag_orig", "primary: %x, secondary: %x",
+				       pon_in_vlan_tag[ECM_TRACKER_SENDER_TYPE_SRC].primary_vlan_tag,
+				       pon_in_vlan_tag[ECM_TRACKER_SENDER_TYPE_SRC].secondary_vlan_tag))) {
 		return result;
 	}
-	if ((result = ecm_state_write(sfi, "pon_eg_vlan_tag", "primary: %x, secondary: %x",
-				       pon_eg_vlan_tag.primary_vlan_tag, pon_eg_vlan_tag.secondary_vlan_tag))) {
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_action_orig", "%s",
+				       ecm_front_end_common_pon_eg_vlan_action_to_string(pon_eg_vlan_action[ECM_TRACKER_SENDER_TYPE_SRC])))) {
 		return result;
 	}
-	if ((result = ecm_state_write(sfi, "pon_in_vlan_tag", "primary: %x, secondary: %x",
-				       pon_in_vlan_tag.primary_vlan_tag, pon_in_vlan_tag.secondary_vlan_tag))) {
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_tag_orig", "primary: %x, secondary: %x",
+				       pon_eg_vlan_tag[ECM_TRACKER_SENDER_TYPE_SRC].primary_vlan_tag,
+				       pon_eg_vlan_tag[ECM_TRACKER_SENDER_TYPE_SRC].secondary_vlan_tag))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_accel_allowed_reply", "%d", pon_accel_allowed[ECM_TRACKER_SENDER_TYPE_DEST]))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_action_reply", "%s",
+				       ecm_front_end_common_pon_in_vlan_action_to_string(pon_in_vlan_action[ECM_TRACKER_SENDER_TYPE_DEST])))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_in_vlan_tag_reply", "primary: %x, secondary: %x",
+				       pon_in_vlan_tag[ECM_TRACKER_SENDER_TYPE_DEST].primary_vlan_tag,
+				       pon_in_vlan_tag[ECM_TRACKER_SENDER_TYPE_DEST].secondary_vlan_tag))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_action_reply", "%s",
+				       ecm_front_end_common_pon_eg_vlan_action_to_string(pon_eg_vlan_action[ECM_TRACKER_SENDER_TYPE_DEST])))) {
+		return result;
+	}
+	if ((result = ecm_state_write(sfi, "pon_eg_vlan_tag_reply", "primary: %x, secondary: %x",
+				       pon_eg_vlan_tag[ECM_TRACKER_SENDER_TYPE_DEST].primary_vlan_tag,
+				       pon_eg_vlan_tag[ECM_TRACKER_SENDER_TYPE_DEST].secondary_vlan_tag))) {
 		return result;
 	}
 #endif
@@ -963,14 +1028,15 @@ int ecm_front_end_common_connection_state_get(struct ecm_front_end_connection_in
  *	Caller must pass a fresh (zero-initialized) action when the query did not succeed.
  */
 void ecm_front_end_common_connection_pon_state_update(struct ecm_front_end_connection_instance *feci,
+						       ecm_tracker_sender_type_t sender,
 						       struct nss_pon_action *action)
 {
 	spin_lock_bh(&feci->lock);
-	feci->pon_accel_allowed = action->accel_allowed;
-	feci->pon_eg_vlan_action = action->eg_vlan_action;
-	feci->pon_in_vlan_action = action->in_vlan_action;
-	feci->pon_eg_vlan_tag = action->eg_vlan_tag;
-	feci->pon_in_vlan_tag = action->in_vlan_tag;
+	feci->pon_accel_allowed[sender] = action->accel_allowed;
+	feci->pon_eg_vlan_action[sender] = action->eg_vlan_action;
+	feci->pon_in_vlan_action[sender] = action->in_vlan_action;
+	feci->pon_eg_vlan_tag[sender] = action->eg_vlan_tag;
+	feci->pon_in_vlan_tag[sender] = action->in_vlan_tag;
 	spin_unlock_bh(&feci->lock);
 }
 #endif
