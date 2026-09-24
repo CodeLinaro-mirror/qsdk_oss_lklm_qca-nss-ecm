@@ -8438,7 +8438,9 @@ void ecm_interface_defunct_connections_by_bridge_port(struct net_device *dev)
 				ecm_db_connection_make_defunct(ci);
 				DEBUG_TRACE("%px: Defunct for ci=%px COMPLETE, dir=%s, name=%s, iface_identifier=%d\n",
 					    ii, ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_FROM], name, iface_identifier);
-				break;
+				ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+                                goto next_ci;
+
 			}
 		}
 		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
@@ -8456,7 +8458,67 @@ void ecm_interface_defunct_connections_by_bridge_port(struct net_device *dev)
 			}
 		}
 		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+next_ci:
+		cin = ecm_db_connection_get_and_ref_next(ci);
+		ecm_db_connection_deref(ci);
+		ci = cin;
+	}
+}
 
+/*
+ * ecm_interface_dev_defunct_routed_connections()
+ *	Defunct only the routed connections that reference the specified interface.
+ */
+static void ecm_interface_dev_defunct_routed_connections(struct net_device *dev)
+{
+	struct ecm_db_connection_instance *ci;
+
+	DEBUG_TRACE("%px: name=%s, ifindex=%d\n", dev, dev->name, dev->ifindex);
+
+	ci = ecm_db_connections_get_and_ref_first();
+	while (ci) {
+		struct ecm_db_connection_instance *cin;
+		struct ecm_db_iface_instance *ii;
+		int32_t iface_identifier;
+		int32_t ifaces_first;
+		struct ecm_db_iface_instance *ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
+		int32_t list_index;
+
+		if (!ecm_db_connection_is_routed_get(ci)) {
+			goto next_ci;
+		}
+
+		/*
+		 * Defunct connection instance if interface in interface heirarchy matches given dev iface.
+		 */
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_FROM);
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			ii = ifaces[list_index];
+			iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (iface_identifier == dev->ifindex) {
+				ecm_db_connection_make_defunct(ci);
+				DEBUG_TRACE("%px: Defunct for ci=%px COMPLETE, dir=%s, name=%s, iface_identifier=%d\n",
+					    ii, ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_FROM], ii->name, iface_identifier);
+				ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+				goto next_ci;
+			}
+		}
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+
+		ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, ifaces, ECM_DB_OBJ_DIR_TO);
+		for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+			ii = ifaces[list_index];
+			iface_identifier = ecm_db_iface_interface_identifier_get(ii);
+			if (iface_identifier == dev->ifindex) {
+				ecm_db_connection_make_defunct(ci);
+				DEBUG_TRACE("%px: Defunct for ci=%px COMPLETE, dir=%s, name=%s, iface_identifier=%d\n",
+					    ii, ci, ecm_db_obj_dir_strings[ECM_DB_OBJ_DIR_TO], ii->name, iface_identifier);
+				break;
+			}
+		}
+		ecm_db_connection_interfaces_deref(ifaces, ifaces_first);
+
+next_ci:
 		cin = ecm_db_connection_get_and_ref_next(ci);
 		ecm_db_connection_deref(ci);
 		ci = cin;
@@ -8532,7 +8594,10 @@ static int ecm_interface_netdev_notifier_callback(struct notifier_block *this, u
 			DEBUG_ASSERT(master, "Expected a master\n");
 			ecm_interface_dev_defunct_connections(master);
 			dev_put(master);
-		} else {
+		} else if (ecm_interface_hierarchy_is_tunnel_dev(dev)) {
+                        DEBUG_TRACE("Net device: %px is a tunnel dev, defunct its routed connections\n", dev);
+                        ecm_interface_dev_defunct_routed_connections(dev);
+                } else {
 			/*
 			 * When a bridge port goes down, it triggers FDB delete events
 			 * for the MAC addresses connected to that port.
