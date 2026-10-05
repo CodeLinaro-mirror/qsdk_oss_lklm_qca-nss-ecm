@@ -828,6 +828,25 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		info.direction = ecm_sfe_ported_ipv6_pon_direction_get(from_iface_is_pon, to_iface_is_pon,
 				from_sfe_iface_id, to_sfe_iface_id);
 
+		DEBUG_TRACE("%px: PON query info dump (update):\n"
+			   "  is_v6: %d, is_routed: %d, direction: %d\n"
+			   "  v6.tuple: flow_ip: %pI6n:%u, return_ip: %pI6n:%u, protocol: %u\n"
+			   "  v6.conn_rule: flow_mac: %pM, return_mac: %pM\n"
+			   "  v6.conn_rule: flow_if: %d, return_if: %d, flow_top_if: %d, return_top_if: %d\n"
+			   "  v6.conn_rule: flow_ip_xlate: %pI6n:%u, return_ip_xlate: %pI6n:%u\n"
+			   "  vlan_tag: primary: %x, secondary: %x\n",
+			   ci,
+			   info.is_v6, info.is_routed, info.direction,
+			   info.v6.tuple.flow_ip, ntohs(info.v6.tuple.flow_ident),
+			   info.v6.tuple.return_ip, ntohs(info.v6.tuple.return_ident),
+			   info.v6.tuple.protocol,
+			   info.v6.conn_rule.flow_mac, info.v6.conn_rule.return_mac,
+			   info.v6.conn_rule.flow_interface_num, info.v6.conn_rule.return_interface_num,
+			   info.v6.conn_rule.flow_top_interface_num, info.v6.conn_rule.return_top_interface_num,
+			   info.v6.conn_rule.flow_ip_xlate, ntohs(info.v6.conn_rule.flow_ident_xlate),
+			   info.v6.conn_rule.return_ip_xlate, ntohs(info.v6.conn_rule.return_ident_xlate),
+			   info.vlan_tag.primary_vlan_tag, info.vlan_tag.secondary_vlan_tag);
+
 		pon_query_ret = nss_pon_plugin_query(&info, &action);
 
 		if (!pon_query_ret || !action.accel_allowed) {
@@ -863,8 +882,8 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 			 * should still reflect whatever the hierarchy walk/seed above
 			 * actually put in the rule.
 			 */
-			action.in_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag;
-			action.in_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.primary_vlan_tag = info.vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = info.vlan_tag.secondary_vlan_tag;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
@@ -2623,6 +2642,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		info.vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
 
 		/*
+		 * Bridging has no VLAN netdev to walk for PON either, but the skb
+		 * still carries the real tag here - prefer it over the nircm-sourced
+		 * value above for this case.
+		 */
+		if (!info.is_routed) {
+			ecm_sfe_ported_ipv6_pon_vlan_tag_from_skb(skb, &info.vlan_tag);
+		}
+
+		/*
 		 * direction: which side of the flow (if any) faces the PON/UNI
 		 * boundary - either wrapped as a VEIP interface (flagged via
 		 * SFE_RULE_CREATE_FLAG_RETURN_DEST_VEIP_PON_VP for the 'from'
@@ -2639,6 +2667,25 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		info.direction = ecm_sfe_ported_ipv6_pon_direction_get(from_iface_is_pon, to_iface_is_pon,
 				from_sfe_iface_id, to_sfe_iface_id);
+
+		DEBUG_TRACE("%px: PON query info dump:\n"
+			   "  is_v6: %d, is_routed: %d, direction: %d\n"
+			   "  v6.tuple: flow_ip: %pI6n:%u, return_ip: %pI6n:%u, protocol: %u\n"
+			   "  v6.conn_rule: flow_mac: %pM, return_mac: %pM\n"
+			   "  v6.conn_rule: flow_if: %d, return_if: %d, flow_top_if: %d, return_top_if: %d\n"
+			   "  v6.conn_rule: flow_ip_xlate: %pI6n:%u, return_ip_xlate: %pI6n:%u\n"
+			   "  vlan_tag: primary: %x, secondary: %x\n",
+			   feci,
+			   info.is_v6, info.is_routed, info.direction,
+			   info.v6.tuple.flow_ip, ntohs(info.v6.tuple.flow_ident),
+			   info.v6.tuple.return_ip, ntohs(info.v6.tuple.return_ident),
+			   info.v6.tuple.protocol,
+			   info.v6.conn_rule.flow_mac, info.v6.conn_rule.return_mac,
+			   info.v6.conn_rule.flow_interface_num, info.v6.conn_rule.return_interface_num,
+			   info.v6.conn_rule.flow_top_interface_num, info.v6.conn_rule.return_top_interface_num,
+			   info.v6.conn_rule.flow_ip_xlate, ntohs(info.v6.conn_rule.flow_ident_xlate),
+			   info.v6.conn_rule.return_ip_xlate, ntohs(info.v6.conn_rule.return_ident_xlate),
+			   info.vlan_tag.primary_vlan_tag, info.vlan_tag.secondary_vlan_tag);
 
 		pon_query_ret = nss_pon_plugin_query(&info, &action);
 
@@ -2665,8 +2712,8 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 * should still reflect whatever the interface hierarchy walk
 			 * above actually put in the rule.
 			 */
-			action.in_vlan_tag.primary_vlan_tag = nircm->vlan_primary_rule.ingress_vlan_tag;
-			action.in_vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.primary_vlan_tag = info.vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = info.vlan_tag.secondary_vlan_tag;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VLAN_INGRESS_AGNOSTIC;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VLAN_INGRESS_AGNOSTIC;
 			break;
@@ -2689,6 +2736,15 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			action.in_vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
 			break;
 		}
+
+		/*
+		 * A PON port always requires transmission via the bottom interface, since SFE's
+		 * manual VLAN tag insertion/removal is only valid when transmitting directly to
+		 * the physical device. This must be set irrespective of the current vlan_action
+		 * result, as the interface selection cannot be changed later via a rule update.
+		 */
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
 
 		switch (action.eg_vlan_action) {
 		case NSS_PON_EGRESS_VLAN_ACTION_UNTAG:

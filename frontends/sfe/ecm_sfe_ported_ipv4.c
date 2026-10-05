@@ -875,8 +875,8 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 			 * should still reflect whatever the hierarchy walk/seed above
 			 * actually put in the rule.
 			 */
-			action.in_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag;
-			action.in_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.primary_vlan_tag = info.vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = info.vlan_tag.secondary_vlan_tag;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
@@ -2677,8 +2677,8 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 * should still reflect whatever the interface hierarchy walk
 			 * above actually put in the rule.
 			 */
-			action.in_vlan_tag.primary_vlan_tag = nircm->vlan_primary_rule.ingress_vlan_tag;
-			action.in_vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.primary_vlan_tag = info.vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = info.vlan_tag.secondary_vlan_tag;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VLAN_INGRESS_AGNOSTIC;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VLAN_INGRESS_AGNOSTIC;
 			break;

@@ -867,10 +867,19 @@ feci_alloc_done:
 
 			/*
 			 * If its UDP flow, then we can accerate this connection in a single direction
-			 * if unidirection acceleration is enabled
+			 * if unidirection acceleration is enabled. TCP gets the same treatment, but only
+			 * when PON is enabled and the connection is handled by the SFE frontend.
 			 */
-			if (nci->protocol == IPPROTO_UDP && ecm_front_end_unidir_accel_en &&  !(nci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
-				nci->unidir_accel_en = true;
+			if (ecm_front_end_unidir_accel_en && !(nci->flags & ECM_DB_CONNECTION_FLAGS_TUNNEL_OUTER)) {
+				if (nci->protocol == IPPROTO_UDP) {
+					nci->unidir_accel_en = true;
+				}
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+				else if (nci->protocol == IPPROTO_TCP && feci->accel_engine == ECM_FRONT_END_ENGINE_SFE &&
+						ppe_drv_is_pon_enable() && nss_pon_plugin_is_registered()) {
+					nci->unidir_accel_en = true;
+				}
+#endif
 			}
 
 			spin_unlock_bh(&ecm_ipv6_lock);
