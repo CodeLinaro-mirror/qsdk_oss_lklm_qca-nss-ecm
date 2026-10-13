@@ -537,6 +537,65 @@ static nss_pon_flow_direction_t ecm_sfe_ported_ipv6_pon_direction_get(bool from_
 			from_sfe_iface_id, to_sfe_iface_id);
 	return NSS_PON_FLOW_DIRECTION_UNI_TO_UNI;
 }
+
+/*
+ * ecm_sfe_ported_ipv6_pon_vlan_tag_get()
+ *	Derive the VLAN tag(s) already present on a flow from its interface hierarchy.
+ *
+ * Mirrors the primary/secondary VLAN classification done for nircm at
+ * connection accelerate() time, but reads directly from the interface
+ * hierarchy since a rule update has no nircm to source tags from.
+ */
+static void ecm_sfe_ported_ipv6_pon_vlan_tag_get(struct ecm_db_iface_instance *ifaces[],
+		int32_t ifaces_first, struct nss_pon_vlan_rule *vlan_tag)
+{
+	int32_t list_index;
+	int32_t vlan_count = 0;
+
+	vlan_tag->primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	vlan_tag->secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+
+	for (list_index = ifaces_first; list_index < ECM_DB_IFACE_HEIRARCHY_MAX; list_index++) {
+		struct ecm_db_iface_instance *ii = ifaces[list_index];
+		struct ecm_db_interface_info_vlan vlan_info;
+		uint32_t vlan_value;
+
+		if (ecm_db_iface_type_get(ii) != ECM_DB_IFACE_TYPE_VLAN) {
+			continue;
+		}
+
+		ecm_db_iface_vlan_info_get(ii, &vlan_info);
+		vlan_value = ((vlan_info.vlan_tpid << 16) | vlan_info.vlan_tag);
+
+		if (vlan_count == 0) {
+			vlan_tag->primary_vlan_tag = vlan_value;
+		} else {
+			vlan_tag->secondary_vlan_tag = vlan_value;
+		}
+		vlan_count++;
+
+		if (vlan_count == 2) {
+			break;
+		}
+	}
+}
+
+/*
+ * ecm_sfe_ported_ipv6_pon_vlan_tag_from_skb()
+ *	Derive the primary VLAN tag already on a bridged packet directly from its skb.
+ *
+ */
+static void ecm_sfe_ported_ipv6_pon_vlan_tag_from_skb(struct sk_buff *skb, struct nss_pon_vlan_rule *vlan_tag)
+{
+	uint32_t primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+
+	if (skb_vlan_tag_present(skb)) {
+		primary_vlan_tag = (ntohs(skb->vlan_proto) << 16) | (skb_vlan_tag_get(skb) & VLAN_VID_MASK);
+	}
+
+	vlan_tag->primary_vlan_tag = primary_vlan_tag;
+	vlan_tag->secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+}
 #endif
 
 /*
@@ -554,6 +613,7 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
 	struct nss_pon_plugin_query_info info = {0};
 	struct nss_pon_action action = {0};
+	struct nss_pon_vlan_rule egress_vlan_tag = {0};
 	bool pon_query_ret;
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
@@ -568,6 +628,12 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 	ecm_db_direction_t ecm_dir;
 	bool from_iface_is_pon;
 	bool to_iface_is_pon;
+	ecm_db_obj_dir_t flow_dir;
+	ecm_db_obj_dir_t return_dir;
+	ecm_db_obj_dir_t flow_dir_nat;
+	ecm_db_obj_dir_t return_dir_nat;
+	ecm_db_obj_dir_t iface_flow_dir;
+	ecm_db_obj_dir_t iface_return_dir;
 #endif
 
 	if (sender == ecm_db_connection_accel_sender_get(ci)) {
@@ -600,6 +666,29 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		update_msg->info.unidir.update_dir = SFE_FLOW_RULE_DIRECTION_RETURN;
 	}
 
+#if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
+	/*
+	 * Select the ECM DB directions that correspond to "flow"/"return" for
+	 * this update, so the PON query info below reflects this direction
+	 * rather than always being FROM/TO_NAT-oriented.
+	 */
+	if (sender == ECM_TRACKER_SENDER_TYPE_SRC) {
+		flow_dir = ECM_DB_OBJ_DIR_FROM;
+		return_dir = ECM_DB_OBJ_DIR_TO_NAT;
+		flow_dir_nat = ECM_DB_OBJ_DIR_FROM_NAT;
+		return_dir_nat = ECM_DB_OBJ_DIR_TO;
+		iface_flow_dir = ECM_DB_OBJ_DIR_FROM;
+		iface_return_dir = ECM_DB_OBJ_DIR_TO;
+	} else {
+		flow_dir = ECM_DB_OBJ_DIR_TO_NAT;
+		return_dir = ECM_DB_OBJ_DIR_FROM;
+		flow_dir_nat = ECM_DB_OBJ_DIR_TO;
+		return_dir_nat = ECM_DB_OBJ_DIR_FROM_NAT;
+		iface_flow_dir = ECM_DB_OBJ_DIR_TO;
+		iface_return_dir = ECM_DB_OBJ_DIR_FROM;
+	}
+#endif
+
 	/*
 	 * Set up the flow and return qos tags
 	 */
@@ -629,8 +718,8 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 	 * decision obtained for the other direction at accelerate() time.
 	 */
 	if (ppe_drv_is_pon_enable() && nss_pon_plugin_is_registered()) {
-		from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, ECM_DB_OBJ_DIR_FROM);
-		to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, to_ifaces, ECM_DB_OBJ_DIR_TO);
+		from_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, from_ifaces, iface_flow_dir);
+		to_ifaces_first = ecm_db_connection_interfaces_get_and_ref(ci, to_ifaces, iface_return_dir);
 		if ((from_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX) || (to_ifaces_first == ECM_DB_IFACE_HEIRARCHY_MAX)) {
 			DEBUG_WARN("%px: PON/OMCI query skipped - no interfaces in hierarchy.\n", ci);
 			ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
@@ -660,13 +749,13 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 */
 		info.v6.tuple.protocol = (u8)ecm_db_connection_protocol_get(ci);
 
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM, src_ip);
+		ecm_db_connection_address_get(ci, flow_dir, src_ip);
 		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(info.v6.tuple.flow_ip, src_ip);
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO_NAT, dest_ip);
+		ecm_db_connection_address_get(ci, return_dir, dest_ip);
 		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(info.v6.tuple.return_ip, dest_ip);
 
-		info.v6.tuple.flow_ident = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM));
-		info.v6.tuple.return_ident = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO_NAT));
+		info.v6.tuple.flow_ident = htons(ecm_db_connection_port_get(ci, flow_dir));
+		info.v6.tuple.return_ident = htons(ecm_db_connection_port_get(ci, return_dir));
 
 		/*
 		 * Interface numbers for the flow/return direction, including the
@@ -681,18 +770,18 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * Post-translation addresses and ports (FROM_NAT / TO) - these
 		 * differ from the tuple above whenever the connection is NAT'd.
 		 */
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_FROM_NAT, src_nat_ip);
+		ecm_db_connection_address_get(ci, flow_dir_nat, src_nat_ip);
 		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(info.v6.conn_rule.flow_ip_xlate, src_nat_ip);
-		ecm_db_connection_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_nat_ip);
+		ecm_db_connection_address_get(ci, return_dir_nat, dest_nat_ip);
 		ECM_IP_ADDR_TO_SFE_IPV6_ADDR(info.v6.conn_rule.return_ip_xlate, dest_nat_ip);
-		info.v6.conn_rule.flow_ident_xlate = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_FROM_NAT));
-		info.v6.conn_rule.return_ident_xlate = htons(ecm_db_connection_port_get(ci, ECM_DB_OBJ_DIR_TO));
+		info.v6.conn_rule.flow_ident_xlate = htons(ecm_db_connection_port_get(ci, flow_dir_nat));
+		info.v6.conn_rule.return_ident_xlate = htons(ecm_db_connection_port_get(ci, return_dir_nat));
 
 		/*
 		 * MAC addresses for the flow/return nodes.
 		 */
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_FROM, (uint8_t *)info.v6.conn_rule.flow_mac);
-		ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, (uint8_t *)info.v6.conn_rule.return_mac);
+		ecm_db_connection_node_address_get(ci, flow_dir, (uint8_t *)info.v6.conn_rule.flow_mac);
+		ecm_db_connection_node_address_get(ci, return_dir, (uint8_t *)info.v6.conn_rule.return_mac);
 
 		/*
 		 * For a routed connection the destination node is reached via its
@@ -700,7 +789,7 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * return_mac above.
 		 */
 		if (info.is_routed) {
-			ecm_db_connection_node_address_get(ci, ECM_DB_OBJ_DIR_TO, dest_mac_xlate);
+			ecm_db_connection_node_address_get(ci, return_dir_nat, dest_mac_xlate);
 		} else {
 			memcpy(dest_mac_xlate, (uint8_t *)info.v6.conn_rule.return_mac, ETH_ALEN);
 		}
@@ -711,13 +800,28 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		}
 
 		/*
-		 * This is a rule update, not a fresh create - there is no
-		 * nircm to source existing VLAN tags from, so default to
-		 * "not configured"; the PON/OMCI driver's decision is what
-		 * populates real VLAN values via action below.
+		 * This is a rule update, not a fresh create - there is no nircm to
+		 * source existing VLAN tags from, so derive them directly from the
+		 * flow-side interface hierarchy (mirrors nircm->vlan_primary/secondary
+		 * _rule.ingress_vlan_tag as set at accelerate() time).
 		 */
-		info.vlan_tag.primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		info.vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+		ecm_sfe_ported_ipv6_pon_vlan_tag_get(from_ifaces, from_ifaces_first, &info.vlan_tag);
+
+		/*
+		 * Bridging has no VLAN netdev to walk for PON either, but the skb
+		 * still carries the real tag here - prefer it over the hierarchy
+		 * walk above for this case.
+		 */
+		if (!info.is_routed) {
+			ecm_sfe_ported_ipv6_pon_vlan_tag_from_skb(skb, &info.vlan_tag);
+		}
+
+		/*
+		 * Same derivation, but for the return-side interface hierarchy - used
+		 * only for reporting the egress tag actually in the rule below, since
+		 * the PON/OMCI query itself has no egress-tag input field.
+		 */
+		ecm_sfe_ported_ipv6_pon_vlan_tag_get(to_ifaces, to_ifaces_first, &egress_vlan_tag);
 
 		from_iface_is_pon = ecm_sfe_common_iface_is_pon(from_ifaces, from_ifaces_first, from_sfe_iface_id);
 		to_iface_is_pon = ecm_sfe_common_iface_is_pon(to_ifaces, to_ifaces_first, to_sfe_iface_id);
@@ -738,12 +842,14 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * Unlike nircm at accelerate() time, update_msg is zero-initialized, so an
 		 * unset tag defaults to 0 rather than SFE_VLAN_ID_NOT_CONFIGURED. SFE treats
 		 * 0 as a real VID and would push a bogus second VLAN header for any tag left
-		 * unset below, corrupting the frame - so every tag must be seeded here first.
+		 * unset below, corrupting the frame - so every tag must be seeded here first,
+		 * from the real interface-hierarchy-walked values above rather than an
+		 * unconditional "not configured".
 		 */
-		update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+		update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = info.vlan_tag.primary_vlan_tag;
+		update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = egress_vlan_tag.primary_vlan_tag;
+		update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag = info.vlan_tag.secondary_vlan_tag;
+		update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = egress_vlan_tag.secondary_vlan_tag;
 
 		/*
 		 * The ingress-agnostic decision is PON/OMCI driver's call, it may know things
@@ -752,10 +858,18 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 */
 		switch (action.in_vlan_action) {
 		case NSS_PON_INGRESS_VLAN_MATCH_AGNOSTIC:
+			/*
+			 * Agnostic matching is the driver's call, but the reported tag
+			 * should still reflect whatever the hierarchy walk/seed above
+			 * actually put in the rule.
+			 */
+			action.in_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
 			update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = action.in_vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_DOUBLE:
@@ -784,10 +898,13 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 			 */
 			update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_SINGLE:
 			update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = action.eg_vlan_tag.primary_vlan_tag;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_DOUBLE:
@@ -797,8 +914,9 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 			break;
 		default:
 			/*
-			 * The PON/OMCI driver had nothing to say - report whatever the
-			 * interface hierarchy walk above actually put in the rule.
+			 * No explicit driver decision (including the agnostic case, which has
+			 * no dedicated SFE egress flag) - report whatever the hierarchy walk/
+			 * seed above actually put in the rule.
 			 */
 			action.eg_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag;
 			action.eg_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag;
@@ -809,7 +927,7 @@ bool ecm_sfe_ported_ipv6_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * Refresh the reported PON state now that the default cases above may have
 		 * corrected the tag values used to build this rule.
 		 */
-		ecm_front_end_common_connection_pon_state_update(feci, &action);
+		ecm_front_end_common_connection_pon_state_update(feci, sender, &action);
 
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
@@ -2542,11 +2660,19 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 		 */
 		switch (action.in_vlan_action) {
 		case NSS_PON_INGRESS_VLAN_MATCH_AGNOSTIC:
+			/*
+			 * Agnostic matching is the driver's call, but the reported tag
+			 * should still reflect whatever the interface hierarchy walk
+			 * above actually put in the rule.
+			 */
+			action.in_vlan_tag.primary_vlan_tag = nircm->vlan_primary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VLAN_INGRESS_AGNOSTIC;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
 			nircm->vlan_primary_rule.ingress_vlan_tag = action.in_vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_DOUBLE:
@@ -2575,10 +2701,13 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 			 */
 			nircm->vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_SINGLE:
 			nircm->vlan_primary_rule.egress_vlan_tag = action.eg_vlan_tag.primary_vlan_tag;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_DOUBLE:
@@ -2598,9 +2727,11 @@ static void ecm_sfe_ported_ipv6_connection_accelerate(struct ecm_front_end_conne
 
 		/*
 		 * Refresh the reported PON state now that the default cases above may have
-		 * corrected the tag values used to build this rule.
+		 * corrected the tag values used to build this rule. This create-rule path
+		 * only determines the flow/orig direction's decision - leave reply's
+		 * state alone until real reply-direction traffic independently queries it.
 		 */
-		ecm_front_end_common_connection_pon_state_update(feci, &action);
+		ecm_front_end_common_connection_pon_state_update(feci, ECM_TRACKER_SENDER_TYPE_SRC, &action);
 	}
 #endif
 

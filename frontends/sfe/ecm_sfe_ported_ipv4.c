@@ -609,6 +609,7 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
 	struct nss_pon_plugin_query_info info = {0};
 	struct nss_pon_action action = {0};
+	struct nss_pon_vlan_rule egress_vlan_tag = {0};
 	struct ecm_db_iface_instance *from_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *to_ifaces[ECM_DB_IFACE_HEIRARCHY_MAX];
 	struct ecm_db_iface_instance *from_sfe_iface;
@@ -807,6 +808,13 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 			ecm_sfe_ported_ipv4_pon_vlan_tag_from_skb(skb, &info.vlan_tag);
 		}
 
+		/*
+		 * Same derivation, but for the return-side interface hierarchy - used
+		 * only for reporting the egress tag actually in the rule below, since
+		 * the PON/OMCI query itself has no egress-tag input field.
+		 */
+		ecm_sfe_ported_ipv4_pon_vlan_tag_get(to_ifaces, to_ifaces_first, &egress_vlan_tag);
+
 		from_iface_is_pon = ecm_sfe_common_iface_is_pon(from_ifaces, from_ifaces_first, from_sfe_iface_id);
 		to_iface_is_pon = ecm_sfe_common_iface_is_pon(to_ifaces, to_ifaces_first, to_sfe_iface_id);
 		info.direction = ecm_sfe_ported_ipv4_pon_direction_get(from_iface_is_pon, to_iface_is_pon,
@@ -845,12 +853,14 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * Unlike nircm at accelerate() time, update_msg is zero-initialized, so an
 		 * unset tag defaults to 0 rather than SFE_VLAN_ID_NOT_CONFIGURED. SFE treats
 		 * 0 as a real VID and would push a bogus second VLAN header for any tag left
-		 * unset below, corrupting the frame - so every tag must be seeded here first.
+		 * unset below, corrupting the frame - so every tag must be seeded here first,
+		 * from the real interface-hierarchy-walked values above rather than an
+		 * unconditional "not configured".
 		 */
-		update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
-		update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+		update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = info.vlan_tag.primary_vlan_tag;
+		update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = egress_vlan_tag.primary_vlan_tag;
+		update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag = info.vlan_tag.secondary_vlan_tag;
+		update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = egress_vlan_tag.secondary_vlan_tag;
 
 		/*
 		 * The ingress-agnostic decision is now the PON/OMCI driver's call, not
@@ -860,10 +870,18 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 		 */
 		switch (action.in_vlan_action) {
 		case NSS_PON_INGRESS_VLAN_MATCH_AGNOSTIC:
+			/*
+			 * Agnostic matching is the driver's call, but the reported tag
+			 * should still reflect whatever the hierarchy walk/seed above
+			 * actually put in the rule.
+			 */
+			action.in_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.ingress_vlan_tag;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
 			update_msg->info.unidir.vlan_primary_rule.ingress_vlan_tag = action.in_vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_DOUBLE:
@@ -891,10 +909,13 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 			 */
 			update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_SINGLE:
 			update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag = action.eg_vlan_tag.primary_vlan_tag;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			update_msg->flags |= SFE_UPDATE_RULE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_DOUBLE:
@@ -904,8 +925,9 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 			break;
 		default:
 			/*
-			 * The PON/OMCI driver had nothing to say - report whatever the
-			 * interface hierarchy walk above actually put in the rule.
+			 * No explicit driver decision (including the agnostic case, which has
+			 * no dedicated SFE egress flag) - report whatever the hierarchy walk/
+			 * seed above actually put in the rule.
 			 */
 			action.eg_vlan_tag.primary_vlan_tag = update_msg->info.unidir.vlan_primary_rule.egress_vlan_tag;
 			action.eg_vlan_tag.secondary_vlan_tag = update_msg->info.unidir.vlan_secondary_rule.egress_vlan_tag;
@@ -916,7 +938,7 @@ bool ecm_sfe_ported_ipv4_unidir_rule_update(struct ecm_db_connection_instance *c
 		 * Refresh the reported PON state now that the default cases above may have
 		 * corrected the tag values used to build this rule.
 		 */
-		ecm_front_end_common_connection_pon_state_update(feci, &action);
+		ecm_front_end_common_connection_pon_state_update(feci, sender, &action);
 
 		ecm_db_connection_interfaces_deref(from_ifaces, from_ifaces_first);
 		ecm_db_connection_interfaces_deref(to_ifaces, to_ifaces_first);
@@ -2650,11 +2672,19 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 		 */
 		switch (action.in_vlan_action) {
 		case NSS_PON_INGRESS_VLAN_MATCH_AGNOSTIC:
+			/*
+			 * Agnostic matching is the driver's call, but the reported tag
+			 * should still reflect whatever the interface hierarchy walk
+			 * above actually put in the rule.
+			 */
+			action.in_vlan_tag.primary_vlan_tag = nircm->vlan_primary_rule.ingress_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = nircm->vlan_secondary_rule.ingress_vlan_tag;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_VLAN_INGRESS_AGNOSTIC;
 			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_VLAN_INGRESS_AGNOSTIC;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_SINGLE:
 			nircm->vlan_primary_rule.ingress_vlan_tag = action.in_vlan_tag.primary_vlan_tag;
+			action.in_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_INGRESS_VLAN_MATCH_DOUBLE:
@@ -2692,10 +2722,13 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 			 */
 			nircm->vlan_primary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->vlan_secondary_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.primary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_SINGLE:
 			nircm->vlan_primary_rule.egress_vlan_tag = action.eg_vlan_tag.primary_vlan_tag;
+			action.eg_vlan_tag.secondary_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
 			nircm->valid_flags |= SFE_RULE_CREATE_VLAN_VALID;
 			break;
 		case NSS_PON_EGRESS_VLAN_ACTION_DOUBLE:
@@ -2715,9 +2748,11 @@ static void ecm_sfe_ported_ipv4_connection_accelerate(struct ecm_front_end_conne
 
 		/*
 		 * Refresh the reported PON state now that the default cases above may have
-		 * corrected the tag values used to build this rule.
+		 * corrected the tag values used to build this rule. This create-rule path
+		 * only determines the flow/orig direction's decision - leave reply's
+		 * state alone until real reply-direction traffic independently queries it.
 		 */
-		ecm_front_end_common_connection_pon_state_update(feci, &action);
+		ecm_front_end_common_connection_pon_state_update(feci, ECM_TRACKER_SENDER_TYPE_SRC, &action);
 	}
 
 #endif
