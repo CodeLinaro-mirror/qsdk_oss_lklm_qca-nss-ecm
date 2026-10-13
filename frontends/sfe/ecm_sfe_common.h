@@ -150,4 +150,6 @@ int ecm_sfe_common_get_vp_from_iface_id(int32_t iface_id);
 #endif
 #if defined(CONFIG_IPQ_PON) && defined(ECM_FRONT_END_PPE_ENABLE)
 int ecm_sfe_common_get_veip_iface_id(int32_t iface_id);
+bool ecm_sfe_common_iface_is_pon(struct ecm_db_iface_instance *ifaces[],
+		int32_t ifaces_first, int32_t sfe_iface_id);
 #endif
